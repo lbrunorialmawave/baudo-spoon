@@ -1,0 +1,14 @@
+pandas>=2.1
+numpy>=1.26
+scikit-learn>=1.4
+# scikit-learn-extra>=0.3  # optional: enables KMedoids (requires gcc); falls back to KMeans if absent
+xgboost>=2.0
+shap>=0.45
+matplotlib>=3.8
+seaborn>=0.13
+sqlalchemy>=2.0
+psycopg2-binary>=2.9
+pydantic>=2.5
+pydantic-settings>=2.1
+joblib>=1.3
+scipy>=1.11

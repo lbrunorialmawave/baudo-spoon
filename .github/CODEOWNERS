@@ -1,0 +1,8 @@
+# Global owner — required reviewer on all PRs
+* @lbrunori
+
+# Service-level ownership
+/api/     @lbrunori
+/ml/      @lbrunori
+/scraper/ @lbrunori
+/db/      @lbrunori

@@ -1,0 +1,96 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: fbref
+      POSTGRES_USER: fbref
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fbref -d fbref"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save "" --appendonly no
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./api
+    environment:
+      API_DATABASE_URL: postgresql+psycopg2://fbref:${POSTGRES_PASSWORD}@db:5432/fbref
+      API_REDIS_URL: redis://redis:6379/0
+      API_API_KEY_SECRET: ${API_KEY_SECRET:-}
+      API_ARTIFACTS_DIR: /app/artifacts
+      API_CACHE_TTL_SECONDS: ${API_CACHE_TTL_SECONDS:-3600}
+      API_RATE_LIMIT_REQUESTS: ${API_RATE_LIMIT_REQUESTS:-60}
+      API_RATE_LIMIT_WINDOW_SECONDS: ${API_RATE_LIMIT_WINDOW_SECONDS:-60}
+      API_LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      API_DEBUG: ${DEBUG:-false}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ml_artifacts:/app/artifacts:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  scraper:
+    build:
+      context: ./scraper
+    environment:
+      SCRAPER_DATABASE_URL: postgresql+psycopg2://fbref:${POSTGRES_PASSWORD}@db:5432/fbref
+      SCRAPER_LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SCRAPER_CACHE_DIR: /app/downloaded_files/cache
+      SCRAPER_OUTPUT_DIR: /app/downloaded_files/output
+    volumes:
+      - scraper_data:/app/downloaded_files
+    depends_on:
+      db:
+        condition: service_healthy
+    # Run on-demand: docker compose --profile scraper run --rm scraper --leagues "Serie A"
+    profiles:
+      - scraper
+
+  ml:
+    build:
+      context: ./ml
+    environment:
+      ML_DATABASE_URL: postgresql+psycopg2://fbref:${POSTGRES_PASSWORD}@db:5432/fbref
+      ML_LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ML_ARTIFACTS_DIR: /app/artifacts
+      ML_RANDOM_SEED: ${ML_RANDOM_SEED:-42}
+    volumes:
+      - ml_artifacts:/app/artifacts
+      - ./ml:/app/ml
+    depends_on:
+      db:
+        condition: service_healthy
+    # Run on-demand:
+    #   docker compose --profile ml run --rm ml
+    #   docker compose --profile ml run --rm ml --league "Serie A" --tune
+    #   docker compose --profile ml run --rm ml --fantavoto-csv /app/artifacts/fantavoto.csv
+    profiles:
+      - ml
+
+volumes:
+  postgres_data:
+  scraper_data:
+  ml_artifacts:
