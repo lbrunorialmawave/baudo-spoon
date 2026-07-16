@@ -25,6 +25,11 @@ import sqlalchemy as sa
 from ..config import MLConfig
 from .stat_names import canonicalize_columns
 
+# Quotation-based features are an optional integration. The import is
+# deferred to the call site because the module pulls a SQLAlchemy
+# engine; loading it eagerly would couple the loader to the DB.
+attach_quotation_features = None
+
 log = logging.getLogger(__name__)
 
 # ── SQL templates ─────────────────────────────────────────────────────────────
@@ -68,6 +73,16 @@ ORDER BY s.season_start, tss.team_fotmob_id, tss.stat_category
 _PLAYER_PROFILES_SQL = """
 SELECT player_fotmob_id, canonical_role
 FROM player_profiles
+"""
+
+# Season-scoped role lookup. Source of truth for ML feature pipelines —
+# a row of `player_profiles` is the *current* role only, so historical
+# training rows would silently inherit role changes that did not exist
+# at the time of the season. This view gives us the role the player
+# actually had per (player, season).
+_PLAYER_SEASON_ROLES_SQL = """
+SELECT player_fotmob_id, season_start, canonical_role
+FROM player_season_roles
 """
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -171,6 +186,88 @@ def _build_team_strength(df_team_long: pd.DataFrame) -> pd.DataFrame:
 
 # ── Public interface ──────────────────────────────────────────────────────────
 
+def _attach_role(
+    df_player: pd.DataFrame,
+    engine: sa.Engine,
+    log: logging.Logger,
+) -> pd.DataFrame:
+    """Attach a season-scoped role column to the player feature frame.
+
+    Strategy:
+    1. Try ``player_season_roles`` (preferred — season-aware).
+    2. If the table does not exist, fall back to ``player_profiles``
+       (current role, used as a constant for every season).
+    3. If both fail, default every row to ``"FWD"`` so the pipeline
+       still runs (matches pre-migration behaviour).
+    """
+    # 1. Season-aware source of truth
+    try:
+        df_season_roles = pd.read_sql(
+            sa.text(_PLAYER_SEASON_ROLES_SQL), engine
+        )
+        if not df_season_roles.empty:
+            df_player = df_player.merge(
+                df_season_roles[
+                    ["player_fotmob_id", "season_start", "canonical_role"]
+                ],
+                on=["player_fotmob_id", "season_start"],
+                how="left",
+            )
+            df_player["canonical_role"] = (
+                df_player["canonical_role"].fillna("FWD").astype(str)
+            )
+            log.info(
+                "Role distribution (season-scoped): %s",
+                df_player["canonical_role"].value_counts().to_dict(),
+            )
+            return df_player
+        log.warning(
+            "player_season_roles is empty — falling back to player_profiles. "
+            "Re-run the scraper with --roles to populate it."
+        )
+    except sa.exc.ProgrammingError:
+        log.warning(
+            "player_season_roles table not found — falling back to "
+            "player_profiles. Apply migration 003_add_player_season_roles.sql "
+            "and re-run the scraper with --roles."
+        )
+    except Exception:  # noqa: BLE001
+        log.warning(
+            "Could not load player_season_roles; falling back to player_profiles.",
+            exc_info=True,
+        )
+
+    # 2. Fallback: current role only
+    try:
+        df_profiles = pd.read_sql(sa.text(_PLAYER_PROFILES_SQL), engine)
+        if not df_profiles.empty:
+            df_player = df_player.merge(
+                df_profiles[["player_fotmob_id", "canonical_role"]],
+                on="player_fotmob_id",
+                how="left",
+            )
+            df_player["canonical_role"] = (
+                df_player["canonical_role"].fillna("FWD").astype(str)
+            )
+            log.info(
+                "Role distribution (current-role fallback): %s",
+                df_player["canonical_role"].value_counts().to_dict(),
+            )
+        else:
+            log.warning(
+                "player_profiles table is empty — defaulting all roles to 'FWD'."
+            )
+            df_player["canonical_role"] = "FWD"
+    except Exception:  # noqa: BLE001
+        log.warning(
+            "Could not load player_profiles; defaulting all roles to 'FWD'.",
+            exc_info=True,
+        )
+        df_player["canonical_role"] = "FWD"
+
+    return df_player
+
+
 def load_raw_data(engine: sa.Engine, cfg: MLConfig) -> pd.DataFrame:
     """Load and merge player + team stats. Returns the feature DataFrame.
 
@@ -206,35 +303,12 @@ def load_raw_data(engine: sa.Engine, cfg: MLConfig) -> pd.DataFrame:
     df_player = canonicalize_columns(df_player)
     df_player = _deduplicate_multi_team_players(df_player)
 
-    # ── Attach player role ────────────────────────────────────────────────────
-    try:
-        df_profiles = pd.read_sql(sa.text(_PLAYER_PROFILES_SQL), engine)
-        if not df_profiles.empty:
-            df_player = df_player.merge(
-                df_profiles[["player_fotmob_id", "canonical_role"]],
-                on="player_fotmob_id",
-                how="left",
-            )
-            df_player["canonical_role"] = (
-                df_player["canonical_role"].fillna("FWD").astype(str)
-            )
-            log.info(
-                "Role distribution: %s",
-                df_player["canonical_role"].value_counts().to_dict(),
-            )
-        else:
-            log.warning(
-                "player_profiles table is empty — run the scraper role-fetch step. "
-                "Defaulting all roles to 'FWD'."
-            )
-            df_player["canonical_role"] = "FWD"
-    except Exception:
-        log.warning(
-            "Could not load player_profiles (table may not exist yet). "
-            "Defaulting all roles to 'FWD'. Run db migration 001_add_player_profiles.sql.",
-            exc_info=True,
-        )
-        df_player["canonical_role"] = "FWD"
+    # ── Attach player role (season-scoped) ────────────────────────────────────
+    # We prefer `player_season_roles` so that each (player, season) row
+    # gets the role the player *had* in that season. We fall back to
+    # `player_profiles` (current role) if the season-aware table is
+    # missing — e.g. before migration 003 has been applied.
+    df_player = _attach_role(df_player, engine, log)
 
     log.info("Loading team_season_stats …")
     df_team_long = pd.read_sql(
@@ -251,6 +325,29 @@ def load_raw_data(engine: sa.Engine, cfg: MLConfig) -> pd.DataFrame:
         log.info("  Team strength features merged.")
     else:
         log.warning("No team_season_stats found; skipping team strength features.")
+
+    # ── Optional: Fantacalcio quotation features ──────────────────────────
+    # Best-effort merge against player_quotations / player_id_map. Tables
+    # may not exist yet — fall back silently to NaN-only columns.
+    try:
+        from ..preprocessing.quotation_features import (
+            attach_quotation_features as _attach_quot,
+        )
+        df_player = _attach_quot(df_player, engine=engine)
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "Could not attach Fantacalcio quotation features (%s). "
+            "Run `python -m ml.data.import_quotations` to populate "
+            "player_quotations / player_id_map.",
+            exc,
+        )
+        for col in (
+            "qt_a", "qt_i", "qt_a_norm", "qt_i_norm",
+            "price_delta_pct", "qt_a_vs_role_median",
+            "price_trend_2y", "qt_a_lag1", "match_method",
+        ):
+            if col not in df_player.columns:
+                df_player[col] = pd.NA
 
     log.info("Raw dataset shape: %s", df_player.shape)
     return df_player

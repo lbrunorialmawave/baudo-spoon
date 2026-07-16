@@ -8,7 +8,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.config import settings
-from src.db import Base, ingest_dataframe, ingest_league_stats, upsert_player_profiles
+from src.db import (
+    Base,
+    ingest_dataframe,
+    ingest_league_stats,
+    upsert_player_profiles,
+    upsert_player_season_roles,
+)
 from src.logging_cfg import configure_logging
 from src.models import LEAGUE_CATALOG, SERIE_A
 from src.scraper import FotMobMatchStatsScraper
@@ -94,8 +100,8 @@ def _run_league_stats(args: argparse.Namespace) -> None:
         seasons=args.seasons,
     )
 
-    collected_player_ids: dict[int, str] = {}  # {player_fotmob_id: player_name}
-    player_url_map: dict[int, str] = {}  # {player_fotmob_id: full_page_url}
+    # Per-season aggregations: {season_label: {player_fotmob_id: {"name", "url"}}}
+    season_player_index: dict[str, dict[int, dict[str, str]]] = {}
 
     with Session(engine) as session:
         for (
@@ -126,36 +132,69 @@ def _run_league_stats(args: argparse.Namespace) -> None:
                 count,
             )
             if stat_type == "players":
+                bucket = season_player_index.setdefault(season_label, {})
                 for r in rows:
-                    collected_player_ids.setdefault(r["entity_id"], r["entity_name"])
-                    if r.get("entity_url"):
-                        player_url_map.setdefault(r["entity_id"], r["entity_url"])
+                    entry = bucket.setdefault(
+                        r["entity_id"],
+                        {"name": r["entity_name"], "url": ""},
+                    )
+                    if r.get("entity_url") and not entry["url"]:
+                        entry["url"] = r["entity_url"]
 
-    if getattr(args, "roles", False) and collected_player_ids:
-        _fetch_and_upsert_roles(engine, collected_player_ids, player_url_map, log)
+    if getattr(args, "roles", False) and season_player_index:
+        for season_label, players in season_player_index.items():
+            player_ids = {
+                pid: info["name"] for pid, info in players.items()
+            }
+            player_urls = {
+                pid: info["url"] for pid, info in players.items() if info["url"]
+            }
+            _fetch_and_upsert_roles(
+                engine, player_ids, player_urls, season_label, log
+            )
+
+
+def _season_start_from_label(season_label: str) -> int:
+    """Extract the start year from a season label like '2023-2024'."""
+    try:
+        return int(season_label.split("-")[0])
+    except (ValueError, IndexError):
+        return 9999
 
 
 def _fetch_and_upsert_roles(
     engine: "sqlalchemy.Engine",
     player_ids: dict[int, str],
     player_url_map: dict[int, str],
+    season_label: str,
     log: logging.Logger,
 ) -> None:
-    """Fetch player roles via browser page navigation (bypasses x-mas token) and upsert."""
+    """Fetch player roles via browser page navigation and double-write to
+    both the canonical ``player_profiles`` table and the season-scoped
+    ``player_season_roles`` table.
+    """
     from src.player_profile_scraper import fetch_player_profiles
 
     log.info(
-        "role_fetch: fetching profiles for %d players (%d with known URLs)",
-        len(player_ids), len(player_url_map),
+        "role_fetch: season=%s players=%d (with URLs: %d)",
+        season_label, len(player_ids), len(player_url_map),
     )
     profiles = fetch_player_profiles(player_ids, player_url_map)
 
-    if profiles:
-        from sqlalchemy.orm import Session
+    if not profiles:
+        return
 
-        with Session(engine) as session:
-            upserted = upsert_player_profiles(session, profiles)
-        log.info("role_fetch: upserted %d player profiles", upserted)
+    season_start = _season_start_from_label(season_label)
+
+    with Session(engine) as session:
+        current = upsert_player_profiles(session, profiles)
+        seasonal = upsert_player_season_roles(
+            session, profiles, season_start=season_start
+        )
+    log.info(
+        "role_fetch: season=%s → player_profiles=%d, player_season_roles=%d",
+        season_label, current, seasonal,
+    )
 
 
 def _run_match_stats(args: argparse.Namespace) -> None:

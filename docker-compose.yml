@@ -9,7 +9,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
-      - "5432:5432"
+      - "5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U fbref -d fbref"]
       interval: 10s
@@ -45,6 +45,7 @@ services:
       - "${API_PORT:-8000}:8000"
     volumes:
       - ml_artifacts:/app/artifacts:ro
+      - ./ml:/app/ml:ro
     depends_on:
       db:
         condition: service_healthy

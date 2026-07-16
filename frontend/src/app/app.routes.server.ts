@@ -1,0 +1,12 @@
+import { RenderMode, ServerRoute } from '@angular/ssr';
+
+export const serverRoutes: ServerRoute[] = [
+  { path: 'dashboard',   renderMode: RenderMode.Client },
+  { path: 'players',     renderMode: RenderMode.Client },
+  { path: 'quotations',  renderMode: RenderMode.Client },
+  { path: 'matches',     renderMode: RenderMode.Client },
+  { path: 'predictions', renderMode: RenderMode.Client },
+  { path: 'optimizer',  renderMode: RenderMode.Client },
+  { path: 'auction',   renderMode: RenderMode.Client },
+  { path: '**',          renderMode: RenderMode.Prerender },
+];

@@ -1,0 +1,415 @@
+================================================================================
+                    DOCKER GUIDE — Fantacalcio Analysis Project
+================================================================================
+
+Stack: PostgreSQL 16 + Redis 7 + FastAPI (uvicorn) + ML pipeline + Selenium scraper.
+Tutti i comandi vanno eseguiti dalla root del progetto (dove si trova
+`docker-compose.yml`), salvo dove indicato diversamente.
+
+Convenzioni shell:
+  - $POSTGRES_PASSWORD, $API_KEY_SECRET, ecc. sono letti da `.env`.
+  - I container si risolvono per nome nella rete Docker:
+        db       → PostgreSQL
+        redis    → Redis
+        api      → FastAPI
+  - Profili Compose: `scraper` e `ml` (servizi on-demand, non partono mai
+    automaticamente; vanno lanciati con `docker compose --profile <nome> run --rm`).
+
+
+================================================================================
+1.  SETUP INIZIALE (una tantum)
+================================================================================
+
+1.1 Copia il template delle variabili d'ambiente e personalizzalo:
+
+    copy .env.example .env          (Windows PowerShell / cmd)
+    oppure
+    cp .env.example .env            (Linux / macOS / WSL)
+
+1.2 Modifica i segreti in `.env` (almeno `POSTGRES_PASSWORD`):
+
+    POSTGRES_PASSWORD=una_password_lunga_e_sicura
+    API_KEY_SECRET=un_token_alfanumerico_a_scelta
+
+1.3 Builda le immagini (API, scraper, ML) — richiede qualche minuto la prima volta:
+
+    docker compose build
+
+1.4 (Opzionale, ma consigliato) verifica che le immagini siano pronte:
+
+    docker images | findstr "analysis"        (Windows)
+    docker images | grep analysis             (Linux/macOS)
+
+
+================================================================================
+2.  SERVIZI PERSISTENTI (db, redis, api)
+================================================================================
+
+2.1 Avvia in background l'API insieme a PostgreSQL e Redis:
+
+    docker compose up -d db redis api
+
+    -- `-d` = detached (non blocca il terminale).
+    -- `db` e `redis` hanno healthcheck: `api` parte solo quando sono healthy.
+
+2.2 Verifica stato:
+
+    docker compose ps
+
+    atteso: `db` (healthy), `redis` (healthy), `api` (running, porta 8000).
+
+2.3 Log in tempo reale dell'API:
+
+    docker compose logs -f api
+    docker compose logs -f --tail=100 db       (per il DB)
+
+2.4 Test rapido che l'API risponda:
+
+    curl http://localhost:8000/health
+    curl http://localhost:8000/docs             (Swagger UI interattiva)
+
+2.5 Fermare i servizi (mantiene volumi e immagini):
+
+    docker compose stop
+
+2.6 Spegnere e rimuovere anche i container (volumi intatti):
+
+    docker compose down
+
+2.7 Spegnere e CANCELLARE ANCHE I VOLUMI (⚠ perde i dati del DB):
+    Da usare solo per reset totale.
+
+    docker compose down -v
+
+
+================================================================================
+3.  MIGRATIONS POSTGRESQL (una tantum dopo il primo avvio del DB)
+================================================================================
+
+Il file `db/init.sql` viene eseguito automaticamente al PRIMO avvio del
+container `db` (crea le tabelle base). Le migration successive in
+`db/migrations/*.sql` devono essere applicate manualmente con `psql`.
+
+3.1 Esegui tutte le migration nell'ordine corretto:
+
+    Get-Content db\migrations\*.sql | docker compose exec -T db psql -U fbref -d fbref     (PowerShell)
+    cat db/migrations/*.sql | docker compose exec -T db psql -U fbref -d fbref               (bash)
+
+    In alternativa, una alla volta:
+
+    type db\migrations\001_add_player_profiles.sql | docker compose exec -T db psql -U fbref -d fbref
+    type db\migrations\002_add_player_quotations.sql | docker compose exec -T db psql -U fbref -d fbref
+    type db\migrations\003_add_player_season_roles.sql | docker compose exec -T db psql -U fbref -d fbref
+    type db\migrations\004_extend_id_map_match_method.sql | docker compose exec -T db psql -U fbref -d fbref
+
+3.2 Verifica rapida che le tabelle esistano:
+
+    docker compose exec db psql -U fbref -d fbref -c "\dt"
+
+    Atteso: leagues, seasons, match_stats, player_season_stats, team_season_stats,
+            player_profiles, player_quotations, player_id_map, player_season_roles,
+            ... (e qualsiasi altra tabella del tuo schema).
+
+
+================================================================================
+4.  SCRAPER FOTMOB  (profilo on-demand)
+================================================================================
+
+Il servizio `scraper` NON parte in automatico. Va lanciato manualmente con
+`docker compose --profile scraper run --rm scraper -- ...`.
+
+4.1 Match stats di una sola lega (default: Serie A), ultimi dati disponibili,
+    scrittura sia su DB sia su CSV:
+
+    docker compose --profile scraper run --rm scraper --leagues "Serie A"
+
+4.2 Match stats di più leghe, specificando le stagioni:
+
+    docker compose --profile scraper run --rm scraper --leagues "Serie A,Premier League" --seasons "2023-2024,2024-2025"
+
+4.3 Match stats in modalità SOLO CSV (nessuna scrittura su DB):
+
+    docker compose --profile scraper run --rm scraper --leagues "Serie A" --no-db
+
+4.4 Stats per-season (ranking giocatori + squadre) — RICHIEDE il DB attivo:
+
+    docker compose --profile scraper run --rm scraper --leagues "Serie A" --stats
+
+4.5 Stats per-season + fetch ruoli da FotMob (popola player_profiles e
+    player_season_roles). Lento, usare con cautela:
+
+    docker compose --profile scraper run --rm scraper --leagues "Serie A" --stats --roles
+
+4.6 Cambiare la directory di output CSV dentro al container:
+
+    docker compose --profile scraper run --rm scraper -e SCRAPER_OUTPUT_DIR=/app/downloaded_files/output_serieA --leagues "Serie A" --no-db
+
+4.7 Pulizia cache scraper (file di download intermedi):
+
+    docker compose run --rm --entrypoint sh scraper -c "rm -rf /app/downloaded_files/cache/*"
+    oppure (se hai il servizio fermo):
+    docker volume rm analysis_scraper_data
+
+
+================================================================================
+5.  PIPELINE ML  (profilo on-demand)
+================================================================================
+
+Il servizio `ml` NON parte in automatico. ENTRYPOINT = `python -m ml.run_pipeline`,
+quindi tutti i flag diventano argomenti del comando Compose.
+
+5.1 Pipeline completa su tutte le leghe, target approssimato da FotMob stats:
+
+    docker compose --profile ml run --rm ml
+
+5.2 Filtra per una singola lega (match parziale, es. "Serie A"):
+
+    docker compose --profile ml run --rm ml --league "Serie A"
+
+5.3 Con i veri fantavoti reali (file CSV prodotto dal loader voti, vedi §6):
+
+    docker compose --profile ml run --rm ml --league "Serie A" --fantavoto-csv /app/artifacts/fantavoto.csv
+
+5.4 Con hyperparameter tuning (RandomizedSearchCV, più lento):
+
+    docker compose --profile ml run --rm ml --league "Serie A" --tune --tune-iter 50
+
+5.5 Con selezione automatica del numero di cluster (Silhouette su k in [2,10]):
+
+    docker compose --profile ml run --rm ml --clusters -1
+
+5.6 Dopo l'evaluation, ri-fit su tutti i dati e predici la prossima stagione
+    (genera next_season_predictions.json in artifacts):
+
+    docker compose --profile ml run --rm ml --league "Serie A" --fantavoto-csv /app/artifacts/fantavoto.csv --predict-next
+
+5.7 Personalizzare il numero di stagioni di test e la soglia di minuti:
+
+    docker compose --profile ml run --rm ml --league "Serie A" --test-seasons 2 --min-minutes 1200
+
+5.8 Cambiare seed per riproducibilità:
+
+    docker compose --profile ml run --rm ml --seed 2024
+
+5.9 Log JSON (per ELK/Splunk) e log level custom:
+
+    docker compose --profile ml run --rm ml --json-logs --log-level DEBUG
+
+5.10 Cambiare la cartella di output (default: /app/artifacts, volume `ml_artifacts`):
+
+    docker compose --profile ml run --rm ml --output-dir /app/artifacts_serieA --league "Serie A"
+
+5.11 Rigenerare artifacts senza rieseguire l'intera pipeline (richiede
+    artifacts pre-esistenti — non c'è uno script dedicato, rilancia
+    semplicemente la pipeline: i modelli migliori vengono riscritti).
+
+
+================================================================================
+6.  IMPORT QUOTAZIONI E VOTI FANTAFANTACALCIO
+================================================================================
+
+Questi script NON hanno un servizio dedicato in `docker-compose.yml`.
+Vanno lanciati come comandi one-shot dentro il container `api`
+(che ha già tutte le dipendenze Python installate e può scrivere su DB).
+
+6.1 Import quotazioni dai listoni Fantagazzetta (file .xlsx in ./quotazioni/):
+
+    docker compose run --rm api python -m ml.data.import_quotations --quotazioni-dir /app/quotazioni --source listone_fantagazzetta
+
+6.2 Generazione del CSV fantavoti reali a partire dai JSON in ./voti/:
+
+    docker compose run --rm api python -m ml.data.voti_loader --voti-dir /app/voti --out /app/artifacts/fantavoto.csv
+
+    Il file `fantavoto.csv` prodotto è quello da passare a
+    `--fantavoto-csv` nella pipeline ML (§5.3, §5.6).
+
+6.3 Test offline del loader (utile dopo modifiche al parser):
+
+    docker compose run --rm api python -m ml.data.test_quotations_offline
+
+NOTA: i path `/app/quotazioni`, `/app/voti`, `/app/artifacts` sono mappati
+come bind mount o volumi solo se aggiunti a `docker-compose.yml`. La
+configurazione attuale espone `/app/artifacts` (volume `ml_artifacts`)
+ma NON monta `./quotazioni` né `./voti`. Per usarli al volo:
+
+    docker compose run --rm -v ${PWD}/quotazioni:/app/quotazioni:ro -v ${PWD}/voti:/app/voti:ro -v ml_artifacts:/app/artifacts api python -m ml.data.voti_loader --voti-dir /app/voti --out /app/artifacts/fantavoto.csv
+
+
+================================================================================
+7.  OTTIMIZZATORE ROSE (endpoint API)
+================================================================================
+
+L'optimizer non è un servizio: è esposto dall'API FastAPI. Non servono
+comandi Docker aggiuntivi oltre all'avvio dell'API (§2.1).
+
+7.1 Esempio di chiamata — strategia singola:
+
+    curl -X POST http://localhost:8000/optimizer/run ^
+         -H "Content-Type: application/json" ^
+         -H "X-API-Key: $API_KEY_SECRET" ^
+         -d "{\"strategy\":\"balanced\",\"budget\":500}"
+
+7.2 Esempio di chiamata — tutte le 4 strategie (bilanciata, super-difensiva,
+    super-offensiva, mista):
+
+    curl -X POST http://localhost:8000/optimizer/run-all ^
+         -H "Content-Type: application/json" ^
+         -H "X-API-Key: $API_KEY_SECRET" ^
+         -d "{\"budget\":500}"
+
+7.3 Lista delle strategie disponibili:
+
+    curl http://localhost:8000/optimizer/strategies -H "X-API-Key: $API_KEY_SECRET"
+
+7.4 Documentazione interattiva completa:
+
+    http://localhost:8000/docs
+
+
+================================================================================
+8.  OPERAZIONI COMUNI
+================================================================================
+
+8.1 Riavviare SOLO l'API dopo modifiche al suo codice (mantiene db/redis accesi):
+
+    docker compose up -d --build api
+
+8.2 Riavviare l'API senza rebuild (solo reload codice se è montato a caldo):
+
+    docker compose restart api
+
+8.3 Aprire una shell in un container running:
+
+    docker compose exec api bash
+    docker compose exec db psql -U fbref -d fbref          (Postgres CLI)
+
+8.4 Eseguire un comando one-shot dentro un container (senza shell interattiva):
+
+    docker compose exec api python -c "print('hello from api')"
+
+8.5 Vedere quanto spazio occupano i volumi Docker:
+
+    docker system df -v
+
+8.6 Ispezionare il contenuto del volume `ml_artifacts` (modelli, plots, JSON):
+
+    docker volume inspect analysis_ml_artifacts
+    docker run --rm -v analysis_ml_artifacts:/data -w /data alpine ls -lah /data
+
+8.7 Copiare un file dal container `api` al filesystem locale:
+
+    docker compose cp api:/app/artifacts/fantavoto.csv ./
+
+8.8 Copiare un file dal filesystem locale al container:
+
+    docker compose cp ./fantavoto.csv api:/app/artifacts/fantavoto.csv
+
+8.9 Pulizia completa (⚠ cancella TUTTO: container, volumi, immagini orfane):
+
+    docker compose down -v
+    docker system prune -a
+
+
+================================================================================
+9.  TROUBLESHOOTING
+================================================================================
+
+9.1 "API non parte: 'connection to db failed'":
+    Aspetta 20-30s e ricontrolla: i container `db` e `redis` hanno healthcheck
+    e l'API aspetta che siano `healthy`.
+
+        docker compose ps
+        docker compose logs db
+        docker compose logs redis
+
+9.2 "Porta 8000 già in uso" sul tuo host:
+    Modifica `API_PORT=8001` in `.env` e riavvia:
+
+        docker compose up -d --build api
+
+9.3 "Porta 5433 già in uso" (Postgres esposto sull'host):
+    Cambia `"5433:5432"` in `"5434:5432"` nel service `db` di `docker-compose.yml`.
+    NB: la porta 5433→5432 interna non è necessaria per l'API, è solo per
+    debug da host.
+
+9.4 "Volumi pieni / niente spazio su disco":
+    I volumi Docker di default vanno in `%USERPROFILE%\.docker\volume-data` (Windows)
+    o `/var/lib/docker/volumes` (Linux). Controlla e libera:
+
+        docker system df
+        docker volume ls
+        docker volume rm analysis_postgres_data       (⚠ cancella il DB)
+
+9.5 "Lo scraper si blocca o crasha":
+    I container Selenium sono pesanti. Controlla:
+
+        docker compose --profile scraper logs scraper
+        # se necessario, aumenta memoria Docker Desktop (Settings → Resources)
+
+9.6 "Errore 'permission denied' su volumi":
+    Su Linux, l'UID del container (root) può non combaciare con quello host.
+    Aggiungi `user: "${UID}:${GID}"` al servizio in `docker-compose.yml`,
+    oppure lascia che scriva come root (è il default).
+
+9.7 "Dopo modifica a `docker-compose.yml` nulla cambia":
+    Le modifiche al file Compose richiedono un re-up:
+
+        docker compose up -d --build
+
+9.8 "Voglio ricostruire solo l'immagine API":
+    Quando cambi dipendenze in `api/requirements.txt` o nel Dockerfile:
+
+        docker compose build --no-cache api
+        docker compose up -d api
+
+9.9 "Voglio cambiare secret in `.env` senza ricreare il DB":
+    I secret API key e rate limit sono letti a runtime dall'API, basta:
+
+        docker compose restart api
+
+    Per `POSTGRES_PASSWORD`, va ricreato anche il container `db`
+    (e potenzialmente perso l'accesso al DB esistente).
+
+9.10 "Pipeline ML fallisce con 'No module named ml'":
+    Verifica che in `ml/Dockerfile` la COPY sia `./ /app/ml/` (vedi
+    commento nel file). Il `WORKDIR` è `/app` e il package va importato
+    come `ml.*`. Se hai modificato il Dockerfile, rebuilda:
+
+        docker compose --profile ml build --no-cache ml
+
+
+================================================================================
+10. QUICK REFERENCE — I COMANDI PIÙ USATI
+================================================================================
+
+Setup iniziale (una volta):
+    copy .env.example .env
+    docker compose build
+    docker compose up -d db redis api
+    Get-Content db\migrations\*.sql | docker compose exec -T db psql -U fbref -d fbref
+
+Workflow tipico (ogni volta):
+    # 1. Scraping nuovi dati
+    docker compose --profile scraper run --rm scraper --leagues "Serie A"
+    # 2. Genera fantavoto CSV reale
+    docker compose run --rm api python -m ml.data.voti_loader --voti-dir /app/voti --out /app/artifacts/fantavoto.csv
+    # 3. Riaddestra modelli ML
+    docker compose --profile ml run --rm ml --league "Serie A" --fantavoto-csv /app/artifacts/fantavoto.csv --predict-next
+    # 4. Chiama optimizer via API
+    curl -X POST http://localhost:8000/optimizer/run-all -H "X-API-Key: $API_KEY_SECRET" -H "Content-Type: application/json" -d "{\"budget\":500}"
+
+Spegnere tutto:
+    docker compose down                 (mantiene volumi e dati)
+    docker compose down -v              (cancella anche i volumi — ⚠)
+
+Debug:
+    docker compose ps
+    docker compose logs -f api
+    docker compose exec db psql -U fbref -d fbref
+    docker compose exec api bash
+
+================================================================================
+Fine della guida. Per dubbi, controlla sempre i docstring dei singoli script
+(`python -m ml.run_pipeline --help`, `python main.py --help` lanciati dentro
+il rispettivo container).
+================================================================================

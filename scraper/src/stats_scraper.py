@@ -16,7 +16,6 @@ log = logging.getLogger(__name__)
 
 _API_BASE = "https://www.fotmob.com"
 _CDN_BASE = "https://data.fotmob.com"
-_SEASON_ID_RE = re.compile(r"/season/(\d+)/")
 
 # JavaScript that extracts ranked rows from a rendered FotMob stats page.
 # arguments[0]: "players" | "teams"
@@ -805,7 +804,13 @@ class _LegacyFotMobLeagueStatsScraper:
 async def _fetch_all_stats(
     jobs: list[tuple[str, str, str]],
 ) -> list[tuple[str, str, list[dict[str, Any]]]]:
-    """Concurrently fetch all stat-category URLs and return parsed rows."""
+    """Concurrently fetch all stat-category URLs and flatten parsed rows.
+
+    Each scheduled job may expand into one or more ``(stat_type, stat_category,
+    rows)`` tuples (e.g. a single ``topstats.json`` fetch fans out into one
+    entry per inner ``TopList``). The result is a flat list preserving the
+    order of ``jobs``.
+    """
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -820,12 +825,14 @@ async def _fetch_all_stats(
         limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
         follow_redirects=True,
     ) as client:
-        return list(
-            await asyncio.gather(
-                *[_fetch_one_stat(client, stype, name, url) for stype, name, url in jobs],
-                return_exceptions=False,
-            )
+        nested = await asyncio.gather(
+            *[_fetch_one_stat(client, stype, name, url) for stype, name, url in jobs],
+            return_exceptions=False,
         )
+    flat: list[tuple[str, str, list[dict[str, Any]]]] = []
+    for item in nested:
+        flat.extend(item)
+    return flat
 
 
 async def _fetch_one_stat(
@@ -833,24 +840,145 @@ async def _fetch_one_stat(
     stat_type: str,
     category: str,
     url: str,
-) -> tuple[str, str, list[dict[str, Any]]]:
+) -> list[tuple[str, str, list[dict[str, Any]]]]:
+    """Fetch a single per-stat CDN file and return one ``(stat_type, category, rows)`` tuple.
+
+    Individual stat files (e.g. ``goals.json``) contain the FULL ranking -- not
+    a Top-3 preview. They always wrap a single ``TopLists[0]`` element which
+    is consumed by ``_parse_stat_payload``.
+    """
     try:
         resp = await client.get(url)
         if resp.status_code == 403:
-            # Historic seasons lack advanced stats (xG, defensive_contributions, …).
+            # Historic seasons lack advanced stats (xG, defensive_contributions, ...).
             # A 403 here means the data never existed, not a rate-limit signal.
             log.debug("No data %s/%s (403): %s", stat_type, category, url)
-            return (stat_type, category, [])
+            return []
         resp.raise_for_status()
-        rows = _parse_stat_payload(resp.json(), stat_type)
+        payload = resp.json()
+        rows = _parse_stat_payload(payload, stat_type)
         log.debug("%s/%s: %d rows", stat_type, category, len(rows))
-        return (stat_type, category, rows)
+        return [(stat_type, category, rows)]
     except httpx.TimeoutException:
         log.warning("Timeout %s/%s [%s]", stat_type, category, url)
-        return (stat_type, category, [])
+        return []
     except Exception as exc:
         log.warning("Fetch error %s/%s [%s]: %s", stat_type, category, url, exc)
-        return (stat_type, category, [])
+        return []
+
+
+async def _discover_stat_urls(
+    client: httpx.AsyncClient,
+    topstats_url: str,
+    default_stat_type: str = "players",
+) -> list[tuple[str, str, str]]:
+    """
+    Phase 1: fetch the per-season ``topstats.json`` and expand its
+    ``TopLists`` into one ``(stat_type, stat_name, StatLocation)`` job per
+    inner ``TopList``.
+
+    ``StatLocation`` is the absolute CDN URL to the full-ranking file (e.g.
+    ``https://data.fotmob.com/stats/55/season/27044/goals.json``) which
+    contains all players/teams, not just the Top 3 preview. Returns an
+    empty list on any error.
+    """
+    try:
+        resp = await client.get(topstats_url)
+        resp.raise_for_status()
+        payload = resp.json()
+    except Exception as exc:
+        log.warning("Discover failed for %s: %s", topstats_url, exc)
+        return []
+
+    jobs: list[tuple[str, str, str]] = []
+    top_lists: list[Any] = (payload.get("TopLists") or []) if isinstance(payload, dict) else []
+    for top in top_lists:
+        if not isinstance(top, dict):
+            continue
+        stat_name = top.get("StatName")
+        stat_url = top.get("StatLocation")
+        if not stat_name or not stat_url:
+            continue
+        entries = top.get("StatList") or []
+        stat_type = _infer_stat_type(str(stat_name), entries, default_stat_type)
+        jobs.append((stat_type, str(stat_name), str(stat_url)))
+    return jobs
+
+
+async def _fetch_full_season_stats(
+    topstats_url: str,
+    default_stat_type: str = "players",
+) -> list[tuple[str, str, list[dict[str, Any]]]]:
+    """
+    Two-phase fetch for a single season:
+
+      1. ``_discover_stat_urls`` reads ``topstats.json`` and extracts every
+         ``StatLocation`` (the URL of the per-stat full ranking).
+      2. All those URLs are fetched concurrently with ``_fetch_one_stat`` and
+         their results flattened.
+
+    Returns a list of ``(stat_type, stat_category, rows)`` -- one per
+    successfully fetched stat file.
+    """
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/146.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json",
+    }
+    async with httpx.AsyncClient(
+        headers=headers,
+        timeout=httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=10.0),
+        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        follow_redirects=True,
+    ) as client:
+        jobs = await _discover_stat_urls(client, topstats_url, default_stat_type)
+        if not jobs:
+            return []
+        log.info(
+            "Discovered %d stat URLs from %s",
+            len(jobs),
+            topstats_url.rsplit("/", 1)[-1],
+        )
+        nested = await asyncio.gather(
+            *[_fetch_one_stat(client, stype, name, url) for stype, name, url in jobs],
+            return_exceptions=False,
+        )
+    flat: list[tuple[str, str, list[dict[str, Any]]]] = []
+    for item in nested:
+        flat.extend(item)
+    return flat
+
+
+def _infer_stat_type(
+    stat_name: str,
+    entries: list[Any],
+    default_stat_type: str,
+) -> str:
+    """Decide whether a TopList describes players or teams.
+
+    Order of precedence:
+
+    1. **Content** -- if every record has ``ParticiantId == 0`` and a non-zero
+       ``TeamId``, the TopList is team-shaped (e.g. ``goals_team_match``,
+       ``expected_goals_team``). This is the most reliable signal.
+    2. **Suffix** -- the ``_team`` token in ``StatName`` is a strong hint
+       when the content check is inconclusive.
+    3. **Default** -- fall back to ``default_stat_type``.
+    """
+    dicts = [e for e in entries if isinstance(e, dict)]
+    if dicts:
+        all_team = all(
+            (e.get("ParticiantId") or 0) == 0 and (e.get("TeamId") or 0) != 0
+            for e in dicts
+        )
+        if all_team:
+            return "teams"
+    if stat_name.endswith("_team") or "_team_" in stat_name:
+        return "teams"
+    return default_stat_type
 
 
 def _parse_stat_payload(payload: Any, stat_type: str) -> list[dict[str, Any]]:
@@ -999,13 +1127,21 @@ class FotMobLeagueStatsScraper:
                 continue
 
             log.info(
-                "[%s] %s (fotmob_id=%d): %d stat jobs",
-                league_name, season_label, fotmob_season_id, len(jobs),
+                "[%s] %s (fotmob_id=%d): discover phase",
+                league_name, season_label, fotmob_season_id,
             )
-            results = asyncio.run(_fetch_all_stats(jobs))
+            # Il job "__topstats__" triggera una pipeline 2-fasi:
+            # 1) discover degli StatLocation da topstats.json
+            # 2) fetch parallelo di tutti i file di ranking completi
+            _, _, topstats_url = jobs[0]
+            results = asyncio.run(_fetch_full_season_stats(topstats_url))
 
             for stat_type, stat_category, rows in results:
                 if rows:
+                    log.info(
+                        "[%s] %s | %s/%s: %d rows",
+                        league_name, season_label, stat_type, stat_category, len(rows),
+                    )
                     yield (
                         league_name,
                         season_label,
@@ -1057,6 +1193,7 @@ class FotMobLeagueStatsScraper:
                         seasonStatLinks: (s.seasonStatLinks || []).map(e => ({
                             Name: e.Name,
                             TournamentId: e.TournamentId,
+                            RelativePath: e.RelativePath,
                         })),
                     });
                 })
@@ -1085,47 +1222,57 @@ class FotMobLeagueStatsScraper:
         ``(season_label, fotmob_season_id, jobs)`` triples where each job is
         ``(stat_type, stat_name, fetch_url)``.
 
-        The current season's jobs are taken verbatim from the API response.
-        Historic seasons reuse the same stat names with the season ID swapped
-        in the CDN URL path.
+        One job per season: FotMob exposes a per-season ``topstats.json`` on the
+        public CDN via the ``RelativePath`` field of ``seasonStatLinks``. The
+        parser expands that single payload into one entry per inner ``TopList``
+        (StatName), so this function only needs to schedule one fetch per
+        season. ``stat_name="top"`` is the sentinel that triggers multi-TopList
+        expansion in ``_parse_topstats_payload``.
         """
-        players: list[dict[str, Any]] = stats.get("players", [])
-        teams: list[dict[str, Any]] = stats.get("teams", [])
         season_links: list[dict[str, Any]] = stats.get("seasonStatLinks", [])
 
-        player_catalog: list[tuple[str, str, str]] = [
-            ("players", e["name"], e["fetchAllUrl"])
-            for e in players
-            if e.get("name") and e.get("fetchAllUrl")
-        ]
-        team_catalog: list[tuple[str, str, str]] = [
-            ("teams", e["name"], e["fetchAllUrl"])
-            for e in teams
-            if e.get("name") and e.get("fetchAllUrl")
-        ]
-        full_catalog = [*player_catalog, *team_catalog]
-
-        current_season_id: int | None = None
-        if player_catalog:
-            m = _SEASON_ID_RE.search(player_catalog[0][2])
-            if m:
-                current_season_id = int(m.group(1))
+        log.info(
+            "Plan input | %s | season_links=%d  stats_keys=%s",
+            meta.display_name,
+            len(season_links),
+            sorted(stats.keys()),
+        )
+        if season_links:
+            log.debug(
+                "Plan input | %s | season_links[0:3]=%s",
+                meta.display_name,
+                season_links[:3],
+            )
+        if not season_links:
+            log.warning(
+                "Plan input | %s | empty season links: nothing to scrape.",
+                meta.display_name,
+            )
 
         plan: list[tuple[str, int, list[tuple[str, str, str]]]] = []
-
         for link in season_links:
             season_id = int(link["TournamentId"])
             season_label = _norm_season(link["Name"])
-
-            if season_id == current_season_id:
-                jobs: list[tuple[str, str, str]] = list(full_catalog)
-            else:
-                jobs = [
-                    (stype, name, _SEASON_ID_RE.sub(f"/season/{season_id}/", url))
-                    for stype, name, url in full_catalog
-                ]
-
+            rel_path = link.get("RelativePath")
+            if not rel_path:
+                log.warning(
+                    "Plan | %s | %s: missing RelativePath, skipping.",
+                    meta.display_name, season_label,
+                )
+                plan.append((season_label, season_id, []))
+                continue
+            url = f"{_CDN_BASE}/{rel_path}"
+            # 1 discover-job per stagione: _fetch_full_season_stats espande
+            # questo in N fetch paralleli (uno per ogni TopList di topstats.json).
+            jobs: list[tuple[str, str, str]] = [("players", "__topstats__", url)]
             plan.append((season_label, season_id, jobs))
 
+        non_empty = [(lbl, sid, len(j)) for lbl, sid, j in plan]
+        log.info(
+            "Plan output | %s | seasons_planned=%d  per_season_jobs=%s",
+            meta.display_name,
+            len(plan),
+            non_empty,
+        )
         return plan
 

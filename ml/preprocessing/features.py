@@ -97,6 +97,14 @@ _ENVIRONMENTAL_STAT_COLS: list[str] = [
     "team_strength_score",
     "is_top_team",
     "team_rank_norm",
+    # Fantacalcio quotation features are contextual (market signal, not an
+    # event). They are filled with median rather than zero because a
+    # missing quotation row means "no market data available", not "free
+    # player".
+    "qt_a_norm",
+    "price_delta_pct",
+    "qt_a_vs_role_median",
+    "price_trend_2y",
 ]
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -515,6 +523,10 @@ _META_COLS = {
     "player_fotmob_id", "player_name", "team_fotmob_id", "team_name",
     "season_start", "season_label", "league_name", "season_idx",
     "fantavoto_medio",
+    # Fantacalcio quotation raw inputs are NOT meta (they are used as
+    # features) but the diagnostic `match_method` column is metadata
+    # and must not leak into the model.
+    "match_method",
 }
 
 # Categorical columns to one-hot encode.
@@ -558,6 +570,15 @@ NUMERIC_FEATURE_CANDIDATES: list[str] = [
     "_goals_prevented_per90_roll2",
     "goals_per90_delta1", "goal_assist_per90_delta1",
     "yellow_card_per90_delta1",
+    # ── Fantacalcio market features (priority order) ─────────────────────────
+    # 1) Normalised current valuation — direct share-of-budget signal.
+    "qt_a_norm",
+    # 2) In-season value momentum: (qt_a − qt_i) / qt_i.
+    "price_delta_pct",
+    # 3) Position-cohort z-score: how a player compares to his role peers.
+    "qt_a_vs_role_median",
+    # 4) Year-over-year price trend (requires prior-season quotation).
+    "price_trend_2y",
 ]
 
 

@@ -5,3 +5,4 @@ asyncpg>=0.29
 orjson>=3.10
 redis[asyncio]>=5.0
 pydantic-settings>=2.3
+pulp>=3.0

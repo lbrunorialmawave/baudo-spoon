@@ -12,7 +12,7 @@ from fastapi.responses import ORJSONResponse
 from .config import settings
 from .data_repository import DataRepository
 from .logging_cfg import configure_logging
-from .routers import leagues, matches, seasons, stats
+from .routers import auction, leagues, matches, optimizer, quotations, seasons, stats
 from .routers.intelligence import intelligence_router, predictions_router
 
 configure_logging(settings.log_level)
@@ -82,6 +82,10 @@ app.include_router(seasons.router, prefix=settings.api_prefix)
 app.include_router(stats.router, prefix=settings.api_prefix)
 app.include_router(predictions_router, prefix=settings.api_prefix)
 app.include_router(intelligence_router, prefix=settings.api_prefix)
+app.include_router(quotations.quotations_router, prefix=settings.api_prefix)
+app.include_router(quotations.id_mapping_router, prefix=settings.api_prefix)
+app.include_router(optimizer.router, prefix=settings.api_prefix)
+app.include_router(auction.router, prefix=settings.api_prefix)
 
 
 # ── Health check ───────────────────────────────────────────────────────────────

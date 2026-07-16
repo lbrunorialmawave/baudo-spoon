@@ -171,7 +171,12 @@ class TeamSeasonStat(Base):
 
 
 class PlayerProfile(Base):
-    """Player-level role/position data, sourced from FotMob playerData API."""
+    """Player-level role/position data, sourced from FotMob playerData API.
+
+    This is the "current/canonical" state for a player — a single row per
+    ``player_fotmob_id``. For season-scoped history, see
+    :class:`PlayerSeasonRole`.
+    """
 
     __tablename__ = "player_profiles"
 
@@ -180,6 +185,31 @@ class PlayerProfile(Base):
     role_key: Mapped[str | None] = mapped_column(String(50), nullable=True)
     canonical_role: Mapped[str | None] = mapped_column(String(5), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class PlayerSeasonRole(Base):
+    """Season-scoped player role. Source of truth for ML feature pipelines.
+
+    Each row is the role a player *had* in a specific season, which means
+    a FotMob reclassification that updates :class:`PlayerProfile` does
+    not retroactively change the role used by historical ML training rows.
+    """
+
+    __tablename__ = "player_season_roles"
+    __table_args__ = (
+        UniqueConstraint("player_fotmob_id", "season_start", name="uq_player_season_role"),
+    )
+
+    player_fotmob_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    season_start: Mapped[int] = mapped_column(Integer, primary_key=True)
+    role_key: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    canonical_role: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    source: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="fotmob"
+    )
+    scraped_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
@@ -366,6 +396,55 @@ def upsert_player_profiles(
             "role_key": stmt.excluded.role_key,
             "canonical_role": stmt.excluded.canonical_role,
             "updated_at": stmt.excluded.updated_at,
+        },
+    )
+    result = session.execute(stmt)
+    session.commit()
+    return result.rowcount
+
+
+def upsert_player_season_roles(
+    session: Session,
+    profiles: list[dict[str, Any]],
+    season_start: int,
+    source: str = "fotmob",
+) -> int:
+    """Upsert season-scoped role data into ``player_season_roles``.
+
+    Each dict in *profiles* must have:
+        player_fotmob_id (int), role_key (str | None),
+        canonical_role (str | None).
+
+    Rows are keyed by ``(player_fotmob_id, season_start)`` so re-scraping
+    the same season refreshes the row in place, while different seasons
+    coexist without overwriting each other.
+
+    Returns:
+        Number of rows inserted / updated.
+    """
+    if not profiles:
+        return 0
+
+    now = datetime.now(timezone.utc)
+    records = [
+        {
+            "player_fotmob_id": p["player_fotmob_id"],
+            "season_start": season_start,
+            "role_key": p.get("role_key"),
+            "canonical_role": p.get("canonical_role"),
+            "source": source,
+            "scraped_at": now,
+        }
+        for p in profiles
+    ]
+    stmt = pg_insert(PlayerSeasonRole).values(records)
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_player_season_role",
+        set_={
+            "role_key": stmt.excluded.role_key,
+            "canonical_role": stmt.excluded.canonical_role,
+            "source": stmt.excluded.source,
+            "scraped_at": stmt.excluded.scraped_at,
         },
     )
     result = session.execute(stmt)

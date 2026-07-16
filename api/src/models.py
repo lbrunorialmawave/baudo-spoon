@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import enum
 from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     DateTime,
+    Enum,
     ForeignKey,
     Index,
     Integer,
@@ -151,3 +154,143 @@ class TeamSeasonStat(Base):
     )
 
     season: Mapped[Season] = relationship("Season", back_populates="team_season_stats")
+
+
+# ── Fantacalcio quotations & ID mapping ──────────────────────────────────────
+
+class MatchMethodEnum(str, enum.Enum):
+    """Algorithm used to map a Fantacalcio ID to a FotMob player."""
+    EXACT_NAME_TEAM = "exact_name_team"
+    EXACT_NAME_ROLE = "exact_name_role"
+    EXACT_RELAXED_ROLE = "exact_relaxed_role"
+    FUZZY_NAME = "fuzzy_name"
+    MANUAL = "manual"
+    UNMATCHED = "unmatched"
+
+
+class PlayerQuotation(Base):
+    """Raw auction valuation for a single Fantacalcio player/season.
+
+    Populated by ``ml.data.import_quotations`` from the
+    ``Quotazioni_Fantacalcio_Stagione_YYYY_YY.xlsx`` listoni.
+    """
+    __tablename__ = "player_quotations"
+    __table_args__ = (
+        UniqueConstraint("fantacalcio_id", "season_start", name="uq_player_quotation"),
+        Index("idx_pq_season", "season_start"),
+        Index("idx_pq_role", "role"),
+        Index("idx_pq_team", "team"),
+        Index("idx_pq_season_role", "season_start", "role"),
+        CheckConstraint(
+            "role IN ('GK', 'DEF', 'MID', 'FWD')",
+            name="player_quotations_role_check",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    fantacalcio_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    season_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    role: Mapped[str] = mapped_column(String(5), nullable=False)
+    team: Mapped[str] = mapped_column(String(100), nullable=False)
+    player_name: Mapped[str] = mapped_column(String(200), nullable=False)
+
+    qt_a: Mapped[int] = mapped_column(Integer, nullable=False)
+    qt_i: Mapped[int] = mapped_column(Integer, nullable=False)
+    diff_val: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    qt_a_m: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    qt_i_m: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    diff_val_m: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    fvm: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fvm_m: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    source: Mapped[str] = mapped_column(
+        String(50), nullable=False, server_default="listone_fantagazzetta"
+    )
+    imported_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "fantacalcio_id": self.fantacalcio_id,
+            "season_start": self.season_start,
+            "role": self.role,
+            "team": self.team,
+            "player_name": self.player_name,
+            "qt_a": self.qt_a,
+            "qt_i": self.qt_i,
+            "diff_val": self.diff_val,
+            "qt_a_m": self.qt_a_m,
+            "qt_i_m": self.qt_i_m,
+            "diff_val_m": self.diff_val_m,
+            "fvm": self.fvm,
+            "fvm_m": self.fvm_m,
+            "source": self.source,
+            "imported_at": self.imported_at.isoformat() if self.imported_at else None,
+        }
+
+
+class PlayerIdMap(Base):
+    """Bridge table: Fantacalcio ID ↔ FotMob player ID.
+
+    One row per (fantacalcio_id, season_start) — the same Fantacalcio ID
+    can be re-assigned across years if the operator corrects a mismatch.
+    """
+    __tablename__ = "player_id_map"
+    __table_args__ = (
+        UniqueConstraint("fantacalcio_id", "season_start", name="uq_id_map"),
+        Index("idx_pim_fotmob", "player_fotmob_id"),
+        Index("idx_pim_season", "season_start"),
+        Index("idx_pim_method", "match_method"),
+        Index("idx_pim_role", "canonical_role"),
+        CheckConstraint(
+            "match_method IN ('exact_name_team', 'exact_name_role', "
+            "'exact_relaxed_role', 'fuzzy_name', 'manual', 'unmatched')",
+            name="player_id_map_match_method_check",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    fantacalcio_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    season_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    player_fotmob_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    name_fantacalcio: Mapped[str] = mapped_column(String(200), nullable=False)
+    name_fotmob: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    team_fantacalcio: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    team_fotmob: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    canonical_role: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    match_method: Mapped[MatchMethodEnum] = mapped_column(
+        Enum(
+            MatchMethodEnum,
+            name="match_method_enum",
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+        ),
+        nullable=False,
+    )
+    confidence: Mapped[float] = mapped_column(Numeric(4, 3), nullable=False, default=1.0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "fantacalcio_id": self.fantacalcio_id,
+            "season_start": self.season_start,
+            "player_fotmob_id": self.player_fotmob_id,
+            "name_fantacalcio": self.name_fantacalcio,
+            "name_fotmob": self.name_fotmob,
+            "team_fantacalcio": self.team_fantacalcio,
+            "team_fotmob": self.team_fotmob,
+            "canonical_role": self.canonical_role,
+            "match_method": self.match_method.value if isinstance(self.match_method, MatchMethodEnum) else self.match_method,
+            "confidence": float(self.confidence) if self.confidence is not None else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
