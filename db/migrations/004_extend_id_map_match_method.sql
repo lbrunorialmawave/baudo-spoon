@@ -34,6 +34,7 @@ ALTER TABLE player_id_map
     CHECK (match_method IN (
         'exact_name_team',
         'exact_name_role',
+        'exact_name_team_role_season',
         'exact_relaxed_role',
         'fuzzy_name',
         'manual',

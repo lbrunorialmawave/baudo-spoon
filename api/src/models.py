@@ -162,6 +162,7 @@ class MatchMethodEnum(str, enum.Enum):
     """Algorithm used to map a Fantacalcio ID to a FotMob player."""
     EXACT_NAME_TEAM = "exact_name_team"
     EXACT_NAME_ROLE = "exact_name_role"
+    EXACT_NAME_TEAM_ROLE_SEASON = "exact_name_team_role_season"
     EXACT_RELAXED_ROLE = "exact_relaxed_role"
     FUZZY_NAME = "fuzzy_name"
     MANUAL = "manual"

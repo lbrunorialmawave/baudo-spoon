@@ -224,6 +224,14 @@ def attach_target(
     Returns:
         DataFrame with a ``fantavoto_medio`` column; rows with NaN targets removed.
     """
+    # ── Target provenance flag ────────────────────────────────────────────────
+    # ``target_source`` records whether each row got its ``fantavoto_medio``
+    # from an external CSV ("external"), from the FotMob-based approximation
+    # ("approx"), or a fallback for rows the external CSV did not cover
+    # ("approx_fallback").  Downstream models can use this column to weight
+    # observations or to analyse error distributions separately.
+    df["target_source"] = "approx"
+
     if external_csv is not None:
         log.info("Loading external fantavoto data from %s", external_csv)
         ext = pd.read_csv(external_csv)
@@ -246,7 +254,11 @@ def attach_target(
                 "(player_fotmob_id, season_start) or (player_name, season_label)."
             )
 
-        missing = df["fantavoto_medio"].isna().sum()
+        # Rows matched by the external CSV get "external" provenance
+        external_mask = df["fantavoto_medio"].notna()
+        df.loc[external_mask, "target_source"] = "external"
+
+        missing = (~external_mask).sum()
         if missing:
             log.warning(
                 "%d player-seasons have no external fantavoto value; "
@@ -257,6 +269,7 @@ def attach_target(
             df.loc[mask, "fantavoto_medio"] = compute_approx_fantavoto(
                 df.loc[mask]
             )
+            df.loc[mask, "target_source"] = "approx_fallback"
     else:
         log.info(
             "No external fantavoto CSV supplied — computing approximation from stats."

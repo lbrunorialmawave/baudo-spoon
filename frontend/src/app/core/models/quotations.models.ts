@@ -63,3 +63,46 @@ export interface QuotationPlayerHistoryResponse {
   total: number;
   items: PlayerQuotation[];
 }
+
+// ── ID Mapping (Fantacalcio ↔ FotMob) ────────────────────────────────────────
+
+export interface PlayerIdMapping {
+  id: number;
+  fantacalcioId: number;
+  seasonStart: number;
+  playerFotmobId: number | null;
+  nameFantacalcio: string;
+  nameFotmob: string | null;
+  teamFantacalcio: string | null;
+  teamFotmob: string | null;
+  canonicalRole: string | null;
+  matchMethod: string;
+  confidence: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IdMappingListResponse {
+  total: number;
+  page: number;
+  size: number;
+  items: PlayerIdMapping[];
+}
+
+export interface IdMappingStatsResponse {
+  total: number;
+  matched: number;
+  unmatched: number;
+  matchRate: number;
+  bySeason: Record<string, Record<string, number>>;
+  byMethod: Record<string, number>;
+}
+
+/** Request body per aggiornare manualmente un mapping. */
+export interface UpdateIdMappingRequest {
+  playerFotmobId?: number | null;
+  nameFotmob?: string | null;
+  teamFotmob?: string | null;
+  canonicalRole?: string | null;
+  note?: string | null;
+}

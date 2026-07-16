@@ -485,6 +485,66 @@ class DataRepository:
             "by_method": by_method,
         }
 
+    async def update_id_mapping(
+        self,
+        db: AsyncSession,
+        fantacalcio_id: int,
+        season_start: int,
+        *,
+        player_fotmob_id: Optional[int] = None,
+        name_fotmob: Optional[str] = None,
+        team_fotmob: Optional[str] = None,
+        canonical_role: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Manually update a single row in ``player_id_map``.
+
+        Sets ``match_method='manual'`` and ``confidence=1.0`` so the
+        override is clearly distinguishable from automatic matches.
+
+        Args:
+            db: DB session.
+            fantacalcio_id: Fantacalcio ID to update.
+            season_start: Season start year.
+            player_fotmob_id: FotMob ID to assign (``None`` = leave as-is,
+                ``-1`` = explicitly clear/set unmatched).
+            name_fotmob: FotMob player name (informational).
+            team_fotmob: FotMob team name override.
+            canonical_role: Canonical role override (GK/DEF/MID/FWD).
+
+        Returns:
+            The updated row dict, or ``None`` if the row was not found.
+        """
+        from datetime import datetime, timezone
+
+        stmt = select(PlayerIdMap).where(
+            and_(
+                PlayerIdMap.fantacalcio_id == fantacalcio_id,
+                PlayerIdMap.season_start == season_start,
+            )
+        )
+        result = await db.execute(stmt)
+        mapping = result.scalar_one_or_none()
+        if mapping is None:
+            return None
+
+        # player_fotmob_id: -1 means "explicitly unmatched"
+        if player_fotmob_id is not None:
+            mapping.player_fotmob_id = None if player_fotmob_id == -1 else player_fotmob_id
+        if name_fotmob is not None:
+            mapping.name_fotmob = name_fotmob
+        if team_fotmob is not None:
+            mapping.team_fotmob = team_fotmob
+        if canonical_role is not None:
+            mapping.canonical_role = canonical_role
+
+        mapping.match_method = MatchMethodEnum.MANUAL
+        mapping.confidence = 1.0
+        mapping.updated_at = datetime.now(tz=timezone.utc)
+
+        await db.commit()
+        await db.refresh(mapping)
+        return mapping.to_dict()
+
     async def get_player_fotmob_history(
         self,
         db: AsyncSession,

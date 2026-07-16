@@ -50,6 +50,11 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/auction/auction.component').then(m => m.AuctionComponent),
       },
+      {
+        path: 'id-mapping',
+        loadComponent: () =>
+          import('./features/id-mapping/id-mapping.component').then(m => m.IdMappingComponent),
+      },
     ],
   },
   {

@@ -444,6 +444,21 @@ def build_fantavoto_csv(
 
     df_mapped = map_voti_to_fotmob(df_agg, id_map)
 
+    # ── Apply manual overrides (if a CSV was provided) ────────────────────
+    # Overrides update the player_fotmob_id for rows that the automatic
+    # mapping got wrong or left unmatched.
+    import os as _os
+    override_csv = _os.environ.get("ML_MATCH_OVERRIDES")
+    if override_csv:
+        override_path = Path(override_csv)
+        if override_path.exists():
+            from .match_override import apply_overrides_to_voti_mapping, load_overrides_csv
+            _overrides = load_overrides_csv(override_path)
+            if _overrides:
+                df_mapped = apply_overrides_to_voti_mapping(df_mapped, _overrides)
+        else:
+            log.warning("ML_MATCH_OVERRIDES=%s set but file not found.", override_csv)
+
     # Output schema: prefer the FotMob-id-based merge key, but also keep
     # name+season_label as a fallback column for debugging.
     out = df_mapped[[

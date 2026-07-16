@@ -75,7 +75,12 @@ from ..evaluation.metrics import (
     evaluate_on_test,
 )
 from ..models.regression import train_all_models
-from ..preprocessing.features import engineer_features, select_features, select_features_rfe
+from ..preprocessing.features import (
+    _ENVIRONMENTAL_STAT_COLS,
+    engineer_features,
+    select_features,
+    select_features_rfe,
+)
 from ..preprocessing.pipeline import build_preprocessor, get_feature_names
 
 log = logging.getLogger(__name__)
@@ -420,7 +425,10 @@ class Trainer:
         X_test = df_test[feature_cols]
         y_test = df_test["fantavoto_medio"]
 
-        preprocessor = build_preprocessor(num_feats, cat_feats)
+        # Differentiated imputation: environmental features (team context,
+        # quotation signals) use median; event-based features use 0.
+        env_feats = [f for f in num_feats if f in _ENVIRONMENTAL_STAT_COLS]
+        preprocessor = build_preprocessor(num_feats, cat_feats, environmental_features=env_feats)
         fitted_pipelines = train_all_models(X_train, y_train, preprocessor, self.cfg)
 
         test_metrics: dict[str, SplitMetrics] = {}
@@ -580,7 +588,8 @@ class Trainer:
             X_test = df_test[feature_cols]
             y_test = df_test["fantavoto_medio"]
 
-            preprocessor = build_preprocessor(numeric_features, categorical_features)
+            env_feats = [f for f in numeric_features if f in _ENVIRONMENTAL_STAT_COLS]
+            preprocessor = build_preprocessor(numeric_features, categorical_features, environmental_features=env_feats)
             fitted_pipelines = train_all_models(X_train, y_train, preprocessor, cfg)
 
             test_metrics_unified: dict[str, SplitMetrics] = {}

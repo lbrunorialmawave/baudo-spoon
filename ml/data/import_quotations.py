@@ -6,7 +6,7 @@ directory and persists them into two PostgreSQL tables:
 * ``player_quotations``  — raw Qt.A / Qt.I / FVM values
 * ``player_id_map``      — Fantacalcio-id ↔ player_fotmob_id bridge
 
-The FotMob-side resolution happens in two passes:
+The FotMob-side resolution happens in three passes:
 
 1. **Deterministic exact match** on (normalised name, normalised team,
    canonical_role). Uses ``player_profiles`` joined with
@@ -14,16 +14,22 @@ The FotMob-side resolution happens in two passes:
    is needed, so the latest season each player appears in is used as the
    reference).
 
-2. **Fuzzy fallback** (optional) using ``difflib.SequenceMatcher`` for
-   players that didn't match exactly. Anything still unmatched is logged
-   and persisted with ``match_method='unmatched'`` so the operator can
-   resolve it manually.
+2. **Exact relaxed role** — same as pass 1 but ignoring ``canonical_role``.
+   Recovers players classified differently by Fantacalcio and FotMob.
 
-The module is CLI-runnable::
+3. **Fuzzy fallback** (optional) using ``difflib.SequenceMatcher`` for
+   players that didn't match exactly.
+
+After automatic matching, **manual overrides** (``--overrides``) are applied
+from a CSV file.  See :mod:`ml.data.match_override` for the CSV format and
+the ``match_override`` CLI tool to export unresolved cases.
+
+Module CLI::
 
     python -m ml.data.import_quotations \\
         --quotazioni-dir ../quotazioni \\
-        --source listone_fantagazzetta
+        --source listone_fantagazzetta \\
+        [--overrides match_overrides.csv]
 """
 
 from __future__ import annotations
@@ -302,16 +308,73 @@ def _load_fotmob_reference(
 ) -> pd.DataFrame:
     """Load the canonical FotMob player index used as the mapping target.
 
-    Joins ``player_profiles`` (canonical_role) with the most-recent season
-    each player appeared in, taken from ``player_season_stats`` (their
-    ``team_name`` is the canonical FotMob team string).
+    Strategy (preference order):
+    1. **Season-scoped roles** — use ``player_season_roles`` joined with
+       the player's team per season from ``player_season_stats``.  This
+       ensures the role used for matching matches what the player *actually
+       had* that season, not their current role years later.
+    2. **Fallback** — ``player_profiles`` (current role only).  Used when
+       migration 003 has not been applied or ``player_season_roles`` is
+       empty.
+
+    The output always contains one row per ``(player_fotmob_id, season_start)``
+    so the caller can join on either ``last_name_norm`` alone (role-agnostic)
+    or on ``(last_name_norm, team_norm, canonical_role, season_start)``.
     """
     where = ""
     if league_name:
         escaped = league_name.replace("'", "''")
-        where = f"WHERE l.name ILIKE '%{escaped}%'"
+        where = f"AND l.name ILIKE '%{escaped}%'"
 
-    sql = f"""
+    # ── Attempt 1: season-scoped roles (preferred) ───────────────────────
+    sql_season_roles = f"""
+        SELECT
+            psr.player_fotmob_id,
+            pss.player_name,
+            pss.team_name          AS team_fotmob,
+            pss.season_start,
+            psr.canonical_role
+        FROM player_season_roles psr
+        JOIN player_season_stats pss
+          ON pss.player_fotmob_id = psr.player_fotmob_id
+         AND pss.season_id = (
+             SELECT s2.id
+             FROM seasons s2
+             WHERE s2.season_start = psr.season_start
+             LIMIT 1
+         )
+        JOIN seasons s ON s.id = pss.season_id
+        JOIN leagues l ON l.id = s.league_id
+        WHERE psr.canonical_role IS NOT NULL
+        {where}
+        GROUP BY psr.player_fotmob_id, pss.player_name, pss.team_name,
+                 pss.season_start, psr.canonical_role
+    """
+    try:
+        df = pd.read_sql(sa.text(sql_season_roles), engine)
+        if not df.empty:
+            log.info(
+                "FotMob reference loaded from player_season_roles: "
+                "%d rows across %d seasons.",
+                len(df), df["season_start"].nunique(),
+            )
+            df["name_norm"] = df["player_name"].map(normalise_player_name)
+            df["team_norm"] = df["team_fotmob"].map(normalise_team).map(apply_team_alias)
+            df["last_name_norm"] = df["name_norm"].map(last_name_token)
+            return df
+        log.warning(
+            "player_season_roles is empty — falling back to player_profiles. "
+            "Re-run the scraper with --roles to populate it."
+        )
+    except Exception:  # noqa: BLE001
+        log.warning(
+            "player_season_roles not available — falling back to player_profiles. "
+            "Apply migration 003_add_player_season_roles.sql and re-run "
+            "the scraper with --roles.",
+        )
+
+    # ── Fallback: current role only (player_profiles) ────────────────────
+    sql_profiles = f"""
         WITH latest_season AS (
             SELECT pss.player_fotmob_id,
                    pss.player_name,
@@ -324,7 +387,7 @@ def _load_fotmob_reference(
             FROM player_season_stats pss
             JOIN seasons s ON s.id = pss.season_id
             JOIN leagues l ON l.id = s.league_id
-            {where}
+            {where.replace('AND', 'WHERE', 1) if where else ''}
         )
         SELECT
             pp.player_fotmob_id,
@@ -336,7 +399,17 @@ def _load_fotmob_reference(
         JOIN latest_season ls ON ls.player_fotmob_id = pp.player_fotmob_id
         WHERE ls.rn = 1
     """
-    df = pd.read_sql(sa.text(sql), engine)
+    df = pd.read_sql(sa.text(sql_profiles), engine)
+    if df.empty:
+        log.warning(
+            "player_profiles is also empty — FotMob reference has 0 rows. "
+            "Run the scraper to populate player_season_stats and player_profiles."
+        )
+    else:
+        log.info(
+            "FotMob reference loaded from player_profiles (fallback): %d rows.",
+            len(df),
+        )
     df["name_norm"] = df["player_name"].map(normalise_player_name)
     df["team_norm"] = df["team_fotmob"].map(normalise_team).map(apply_team_alias)
     df["last_name_norm"] = df["name_norm"].map(last_name_token)
@@ -348,10 +421,58 @@ def _exact_match(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Return (matched_q, unmatched_q).
 
-    Match key is (last_name_norm, team_norm, canonical_role). Switching from
-    the full name to the surname is what makes the join work: the
-    Fantacalcio listone encodes surnames only (``"Benedyczak"``,
+    Two-phase match:
+    1. **Strict** — join on ``(last_name_norm, team_norm, canonical_role,
+       season_start)``.  Only possible when *ref* contains ``season_start``
+       (season-scoped roles).  Recovers the per-season role the player
+       actually had.
+    2. **Relaxed** (fallback) — join on ``(last_name_norm, team_norm,
+       canonical_role)`` without season.  When *ref* is from player_profiles
+       (current role only) this is the only option.
+
+    Switching from the full name to the surname is what makes the join work:
+    the Fantacalcio listone encodes surnames only (``"Benedyczak"``,
     ``"Martinez L."``) while FotMob has full names (``"Adrian Benedyczak"``).
+    """
+    ref_has_season = "season_start" in ref.columns
+
+    # Phase 1: strict per-season match (if ref has season_start)
+    if ref_has_season:
+        merged = q.merge(
+            ref,
+            on=["last_name_norm", "team_norm", "canonical_role", "season_start"],
+            how="left",
+            suffixes=("", "_ref"),
+        )
+        matched = merged[merged["player_fotmob_id"].notna()].copy()
+        matched["match_method"] = "exact_name_team_role_season"
+        matched["confidence"] = 1.0
+        leftover = merged[merged["player_fotmob_id"].isna()][
+            [
+                "fantacalcio_id", "season_start", "name", "team", "name_norm",
+                "last_name_norm", "team_norm", "canonical_role",
+            ]
+        ].copy()
+        log.info(
+            "exact_match[season]: %d matched, %d unmatched (strict key).",
+            len(matched), len(leftover),
+        )
+        # Recurse on unmatched with the season-agnostic fallback
+        if not leftover.empty:
+            fallback_matched, leftover = _exact_match_no_season(leftover, ref)
+            matched = pd.concat([matched, fallback_matched], ignore_index=True)
+        return matched, leftover
+
+    # Phase 2: no season_start in ref — standard match
+    return _exact_match_no_season(q, ref)
+
+
+def _exact_match_no_season(
+    q: pd.DataFrame, ref: pd.DataFrame
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Match on (last_name_norm, team_norm, canonical_role) ignoring season.
+
+    Used when the reference only has current roles (player_profiles fallback).
     """
     merged = q.merge(
         ref,
@@ -382,15 +503,25 @@ def _exact_match_relaxed_role(
     as MID. When a unique FotMob player with the same surname and team
     exists in *any* role, accept it.
 
+    When *ref* has ``season_start`` (season-scoped roles), the join also
+    includes ``season_start`` so a transfer mid-season does not alias two
+    different players on the same team.
+
     Ambiguity rule: if the (surname, team) pair is non-unique in the FotMob
     reference, fall back to letting the caller keep the row unmatched so
     the operator can disambiguate manually.
     """
     if q.empty or ref.empty:
         return q.iloc[0:0].copy(), q
+
+    ref_has_season = "season_start" in ref.columns
+    join_keys = ["last_name_norm", "team_norm"]
+    if ref_has_season:
+        join_keys = ["last_name_norm", "team_norm", "season_start"]
+
     merged = q.merge(
         ref,
-        on=["last_name_norm", "team_norm"],
+        on=join_keys,
         how="left",
         suffixes=("", "_ref"),
     )
@@ -721,6 +852,22 @@ def _parse_args() -> argparse.Namespace:
         help="Provenance tag stored in player_quotations.source.",
     )
     p.add_argument(
+        "--overrides",
+        type=Path,
+        default=None,
+        metavar="CSV",
+        help="Path to a match_overrides CSV file for manual ID resolution. "
+             "See ml.data.match_override for the format.",
+    )
+    p.add_argument(
+        "--export-unresolved",
+        type=Path,
+        default=None,
+        metavar="CSV",
+        help="Export unmatched / low-confidence rows to this CSV after "
+             "processing, so the operator can review and resolve them.",
+    )
+    p.add_argument(
         "--db-url",
         default=None,
         help="Override database URL. Defaults to ML_DATABASE_URL or API_DATABASE_URL.",
@@ -734,6 +881,8 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    import os as _os
+
     args = _parse_args()
     logging.basicConfig(
         level=getattr(logging, args.log_level),
@@ -743,8 +892,8 @@ def main() -> int:
 
     db_url = (
         args.db_url
-        or __import__("os").environ.get("ML_DATABASE_URL")
-        or __import__("os").environ.get("API_DATABASE_URL")
+        or _os.environ.get("ML_DATABASE_URL")
+        or _os.environ.get("API_DATABASE_URL")
     )
     if not db_url:
         log.error(
@@ -752,10 +901,19 @@ def main() -> int:
         )
         return 2
 
+    # Load manual overrides upfront (shared across all seasons)
+    from .match_override import load_overrides_csv
+
+    overrides = load_overrides_csv(args.overrides) if args.overrides else []
+    if overrides:
+        log.info("Loaded %d manual override(s) from %s.", len(overrides), args.overrides)
+
     engine = sa.create_engine(db_url, pool_pre_ping=True)
     files = discover_season_files(args.quotazioni_dir)
     log.info("Discovered %d season file(s) in %s",
              len(files), args.quotazioni_dir)
+
+    all_id_maps: list[pd.DataFrame] = []
 
     for sf in files:
         log.info("=" * 60)
@@ -768,12 +926,26 @@ def main() -> int:
         n_q = persist_quotations(df, engine=engine, source=args.source)
         log.info("  Persisted %d quotation rows.", n_q)
 
-        # Build & persist the id map
+        # Build the id map
         id_map = build_player_id_map(df, engine=engine, league_name=args.league)
+
+        # Apply manual overrides (if any) before persisting
+        if overrides:
+            from .match_override import apply_overrides_to_id_map
+            id_map = apply_overrides_to_id_map(id_map, overrides)
+
         log.info("  id map distribution: %s",
                  id_map["match_method"].value_counts().to_dict())
         n_m = persist_player_id_map(id_map, engine=engine)
         log.info("  Persisted %d id map rows.", n_m)
+        all_id_maps.append(id_map)
+
+    # ── Export unresolved rows (optional) ─────────────────────────────────
+    if args.export_unresolved and all_id_maps:
+        from .match_override import export_unresolved
+        combined_map = pd.concat(all_id_maps, ignore_index=True)
+        n_exported = export_unresolved(combined_map, args.export_unresolved)
+        log.info("Exported %d unresolved rows to %s.", n_exported, args.export_unresolved)
 
     log.info("Done.")
     return 0

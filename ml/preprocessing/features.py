@@ -36,11 +36,6 @@ from sklearn.preprocessing import RobustScaler
 
 log = logging.getLogger(__name__)
 
-# ── Data-quality threshold ─────────────────────────────────────────────────────
-# Player-seasons with fewer minutes than this are excluded to mitigate per-90
-# noise and statistical outliers from low-participation entries.
-_MIN_MINUTES_THRESHOLD: int = 450
-
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 # Stats that get per-90 normalisation.  Only columns present in the
@@ -138,40 +133,6 @@ def _denominator_per90(df: pd.DataFrame) -> pd.Series:
         "Neither 'mins_played' nor 'appearances' found. "
         "Cannot compute per-90 features."
     )
-
-
-# ── Data quality gate ─────────────────────────────────────────────────────────
-
-def filter_min_minutes(
-    df: pd.DataFrame,
-    min_minutes: int = _MIN_MINUTES_THRESHOLD,
-) -> pd.DataFrame:
-    """Exclude player-seasons with fewer than *min_minutes* minutes played.
-
-    Removes low-participation entries whose per-90 statistics are unreliable
-    due to small sample sizes.
-
-    Args:
-        df: Raw player-season DataFrame containing a minutes column.
-        min_minutes: Minimum minutes threshold (default 450).
-
-    Returns:
-        A new DataFrame with under-threshold rows dropped.
-    """
-    minutes = _get_minutes(df)
-    if minutes is None:
-        log.warning(
-            "filter_min_minutes: no minutes column found; skipping filter."
-        )
-        return df.copy()
-    mask = minutes >= min_minutes
-    n_dropped = int((~mask).sum())
-    if n_dropped:
-        log.info(
-            "filter_min_minutes: dropped %d rows with < %d minutes played.",
-            n_dropped, min_minutes,
-        )
-    return df[mask].copy()
 
 
 # ── Differentiated imputation ──────────────────────────────────────────────────
@@ -478,12 +439,10 @@ def add_season_index(df: pd.DataFrame) -> pd.DataFrame:
 def engineer_features(
     df: pd.DataFrame,
     trend_window: int = 2,
-    min_minutes: int = _MIN_MINUTES_THRESHOLD,
 ) -> pd.DataFrame:
     """Run all feature engineering steps in order.
 
     Steps:
-    0. Small-sample filter — drop player-seasons with < *min_minutes* played.
     1. Per-90 normalisation (event-based NaNs → 0).
     2. Temporal rolling features (``closed='left'`` — no look-ahead).
     3. Schedule-adjusted performance (SAP) weighting.
@@ -492,16 +451,19 @@ def engineer_features(
     6. Environmental stat imputation (contextual NaNs → median).
     7. Winsorise per-90 stats at the 99th percentile.
 
+    Note:
+        The ``min_minutes`` filter is applied *before* feature engineering
+        by :func:`~data.target.attach_target` using ``MLConfig.min_minutes``.
+        This step no longer re-filters to avoid duplicating the threshold.
+
     Args:
         df: Raw player-season DataFrame.
         trend_window: Rolling window size in seasons.
-        min_minutes: Minimum minutes required to retain a row (default 450).
 
     Returns:
         A new copy of *df* with all engineered columns appended.
     """
     df = df.copy()
-    df = filter_min_minutes(df, min_minutes=min_minutes)
     df = add_per90_features(df)
     df = add_trend_features(df, window=trend_window)
     df = add_opponent_strength_features(df)
@@ -527,6 +489,8 @@ _META_COLS = {
     # features) but the diagnostic `match_method` column is metadata
     # and must not leak into the model.
     "match_method",
+    # Target provenance flag — audit/inspection column, not a feature.
+    "target_source",
 }
 
 # Categorical columns to one-hot encode.

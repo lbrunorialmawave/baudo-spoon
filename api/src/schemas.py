@@ -264,6 +264,25 @@ class PlayerIdMapSchema(_CamelModel):
     updated_at: datetime
 
 
+class UpdateIdMappingRequest(_CamelModel):
+    """Request body to manually update a Fantacalcio ↔ FotMob mapping.
+
+    All fields are optional except those identifying the row; only
+    non-``None`` fields will be updated.
+    """
+
+    player_fotmob_id: Optional[int] = None
+    """FotMob player ID to assign. Set to ``-1`` to clear/keep unmatched."""
+    name_fotmob: Optional[str] = None
+    """FotMob player name (informational)."""
+    team_fotmob: Optional[str] = None
+    """FotMob team name (optional override)."""
+    canonical_role: Optional[str] = None
+    """Override canonical role (GK/DEF/MID/FWD)."""
+    note: Optional[str] = None
+    """Free-text note about this override."""
+
+
 class QuotationRoleAggregateSchema(_CamelModel):
     """One row of ``GET /quotations/stats``: aggregate per role+season."""
 

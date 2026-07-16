@@ -294,6 +294,33 @@ def load_raw_data(engine: sa.Engine, cfg: MLConfig) -> pd.DataFrame:
              df_player_long["player_fotmob_id"].nunique(),
              df_player_long["season_start"].nunique())
 
+    # ── Season continuity check ──────────────────────────────────────────────
+    # Rolling / delta features (diff(1)) assume one row per season per player.
+    # If a season is completely absent (e.g. 2021-22 was not scraped but
+    # 2020-21 and 2022-23 are present), the diff spans 2 years instead of 1,
+    # creating biased trend features.  We log a warning so the operator knows.
+    _seasons_present = sorted(df_player_long["season_start"].unique())
+    _season_gaps = []
+    for i in range(1, len(_seasons_present)):
+        if _seasons_present[i] - _seasons_present[i - 1] > 1:
+            _season_gaps.append(
+                f"{_seasons_present[i-1]+1}–{_seasons_present[i]-1}"
+            )
+    if _season_gaps:
+        log.warning(
+            "SEASON GAP DETECTED: missing season(s) %s between scraped years %s. "
+            "Rolling/delta features (diff(1)) will span multi-year gaps instead of 1 — "
+            "trend features for affected players will be biased. "
+            "Scrape the missing season(s) and re-run to eliminate gaps.",
+            ", ".join(_season_gaps),
+            _seasons_present,
+        )
+    else:
+        log.info(
+            "Season continuity check: %d consecutive season(s) — OK.",
+            len(_seasons_present),
+        )
+
     index_cols = [
         "player_fotmob_id", "player_name",
         "team_fotmob_id", "team_name",
@@ -317,6 +344,19 @@ def load_raw_data(engine: sa.Engine, cfg: MLConfig) -> pd.DataFrame:
     )
     if not df_team_long.empty:
         df_team_strength = _build_team_strength(df_team_long)
+
+        # Log player rows with NULL team_fotmob_id — they won't get team
+        # strength features via the left join, so they will be NaN-imputed
+        # downstream.  This is expected for players whose team FotMob ID
+        # was not scraped (rare edge case).
+        _null_team = df_player["team_fotmob_id"].isna().sum()
+        if _null_team:
+            log.warning(
+                "%d player-season rows have NULL team_fotmob_id; "
+                "team strength features for them will be NaN (median-imputed).",
+                _null_team,
+            )
+
         df_player = df_player.merge(
             df_team_strength,
             on=["team_fotmob_id", "season_start"],
@@ -324,7 +364,14 @@ def load_raw_data(engine: sa.Engine, cfg: MLConfig) -> pd.DataFrame:
         )
         log.info("  Team strength features merged.")
     else:
-        log.warning("No team_season_stats found; skipping team strength features.")
+        log.warning(
+            "No team_season_stats found; team strength features will be NaN. "
+            "Run the team-stats scraper step to populate this table."
+        )
+        # Ensure the expected columns exist with NaN so downstream code
+        # (SAP adjuster, imputation) does not crash on missing columns.
+        for _col in ("team_strength_score", "is_top_team", "team_rank_norm"):
+            df_player[_col] = float("nan")
 
     # ── Optional: Fantacalcio quotation features ──────────────────────────
     # Best-effort merge against player_quotations / player_id_map. Tables

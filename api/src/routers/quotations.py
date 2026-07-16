@@ -34,6 +34,7 @@ from ..schemas import (
     PlayerIdMapSchema,
     PlayerQuotationWithMappingSchema,
     QuotationStatsResponse,
+    UpdateIdMappingRequest,
 )
 
 log = logging.getLogger(__name__)
@@ -44,6 +45,7 @@ _VALID_ROLES = {"GK", "DEF", "MID", "FWD"}
 _VALID_MATCH_METHODS = {
     "exact_name_team",
     "exact_name_role",
+    "exact_name_team_role_season",
     "exact_relaxed_role",
     "fuzzy_name",
     "manual",
@@ -327,6 +329,52 @@ async def get_id_mapping(
             detail=(
                 f"No mapping found for fantacalcio_id={fantacalcio_id}"
                 + (f" in season_start={season_start}" if season_start else "")
+            ),
+        )
+    return ORJSONResponse(content=PlayerIdMapSchema(**row).model_dump(by_alias=True))
+
+
+@id_mapping_router.put(
+    "/{fantacalcio_id}",
+    response_class=ORJSONResponse,
+    summary="Manually update a Fantacalcio → FotMob mapping",
+    description=(
+        "Updates the mapping row for the given ``fantacalcio_id`` and "
+        "``season_start``.  The ``match_method`` is automatically set to "
+        "``manual`` and ``confidence`` to ``1.0``, making the override "
+        "clearly distinguishable from automatic matches.\n\n"
+        "To explicitly mark a player as unmatched (e.g. a Fantacalcio-only "
+        "player with no FotMob counterpart), set ``player_fotmob_id`` to "
+        "``-1``."
+    ),
+    responses={
+        200: {"description": "Mapping updated"},
+        404: {"description": "No mapping found for the requested ID"},
+        422: {"description": "Invalid request body"},
+    },
+)
+async def update_id_mapping(
+    fantacalcio_id: int,
+    body: UpdateIdMappingRequest,
+    season_start: int = Query(..., ge=1990, le=2100, description="Season start year"),
+    db: AsyncSession = Depends(get_db),
+    repo: DataRepository = Depends(get_repository),
+) -> ORJSONResponse:
+    row = await repo.update_id_mapping(
+        db=db,
+        fantacalcio_id=fantacalcio_id,
+        season_start=season_start,
+        player_fotmob_id=body.player_fotmob_id,
+        name_fotmob=body.name_fotmob,
+        team_fotmob=body.team_fotmob,
+        canonical_role=body.canonical_role,
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No mapping found for fantacalcio_id={fantacalcio_id} "
+                f"in season_start={season_start}"
             ),
         )
     return ORJSONResponse(content=PlayerIdMapSchema(**row).model_dump(by_alias=True))
