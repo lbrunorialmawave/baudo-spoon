@@ -111,6 +111,34 @@ class PlayerPredictionSchema(_CamelModel):
     season: Optional[str] = None
     fantavoto_medio: Optional[float] = None  # actual (when available)
     predicted: float
+    # Phase 3+ enrichments (optional — absent in older artifacts)
+    confidence: Optional[float] = None
+    prediction_interval_low: Optional[float] = None
+    prediction_interval_high: Optional[float] = None
+    expected_minutes: Optional[float] = None
+
+
+class PlayerVarSchema(_CamelModel):
+    """Value Above Replacement record for a single player."""
+
+    player_id: str
+    player_name: Optional[str] = None
+    role: str
+    projected_score: float
+    replacement_level_score: float
+    var_score: float
+    expected_price: float
+    esv: float
+    calibrated: bool
+
+
+class VarResultsResponse(_CamelModel):
+    """Response for GET /intelligence/var/players."""
+
+    run_id: str
+    calibrated: bool
+    total: int
+    items: list[PlayerVarSchema]
 
 
 class NextSeasonPredictionSchema(_CamelModel):

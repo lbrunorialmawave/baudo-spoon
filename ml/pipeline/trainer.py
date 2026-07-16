@@ -692,6 +692,66 @@ class Trainer:
         )
         alternatives = find_low_cost_alternatives(cluster_result)
 
+        # ── 11b. VAR + ESV ────────────────────────────────────────────────────
+        log.info("Step 11b — Computing VAR / Expected Surplus Value")
+        var_results: list[dict] = []
+        try:
+            from ml.auction.var import DemandCurve, ReplacementLevel, VAR, VarEngine
+            _fc_role_map = {"GK": "P", "DEF": "D", "MID": "C", "FWD": "A"}
+            _role_col = "canonical_role" if "canonical_role" in df_latest.columns else None
+
+            # Build player list with Fantacalcio role codes
+            var_players: list[dict] = []
+            for _, row in df_latest.iterrows():
+                raw_role = str(row[_role_col] if _role_col else "MID")
+                var_players.append({
+                    "player_id": str(row.get("player_fotmob_id", row.get("player_name", "unknown"))),
+                    "player_name": str(row.get("player_name", "")),
+                    "role": _fc_role_map.get(raw_role, "C"),
+                    "projected_score": float(row["predicted_fantavoto"]),
+                })
+
+            # Group by role to compute replacement level, then produce VAR + ESV
+            from collections import defaultdict as _dd
+            by_role: dict[str, list[dict]] = _dd(list)
+            for p in var_players:
+                by_role[p["role"]].append(p)
+
+            demand = DemandCurve()  # calibrated=False by design
+            total_slots = 25  # Fantacalcio classico roster size
+            role_slots = {"P": 3, "D": 8, "C": 8, "A": 6}
+
+            for role, role_ps in by_role.items():
+                scores = [p["projected_score"] for p in role_ps]
+                rl = ReplacementLevel.from_player_pool(role, scores)
+                positive_vars = [s - rl.score for s in scores if s > rl.score]
+                baseline_var = sum(positive_vars) / len(positive_vars) if positive_vars else 1.0
+                budget_per_slot = 500.0 / total_slots
+
+                for p in role_ps:
+                    v = VAR.compute(p["player_id"], role, p["projected_score"], rl)
+                    esv_val = (
+                        (v.var_score / baseline_var) * budget_per_slot - demand.expected_price(v.var_score)
+                        if baseline_var > 0 and v.var_score > 0
+                        else demand.base_price - demand.expected_price(v.var_score)
+                    )
+                    var_results.append({
+                        "player_id": p["player_id"],
+                        "player_name": p["player_name"],
+                        "role": role,
+                        "projected_score": round(p["projected_score"], 3),
+                        "replacement_level_score": round(rl.score, 3),
+                        "var_score": round(v.var_score, 3),
+                        "expected_price": round(demand.expected_price(v.var_score), 2),
+                        "esv": round(esv_val, 3),
+                        "calibrated": demand.calibrated,
+                    })
+
+            var_results.sort(key=lambda r: r["esv"], reverse=True)
+            log.info("VAR computed for %d players.", len(var_results))
+        except Exception as _var_exc:
+            log.warning("VAR computation failed (non-critical): %s", _var_exc)
+
         # ── Predict next season (optional) ────────────────────────────────────
         next_season_predictions: list[dict] = []
         if cfg.predict_next:
@@ -764,6 +824,7 @@ class Trainer:
                 "pca_explained_variance": cluster_result.explained_variance,
             },
             "next_season_predictions": next_season_predictions,
+            "var_results": var_results,
             "metadata": metadata,
             "config": {
                 "test_seasons": cfg.test_seasons,

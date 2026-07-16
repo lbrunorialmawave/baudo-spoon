@@ -30,6 +30,8 @@ from ..schemas import (
     NextSeasonPredictionSchema,
     PlayerClusterSchema,
     PlayerPredictionSchema,
+    PlayerVarSchema,
+    VarResultsResponse,
 )
 
 log = logging.getLogger(__name__)
@@ -109,6 +111,10 @@ async def list_player_predictions(
             season=r.get("season"),
             fantavoto_medio=r.get("fantavoto_medio"),
             predicted=r.get("predicted", 0.0),
+            confidence=r.get("confidence"),
+            prediction_interval_low=r.get("prediction_interval_low"),
+            prediction_interval_high=r.get("prediction_interval_high"),
+            expected_minutes=r.get("expected_minutes"),
         )
         if player and player.lower() not in name.lower():
             continue
@@ -261,6 +267,50 @@ async def list_low_cost_alternatives(
         clustering_stats=ClusteringStatsSchema(**stats),
         player_clusters=[PlayerClusterSchema(**c) for c in clusters],
         low_cost_recommendations=[LowCostAlternativeSchema(**r) for r in recs],
+    )
+    return ORJSONResponse(content=response.model_dump(by_alias=True))
+
+
+@intelligence_router.get(
+    "/var/players",
+    response_class=ORJSONResponse,
+    summary="Value Above Replacement for all players",
+    description=(
+        "Returns VAR and Expected Surplus Value (ESV) per player from the latest ML run. "
+        "ESV > 0 means the player is expected to be underpriced at auction. "
+        "**Note**: `calibrated=false` until real auction history is fitted to the demand curve."
+    ),
+    responses={
+        200: {"description": "VAR results sorted by ESV descending"},
+        503: {"description": "ML artifact not yet generated or VAR not computed"},
+    },
+)
+async def list_var_players(
+    role: Optional[str] = Query(None, description="Filter by role: P, D, C, A"),
+    repo: DataRepository = Depends(get_repository),
+) -> ORJSONResponse:
+    try:
+        meta = await repo.get_run_metadata()
+        raw = await repo.get_var_results()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    if not raw:
+        raise HTTPException(
+            status_code=503,
+            detail="VAR results not available in current artifact. Re-run the ML pipeline.",
+        )
+
+    items = [PlayerVarSchema(**r) for r in raw]
+    if role:
+        items = [i for i in items if i.role == role.upper()]
+
+    calibrated = all(i.calibrated for i in items)
+    response = VarResultsResponse(
+        run_id=meta["run_id"],
+        calibrated=calibrated,
+        total=len(items),
+        items=items,
     )
     return ORJSONResponse(content=response.model_dump(by_alias=True))
 

@@ -1,0 +1,1681 @@
+player_fotmob_id,season_start,name,team,role,fantavoto_medio,n_votes,n_matches,match_method
+,2023,Di Francesco F.,Lecce,FWD,10.0,1,1,unmatched
+1498718,2023,Mutandwa,Cagliari,FWD,10.0,1,1,last_name_team_role
+,2023,Savva,Torino,FWD,10.0,1,1,unmatched
+,2023,Traore' C.,Milan,FWD,10.0,1,1,unmatched
+,2023,Biraschi,Genoa,DEF,9.0,1,1,unmatched
+690230,2023,Martinez L.,Inter,FWD,8.727,33,33,last_name_team_role_season
+325916,2023,Dybala,Roma,FWD,8.204,27,27,last_name_team_role_season
+364520,2023,Berardi,Sassuolo,FWD,8.059,17,17,last_name_team_role_season
+721089,2023,Scamacca,Atalanta,FWD,7.893,28,28,last_name_team_role_season
+687681,2023,Osimhen,Napoli,FWD,7.88,25,25,last_name_team_role_season
+621562,2023,Thuram,Inter,FWD,7.814,35,35,last_name_team_role_season
+46469,2023,Giroud,Milan,FWD,7.706,34,34,last_name_team_role_season
+304733,2023,Calhanoglu,Inter,MID,7.703,32,32,last_name_team_role_season
+46241,2023,Niang,Empoli,FWD,7.679,14,14,last_name_team_role_season
+665188,2023,Gudmundsson A.,Genoa,MID,7.643,35,35,last_name_role
+690516,2023,Lookman,Atalanta,FWD,7.633,30,30,last_name_team_role_season
+866516,2023,Koopmeiners,Atalanta,MID,7.529,34,34,last_name_role
+688295,2023,Pulisic,Milan,MID,7.5,36,36,last_name_team_role_season
+737857,2023,Vlahovic,Juventus,FWD,7.424,33,33,last_name_team_role_season
+1282285,2023,Noslin,Verona,FWD,7.412,17,17,last_name_team_role_season
+848844,2023,Rafael Leao,Milan,FWD,7.409,33,33,last_name_team_role_season
+950830,2023,Zirkzee,Bologna,FWD,7.397,34,34,last_name_team_role_season
+841672,2023,Gonzalez N.,Fiorentina,FWD,7.397,29,29,last_name_role
+1095432,2023,De Ketelaere,Atalanta,MID,7.394,33,33,last_name_team_role_season
+116555,2023,Zapata D.,Torino,FWD,7.365,37,37,last_name_team_role_season
+1215057,2023,Vitinha O.,Genoa,FWD,7.333,6,6,last_name_team_role_season
+574847,2023,Castrovilli,Fiorentina,MID,7.3,5,5,last_name_role
+900433,2023,Kvaratskhelia,Napoli,FWD,7.25,34,34,last_name_team_role_season
+181276,2023,Lukaku,Roma,FWD,7.203,32,32,last_name_team_role_season
+,2023,Radonjic,Torino,MID,7.188,8,8,unmatched
+605224,2023,Dimarco,Inter,DEF,7.183,30,30,last_name_team_role_season
+784510,2023,Chiesa,Juventus,FWD,7.172,32,32,last_name_team_role_season
+1369420,2023,Simic J.,Milan,DEF,7.167,3,3,last_name_team_role_season
+309726,2023,Belotti,Fiorentina,FWD,7.104,24,24,last_name_team_role_season
+1280082,2023,Soule',Frosinone,FWD,7.069,36,36,last_name_team_role_season
+661761,2023,Orsolini,Bologna,MID,7.065,31,31,last_name_team_role_season
+231176,2023,Pavoletti,Cagliari,FWD,7.036,14,14,last_name_team_role_season
+915797,2023,Okafor,Milan,FWD,7.021,24,24,last_name_team_role_season
+889535,2023,Bisseck,Inter,DEF,7.0,11,11,last_name_team_role_season
+815431,2023,Frattesi,Inter,MID,7.0,28,28,last_name_team_role_season
+689680,2023,Odgaard,Bologna,FWD,7.0,9,9,last_name_team_role_season
+1072054,2023,Maldini,Monza,MID,6.969,16,16,last_name_role
+540307,2023,Pellegrini Lo.,Roma,MID,6.948,29,29,last_name_team_role_season
+888921,2023,Ferguson,Bologna,MID,6.935,31,31,last_name_team_role_season
+1106916,2023,Zarraga,Udinese,MID,6.929,7,7,last_name_team_role_season
+937462,2023,Colpani,Monza,MID,6.921,38,38,last_name_role
+110148,2023,Arnautovic,Inter,FWD,6.896,24,24,last_name_team_role_season
+446266,2023,Pasalic,Atalanta,MID,6.894,33,33,last_name_team_role_season
+415539,2023,Politano,Napoli,MID,6.892,37,37,last_name_team_role_season
+127460,2023,Bonaventura,Fiorentina,MID,6.887,31,31,last_name_team_role_season
+1012842,2023,Gaetano,Cagliari,MID,6.882,17,17,last_name_team_role_season
+11685,2023,Candreva,Salernitana,MID,6.868,34,34,last_name_team_role_season
+1276505,2023,Fabbian,Bologna,MID,6.864,22,22,last_name_role
+994403,2023,Ngonge,Verona,FWD,6.857,28,28,last_name_role_season
+198566,2023,Luis Alberto,Lazio,MID,6.844,32,32,last_name_team_role_season
+254308,2023,Thauvin,Udinese,FWD,6.84,25,25,last_name_team_role_season
+1283469,2023,El Azzouzi,Bologna,MID,6.833,9,9,last_name_team_role_season
+442581,2023,Miranchuk,Atalanta,MID,6.818,22,22,last_name_team_role_season
+281993,2023,Simy,Salernitana,FWD,6.818,11,11,last_name_team_role_season
+846948,2023,Zurkowski,Empoli,MID,6.808,13,13,last_name_team_role_season
+909030,2023,Harroui,Frosinone,MID,6.794,17,17,last_name_team_role_season
+905546,2023,Retegui,Genoa,FWD,6.793,29,29,last_name_team_role_season
+463291,2023,Jovic,Milan,FWD,6.789,19,19,last_name_team_role_season
+206322,2023,Vecino,Lazio,MID,6.78,25,25,last_name_team_role_season
+541555,2023,Zaccagni,Lazio,MID,6.768,28,28,last_name_team_role_season
+441309,2023,Azmoun,Roma,FWD,6.767,15,15,last_name_team_role_season
+50047,2023,Sanchez,Inter,FWD,6.763,19,19,last_name_team_role_season
+1078113,2023,Cheddira,Frosinone,FWD,6.758,31,31,last_name_team_role_season
+1212630,2023,Lucca,Udinese,FWD,6.75,34,34,last_name_team_role_season
+1089744,2023,Luvumbo,Cagliari,FWD,6.75,30,30,last_name_team_role_season
+1050178,2023,Samardzic,Udinese,MID,6.742,33,33,last_name_role
+776299,2023,Aouar,Roma,MID,6.731,13,13,last_name_team_role_season
+750030,2023,Pinamonti,Sassuolo,FWD,6.703,37,37,last_name_team_role_season
+68404,2023,Viola,Cagliari,MID,6.7,25,25,last_name_team_role_season
+,2023,Muriel,Atalanta,FWD,6.692,13,13,unmatched
+604982,2023,Loftus-Cheek,Milan,MID,6.69,29,29,last_name_team_role_season
+73167,2023,Mkhitaryan,Inter,MID,6.681,36,36,last_name_team_role_season
+25587,2023,De Silvestri,Bologna,DEF,6.667,12,12,last_name_team_role_season
+108381,2023,Djuric,Verona,FWD,6.667,36,36,last_name_role_season
+424614,2023,Ekuban,Genoa,FWD,6.652,23,23,last_name_team_role_season
+974755,2023,Beltran L.,Fiorentina,FWD,6.65,30,30,last_name_team_role_season
+1080669,2023,Zortea,Frosinone,DEF,6.632,19,19,last_name_team_role_season
+459658,2023,Malinovskyi,Genoa,MID,6.63,23,23,last_name_team_role_season
+451966,2023,Barak,Fiorentina,MID,6.615,13,13,last_name_team_role_season
+724368,2023,Davis K.,Udinese,FWD,6.6,5,5,last_name_team_role_season
+230190,2023,Felipe Anderson,Lazio,MID,6.592,38,38,last_name_team_role_season
+161660,2023,Immobile,Lazio,FWD,6.589,28,28,last_name_team_role_season
+210278,2023,Pereyra,Udinese,MID,6.577,26,26,last_name_team_role_season
+1105912,2023,Calafiori,Bologna,DEF,6.574,27,27,last_name_team_role_season
+957203,2023,Ederson D.s.,Atalanta,MID,6.556,36,36,last_name_team_role_season
+741049,2023,Elmas,Napoli,MID,6.556,9,9,last_name_team_role
+1054114,2023,Toure' E.,Atalanta,FWD,6.556,9,9,last_name_team_role_season
+600190,2023,Henry,Verona,FWD,6.55,10,10,last_name_team_role_season
+558136,2023,Swiderski,Verona,FWD,6.538,13,13,last_name_team_role_season
+593118,2023,Dumfries,Inter,DEF,6.533,30,30,last_name_team_role_season
+972120,2023,Dia,Salernitana,FWD,6.529,17,17,last_name_team_role_season
+541820,2023,Barella,Inter,MID,6.527,37,37,last_name_team_role_season
+513982,2023,Mazzitelli,Frosinone,MID,6.517,29,29,last_name_team_role_season
+1283034,2023,Tchaouna,Salernitana,MID,6.517,29,29,last_name_role
+73024,2023,Acerbi,Inter,DEF,6.5,29,29,last_name_team_role_season
+1208969,2023,Asllani,Inter,MID,6.5,16,16,last_name_team_role_season
+1026135,2023,Buchanan,Inter,MID,6.5,7,7,last_name_team_role_season
+823018,2023,Buongiorno,Torino,DEF,6.5,29,29,last_name_team_role_season
+1282008,2023,Castro S.,Bologna,FWD,6.5,5,5,last_name_team_role_season
+239911,2023,Demme,Napoli,MID,6.5,2,2,last_name_team_role_season
+417743,2023,Di Gennaro,Inter,GK,6.5,1,1,last_name_team_role_season
+,2023,Fusco,Salernitana,FWD,6.5,1,1,unmatched
+1327150,2023,Ibrahimovic A.,Frosinone,MID,6.5,8,8,last_name_role
+447680,2023,Maric,Monza,FWD,6.5,7,7,last_name_role
+196074,2023,Pinsoglio,Juventus,GK,6.5,1,1,last_name_team_role_season
+352879,2023,Rabiot,Juventus,MID,6.5,31,31,last_name_team_role_season
+181644,2023,Rossi F.,Atalanta,GK,6.5,1,1,last_name_team_role_season
+470479,2023,Sensi,Inter,MID,6.5,1,1,last_name_team_role_season
+780491,2023,Oudin,Lecce,MID,6.484,31,31,last_name_team_role_season
+609624,2023,Bennacer,Milan,MID,6.472,18,18,last_name_team_role_season
+921341,2023,Saelemaekers,Bologna,MID,6.467,30,30,last_name_team_role_season
+1127054,2023,Suslov,Verona,MID,6.467,30,30,last_name_team_role_season
+358155,2023,Rugani,Juventus,DEF,6.464,14,14,last_name_team_role_season
+317156,2023,Duncan,Fiorentina,MID,6.462,26,26,last_name_team_role_season
+935769,2023,Lauriente',Sassuolo,FWD,6.459,37,37,last_name_team_role_season
+566654,2023,Pessina,Monza,MID,6.459,37,37,last_name_team_role_season
+277460,2023,Milik,Juventus,FWD,6.458,24,24,last_name_team_role_season
+1016093,2023,Isaksen,Lazio,FWD,6.457,23,23,last_name_team_role_season
+724371,2023,Hernandez T.,Milan,DEF,6.453,32,32,last_name_team_role_season
+,2023,Dragusin,Genoa,DEF,6.447,19,19,unmatched
+805451,2023,Bastoni,Inter,DEF,6.446,28,28,last_name_team_role_season
+933817,2023,Sottil,Fiorentina,MID,6.444,18,18,last_name_role
+950596,2023,Brescianini,Frosinone,MID,6.443,35,35,last_name_team_role_season
+951743,2023,Raspadori,Napoli,FWD,6.439,33,33,last_name_team_role_season
+619513,2023,Shomurodov,Cagliari,FWD,6.425,20,20,last_name_team_role_season
+921543,2023,Frendrup,Genoa,MID,6.419,37,37,last_name_team_role_season
+638771,2023,Martinez Quarta,Fiorentina,DEF,6.411,28,28,last_name_team_role_season
+188555,2023,De Vrij,Inter,DEF,6.409,22,22,last_name_team_role_season
+822440,2023,Folorunsho,Verona,MID,6.409,33,33,last_name_team_role_season
+737339,2023,Mota,Monza,FWD,6.409,33,33,last_name_team_role_season
+1017401,2023,Piccoli,Lecce,FWD,6.406,32,32,last_name_team_role_season
+921921,2023,Thorstvedt,Sassuolo,MID,6.397,34,34,last_name_team_role_season
+161328,2023,El Shaarawy,Roma,MID,6.397,29,29,last_name_team_role_season
+1050163,2023,Colombo,Monza,FWD,6.391,23,23,last_name_team_role_season
+1036182,2023,Ilic,Torino,MID,6.375,28,28,last_name_team_role_season
+1110045,2023,Oristanio,Cagliari,MID,6.375,24,24,last_name_role
+868344,2023,Reijnders,Milan,MID,6.375,36,36,last_name_team_role_season
+857269,2023,Bremer,Juventus,DEF,6.361,36,36,last_name_team_role_season
+395914,2023,Lykogiannis,Bologna,DEF,6.361,18,18,last_name_team_role_season
+1003368,2023,Messias,Genoa,MID,6.353,17,17,last_name_team_role_season
+299799,2023,Cristante,Roma,MID,6.351,37,37,last_name_team_role_season
+902651,2023,Bellanova,Torino,DEF,6.347,36,36,last_name_team_role_season
+,2023,Arthur Melo,Fiorentina,MID,6.344,32,32,unmatched
+896377,2023,Banda,Lecce,FWD,6.333,21,21,last_name_team_role_season
+793041,2023,Ravaglia F.,Bologna,GK,6.333,6,6,last_name_team_role_season
+726127,2023,Schuurs,Torino,DEF,6.333,9,9,last_name_team_role_season
+362212,2023,Zielinski,Napoli,MID,6.333,27,27,last_name_team_role_season
+46820,2023,Darmian,Inter,DEF,6.328,32,32,last_name_team_role_season
+823658,2023,Castellanos,Lazio,FWD,6.323,31,31,last_name_team_role_season
+1123969,2023,Carboni V.,Monza,MID,6.32,25,25,last_name_team_role_season
+749662,2023,Tomori,Milan,DEF,6.32,25,25,last_name_team_role_season
+848266,2023,Mckennie,Juventus,MID,6.318,33,33,last_name_team_role_season
+1075046,2023,Reinier,Frosinone,MID,6.312,16,16,last_name_team_role_season
+439148,2023,Thorsby,Genoa,MID,6.31,21,21,last_name_team_role_season
+1146500,2023,Cancellieri,Empoli,FWD,6.309,34,34,last_name_team_role_season
+265924,2023,Defrel,Sassuolo,FWD,6.308,13,13,last_name_team_role_season
+215242,2023,Spinazzola,Roma,DEF,6.304,23,23,last_name_team_role_season
+833638,2023,Krstovic,Lecce,FWD,6.303,33,33,last_name_team_role_season
+557677,2023,Vlasic,Torino,MID,6.303,33,33,last_name_team_role_season
+776940,2023,Kouame',Fiorentina,FWD,6.3,20,20,last_name_team_role_season
+543306,2023,Bonazzoli,Verona,FWD,6.295,22,22,last_name_team_role_season
+195199,2023,Sansone,Lecce,FWD,6.295,22,22,last_name_team_role_season
+625797,2023,Kastanos,Salernitana,MID,6.292,24,24,last_name_team_role_season
+358149,2023,Patric,Lazio,DEF,6.289,19,19,last_name_team_role_season
+964661,2023,Kaio Jorge,Frosinone,FWD,6.286,14,14,last_name_team_role_season
+1412132,2023,Yildiz,Juventus,FWD,6.286,21,21,last_name_team_role_season
+577911,2023,Mandragora,Fiorentina,MID,6.283,30,30,last_name_team_role_season
+956212,2023,Cuni,Frosinone,FWD,6.278,9,9,last_name_team_role_season
+822794,2023,Bajrami,Sassuolo,MID,6.271,24,24,last_name_team_role_season
+1200591,2023,Baldanzi,Empoli,MID,6.271,24,24,last_name_role
+496042,2023,Mina,Cagliari,DEF,6.267,15,15,last_name_team_role_season
+844996,2023,Gabbia,Milan,DEF,6.265,17,17,last_name_team_role_season
+749661,2023,Abraham,Roma,FWD,6.25,6,6,last_name_team_role_season
+157865,2023,Alex Sandro,Juventus,DEF,6.25,10,10,last_name_team_role_season
+391991,2023,Baez,Frosinone,MID,6.25,10,10,last_name_team_role_season
+1388071,2023,Belahyane,Verona,MID,6.25,2,2,last_name_team_role_season
+688300,2023,Chukwueze,Milan,MID,6.25,20,20,last_name_team_role_season
+951712,2023,Fagioli,Juventus,MID,6.25,8,8,last_name_team_role_season
+45220,2023,Gomez,Monza,MID,6.25,2,2,last_name_team_role_season
+1117058,2023,Monterisi,Frosinone,DEF,6.25,18,18,last_name_team_role_season
+1251988,2023,Vignato S.,Monza,MID,6.25,8,8,last_name_team_role_season
+474448,2023,Sanabria,Torino,FWD,6.243,35,35,last_name_team_role_season
+231521,2023,Lapadula,Cagliari,FWD,6.238,21,21,last_name_team_role_season
+611223,2023,Pavard,Inter,DEF,6.238,21,21,last_name_team_role_season
+940829,2023,Carlos Augusto,Inter,DEF,6.214,35,35,last_name_team_role_season
+1039403,2023,Pierotti,Lecce,FWD,6.214,7,7,last_name_team_role_season
+800609,2023,Guendouzi,Lazio,MID,6.212,33,33,last_name_team_role_season
+414906,2023,Di Lorenzo,Napoli,DEF,6.208,36,36,last_name_team_role_season
+641595,2023,Moro N.,Bologna,MID,6.206,17,17,last_name_team_role_season
+1044029,2023,Cambiaghi,Empoli,FWD,6.203,37,37,last_name_team_role_season
+155066,2023,Cuadrado,Inter,DEF,6.2,10,10,last_name_role
+1368061,2023,Iling Junior,Juventus,MID,6.2,20,20,last_name_role
+588687,2023,Mancini,Roma,DEF,6.2,35,35,last_name_team_role_season
+643573,2023,Nandez,Cagliari,MID,6.2,30,30,last_name_team_role_season
+589344,2023,Renato Sanches,Roma,MID,6.2,5,5,last_name_team_role_season
+1202358,2023,Scalvini,Atalanta,DEF,6.197,33,33,last_name_team_role_season
+119014,2023,Lazovic,Verona,MID,6.194,31,31,last_name_team_role_season
+776571,2023,Maggiore,Salernitana,MID,6.192,26,26,last_name_team_role_season
+719946,2023,Marchizza,Frosinone,DEF,6.192,13,13,last_name_team_role_season
+914103,2023,Vasquez,Genoa,DEF,6.186,35,35,last_name_team_role_season
+264842,2023,Florenzi,Milan,DEF,6.185,27,27,last_name_team_role_season
+,2023,Brekalo,Fiorentina,FWD,6.182,11,11,unmatched
+1429912,2023,Kayode,Fiorentina,DEF,6.173,26,26,last_name_team_role_season
+115591,2023,Rodriguez R.,Torino,DEF,6.171,35,35,last_name_team_role_season
+601591,2023,Jankto,Cagliari,MID,6.156,16,16,last_name_team_role_season
+593213,2023,Kovalenko,Empoli,MID,6.156,16,16,last_name_team_role_season
+155254,2023,Caputo,Empoli,FWD,6.15,20,20,last_name_team_role_season
+,2023,Jovane,Salernitana,FWD,6.15,10,10,unmatched
+557325,2023,Posch,Bologna,DEF,6.15,30,30,last_name_team_role_season
+544693,2023,Rrahmani,Napoli,DEF,6.15,30,30,last_name_team_role_season
+846002,2023,Adli,Milan,MID,6.143,21,21,last_name_role
+141699,2023,Badelj,Genoa,MID,6.141,32,32,last_name_team_role_season
+822589,2023,Almqvist,Lecce,FWD,6.133,30,30,last_name_team_role_season
+237606,2023,Paredes,Roma,MID,6.132,34,34,last_name_team_role_season
+1396375,2023,Sulemana I.,Cagliari,MID,6.132,19,19,last_name_team_role_season
+1078846,2023,Cambiaso,Juventus,DEF,6.118,34,34,last_name_team_role_season
+1189288,2023,Gatti,Juventus,DEF,6.109,32,32,last_name_team_role_season
+239350,2023,Biraghi,Fiorentina,DEF,6.107,28,28,last_name_team_role_season
+208077,2023,Danilo,Juventus,DEF,6.107,28,28,last_name_team_role_season
+1523327,2023,Ghedjemis,Frosinone,FWD,6.1,5,5,last_name_team_role_season
+621515,2023,Kamada,Lazio,MID,6.1,25,25,last_name_team_role_season
+686102,2023,Karamoh,Torino,FWD,6.1,5,5,last_name_team_role
+488415,2023,Kamara H.,Udinese,DEF,6.097,31,31,last_name_team_role_season
+1077653,2023,Gendrey,Lecce,DEF,6.095,37,37,last_name_team_role_season
+581137,2023,Sambia,Salernitana,DEF,6.094,16,16,last_name_role
+557346,2023,Lovric,Udinese,MID,6.086,29,29,last_name_team_role_season
+613334,2023,Nzola,Fiorentina,FWD,6.086,29,29,last_name_team_role_season
+1014630,2023,Holm,Atalanta,DEF,6.083,18,18,last_name_team_role_season
+560852,2023,Karsdorp,Roma,DEF,6.083,18,18,last_name_team_role_season
+764624,2023,Racic,Sassuolo,MID,6.083,18,18,last_name_team_role_season
+1022649,2023,Ndoye,Bologna,MID,6.081,31,31,last_name_team_role_season
+1288119,2023,Ikone',Fiorentina,MID,6.077,26,26,last_name_team_role_season
+1051097,2023,Ruggeri,Atalanta,DEF,6.076,33,33,last_name_team_role_season
+415017,2023,Bani,Genoa,DEF,6.074,27,27,last_name_team_role_season
+1128965,2023,Alcaraz,Juventus,MID,6.071,7,7,last_name_team_role_season
+1020963,2023,Rovella,Lazio,MID,6.071,21,21,last_name_team_role_season
+814138,2023,Vignato,Salernitana,MID,6.071,7,7,last_name_team_role_season
+304345,2023,Kolasinac,Atalanta,DEF,6.069,29,29,last_name_team_role_season
+860913,2023,Lucumi',Bologna,DEF,6.069,29,29,last_name_team_role_season
+321140,2023,Lazaro,Torino,DEF,6.067,30,30,last_name_team_role_season
+244811,2023,Zappacosta,Atalanta,DEF,6.065,31,31,last_name_team_role_season
+201704,2023,Freuler,Bologna,MID,6.062,32,32,last_name_team_role_season
+443966,2023,Toljan,Sassuolo,DEF,6.062,24,24,last_name_team_role_season
+604330,2023,Luperto,Empoli,DEF,6.053,38,38,last_name_team_role_season
+435983,2023,Cerri,Empoli,FWD,6.045,11,11,last_name_team_role_season
+1367619,2023,Huijsen,Roma,DEF,6.045,11,11,last_name_team_role_season
+612755,2023,Calabria,Milan,DEF,6.034,29,29,last_name_team_role_season
+817844,2023,Pellegri,Torino,FWD,6.033,15,15,last_name_team_role_season
+769335,2023,Lirola,Frosinone,DEF,6.021,24,24,last_name_role
+812549,2023,Marin,Empoli,MID,6.018,28,28,last_name_team_role_season
+874621,2023,Payero,Udinese,MID,6.018,28,28,last_name_team_role_season
+873573,2023,Beukema,Bologna,DEF,6.017,30,30,last_name_team_role_season
+936164,2023,Adopo,Atalanta,MID,6.0,4,4,last_name_team_role_season
+,2023,Akinsamiro,Inter,MID,6.0,1,1,unmatched
+891870,2023,Bakker,Atalanta,DEF,6.0,9,9,last_name_team_role_season
+1385856,2023,Bartesaghi,Milan,DEF,6.0,3,3,last_name_team_role_season
+521838,2023,Bastoni S.,Empoli,DEF,6.0,12,12,last_name_team_role_season
+861805,2023,Bijol,Udinese,DEF,6.0,24,24,last_name_team_role_season
+1030646,2023,Borrelli,Frosinone,FWD,6.0,1,1,last_name_role
+1286272,2023,Burnete,Lecce,FWD,6.0,1,1,last_name_team_role_season
+,2023,Canotto,Frosinone,FWD,6.0,1,1,unmatched
+1123969,2023,Carboni A.,Monza,DEF,6.0,21,21,last_name_team_role_season
+,2023,Charlys,Verona,MID,6.0,1,1,unmatched
+517068,2023,Contini,Napoli,GK,6.0,1,1,last_name_team_role_season
+288613,2023,De Sciglio,Juventus,DEF,6.0,1,1,last_name_role
+,2023,Dellavalle,Torino,DEF,6.0,1,1,unmatched
+866358,2023,Djalo',Juventus,DEF,6.0,1,1,last_name_team_role_season
+1526560,2023,Dorgu,Lecce,DEF,6.0,29,29,last_name_team_role_season
+879065,2023,Gallo,Lecce,DEF,6.0,34,34,last_name_team_role_season
+414232,2023,Haps,Genoa,DEF,6.0,14,14,last_name_role
+298448,2023,Klaassen,Inter,MID,6.0,6,6,last_name_team_role_season
+1211437,2023,Kristiansen,Bologna,DEF,6.0,30,30,last_name_team_role_season
+,2023,Kutlu,Genoa,MID,6.0,6,6,unmatched
+1369279,2023,Lipani,Sassuolo,MID,6.0,7,7,last_name_team_role_season
+,2023,Lulic K.,Frosinone,MID,6.0,1,1,unmatched
+1075450,2023,Martegani,Salernitana,MID,6.0,15,15,last_name_team_role_season
+845994,2023,Nicolussi Caviglia,Juventus,MID,6.0,6,6,last_name_team_role_season
+740944,2023,Ostigard,Napoli,DEF,6.0,20,20,last_name_team_role_season
+1484827,2023,Pagano,Roma,MID,6.0,2,2,last_name_team_role_season
+150250,2023,Pedro,Lazio,FWD,6.0,26,26,last_name_team_role_season
+413160,2023,Petagna,Cagliari,FWD,6.0,15,15,last_name_team_role_season
+1300387,2023,Pierozzi,Salernitana,DEF,6.0,12,12,last_name_team_role_season
+248453,2023,Pogba,Juventus,MID,6.0,2,2,last_name_team_role_season
+1396089,2023,Prati,Cagliari,MID,6.0,26,26,last_name_team_role_season
+,2023,Saponara,Verona,MID,6.0,10,10,unmatched
+983047,2023,Tavsan,Verona,FWD,6.0,2,2,last_name_team_role_season
+1308909,2023,Volpato,Sassuolo,MID,6.0,17,17,last_name_team_role_season
+538540,2023,Walace,Udinese,MID,6.0,37,37,last_name_team_role_season
+821240,2023,Weissman,Salernitana,FWD,6.0,11,11,last_name_team_role_season
+1446625,2023,Zeroli,Milan,MID,6.0,1,1,last_name_role
+,2023,Zima,Torino,DEF,6.0,3,3,unmatched
+350634,2023,Duda,Verona,MID,5.984,32,32,last_name_team_role_season
+281012,2023,Kostic,Juventus,MID,5.983,29,29,last_name_team_role_season
+982633,2023,Zemura,Udinese,DEF,5.976,21,21,last_name_team_role_season
+198559,2023,De Roon,Atalanta,MID,5.967,30,30,last_name_team_role_season
+894803,2023,Spence,Genoa,DEF,5.967,15,15,last_name_team_role_season
+958401,2023,Vogliacco,Genoa,DEF,5.967,15,15,last_name_team_role_season
+420568,2023,Llorente D.,Roma,DEF,5.966,29,29,last_name_team_role_season
+1212866,2023,Bove,Roma,MID,5.964,28,28,last_name_role
+1116749,2023,Viti,Sassuolo,DEF,5.964,14,14,last_name_team_role_season
+1329487,2023,Fazzini,Empoli,MID,5.96,25,25,last_name_role
+667790,2023,Serdar,Verona,MID,5.957,23,23,last_name_team_role_season
+114558,2023,Strootman,Genoa,MID,5.957,23,23,last_name_team_role_season
+979789,2023,Caso,Frosinone,FWD,5.955,11,11,last_name_team_role_season
+362120,2023,Cataldi,Lazio,MID,5.955,22,22,last_name_team_role_season
+560945,2023,Vojvoda,Torino,DEF,5.952,21,21,last_name_role
+1421505,2023,Gineitis,Torino,MID,5.95,10,10,last_name_team_role_season
+1289600,2023,Gonzalez J.,Lecce,MID,5.944,27,27,last_name_team_role_season
+822789,2023,Dossena,Cagliari,DEF,5.943,35,35,last_name_team_role_season
+624166,2023,Locatelli,Juventus,MID,5.943,35,35,last_name_team_role_season
+1106074,2023,Gila,Lazio,DEF,5.929,21,21,last_name_team_role_season
+747926,2023,Kean,Juventus,FWD,5.929,14,14,last_name_team_role_season
+790732,2023,Pobega,Milan,MID,5.929,7,7,last_name_team_role_season
+518633,2023,Kyriakopoulos,Monza,DEF,5.926,27,27,last_name_team_role_season
+1321562,2023,Coppola D.,Verona,DEF,5.925,20,20,last_name_team_role_season
+684981,2023,Martin,Genoa,DEF,5.925,20,20,last_name_team_role_season
+485634,2023,Gagliardini,Monza,MID,5.922,32,32,last_name_team_role_season
+900043,2023,Matheus Henrique,Sassuolo,MID,5.919,31,31,last_name_team_role_season
+260964,2023,Djimsiti,Atalanta,DEF,5.917,36,36,last_name_team_role_season
+737061,2023,Karlsson,Bologna,FWD,5.917,6,6,last_name_team_role_season
+308517,2023,Lobotka,Napoli,MID,5.908,38,38,last_name_team_role_season
+949731,2023,Zappa,Cagliari,DEF,5.905,37,37,last_name_team_role_season
+792756,2023,Aebischer,Bologna,MID,5.903,31,31,last_name_team_role_season
+252650,2023,Caprari,Monza,FWD,5.9,5,5,last_name_team_role_season
+834956,2023,Magnani,Verona,DEF,5.9,30,30,last_name_team_role_season
+1280080,2023,Miretti,Juventus,MID,5.9,20,20,last_name_team_role_season
+1157634,2023,Mitrovic S.,Verona,MID,5.9,10,10,last_name_team_role_season
+662205,2023,Lazzari,Lazio,DEF,5.896,24,24,last_name_team_role_season
+281762,2023,Terracciano F.,Verona,DEF,5.895,19,19,last_name_role_season
+1191685,2023,Seck,Torino,FWD,5.893,14,14,last_name_role_season
+799497,2023,Birindelli,Monza,DEF,5.891,32,32,last_name_team_role_season
+729093,2023,Olivera,Napoli,DEF,5.886,22,22,last_name_team_role_season
+935406,2023,Ranieri L.,Fiorentina,DEF,5.88,25,25,last_name_team_role_season
+299981,2023,Mari',Monza,DEF,5.879,33,33,last_name_team_role_season
+603537,2023,Angelino,Roma,DEF,5.875,16,16,last_name_team_role_season
+1395728,2023,Berisha M.,Lecce,MID,5.875,4,4,last_name_team_role
+,2023,Brenner,Udinese,FWD,5.875,4,4,unmatched
+867225,2023,Celik,Roma,DEF,5.875,12,12,last_name_team_role_season
+303155,2023,Djidji,Torino,DEF,5.875,12,12,last_name_team_role_season
+923222,2023,Mulattieri,Sassuolo,FWD,5.875,12,12,last_name_team_role_season
+1093766,2023,Rafia,Lecce,MID,5.875,24,24,last_name_team_role_season
+364104,2023,Sabelli,Genoa,DEF,5.871,31,31,last_name_team_role_season
+836436,2023,Strefezza,Lecce,MID,5.868,19,19,last_name_role
+561844,2023,Ebuehi,Empoli,DEF,5.867,15,15,last_name_team_role_season
+,2023,Kjaer,Milan,DEF,5.867,15,15,unmatched
+941656,2023,Ricci S.,Torino,MID,5.867,30,30,last_name_team_role_season
+480021,2023,Ciurria,Monza,MID,5.864,22,22,last_name_team_role_season
+1137272,2023,Musah,Milan,MID,5.86,25,25,last_name_team_role_season
+787242,2023,N'Dicka,Roma,DEF,5.86,25,25,last_name_team_role_season
+889536,2023,Weah,Juventus,MID,5.86,25,25,last_name_team_role_season
+1131217,2023,Kalulu,Milan,DEF,5.857,7,7,last_name_team_role_season
+,2023,Mboula,Verona,MID,5.857,7,7,unmatched
+95509,2023,Fazio,Salernitana,DEF,5.853,17,17,last_name_team_role_season
+362119,2023,Garritano,Frosinone,MID,5.85,10,10,last_name_team_role_season
+612863,2023,Zambo Anguissa,Napoli,MID,5.848,33,33,last_name_team_role_season
+,2023,Lindstrom,Napoli,MID,5.844,16,16,unmatched
+36183,2023,Boateng J.,Salernitana,DEF,5.833,6,6,last_name_team_role_season
+1327513,2023,Cittadini,Genoa,DEF,5.833,3,3,last_name_team_role_season
+111739,2023,Romagnoli S.,Frosinone,DEF,5.833,33,33,last_name_team_role_season
+165823,2023,Smalling,Roma,DEF,5.833,6,6,last_name_team_role_season
+,2023,Soppy,Torino,DEF,5.833,3,3,unmatched
+,2023,Stewart,Salernitana,FWD,5.833,3,3,unmatched
+1121295,2023,Urbanski,Bologna,MID,5.833,18,18,last_name_team_role_season
+198099,2023,Bereszynski,Empoli,DEF,5.826,23,23,last_name_team_role_season
+586474,2023,Ehizibue,Udinese,DEF,5.825,20,20,last_name_team_role_season
+469615,2023,Simeone,Napoli,FWD,5.824,17,17,last_name_team_role_season
+693591,2023,Bohinen,Salernitana,MID,5.821,14,14,last_name_role_season
+,2023,Hongla,Verona,MID,5.821,14,14,unmatched
+902383,2023,Perez N.,Udinese,DEF,5.819,36,36,last_name_team_role_season
+527563,2023,Azzi,Cagliari,DEF,5.818,22,22,last_name_team_role_season
+939780,2023,Hien,Atalanta,DEF,5.818,22,22,last_name_team_role_season
+850055,2023,Boloca,Sassuolo,MID,5.817,30,30,last_name_team_role_season
+534484,2023,Success,Udinese,FWD,5.816,19,19,last_name_team_role_season
+693160,2023,Augello,Cagliari,DEF,5.812,32,32,last_name_team_role_season
+671621,2023,Machin,Monza,MID,5.812,8,8,last_name_team_role_season
+161683,2023,Manolas,Salernitana,DEF,5.812,8,8,last_name_team_role_season
+831474,2023,Pongracic,Lecce,DEF,5.806,36,36,last_name_team_role_season
+1297995,2023,Ikwuemesi,Salernitana,FWD,5.804,23,23,last_name_team_role_season
+362195,2023,Romagnoli,Lazio,DEF,5.804,28,28,last_name_team_role_season
+1526283,2023,Corazza,Bologna,DEF,5.8,5,5,last_name_team_role_season
+149219,2023,Kabasele,Udinese,DEF,5.8,10,10,last_name_team_role_season
+500502,2023,Masina,Torino,DEF,5.8,15,15,last_name_team_role_season
+740161,2023,Okereke,Torino,FWD,5.8,5,5,last_name_team_role_season
+,2023,Van Hooijdonk,Bologna,FWD,5.786,7,7,unmatched
+862467,2023,Vinagre,Verona,DEF,5.786,7,7,last_name_team_role_season
+616170,2023,Erlic,Sassuolo,DEF,5.781,32,32,last_name_team_role_season
+850295,2023,Zerbin,Monza,MID,5.781,16,16,last_name_team_role_season
+1209987,2023,Bondo,Monza,MID,5.78,25,25,last_name_team_role_season
+485047,2023,Hateboer,Atalanta,DEF,5.778,18,18,last_name_team_role_season
+154245,2023,Caldirola,Monza,DEF,5.776,29,29,last_name_team_role_season
+618698,2023,Gelli,Frosinone,MID,5.775,20,20,last_name_team_role_season
+1053714,2023,Zalewski,Roma,MID,5.773,22,22,last_name_role
+575364,2023,Grassi,Empoli,MID,5.769,26,26,last_name_team_role_season
+1130330,2023,Doig,Sassuolo,DEF,5.768,28,28,last_name_team_role_season
+807148,2023,Pellegrini Lu.,Lazio,DEF,5.765,17,17,last_name_team_role_season
+1210943,2023,Tchatchoua,Verona,MID,5.76,25,25,last_name_team_role_season
+1416600,2023,Ankeye,Genoa,FWD,5.75,2,2,last_name_team_role_season
+605848,2023,Blin,Lecce,MID,5.75,28,28,last_name_team_role_season
+1337009,2023,Bonfanti,Atalanta,DEF,5.75,2,2,last_name_team_role_season
+,2023,Bonifazi,Frosinone,DEF,5.75,6,6,unmatched
+,2023,Bronn,Salernitana,DEF,5.75,2,2,unmatched
+1529222,2023,Comuzzo,Fiorentina,DEF,5.75,2,2,last_name_team_role_season
+750734,2023,Dodo',Fiorentina,DEF,5.75,6,6,last_name_team_role_season
+,2023,Dominguez,Bologna,MID,5.75,2,2,unmatched
+1190029,2023,Kristensen T.,Udinese,DEF,5.75,26,26,last_name_team_role_season
+1342748,2023,Kvernadze,Frosinone,FWD,5.75,2,2,last_name_team_role_season
+1307979,2023,Missori,Sassuolo,DEF,5.75,6,6,last_name_team_role_season
+1235421,2023,Oyono,Frosinone,DEF,5.75,14,14,last_name_team_role_season
+,2023,Romero L.,Milan,MID,5.75,2,2,unmatched
+875672,2023,Traore' Hj.,Napoli,MID,5.75,8,8,last_name_team_role_season
+916710,2023,Zanoli,Salernitana,DEF,5.75,18,18,last_name_role
+1200630,2023,De Winter,Genoa,DEF,5.741,29,29,last_name_team_role_season
+282731,2023,Mario Rui,Napoli,DEF,5.737,19,19,last_name_team_role_season
+660010,2023,Pereira P.,Monza,DEF,5.737,19,19,last_name_team_role_season
+921594,2023,Bradaric,Salernitana,DEF,5.735,34,34,last_name_role
+1060654,2023,Ebosele,Udinese,DEF,5.733,30,30,last_name_team_role_season
+426393,2023,Tameze,Torino,MID,5.732,28,28,last_name_team_role_season
+478447,2023,Marusic,Lazio,DEF,5.73,37,37,last_name_team_role_season
+1352923,2023,Barrenechea,Frosinone,MID,5.729,35,35,last_name_team_role_season
+1299869,2023,Kaba,Lecce,MID,5.727,22,22,last_name_team_role_season
+1019567,2023,Dani Silva,Verona,MID,5.722,9,9,last_name_team_role_season
+,2023,Krunic,Milan,MID,5.722,9,9,unmatched
+,2023,Ranocchia F.,Empoli,MID,5.722,9,9,unmatched
+1402629,2023,Shpendi S.,Empoli,FWD,5.722,9,9,last_name_team_role_season
+762028,2023,Ramadani,Lecce,MID,5.721,34,34,last_name_team_role_season
+935622,2023,Pedersen,Sassuolo,DEF,5.717,23,23,last_name_role
+799230,2023,Baschirotto,Lecce,DEF,5.716,37,37,last_name_team_role_season
+1030945,2023,Gomis I.,Salernitana,MID,5.7,5,5,last_name_team_role_season
+,2023,Hefti,Genoa,DEF,5.7,5,5,unmatched
+722207,2023,Kristensen,Roma,DEF,5.692,26,26,last_name_team_role_season
+361403,2023,Linetty,Torino,MID,5.692,26,26,last_name_team_role_season
+1188375,2023,Natan,Napoli,DEF,5.692,13,13,last_name_team_role_season
+526450,2023,Gyasi,Empoli,MID,5.69,29,29,last_name_team_role_season
+130155,2023,D'Ambrosio,Monza,DEF,5.688,24,24,last_name_team_role_season
+1179368,2023,Sazonov,Torino,DEF,5.688,8,8,last_name_team_role_season
+801120,2023,Cajuste,Napoli,MID,5.682,22,22,last_name_team_role_season
+562062,2023,Castillejo,Sassuolo,MID,5.682,11,11,last_name_team_role_season
+750880,2023,Ismajli,Empoli,DEF,5.68,25,25,last_name_team_role_season
+127374,2023,Toloi,Atalanta,DEF,5.679,14,14,last_name_team_role_season
+660887,2023,Centonze,Verona,DEF,5.667,9,9,last_name_team_role_season
+1128951,2023,Cruz,Verona,FWD,5.667,3,3,last_name_team_role_season
+951711,2023,Di Pardo,Cagliari,DEF,5.667,9,9,last_name_team_role_season
+1200022,2023,Infantino,Fiorentina,MID,5.667,3,3,last_name_team_role_season
+197352,2023,Juan Jesus,Napoli,DEF,5.667,24,24,last_name_team_role_season
+181910,2023,Perin,Juventus,GK,5.667,3,3,last_name_team_role_season
+789243,2023,Maleh,Empoli,MID,5.662,34,34,last_name_team_role_season
+919671,2023,Cacace,Empoli,DEF,5.661,28,28,last_name_team_role_season
+1083562,2023,Cabal,Verona,DEF,5.658,19,19,last_name_role
+614207,2023,Lopez M.,Fiorentina,MID,5.656,16,16,last_name_team_role_season
+1229761,2023,Legowski,Salernitana,MID,5.652,23,23,last_name_team_role_season
+293160,2023,Hysaj,Lazio,DEF,5.65,20,20,last_name_team_role_season
+833024,2023,Coulibaly L.,Salernitana,MID,5.648,27,27,last_name_team_role_season
+860592,2023,Walukiewicz,Empoli,DEF,5.648,27,27,last_name_team_role_season
+279879,2023,Akpa Akpro,Monza,MID,5.643,14,14,last_name_team_role_season
+848951,2023,Ceide,Sassuolo,FWD,5.643,7,7,last_name_team_role_season
+315235,2023,Giannetti L.,Udinese,DEF,5.643,7,7,last_name_team_role_season
+1093285,2023,Parisi,Fiorentina,DEF,5.643,21,21,last_name_team_role_season
+675327,2023,Mazzocchi,Salernitana,DEF,5.64,25,25,last_name_role_season
+41618,2023,Sommer,Inter,GK,5.632,34,34,last_name_team_role_season
+109338,2023,Faraoni,Verona,DEF,5.625,16,16,last_name_team_role
+301023,2023,Izzo,Monza,DEF,5.625,20,20,last_name_team_role_season
+1006676,2023,Okoli,Frosinone,DEF,5.618,34,34,last_name_team_role_season
+915238,2023,Makoumbou,Cagliari,MID,5.609,32,32,last_name_team_role_season
+766611,2023,Milenkovic,Fiorentina,DEF,5.6,30,30,last_name_team_role_season
+,2023,Vina,Sassuolo,DEF,5.6,15,15,unmatched
+406505,2023,Dawidowicz,Verona,DEF,5.596,26,26,last_name_team_role_season
+506309,2023,Ferrari G.,Sassuolo,DEF,5.593,27,27,last_name_team_role_season
+449283,2023,Deiola,Cagliari,MID,5.591,22,22,last_name_team_role_season
+154249,2023,Destro,Empoli,FWD,5.591,11,11,last_name_team_role_season
+867789,2023,Valeri,Frosinone,DEF,5.567,15,15,last_name_role
+,2023,Amione,Verona,DEF,5.562,8,8,unmatched
+814398,2023,Casale,Lazio,DEF,5.553,19,19,last_name_team_role_season
+1072257,2023,Ferreira J.,Udinese,DEF,5.55,30,30,last_name_team_role_season
+1050165,2023,Pirola,Salernitana,DEF,5.54,25,25,last_name_team_role_season
+362121,2023,Goldaniga,Cagliari,DEF,5.538,13,13,last_name_role
+,2023,Amatucci,Fiorentina,MID,5.5,1,1,unmatched
+,2023,Beto,Udinese,FWD,5.5,1,1,unmatched
+,2023,Caldara,Milan,DEF,5.5,1,1,unmatched
+,2023,Guessand A.,Udinese,DEF,5.5,1,1,unmatched
+915156,2023,Mandas,Lazio,GK,5.5,8,8,last_name_team_role_season
+163919,2023,Obiang,Sassuolo,MID,5.5,7,7,last_name_team_role_season
+364515,2023,Perilli,Verona,GK,5.5,1,1,last_name_team_role_season
+,2023,Pezzella Giu.,Empoli,DEF,5.5,15,15,unmatched
+917779,2023,Solbakken,Roma,FWD,5.5,1,1,last_name_role
+555646,2023,Wieteska,Cagliari,DEF,5.5,15,15,last_name_team_role_season
+766062,2023,Di Gregorio,Monza,GK,5.47,33,33,last_name_team_role_season
+660132,2023,Hatzidiakos,Cagliari,DEF,5.462,13,13,last_name_team_role_season
+1047570,2023,Lovato,Salernitana,DEF,5.447,19,19,last_name_role_season
+169718,2023,Szczesny,Juventus,GK,5.429,35,35,last_name_team_role_season
+519192,2023,Venuti,Lecce,DEF,5.417,6,6,last_name_team_role_season
+,2023,Bourabia,Frosinone,MID,5.4,5,5,unmatched
+1137407,2023,Thiaw,Milan,DEF,5.4,20,20,last_name_team_role_season
+768474,2023,Svilar,Roma,GK,5.367,15,15,last_name_team_role_season
+1072472,2023,Daniliuc,Salernitana,DEF,5.364,11,11,last_name_role
+651435,2023,Basic,Salernitana,MID,5.357,14,14,last_name_team_role_season
+841910,2023,Pasalidis,Salernitana,DEF,5.357,7,7,last_name_team_role_season
+,2023,Puscas,Genoa,FWD,5.333,3,3,unmatched
+792653,2023,Touba,Lecce,DEF,5.333,6,6,last_name_team_role_season
+178732,2023,Skorupski,Bologna,GK,5.328,32,32,last_name_team_role_season
+1289961,2023,Obert,Cagliari,DEF,5.308,13,13,last_name_team_role_season
+1237690,2023,Pellegrino,Salernitana,DEF,5.3,10,10,last_name_team_role_season
+1013021,2023,Carnesecchi,Atalanta,GK,5.296,27,27,last_name_team_role_season
+281762,2023,Terracciano,Fiorentina,GK,5.258,33,33,last_name_team_role_season
+602845,2023,Audero,Inter,GK,5.25,4,4,last_name_team_role_season
+213299,2023,Leali,Genoa,GK,5.25,2,2,last_name_team_role_season
+543021,2023,Milinkovic-Savic V.,Torino,GK,5.236,36,36,last_name_team_role_season
+958422,2023,Caprile,Empoli,GK,5.217,23,23,last_name_team_role_season
+,2023,Botheim,Salernitana,FWD,5.2,5,5,unmatched
+364822,2023,Provedel,Lazio,GK,5.133,30,30,last_name_team_role_season
+,2023,Tressoldi,Sassuolo,DEF,5.13,23,23,unmatched
+291655,2023,Gyomber,Salernitana,DEF,5.068,22,22,last_name_team_role_season
+389050,2023,Musso,Atalanta,GK,5.045,11,11,last_name_team_role_season
+150747,2023,Berisha,Empoli,GK,5.036,14,14,last_name_team_role_season
+39226,2023,Aresti,Cagliari,GK,5.0,1,1,last_name_team_role_season
+570830,2023,Haas,Empoli,MID,5.0,1,1,last_name_team_role
+,2023,Jagiello,Genoa,MID,5.0,1,1,unmatched
+1531814,2023,Mateus Lusuardi,Frosinone,DEF,5.0,3,3,last_name_team_role_season
+,2023,Sekulov,Juventus,MID,5.0,1,1,unmatched
+491784,2023,Montipo',Verona,GK,4.986,37,37,last_name_team_role_season
+772168,2023,Martinez Jo.,Genoa,GK,4.972,36,36,last_name_team_role_season
+577912,2023,Meret,Napoli,GK,4.968,31,31,last_name_team_role_season
+1091193,2023,Okoye,Udinese,GK,4.929,21,21,last_name_team_role_season
+362200,2023,Falcone,Lecce,GK,4.908,38,38,last_name_team_role_season
+872362,2023,Kumbulla,Sassuolo,DEF,4.9,5,5,last_name_team_role_season
+466439,2023,Maignan,Milan,GK,4.862,29,29,last_name_team_role_season
+,2023,Gollini,Napoli,GK,4.857,7,7,unmatched
+1412942,2023,Matturro,Genoa,DEF,4.833,3,3,last_name_team_role_season
+40604,2023,Rui Patricio,Roma,GK,4.783,23,23,last_name_role
+35644,2023,Mirante,Milan,GK,4.75,2,2,last_name_team_role_season
+212630,2023,Sportiello,Milan,GK,4.571,7,7,last_name_team_role_season
+191080,2023,Donati,Monza,DEF,4.5,1,1,last_name_team_role_season
+1526689,2023,Jimenez A.,Milan,DEF,4.5,1,1,last_name_team_role_season
+1420260,2023,Martinelli T.,Fiorentina,GK,4.5,1,1,last_name_team_role_season
+1326881,2023,Nava,Milan,GK,4.5,1,1,last_name_team_role_season
+,2023,Nonge,Juventus,MID,4.5,1,1,unmatched
+39170,2023,Consigli,Sassuolo,GK,4.443,35,35,last_name_team_role_season
+869054,2023,Turati,Frosinone,GK,4.419,31,31,last_name_team_role_season
+39220,2023,Mancosu,Cagliari,MID,4.333,3,3,last_name_team_role_season
+423223,2023,Scuffet,Cagliari,GK,4.306,31,31,last_name_team_role_season
+822252,2023,Cerofolini,Frosinone,GK,4.25,8,8,last_name_team_role_season
+31047,2023,Ochoa,Salernitana,GK,4.214,21,21,last_name_team_role_season
+165952,2023,Silvestri,Udinese,GK,4.176,17,17,last_name_team_role_season
+435684,2023,Radunovic,Cagliari,GK,4.0,7,7,last_name_team_role_season
+11319,2023,Costil,Salernitana,GK,3.962,13,13,last_name_team_role_season
+49541,2023,Fiorillo,Salernitana,GK,3.875,4,4,last_name_team_role_season
+1083606,2023,Sorrentino A.,Monza,GK,3.714,7,7,last_name_team_role_season
+282706,2023,Cragno,Sassuolo,GK,3.667,3,3,last_name_team_role_season
+806972,2023,Christensen O.,Fiorentina,GK,3.25,4,4,last_name_team_role_season
+636949,2023,Perisan,Empoli,GK,3.0,1,1,last_name_team_role_season
+1005792,2023,Gemello,Torino,GK,2.5,2,2,last_name_team_role_season
+905546,2024,Retegui,Atalanta,FWD,8.667,36,36,last_name_team_role_season
+661761,2024,Orsolini,Bologna,MID,8.19,29,29,last_name_team_role_season
+747926,2024,Kean,Fiorentina,FWD,8.078,32,32,last_name_team_role_season
+1434889,2024,Diao,Como,MID,8.067,15,15,last_name_team_role_season
+690516,2024,Lookman,Atalanta,FWD,7.935,31,31,last_name_team_role_season
+1109476,2024,Ondrejka,Parma,MID,7.85,10,10,last_name_team_role_season
+116555,2024,Zapata D.,Torino,FWD,7.786,7,7,last_name_team_role_season
+823825,2024,Kolo Muani,Juventus,FWD,7.781,16,16,last_name_team_role_season
+621562,2024,Thuram,Inter,FWD,7.75,32,32,last_name_team_role_season
+1707510,2024,Venturino,Genoa,MID,7.7,5,5,last_name_role
+843099,2024,McTominay,Napoli,MID,7.662,34,34,last_name_team_role_season
+181276,2024,Lukaku,Napoli,FWD,7.569,36,36,last_name_team_role_season
+688295,2024,Pulisic,Milan,MID,7.485,34,34,last_name_team_role_season
+325916,2024,Dybala,Roma,FWD,7.475,20,20,last_name_team_role_season
+690230,2024,Martinez L.,Inter,FWD,7.435,31,31,last_name_team_role_season
+737857,2024,Vlahovic,Juventus,FWD,7.38,25,25,last_name_team_role_season
+566776,2024,Gabrielloni,Como,FWD,7.375,4,4,last_name_team_role_season
+921341,2024,Saelemaekers,Roma,MID,7.364,22,22,last_name_team_role_season
+1022649,2024,Ndoye,Bologna,MID,7.362,29,29,last_name_team_role_season
+150250,2024,Pedro,Lazio,FWD,7.268,28,28,last_name_team_role_season
+426880,2024,Cornet,Genoa,MID,7.25,6,6,last_name_team_role_season
+900433,2024,Kvaratskhelia,Napoli,FWD,7.235,17,17,last_name_team_role
+951743,2024,Raspadori,Napoli,FWD,7.222,18,18,last_name_team_role_season
+655696,2024,Dovbyk,Roma,FWD,7.188,32,32,last_name_team_role_season
+254308,2024,Thauvin,Udinese,FWD,7.188,24,24,last_name_team_role_season
+868344,2024,Reijnders,Milan,MID,7.176,37,37,last_name_team_role_season
+823658,2024,Castellanos,Lazio,FWD,7.172,29,29,last_name_team_role_season
+1485169,2024,Lambourde,Verona,FWD,7.167,3,3,last_name_team_role_season
+1402900,2024,Mbangula,Juventus,FWD,7.133,15,15,last_name_team_role_season
+110148,2024,Arnautovic,Inter,FWD,7.107,14,14,last_name_team_role_season
+1130691,2024,Sulemana I.,Atalanta,MID,7.083,6,6,last_name_team_role_season
+848844,2024,Leao,Milan,FWD,7.059,34,34,last_name_team_role_season
+1212630,2024,Lucca,Udinese,FWD,7.045,33,33,last_name_team_role_season
+1280082,2024,Soule',Roma,FWD,7.043,23,23,last_name_team_role_season
+741049,2024,Elmas,Torino,MID,7.038,13,13,last_name_role
+1412132,2024,Yildiz,Juventus,FWD,7.015,34,34,last_name_team_role_season
+541555,2024,Zaccagni,Lazio,MID,7.015,34,34,last_name_team_role_season
+665188,2024,Gudmundsson A.,Fiorentina,FWD,6.976,21,21,last_name_team_role_season
+1329487,2024,Fazzini,Empoli,MID,6.975,20,20,last_name_role
+612863,2024,Zambo Anguissa,Napoli,MID,6.971,35,35,last_name_team_role_season
+846002,2024,Adli,Fiorentina,MID,6.955,22,22,last_name_team_role_season
+817844,2024,Pellegri,Empoli,FWD,6.944,9,9,last_name_team_role_season
+1095432,2024,De Ketelaere,Atalanta,FWD,6.941,34,34,last_name_team_role_season
+1347574,2024,Paz N.,Como,MID,6.941,34,34,last_name_team_role_season
+833638,2024,Krstovic,Lecce,FWD,6.919,37,37,last_name_team_role_season
+593118,2024,Dumfries,Inter,DEF,6.914,29,29,last_name_team_role_season
+304733,2024,Calhanoglu,Inter,MID,6.893,28,28,last_name_team_role_season
+213501,2024,Morata,Milan,FWD,6.875,16,16,last_name_role
+972120,2024,Dia,Lazio,FWD,6.871,35,35,last_name_team_role_season
+1224237,2024,Pellegrino M.,Parma,FWD,6.864,11,11,last_name_team_role_season
+605224,2024,Dimarco,Inter,DEF,6.859,32,32,last_name_team_role_season
+689680,2024,Odgaard,Bologna,FWD,6.839,28,28,last_name_team_role_season
+1316088,2024,Dominguez B.,Bologna,FWD,6.825,20,20,last_name_team_role_season
+846000,2024,Caqueret,Como,MID,6.824,17,17,last_name_team_role_season
+619513,2024,Shomurodov,Roma,FWD,6.8,20,20,last_name_team_role_season
+836436,2024,Strefezza,Como,MID,6.797,37,37,last_name_role
+1367618,2024,Esposito Se.,Empoli,FWD,6.788,33,33,last_name_team_role_season
+688300,2024,Chukwueze,Milan,MID,6.781,16,16,last_name_team_role_season
+,2024,Pohjanpalo,Venezia,FWD,6.775,20,20,unmatched
+954092,2024,Gimenez,Milan,FWD,6.769,13,13,last_name_team_role_season
+1282008,2024,Castro S.,Bologna,FWD,6.758,33,33,last_name_team_role_season
+599353,2024,Adams C.,Torino,FWD,6.757,35,35,last_name_team_role_season
+1017401,2024,Piccoli,Cagliari,FWD,6.757,37,37,last_name_team_role_season
+,2024,Brenner,Udinese,FWD,6.75,6,6,unmatched
+873270,2024,Douvikas,Como,FWD,6.75,12,12,last_name_team_role_season
+1368061,2024,Iling Junior,Bologna,MID,6.75,4,4,last_name_role
+,2024,Thuram K.,Juventus,MID,6.742,33,33,unmatched
+793066,2024,Neres,Napoli,MID,6.72,25,25,last_name_team_role_season
+950596,2024,Brescianini,Atalanta,MID,6.717,23,23,last_name_team_role_season
+815431,2024,Frattesi,Inter,MID,6.717,23,23,last_name_team_role_season
+161328,2024,El Shaarawy,Roma,MID,6.714,21,21,last_name_team_role_season
+478112,2024,Gigot,Lazio,DEF,6.7,10,10,last_name_team_role_season
+1102240,2024,Tengstedt,Verona,FWD,6.696,23,23,last_name_team_role_season
+889536,2024,Weah,Juventus,MID,6.692,26,26,last_name_team_role_season
+750030,2024,Pinamonti,Genoa,FWD,6.681,36,36,last_name_team_role_season
+237606,2024,Paredes,Roma,MID,6.675,20,20,last_name_team_role_season
+1059459,2024,Charpentier,Parma,FWD,6.667,9,9,last_name_team_role_season
+639671,2024,Cutrone,Como,FWD,6.667,33,33,last_name_team_role_season
+577911,2024,Mandragora,Fiorentina,MID,6.667,27,27,last_name_team_role_season
+557677,2024,Vlasic,Torino,MID,6.667,30,30,last_name_team_role_season
+541820,2024,Barella,Inter,MID,6.652,33,33,last_name_team_role_season
+1091907,2024,Dele-Bashiru,Lazio,MID,6.647,17,17,last_name_team_role_season
+983199,2024,Anjorin,Empoli,MID,6.636,22,22,last_name_team_role_season
+108381,2024,Djuric,Monza,FWD,6.609,23,23,last_name_team_role
+940829,2024,Carlos Augusto,Inter,DEF,6.607,28,28,last_name_team_role_season
+1080669,2024,Zortea,Cagliari,DEF,6.6,35,35,last_name_team_role_season
+518346,2024,Gosens,Fiorentina,DEF,6.594,32,32,last_name_team_role_season
+1072054,2024,Maldini,Monza,MID,6.593,27,27,last_name_role
+299799,2024,Cristante,Roma,MID,6.589,28,28,last_name_team_role_season
+1212866,2024,Bove,Fiorentina,MID,6.583,12,12,last_name_team_role_season
+319631,2024,Correa,Inter,FWD,6.567,15,15,last_name_team_role_season
+1208969,2024,Asllani,Inter,MID,6.562,16,16,last_name_team_role_season
+805451,2024,Bastoni,Inter,DEF,6.547,32,32,last_name_team_role_season
+188555,2024,De Vrij,Inter,DEF,6.545,22,22,last_name_team_role_season
+845994,2024,Nicolussi Caviglia,Venezia,MID,6.529,35,35,last_name_team_role_season
+198559,2024,De Roon,Atalanta,MID,6.528,36,36,last_name_team_role_season
+1199383,2024,Bonny,Parma,FWD,6.514,37,37,last_name_team_role_season
+1044029,2024,Cambiaghi,Bologna,FWD,6.5,17,17,last_name_team_role_season
+1185336,2024,Conceicao,Juventus,MID,6.5,25,25,last_name_team_role_season
+,2024,Konate Is.,Empoli,FWD,6.5,3,3,unmatched
+42692,2024,Padelli,Udinese,GK,6.5,1,1,last_name_team_role_season
+1333331,2024,Provstgaard,Lazio,DEF,6.5,1,1,last_name_team_role_season
+957118,2024,Tavares N.,Lazio,DEF,6.5,23,23,last_name_team_role_season
+957203,2024,Ederson D.s.,Atalanta,MID,6.486,36,36,last_name_team_role_season
+1276505,2024,Fabbian,Bologna,MID,6.477,22,22,last_name_role
+951714,2024,Bernabe',Parma,MID,6.474,19,19,last_name_team_role_season
+823018,2024,Buongiorno,Napoli,DEF,6.455,22,22,last_name_team_role_season
+805767,2024,Man,Parma,MID,6.453,32,32,last_name_team_role_season
+459658,2024,Malinovskyi,Genoa,MID,6.444,9,9,last_name_team_role_season
+206322,2024,Vecino,Lazio,MID,6.444,18,18,last_name_team_role_season
+513982,2024,Mazzitelli,Como,MID,6.438,8,8,last_name_role
+267374,2024,Hernani,Parma,MID,6.42,25,25,last_name_team_role_season
+1280080,2024,Miretti,Genoa,MID,6.42,25,25,last_name_role
+415539,2024,Politano,Napoli,MID,6.419,37,37,last_name_team_role_season
+309726,2024,Belotti,Como,FWD,6.417,12,12,last_name_role
+974755,2024,Beltran L.,Fiorentina,FWD,6.417,30,30,last_name_team_role_season
+857269,2024,Bremer,Juventus,DEF,6.417,6,6,last_name_team_role_season
+885085,2024,Dallinga,Bologna,FWD,6.413,23,23,last_name_team_role_season
+1012842,2024,Gaetano,Cagliari,MID,6.407,27,27,last_name_team_role_season
+574844,2024,Marin,Cagliari,MID,6.407,27,27,last_name_team_role_season
+909030,2024,Harroui,Verona,MID,6.4,10,10,last_name_team_role_season
+,2024,Keita B.,Monza,FWD,6.4,10,10,unmatched
+244811,2024,Zappacosta,Atalanta,DEF,6.4,30,30,last_name_team_role_season
+362120,2024,Cataldi,Fiorentina,MID,6.396,24,24,last_name_team_role_season
+888921,2024,Ferguson,Bologna,MID,6.393,14,14,last_name_team_role_season
+866516,2024,Koopmeiners,Juventus,MID,6.393,28,28,last_name_team_role_season
+1050163,2024,Colombo,Empoli,FWD,6.389,36,36,last_name_team_role_season
+1016132,2024,Kone' M.,Roma,MID,6.379,33,33,last_name_team_role_season
+724368,2024,Davis K.,Udinese,FWD,6.375,16,16,last_name_team_role_season
+841672,2024,Gonzalez N.,Juventus,FWD,6.37,23,23,last_name_team_role_season
+1282285,2024,Noslin,Lazio,FWD,6.368,19,19,last_name_team_role_season
+46820,2024,Darmian,Inter,DEF,6.365,26,26,last_name_team_role_season
+414906,2024,Di Lorenzo,Napoli,DEF,6.365,37,37,last_name_team_role_season
+231176,2024,Pavoletti,Cagliari,FWD,6.364,11,11,last_name_team_role_season
+1076647,2024,Da Cunha,Como,MID,6.357,35,35,last_name_team_role_season
+470479,2024,Sensi,Monza,MID,6.357,7,7,last_name_team_role_season
+799497,2024,Birindelli,Monza,DEF,6.35,20,20,last_name_team_role_season
+794427,2024,Joao Felix,Milan,FWD,6.346,13,13,last_name_team_role_season
+1016093,2024,Isaksen,Lazio,FWD,6.338,37,37,last_name_team_role_season
+1110045,2024,Oristanio,Venezia,MID,6.338,37,37,last_name_role
+749661,2024,Abraham,Milan,FWD,6.333,24,24,last_name_team_role_season
+532743,2024,Billing,Napoli,MID,6.333,6,6,last_name_team_role_season
+889535,2024,Bisseck,Inter,DEF,6.333,27,27,last_name_team_role_season
+1203212,2024,Fila,Venezia,FWD,6.333,9,9,last_name_team_role_season
+463291,2024,Jovic,Milan,FWD,6.333,12,12,last_name_team_role_season
+362212,2024,Zielinski,Inter,MID,6.325,20,20,last_name_team_role_season
+684981,2024,Martin,Genoa,DEF,6.319,36,36,last_name_team_role_season
+603537,2024,Angelino,Roma,DEF,6.316,38,38,last_name_team_role_season
+1078846,2024,Cambiaso,Juventus,DEF,6.312,32,32,last_name_team_role_season
+119014,2024,Lazovic,Verona,MID,6.312,24,24,last_name_team_role_season
+737339,2024,Mota,Monza,FWD,6.306,31,31,last_name_team_role_season
+424614,2024,Ekuban,Genoa,FWD,6.306,18,18,last_name_team_role_season
+1130732,2024,Mosquera,Verona,FWD,6.303,33,33,last_name_team_role_season
+68404,2024,Viola,Cagliari,MID,6.3,25,25,last_name_team_role_season
+866708,2024,Solet,Udinese,DEF,6.289,19,19,last_name_team_role_season
+724371,2024,Hernandez T.,Milan,DEF,6.288,33,33,last_name_team_role_season
+252650,2024,Caprari,Monza,FWD,6.283,30,30,last_name_team_role_season
+1308892,2024,Bravo,Udinese,FWD,6.281,16,16,last_name_team_role_season
+770166,2024,Coman F.,Cagliari,FWD,6.278,9,9,last_name_team_role_season
+934156,2024,Ekkelenkamp,Udinese,MID,6.273,33,33,last_name_team_role_season
+1607014,2024,Njie,Torino,FWD,6.273,11,11,last_name_team_role_season
+1339372,2024,Casadei,Torino,MID,6.267,15,15,last_name_team_role_season
+1156568,2024,Sarr A.,Verona,FWD,6.259,29,29,last_name_team_role_season
+902651,2024,Bellanova,Atalanta,DEF,6.257,35,35,last_name_team_role_season
+624166,2024,Locatelli,Juventus,MID,6.257,35,35,last_name_team_role_season
+588687,2024,Mancini,Roma,DEF,6.257,37,37,last_name_team_role_season
+975242,2024,Sohm,Parma,MID,6.257,37,37,last_name_team_role_season
+1083562,2024,Cabal,Juventus,DEF,6.25,6,6,last_name_team_role_season
+939593,2024,Helgason,Lecce,MID,6.25,20,20,last_name_team_role_season
+1089744,2024,Luvumbo,Cagliari,FWD,6.25,26,26,last_name_team_role_season
+73167,2024,Mkhitaryan,Inter,MID,6.25,32,32,last_name_team_role_season
+902383,2024,Perez N.,Udinese,DEF,6.25,2,2,last_name_team_role
+790732,2024,Pobega,Bologna,MID,6.25,20,20,last_name_team_role_season
+1050178,2024,Samardzic,Atalanta,MID,6.25,28,28,last_name_team_role_season
+195199,2024,Sansone,Lecce,FWD,6.25,2,2,last_name_team_role_season
+1574492,2024,Tiago Gabriel,Lecce,DEF,6.25,2,2,last_name_team_role_season
+867789,2024,Valeri,Parma,DEF,6.25,34,34,last_name_team_role_season
+1215057,2024,Vitinha O.,Genoa,FWD,6.25,22,22,last_name_team_role_season
+,2024,Andersen M.K.,Venezia,MID,6.231,13,13,unmatched
+1093285,2024,Parisi,Fiorentina,DEF,6.225,20,20,last_name_team_role_season
+619506,2024,Taremi,Inter,FWD,6.222,18,18,last_name_team_role_season
+818893,2024,Zaniolo,Atalanta,MID,6.222,18,18,last_name_role
+954621,2024,Fofana Y.,Milan,MID,6.221,34,34,last_name_team_role_season
+149219,2024,Kabasele,Udinese,DEF,6.219,16,16,last_name_team_role_season
+215242,2024,Spinazzola,Napoli,DEF,6.217,23,23,last_name_team_role_season
+201704,2024,Freuler,Bologna,MID,6.216,37,37,last_name_team_role_season
+750734,2024,Dodo',Fiorentina,DEF,6.214,35,35,last_name_team_role_season
+942193,2024,Ellertsson,Venezia,MID,6.214,35,35,last_name_team_role_season
+1189288,2024,Gatti,Juventus,DEF,6.214,28,28,last_name_team_role_season
+1421505,2024,Gineitis,Torino,MID,6.214,28,28,last_name_team_role_season
+638771,2024,Martinez Quarta,Fiorentina,DEF,6.214,7,7,last_name_team_role
+1053714,2024,Zalewski,Inter,MID,6.211,19,19,last_name_role
+1529687,2024,Haj Mohamed,Parma,FWD,6.208,12,12,last_name_team_role_season
+935380,2024,Delprato,Parma,DEF,6.206,34,34,last_name_team_role_season
+844996,2024,Gabbia,Milan,DEF,6.2,25,25,last_name_team_role_season
+1288119,2024,Ikone',Fiorentina,MID,6.196,23,23,last_name_team_role
+1159233,2024,Fadera,Como,MID,6.188,24,24,last_name_role
+1180321,2024,Rensch,Roma,DEF,6.188,8,8,last_name_team_role_season
+914103,2024,Vasquez,Genoa,DEF,6.181,36,36,last_name_team_role_season
+848266,2024,McKennie,Juventus,MID,6.177,31,31,last_name_team_role_season
+544693,2024,Rrahmani,Napoli,DEF,6.171,38,38,last_name_team_role_season
+561844,2024,Ebuehi,Empoli,DEF,6.167,3,3,last_name_team_role_season
+478447,2024,Marusic,Lazio,DEF,6.161,31,31,last_name_team_role_season
+395914,2024,Lykogiannis,Bologna,DEF,6.156,16,16,last_name_team_role_season
+888167,2024,Perez K.,Venezia,MID,6.156,16,16,last_name_team_role_season
+873956,2024,Miranda J.,Bologna,DEF,6.155,29,29,last_name_team_role_season
+801213,2024,Tete Morente,Lecce,MID,6.15,30,30,last_name_team_role_season
+,2024,Gytkjaer,Venezia,FWD,6.147,17,17,unmatched
+1206806,2024,Gaspar K.,Lecce,DEF,6.146,24,24,last_name_team_role_season
+1200591,2024,Baldanzi,Roma,MID,6.143,21,21,last_name_role
+449283,2024,Deiola,Cagliari,MID,6.14,25,25,last_name_team_role_season
+1189223,2024,Masini,Genoa,MID,6.136,22,22,last_name_team_role_season
+446266,2024,Pasalic,Atalanta,MID,6.136,33,33,last_name_team_role_season
+1014630,2024,Holm,Bologna,DEF,6.125,16,16,last_name_team_role_season
+293160,2024,Hysaj,Lazio,DEF,6.125,8,8,last_name_team_role_season
+500502,2024,Masina,Torino,DEF,6.125,24,24,last_name_team_role_season
+915797,2024,Okafor,Milan,FWD,6.125,12,12,last_name_team_role
+1451196,2024,Pisilli,Roma,MID,6.125,24,24,last_name_team_role_season
+750880,2024,Ismajli,Empoli,DEF,6.121,29,29,last_name_team_role_season
+73024,2024,Acerbi,Inter,DEF,6.119,21,21,last_name_team_role_season
+1526560,2024,Dorgu,Lecce,DEF,6.119,21,21,last_name_team_role
+933817,2024,Sottil,Fiorentina,MID,6.119,21,21,last_name_role
+557346,2024,Lovric,Udinese,MID,6.114,35,35,last_name_team_role_season
+1048023,2024,Pavlovic,Milan,DEF,6.114,22,22,last_name_team_role_season
+850295,2024,Zerbin,Venezia,MID,6.111,18,18,last_name_team_role_season
+807148,2024,Pellegrini Lu.,Lazio,DEF,6.105,19,19,last_name_team_role_season
+469615,2024,Simeone,Napoli,FWD,6.105,19,19,last_name_team_role_season
+1200630,2024,De Winter,Genoa,DEF,6.104,24,24,last_name_team_role_season
+155066,2024,Cuadrado,Atalanta,DEF,6.1,20,20,last_name_role
+1669628,2024,Ekhator,Genoa,FWD,6.1,15,15,last_name_team_role_season
+1039403,2024,Pierotti,Lecce,FWD,6.1,35,35,last_name_team_role_season
+693160,2024,Augello,Cagliari,DEF,6.095,37,37,last_name_team_role_season
+737061,2024,Karlsson,Lecce,MID,6.088,17,17,last_name_team_role_season
+604330,2024,Luperto,Cagliari,DEF,6.083,36,36,last_name_team_role_season
+321140,2024,Lazaro,Torino,DEF,6.081,31,31,last_name_team_role_season
+1051097,2024,Ruggeri,Atalanta,DEF,6.077,26,26,last_name_team_role_season
+616170,2024,Erlic,Bologna,DEF,6.071,7,7,last_name_team_role_season
+800609,2024,Guendouzi,Lazio,MID,6.068,37,37,last_name_team_role_season
+1116749,2024,Viti,Empoli,DEF,6.067,30,30,last_name_team_role_season
+496042,2024,Mina,Cagliari,DEF,6.065,31,31,last_name_team_role_season
+25587,2024,De Silvestri,Bologna,DEF,6.062,16,16,last_name_team_role_season
+942549,2024,Gilmour,Napoli,MID,6.059,17,17,last_name_team_role_season
+518633,2024,Kyriakopoulos,Monza,DEF,6.059,34,34,last_name_team_role_season
+1131217,2024,Kalulu,Juventus,DEF,6.054,28,28,last_name_team_role_season
+1289961,2024,Obert,Cagliari,DEF,6.053,19,19,last_name_team_role_season
+729093,2024,Olivera,Napoli,DEF,6.05,30,30,last_name_team_role_season
+141699,2024,Badelj,Genoa,MID,6.045,22,22,last_name_team_role_season
+1290968,2024,Hainaut,Parma,MID,6.043,23,23,last_name_team_role_season
+921543,2024,Frendrup,Genoa,MID,6.043,35,35,last_name_team_role_season
+,2024,Pezzella Giu.,Empoli,DEF,6.043,35,35,unmatched
+937462,2024,Colpani,Fiorentina,MID,6.042,24,24,last_name_team_role_season
+288613,2024,De Sciglio,Empoli,DEF,6.042,12,12,last_name_team_role_season
+951712,2024,Fagioli,Fiorentina,MID,6.042,24,24,last_name_team_role_season
+1146500,2024,Cancellieri,Parma,FWD,6.04,25,25,last_name_team_role_season
+1188665,2024,Rui Modesto,Udinese,MID,6.038,13,13,last_name_team_role_season
+560945,2024,Vojvoda,Torino,DEF,6.037,27,27,last_name_role_season
+488415,2024,Kamara H.,Udinese,DEF,6.033,30,30,last_name_team_role_season
+924431,2024,Busio,Venezia,MID,6.032,31,31,last_name_team_role_season
+308517,2024,Lobotka,Napoli,MID,6.032,31,31,last_name_team_role_season
+1003368,2024,Messias,Genoa,MID,6.031,16,16,last_name_team_role_season
+641595,2024,Moro N.,Bologna,MID,6.031,16,16,last_name_team_role_season
+941656,2024,Ricci S.,Torino,MID,6.029,34,34,last_name_team_role_season
+787242,2024,N'Dicka,Roma,DEF,6.026,38,38,last_name_team_role_season
+667790,2024,Serdar,Verona,MID,6.024,21,21,last_name_team_role_season
+1622290,2024,Savona,Juventus,DEF,6.019,27,27,last_name_team_role_season
+919671,2024,Cacace,Empoli,DEF,6.017,29,29,last_name_team_role_season
+1269329,2024,Abankwah,Udinese,DEF,6.0,2,2,last_name_team_role
+1002617,2024,Abdulhamid,Roma,DEF,6.0,4,4,last_name_team_role_season
+1382375,2024,Adzic,Juventus,MID,6.0,1,1,last_name_team_role_season
+1669629,2024,Ahanor,Genoa,DEF,6.0,6,6,last_name_team_role_season
+1416600,2024,Ankeye,Genoa,FWD,6.0,1,1,last_name_team_role
+,2024,Bacci,Empoli,MID,6.0,1,1,unmatched
+891870,2024,Bakker,Atalanta,DEF,6.0,1,1,last_name_team_role
+,2024,Baselli,Como,MID,6.0,1,1,unmatched
+,2024,Cacciamani,Torino,MID,6.0,1,1,unmatched
+,2024,Cassa,Atalanta,MID,6.0,1,1,unmatched
+480021,2024,Ciurria,Monza,MID,6.0,17,17,last_name_team_role_season
+664587,2024,Coulibaly L.,Lecce,MID,6.0,37,37,last_name_team_role_season
+,2024,Dahl,Roma,DEF,6.0,2,2,unmatched
+1674890,2024,El Haddad,Venezia,MID,6.0,1,1,last_name_team_role_season
+,2024,Godfrey,Atalanta,DEF,6.0,1,1,unmatched
+570830,2024,Haas,Empoli,MID,6.0,6,6,last_name_team_role_season
+1016132,2024,Kone B.,Como,MID,6.0,1,1,last_name_role_season
+593213,2024,Kovalenko,Empoli,MID,6.0,3,3,last_name_team_role_season
+1367997,2024,Kowalski,Parma,FWD,6.0,1,1,last_name_team_role_season
+1593861,2024,Liberali,Milan,MID,6.0,1,1,last_name_team_role_season
+1682864,2024,Martins K.,Monza,MID,6.0,6,6,last_name_team_role_season
+,2024,Melegoni,Genoa,MID,6.0,3,3,unmatched
+389050,2024,Musso,Atalanta,GK,6.0,1,1,last_name_team_role
+776594,2024,Nelsson,Roma,DEF,6.0,4,4,last_name_team_role_season
+1473806,2024,Palestra,Atalanta,DEF,6.0,4,4,last_name_role
+611223,2024,Pavard,Inter,DEF,6.0,22,22,last_name_team_role_season
+1700207,2024,Perciun,Torino,MID,6.0,5,5,last_name_team_role_season
+,2024,Pereiro,Genoa,MID,6.0,1,1,unmatched
+566654,2024,Pessina,Monza,MID,6.0,11,11,last_name_team_role_season
+,2024,Raimondo,Venezia,FWD,6.0,1,1,unmatched
+1020963,2024,Rovella,Lazio,MID,6.0,33,33,last_name_team_role_season
+1050838,2024,Salah-Eddine,Roma,DEF,6.0,2,2,last_name_team_role_season
+577914,2024,Sommariva,Genoa,GK,6.0,1,1,last_name_team_role_season
+1121295,2024,Urbanski,Monza,MID,6.0,12,12,last_name_team_role_season
+1343750,2024,Veiga R.,Juventus,MID,6.0,13,13,last_name_team_role_season
+1337926,2024,Vlahovic V.,Atalanta,FWD,6.0,2,2,last_name_team_role_season
+982633,2024,Zemura,Udinese,DEF,6.0,21,21,last_name_team_role_season
+845368,2024,Yeboah J.,Venezia,MID,5.982,28,28,last_name_team_role_season
+304345,2024,Kolasinac,Atalanta,DEF,5.978,23,23,last_name_team_role_season
+414232,2024,Haps,Venezia,DEF,5.977,22,22,last_name_team_role_season
+799230,2024,Baschirotto,Lecce,DEF,5.974,38,38,last_name_team_role_season
+1021302,2024,Felici,Cagliari,MID,5.972,18,18,last_name_team_role_season
+937412,2024,Idzes,Venezia,DEF,5.971,35,35,last_name_team_role_season
+1269497,2024,Engelhardt,Como,MID,5.969,16,16,last_name_team_role_season
+1036182,2024,Ilic,Torino,MID,5.969,16,16,last_name_team_role_season
+1395728,2024,Berisha M.,Lecce,MID,5.964,14,14,last_name_team_role_season
+916710,2024,Zanoli,Genoa,DEF,5.963,27,27,last_name_role
+874621,2024,Payero,Udinese,MID,5.96,25,25,last_name_team_role_season
+767013,2024,Bernede,Verona,MID,5.958,12,12,last_name_team_role_season
+935406,2024,Ranieri L.,Fiorentina,DEF,5.958,36,36,last_name_team_role_season
+625797,2024,Kastanos,Verona,MID,5.955,22,22,last_name_team_role_season
+1106074,2024,Gila,Lazio,DEF,5.953,32,32,last_name_team_role_season
+1339345,2024,Doumbia I.,Venezia,MID,5.947,19,19,last_name_team_role_season
+350634,2024,Duda,Verona,MID,5.946,28,28,last_name_team_role_season
+762028,2024,Ramadani,Lecce,MID,5.944,27,27,last_name_team_role_season
+1106916,2024,Zarraga,Udinese,MID,5.944,18,18,last_name_team_role_season
+873573,2024,Beukema,Bologna,DEF,5.941,34,34,last_name_team_role_season
+1336582,2024,Perrone,Como,MID,5.94,25,25,last_name_team_role_season
+,2024,Ekong,Empoli,FWD,5.938,8,8,unmatched
+776940,2024,Kouame',Fiorentina,FWD,5.932,22,22,last_name_team_role
+1529222,2024,Comuzzo,Fiorentina,DEF,5.929,28,28,last_name_team_role_season
+402830,2024,Maripan,Torino,DEF,5.929,28,28,last_name_team_role_season
+967759,2024,Camara D.,Parma,MID,5.923,13,13,last_name_team_role_season
+36388,2024,Hummels,Roma,DEF,5.923,13,13,last_name_team_role_season
+1554575,2024,Camarda,Milan,FWD,5.917,6,6,last_name_team_role_season
+265725,2024,Rebic,Lecce,FWD,5.917,18,18,last_name_team_role_season
+212472,2024,Sergi Roberto,Como,DEF,5.917,12,12,last_name_team_role_season
+1082597,2024,Van Der Brempt,Como,DEF,5.917,18,18,last_name_team_role_season
+936164,2024,Adopo,Cagliari,MID,5.912,34,34,last_name_team_role_season
+1014496,2024,Kossounou,Atalanta,DEF,5.912,17,17,last_name_team_role_season
+686102,2024,Karamoh,Torino,FWD,5.909,22,22,last_name_team_role_season
+362195,2024,Romagnoli,Lazio,DEF,5.906,32,32,last_name_team_role_season
+526450,2024,Gyasi,Empoli,MID,5.905,37,37,last_name_team_role_season
+1210943,2024,Tchatchoua,Verona,DEF,5.903,36,36,last_name_team_role_season
+340790,2024,Crnigoj,Venezia,MID,5.9,5,5,last_name_team_role_season
+,2024,Le Fee,Roma,MID,5.9,5,5,unmatched
+1498718,2024,Mutandwa,Cagliari,FWD,5.9,5,5,last_name_team_role_season
+364104,2024,Sabelli,Genoa,DEF,5.9,30,30,last_name_team_role_season
+159833,2024,Walker,Milan,DEF,5.9,10,10,last_name_team_role_season
+574847,2024,Castrovilli,Monza,MID,5.893,14,14,last_name_team_role_season
+1428426,2024,Atta,Udinese,MID,5.891,23,23,last_name_team_role_season
+1429871,2024,Dembele' A.,Torino,DEF,5.889,9,9,last_name_team_role_season
+127374,2024,Toloi,Atalanta,DEF,5.889,9,9,last_name_team_role_season
+1309634,2024,Rocha Livramento,Verona,FWD,5.886,22,22,last_name_team_role_season
+414924,2024,Zampano,Venezia,DEF,5.886,22,22,last_name_team_role_season
+861805,2024,Bijol,Udinese,DEF,5.882,34,34,last_name_team_role_season
+469939,2024,Henderson L.,Empoli,MID,5.882,34,34,last_name_team_role_season
+1609209,2024,Leoni,Parma,DEF,5.882,17,17,last_name_team_role_season
+540307,2024,Pellegrini Lo.,Roma,MID,5.88,25,25,last_name_team_role_season
+260964,2024,Djimsiti,Atalanta,DEF,5.879,33,33,last_name_team_role_season
+890266,2024,Mihaila,Parma,FWD,5.875,20,20,last_name_team_role_season
+358149,2024,Patric,Lazio,DEF,5.875,8,8,last_name_team_role_season
+846948,2024,Zurkowski,Empoli,MID,5.875,4,4,last_name_team_role_season
+1228840,2024,Bianco,Monza,MID,5.871,35,35,last_name_team_role_season
+,2024,Moreno Alb.,Como,DEF,5.87,23,23,unmatched
+1321562,2024,Coppola D.,Verona,DEF,5.864,33,33,last_name_team_role_season
+662205,2024,Lazzari,Lazio,DEF,5.864,22,22,last_name_team_role_season
+949731,2024,Zappa,Cagliari,DEF,5.861,36,36,last_name_team_role_season
+239350,2024,Biraghi,Torino,DEF,5.857,21,21,last_name_team_role_season
+1027594,2024,N'Dri,Lecce,FWD,5.857,7,7,last_name_team_role_season
+581137,2024,Sambia,Empoli,DEF,5.857,7,7,last_name_team_role_season
+782703,2024,Sverko,Venezia,DEF,5.857,14,14,last_name_team_role_season
+185625,2024,Palomino,Cagliari,DEF,5.853,17,17,last_name_team_role_season
+415017,2024,Bani,Genoa,DEF,5.85,20,20,last_name_team_role_season
+968029,2024,Valenti,Parma,DEF,5.85,20,20,last_name_team_role_season
+822789,2024,Dossena,Como,DEF,5.848,23,23,last_name_team_role_season
+822589,2024,Almqvist,Parma,FWD,5.846,26,26,last_name_team_role_season
+612755,2024,Calabria,Bologna,DEF,5.846,13,13,last_name_team_role_season
+951921,2024,Svoboda,Venezia,DEF,5.844,16,16,last_name_team_role_season
+474448,2024,Sanabria,Torino,FWD,5.841,22,22,last_name_team_role_season
+1255860,2024,Richardson,Fiorentina,MID,5.84,25,25,last_name_team_role_season
+575364,2024,Grassi,Empoli,MID,5.839,28,28,last_name_team_role_season
+527563,2024,Azzi,Cagliari,DEF,5.833,6,6,last_name_team_role
+108808,2024,Balotelli,Genoa,FWD,5.833,3,3,last_name_team_role_season
+1026135,2024,Buchanan T.,Inter,MID,5.833,3,3,last_name_team_role
+1526689,2024,Jimenez A.,Milan,DEF,5.833,21,21,last_name_team_role_season
+1299869,2024,Kaba,Lecce,MID,5.833,12,12,last_name_team_role_season
+1313884,2024,Marin R.,Napoli,DEF,5.833,3,3,last_name_team_role_season
+50047,2024,Sanchez,Udinese,FWD,5.833,9,9,last_name_team_role_season
+426393,2024,Tameze,Torino,MID,5.833,15,15,last_name_team_role_season
+941953,2024,Coco,Torino,DEF,5.828,32,32,last_name_team_role_season
+1041522,2024,Candè,Venezia,DEF,5.824,17,17,last_name_team_role_season
+1387439,2024,Alberto Costa,Juventus,DEF,5.812,8,8,last_name_team_role_season
+896377,2024,Banda,Lecce,FWD,5.808,13,13,last_name_team_role_season
+197352,2024,Juan Jesus,Napoli,DEF,5.808,13,13,last_name_team_role_season
+586474,2024,Ehizibue,Udinese,DEF,5.806,31,31,last_name_team_role_season
+749662,2024,Tomori,Milan,DEF,5.806,18,18,last_name_team_role_season
+787350,2024,Douglas Luiz,Juventus,MID,5.8,15,15,last_name_team_role_season
+1396089,2024,Prati,Cagliari,MID,5.8,10,10,last_name_team_role_season
+317156,2024,Duncan,Venezia,MID,5.786,14,14,last_name_team_role_season
+824623,2024,Frese,Verona,DEF,5.786,7,7,last_name_team_role_season
+1027740,2024,Onana J.,Genoa,MID,5.786,7,7,last_name_team_role_season
+322003,2024,Karlstrom,Udinese,MID,5.784,37,37,last_name_team_role_season
+604982,2024,Loftus-Cheek,Milan,MID,5.778,18,18,last_name_team_role_season
+939780,2024,Hien,Atalanta,DEF,5.776,29,29,last_name_team_role_season
+1283034,2024,Tchaouna,Lazio,MID,5.775,20,20,last_name_team_role_season
+958401,2024,Vogliacco,Genoa,DEF,5.775,20,20,last_name_team_role
+1209987,2024,Bondo,Monza,MID,5.773,22,22,last_name_team_role
+361403,2024,Linetty,Torino,MID,5.773,22,22,last_name_team_role_season
+822440,2024,Folorunsho,Fiorentina,MID,5.769,13,13,last_name_team_role_season
+557325,2024,Posch,Bologna,DEF,5.769,13,13,last_name_team_role
+867225,2024,Celik,Roma,DEF,5.767,30,30,last_name_team_role_season
+915238,2024,Makoumbou,Cagliari,MID,5.766,32,32,last_name_team_role_season
+355356,2024,Kempf,Como,DEF,5.758,31,31,last_name_team_role_season
+1127054,2024,Suslov,Verona,MID,5.758,31,31,last_name_team_role_season
+,2024,Altare,Venezia,DEF,5.75,12,12,unmatched
+,2024,Amrabat,Fiorentina,MID,5.75,2,2,unmatched
+942203,2024,Bjarkason,Venezia,MID,5.75,4,4,last_name_team_role_season
+1318686,2024,Circati,Parma,DEF,5.75,6,6,last_name_team_role_season
+,2024,Cyprien,Parma,MID,5.75,2,2,unmatched
+1388474,2024,Jean,Lecce,DEF,5.75,18,18,last_name_team_role_season
+,2024,Lovik,Parma,DEF,5.75,4,4,unmatched
+789243,2024,Maleh,Empoli,MID,5.75,22,22,last_name_team_role_season
+1436436,2024,Marcandalli,Venezia,DEF,5.75,8,8,last_name_team_role_season
+299981,2024,Mari',Monza,DEF,5.75,32,32,last_name_team_role
+447680,2024,Maric,Venezia,FWD,5.75,8,8,last_name_team_role_season
+,2024,Pierini,Venezia,FWD,5.75,2,2,unmatched
+1353289,2024,Smolcic I.,Como,DEF,5.75,8,8,last_name_team_role_season
+362121,2024,Goldaniga,Como,DEF,5.733,30,30,last_name_team_role_season
+1529148,2024,Marianucci,Empoli,DEF,5.731,13,13,last_name_team_role_season
+1384881,2024,Valle,Como,DEF,5.731,13,13,last_name_team_role_season
+1306664,2024,Veiga D.,Lecce,DEF,5.727,11,11,last_name_team_role_season
+1117306,2024,Balogh,Parma,DEF,5.722,27,27,last_name_team_role_season
+921594,2024,Bradaric,Verona,DEF,5.722,27,27,last_name_team_role_season
+622091,2024,Sosa B.,Torino,DEF,5.722,18,18,last_name_team_role_season
+1125446,2024,Pierret,Lecce,MID,5.717,30,30,last_name_team_role_season
+1446625,2024,Zeroli,Monza,MID,5.714,7,7,last_name_team_role_season
+1507697,2024,Goglichidze,Empoli,DEF,5.712,33,33,last_name_team_role_season
+612747,2024,Guilbert,Lecce,DEF,5.71,31,31,last_name_team_role_season
+815366,2024,Estevez,Parma,MID,5.708,12,12,last_name_team_role_season
+577912,2024,Meret,Napoli,GK,5.706,34,34,last_name_team_role_season
+860913,2024,Lucumi',Bologna,DEF,5.703,32,32,last_name_team_role_season
+1123969,2024,Carboni F.,Venezia,DEF,5.7,5,5,last_name_team_role_season
+1137106,2024,Gourna-Douath,Roma,MID,5.7,5,5,last_name_team_role_season
+231521,2024,Lapadula,Cagliari,FWD,5.7,10,10,last_name_team_role
+772168,2024,Martinez Jo.,Inter,GK,5.7,5,5,last_name_team_role_season
+1214915,2024,Norton-Cuffy,Genoa,DEF,5.7,10,10,last_name_team_role_season
+792756,2024,Aebischer,Bologna,MID,5.692,13,13,last_name_team_role_season
+1388071,2024,Belahyane,Verona,MID,5.692,26,26,last_name_team_role
+301023,2024,Izzo,Monza,DEF,5.679,28,28,last_name_team_role_season
+1137272,2024,Musah,Milan,MID,5.673,26,26,last_name_team_role_season
+920861,2024,Benedyczak,Parma,FWD,5.667,6,6,last_name_team_role_season
+609624,2024,Bennacer,Milan,MID,5.667,6,6,last_name_team_role
+1132551,2024,Condè,Venezia,MID,5.667,3,3,last_name_team_role_season
+109338,2024,Faraoni,Verona,DEF,5.667,6,6,last_name_team_role_season
+1190023,2024,Forson O.,Monza,MID,5.667,6,6,last_name_team_role_season
+1618922,2024,Kasa,Genoa,MID,5.667,6,6,last_name_team_role_season
+1605748,2024,Moreno M.,Fiorentina,DEF,5.667,3,3,last_name_team_role_season
+994403,2024,Ngonge,Napoli,FWD,5.667,6,6,last_name_team_role_season
+1098817,2024,Oyegoke,Verona,DEF,5.667,3,3,last_name_team_role_season
+1366034,2024,Pafundi,Udinese,MID,5.667,3,3,last_name_team_role_season
+1093766,2024,Rafia,Lecce,MID,5.667,18,18,last_name_team_role_season
+1251988,2024,Vignato S.,Monza,MID,5.667,12,12,last_name_team_role_season
+1239749,2024,Keita M.,Parma,MID,5.661,28,28,last_name_team_role_season
+660010,2024,Pereira P.,Monza,DEF,5.652,33,33,last_name_team_role_season
+675327,2024,Mazzocchi,Napoli,DEF,5.65,10,10,last_name_team_role_season
+439148,2024,Thorsby,Genoa,MID,5.648,27,27,last_name_team_role_season
+831474,2024,Pongracic,Fiorentina,DEF,5.647,17,17,last_name_team_role_season
+879065,2024,Gallo,Lecce,DEF,5.645,31,31,last_name_team_role_season
+1246009,2024,Ndour,Fiorentina,MID,5.643,7,7,last_name_team_role_season
+860592,2024,Walukiewicz,Torino,DEF,5.643,28,28,last_name_team_role_season
+1352744,2024,Schingtienne,Venezia,DEF,5.633,15,15,last_name_team_role_season
+819215,2024,Kelly L.,Juventus,DEF,5.625,12,12,last_name_team_role_season
+,2024,Rouhi,Juventus,DEF,5.625,4,4,unmatched
+,2024,Verdi,Como,MID,5.625,4,4,unmatched
+1123969,2024,Carboni A.,Monza,DEF,5.615,26,26,last_name_team_role_season
+917779,2024,Solbakken,Empoli,FWD,5.611,18,18,last_name_team_role_season
+154245,2024,Caldirola,Monza,DEF,5.607,14,14,last_name_team_role_season
+1190029,2024,Kristensen T.,Udinese,DEF,5.595,21,21,last_name_team_role_season
+485634,2024,Gagliardini,Monza,MID,5.583,6,6,last_name_team_role_season
+281762,2024,Terracciano F.,Milan,DEF,5.571,7,7,last_name_team_role_season
+935622,2024,Pedersen,Torino,DEF,5.543,23,23,last_name_team_role_season
+1386006,2024,Ghilardi,Verona,DEF,5.542,24,24,last_name_team_role_season
+1412942,2024,Matturro,Genoa,DEF,5.542,12,12,last_name_team_role_season
+814398,2024,Casale,Bologna,DEF,5.533,15,15,last_name_team_role_season
+,2024,Alidou,Verona,MID,5.5,2,2,unmatched
+451966,2024,Barak,Fiorentina,MID,5.5,1,1,last_name_team_role
+1286272,2024,Burnete,Lecce,FWD,5.5,1,1,last_name_team_role_season
+,2024,Campaniello,Empoli,FWD,5.5,1,1,unmatched
+600513,2024,Ganvoula,Monza,FWD,5.5,7,7,last_name_team_role_season
+566789,2024,Iovine,Como,DEF,5.5,7,7,last_name_team_role_season
+1429912,2024,Kayode,Fiorentina,DEF,5.5,2,2,last_name_team_role
+915156,2024,Mandas,Lazio,GK,5.5,9,9,last_name_team_role_season
+780491,2024,Oudin,Lecce,MID,5.5,6,6,last_name_team_role
+,2024,Pelmard,Lecce,DEF,5.5,2,2,unmatched
+181910,2024,Perin,Juventus,GK,5.5,5,5,last_name_team_role_season
+,2024,Sala M.,Como,DEF,5.5,6,6,unmatched
+,2024,Siegrist,Genoa,GK,5.5,2,2,unmatched
+,2024,Valoti,Monza,MID,5.5,1,1,unmatched
+555646,2024,Wieteska,Cagliari,DEF,5.5,5,5,last_name_team_role
+130155,2024,D'Ambrosio,Monza,DEF,5.471,17,17,last_name_team_role_season
+797908,2024,Emerson Royal,Milan,DEF,5.471,17,17,last_name_team_role_season
+315235,2024,Giannetti L.,Udinese,DEF,5.462,13,13,last_name_team_role_season
+543021,2024,Milinkovic-Savic V.,Torino,GK,5.446,37,37,last_name_team_role_season
+208077,2024,Danilo,Juventus,DEF,5.438,8,8,last_name_team_role
+1137407,2024,Thiaw,Milan,DEF,5.432,22,22,last_name_team_role_season
+279879,2024,Akpa Akpro,Monza,MID,5.429,14,14,last_name_team_role_season
+834956,2024,Magnani,Verona,DEF,5.429,14,14,last_name_team_role
+1249665,2024,Valentini N.,Verona,DEF,5.429,14,14,last_name_team_role_season
+,2024,Barba,Como,DEF,5.417,6,6,unmatched
+182917,2024,De Gea,Fiorentina,GK,5.414,35,35,last_name_team_role_season
+1180547,2024,Toure' I.s.,Udinese,DEF,5.409,11,11,last_name_team_role_season
+1072472,2024,Daniliuc,Verona,DEF,5.393,14,14,last_name_team_role_season
+768474,2024,Svilar,Roma,GK,5.382,38,38,last_name_team_role_season
+406505,2024,Dawidowicz,Verona,DEF,5.38,25,25,last_name_team_role_season
+,2024,Brorsson,Monza,DEF,5.375,4,4,unmatched
+1074476,2024,Coulibaly W.,Parma,DEF,5.357,14,14,last_name_role
+1388039,2024,Sagrado,Venezia,DEF,5.333,3,3,last_name_team_role_season
+1013021,2024,Carnesecchi,Atalanta,GK,5.324,34,34,last_name_team_role_season
+1011022,2024,Niasse,Verona,MID,5.318,11,11,last_name_team_role_season
+41618,2024,Sommer,Inter,GK,5.303,33,33,last_name_team_role_season
+413160,2024,Petagna,Monza,FWD,5.286,7,7,last_name_team_role_season
+,2024,Bonifazi,Lecce,DEF,5.25,2,2,unmatched
+,2024,Candela,Venezia,DEF,5.25,14,14,unmatched
+1019567,2024,Dani Silva,Verona,MID,5.25,6,6,last_name_team_role
+769167,2024,Ebosse,Udinese,DEF,5.25,2,2,last_name_team_role
+1077653,2024,Gendrey,Lecce,DEF,5.25,2,2,last_name_team_role
+1202358,2024,Scalvini,Atalanta,DEF,5.25,4,4,last_name_team_role_season
+681213,2024,Radu I.,Venezia,GK,5.233,15,15,last_name_team_role_season
+1130600,2024,Stankovic F.,Venezia,GK,5.233,15,15,last_name_team_role_season
+560939,2024,Butez,Como,GK,5.184,19,19,last_name_team_role_season
+766062,2024,Di Gregorio,Juventus,GK,5.182,33,33,last_name_team_role_season
+435983,2024,Cerri,Como,FWD,5.167,3,3,last_name_role
+617622,2024,Osorio,Parma,DEF,5.167,3,3,last_name_team_role_season
+40604,2024,Rui Patricio,Atalanta,GK,5.167,3,3,last_name_team_role_season
+281762,2024,Terracciano,Fiorentina,GK,5.167,3,3,last_name_team_role_season
+958422,2024,Caprile,Cagliari,GK,5.159,22,22,last_name_team_role_season
+466439,2024,Maignan,Milan,GK,5.135,37,37,last_name_team_role_season
+213299,2024,Leali,Genoa,GK,5.103,29,29,last_name_team_role_season
+1344726,2024,Palacios T.,Monza,DEF,5.083,6,6,last_name_team_role_season
+178732,2024,Skorupski,Bologna,GK,5.037,27,27,last_name_team_role_season
+1385856,2024,Bartesaghi,Milan,DEF,5.0,3,3,last_name_team_role_season
+693591,2024,Bohinen,Genoa,MID,5.0,2,2,last_name_team_role
+,2024,Caprini,Fiorentina,FWD,5.0,1,1,unmatched
+1677221,2024,Jack,Como,DEF,5.0,3,3,last_name_team_role_season
+364515,2024,Perilli,Verona,GK,5.0,2,2,last_name_team_role_season
+1179368,2024,Sazonov,Torino,DEF,5.0,1,1,last_name_team_role
+212630,2024,Sportiello,Milan,GK,5.0,2,2,last_name_team_role_season
+671203,2024,Hermoso,Roma,DEF,4.875,4,4,last_name_team_role
+793041,2024,Ravaglia F.,Bologna,GK,4.833,12,12,last_name_team_role_season
+362200,2024,Falcone,Lecce,GK,4.789,38,38,last_name_team_role_season
+1053679,2024,Suzuki,Parma,GK,4.757,37,37,last_name_team_role_season
+1073496,2024,Braunoder,Como,MID,4.75,4,4,last_name_team_role_season
+869054,2024,Turati,Monza,GK,4.75,30,30,last_name_team_role_season
+1186685,2024,Vasquez D.,Empoli,GK,4.672,32,32,last_name_team_role_season
+1404077,2024,Otoa,Genoa,DEF,4.667,3,3,last_name_team_role_season
+1132319,2024,Sava,Udinese,GK,4.667,12,12,last_name_team_role_season
+364822,2024,Provedel,Lazio,GK,4.534,29,29,last_name_team_role_season
+30660,2024,Reina,Como,GK,4.5,12,12,last_name_team_role_season
+491784,2024,Montipo',Verona,GK,4.444,36,36,last_name_team_role_season
+1376137,2024,Lekovic,Monza,DEF,4.417,6,6,last_name_team_role_season
+1091193,2024,Okoye,Udinese,GK,4.4,25,25,last_name_team_role_season
+1178779,2024,Sherri,Cagliari,GK,4.286,7,7,last_name_team_role_season
+423223,2024,Scuffet,Cagliari,GK,4.179,14,14,last_name_team_role
+,2024,Gollini,Genoa,GK,4.071,7,7,unmatched
+917464,2024,Pizzignacco,Monza,GK,3.944,9,9,last_name_team_role_season
+602845,2024,Audero,Como,GK,3.75,8,8,last_name_role
+363333,2024,Alli,Como,MID,3.5,1,1,last_name_team_role_season
+415137,2024,Paleari,Torino,GK,3.5,1,1,last_name_team_role_season
+,2024,Seghetti,Empoli,GK,3.5,1,1,unmatched
+165952,2024,Silvestri,Empoli,GK,3.5,5,5,last_name_team_role_season
+436563,2024,Joronen,Venezia,GK,3.375,8,8,last_name_team_role_season
+,2024,Chichizola,Parma,GK,2.0,1,1,unmatched
+,2025,De Luca,Cremonese,FWD,10.0,1,1,unmatched
+181276,2025,Lukaku,Napoli,FWD,9.5,1,1,last_name_team_role_season
+660301,2025,Malen,Roma,FWD,8.972,18,18,last_name_team_role_season
+690230,2025,Martinez L.,Inter,FWD,8.25,30,30,last_name_team_role_season
+621562,2025,Thuram,Inter,FWD,7.948,29,29,last_name_team_role_season
+605224,2025,Dimarco,Inter,DEF,7.643,35,35,last_name_team_role_season
+304733,2025,Calhanoglu,Inter,MID,7.636,22,22,last_name_team_role_season
+309726,2025,Belotti,Cagliari,FWD,7.625,4,4,last_name_team_role_season
+721089,2025,Scamacca,Atalanta,FWD,7.545,22,22,last_name_team_role_season
+,2025,Topalovic,Inter,MID,7.5,1,1,unmatched
+,2025,Hojlund,Napoli,FWD,7.439,33,33,unmatched
+873270,2025,Douvikas,Como,FWD,7.375,36,36,last_name_team_role_season
+724368,2025,Davis K.,Udinese,FWD,7.367,30,30,last_name_team_role_season
+737857,2025,Vlahovic,Juventus,FWD,7.306,18,18,last_name_team_role_season
+1347574,2025,Paz N.,Como,MID,7.3,35,35,last_name_team_role_season
+1412132,2025,Yildiz,Juventus,FWD,7.3,35,35,last_name_team_role_season
+843099,2025,McTominay,Napoli,MID,7.258,33,33,last_name_team_role_season
+169200,2025,De Bruyne,Napoli,MID,7.235,17,17,last_name_team_role_season
+1355552,2025,Santos A.,Napoli,MID,7.231,13,13,last_name_team_role_season
+281012,2025,Kostic,Juventus,MID,7.2,10,10,last_name_team_role_season
+364520,2025,Berardi,Sassuolo,FWD,7.192,26,26,last_name_team_role_season
+833638,2025,Krstovic,Atalanta,FWD,7.188,32,32,last_name_team_role_season
+643229,2025,Boga,Juventus,FWD,7.154,13,13,last_name_team_role_season
+1215064,2025,Baturina,Como,MID,7.14,25,25,last_name_team_role_season
+469615,2025,Simeone,Torino,FWD,7.094,32,32,last_name_team_role_season
+688295,2025,Pulisic,Milan,MID,7.074,27,27,last_name_team_role_season
+1367618,2025,Esposito F.P.,Inter,FWD,7.016,31,31,last_name_team_role_season
+543306,2025,Bonazzoli,Cremonese,FWD,7.014,35,35,last_name_team_role_season
+935769,2025,Laurientè,Sassuolo,FWD,6.986,37,37,last_name_team_role_season
+352879,2025,Rabiot,Milan,MID,6.983,29,29,last_name_team_role_season
+1395728,2025,Berisha M.,Lecce,MID,6.917,12,12,last_name_team_role_season
+1076647,2025,Da Cunha,Como,MID,6.914,35,35,last_name_team_role_season
+951743,2025,Raspadori,Atalanta,FWD,6.885,13,13,last_name_team_role_season
+1382375,2025,Adzic,Juventus,MID,6.875,4,4,last_name_team_role_season
+1428426,2025,Atta,Udinese,MID,6.875,32,32,last_name_team_role_season
+1460253,2025,Elphege,Parma,FWD,6.875,8,8,last_name_team_role_season
+1030212,2025,Esposito Se.,Cagliari,FWD,6.875,36,36,last_name_team_role_season
+1861022,2025,Trepy,Cagliari,FWD,6.875,4,4,last_name_team_role_season
+704523,2025,Nkunku,Milan,FWD,6.865,26,26,last_name_team_role_season
+612863,2025,Zambo Anguissa,Napoli,MID,6.861,18,18,last_name_team_role_season
+1068482,2025,Ferguson E.,Roma,FWD,6.857,14,14,last_name_team_role_season
+848844,2025,Leao,Milan,FWD,6.857,28,28,last_name_team_role_season
+793066,2025,Neres,Napoli,MID,6.844,16,16,last_name_team_role_season
+1199383,2025,Bonny,Inter,FWD,6.833,27,27,last_name_team_role_season
+1280082,2025,Soulè,Roma,FWD,6.828,32,32,last_name_team_role_season
+823658,2025,Castellanos,Lazio,FWD,6.818,11,11,last_name_team_role
+857269,2025,Bremer,Juventus,DEF,6.808,26,26,last_name_team_role_season
+362212,2025,Zielinski,Inter,MID,6.8,30,30,last_name_team_role_season
+982617,2025,Bowie,Verona,FWD,6.786,14,14,last_name_team_role_season
+150250,2025,Pedro,Lazio,FWD,6.783,23,23,last_name_team_role_season
+1435689,2025,Kilicsoy,Cagliari,FWD,6.781,16,16,last_name_team_role_season
+818893,2025,Zaniolo,Udinese,MID,6.774,31,31,last_name_team_role_season
+655696,2025,Dovbyk,Roma,FWD,6.769,13,13,last_name_team_role_season
+747926,2025,Kean,Fiorentina,FWD,6.769,26,26,last_name_team_role_season
+661761,2025,Orsolini,Bologna,MID,6.765,34,34,last_name_team_role_season
+325916,2025,Dybala,Roma,FWD,6.738,21,21,last_name_team_role_season
+541820,2025,Barella,Inter,MID,6.706,34,34,last_name_team_role_season
+1185336,2025,Conceicao,Juventus,MID,6.7,30,30,last_name_team_role_season
+1003368,2025,Messias,Genoa,MID,6.684,19,19,last_name_team_role_season
+836436,2025,Strefezza,Parma,MID,6.679,14,14,last_name_team_role_season
+848266,2025,McKennie,Juventus,MID,6.676,34,34,last_name_team_role_season
+31097,2025,Modric,Milan,MID,6.667,33,33,last_name_team_role_season
+557677,2025,Vlasic,Torino,MID,6.662,37,37,last_name_team_role_season
+1624039,2025,Rodriguez Je.,Como,FWD,6.661,28,28,last_name_team_role_season
+889535,2025,Bisseck,Inter,DEF,6.652,23,23,last_name_team_role_season
+1224237,2025,Pellegrino M.,Parma,FWD,6.649,37,37,last_name_team_role_season
+599353,2025,Adams C.,Torino,FWD,6.641,32,32,last_name_team_role_season
+1016093,2025,Isaksen,Lazio,MID,6.63,27,27,last_name_team_role_season
+1288119,2025,Konè I.,Sassuolo,MID,6.629,35,35,last_name_team_role_season
+1308892,2025,Bravo,Udinese,FWD,6.625,4,4,last_name_team_role
+1435445,2025,Lorran,Pisa,MID,6.625,4,4,last_name_team_role_season
+1902196,2025,Mendy P.,Cagliari,FWD,6.625,8,8,last_name_team_role_season
+286119,2025,Vardy,Cremonese,FWD,6.621,29,29,last_name_team_role_season
+577911,2025,Mandragora,Fiorentina,MID,6.618,34,34,last_name_team_role_season
+1048023,2025,Pavlovic,Milan,DEF,6.618,34,34,last_name_team_role_season
+750030,2025,Pinamonti,Sassuolo,FWD,6.618,34,34,last_name_team_role_season
+689680,2025,Odgaard,Bologna,MID,6.614,22,22,last_name_team_role_season
+934156,2025,Ekkelenkamp,Udinese,MID,6.613,31,31,last_name_team_role_season
+1095432,2025,De Ketelaere,Atalanta,FWD,6.597,31,31,last_name_team_role_season
+73167,2025,Mkhitaryan,Inter,MID,6.589,28,28,last_name_team_role_season
+1113694,2025,Rowe,Bologna,MID,6.589,28,28,last_name_team_role_season
+540307,2025,Pellegrini Lo.,Roma,MID,6.583,24,24,last_name_team_role_season
+593118,2025,Dumfries,Inter,DEF,6.579,19,19,last_name_team_role_season
+513982,2025,Mazzitelli,Cagliari,MID,6.571,14,14,last_name_team_role_season
+414245,2025,Bernardeschi,Bologna,MID,6.562,24,24,last_name_team_role_season
+970565,2025,Taylor K.,Lazio,MID,6.559,17,17,last_name_team_role_season
+506776,2025,Moreo,Pisa,FWD,6.557,35,35,last_name_team_role_season
+1083562,2025,Cabal,Juventus,DEF,6.556,9,9,last_name_team_role_season
+215242,2025,Spinazzola,Napoli,DEF,6.55,30,30,last_name_team_role_season
+896377,2025,Banda,Lecce,FWD,6.547,32,32,last_name_team_role_season
+1021302,2025,Felici,Cagliari,MID,6.545,11,11,last_name_team_role_season
+459658,2025,Malinovskyi,Genoa,MID,6.544,34,34,last_name_team_role_season
+1347241,2025,Addai,Como,FWD,6.542,12,12,last_name_team_role_season
+,2025,Vazquez,Cremonese,MID,6.538,13,13,unmatched
+1368557,2025,Orban G.,Verona,FWD,6.536,28,28,last_name_team_role_season
+1016132,2025,Konè M.,Roma,MID,6.534,29,29,last_name_team_role_season
+604982,2025,Loftus-Cheek,Milan,MID,6.524,21,21,last_name_team_role_season
+1308909,2025,Volpato,Sassuolo,MID,6.524,21,21,last_name_team_role_season
+355356,2025,Kempf,Como,DEF,6.517,29,29,last_name_team_role_season
+740944,2025,Ostigard,Genoa,DEF,6.517,30,30,last_name_team_role_season
+1282008,2025,Castro S.,Bologna,FWD,6.514,35,35,last_name_team_role_season
+588687,2025,Mancini,Roma,DEF,6.514,36,36,last_name_team_role_season
+806972,2025,Christensen O.,Fiorentina,GK,6.5,1,1,last_name_team_role_season
+1189692,2025,Iannoni,Sassuolo,MID,6.5,5,5,last_name_team_role_season
+1282285,2025,Noslin,Lazio,FWD,6.5,23,23,last_name_team_role_season
+740161,2025,Okereke,Cremonese,FWD,6.5,10,10,last_name_team_role_season
+611223,2025,Pavard,Inter,DEF,6.5,1,1,last_name_team_role
+1180321,2025,Rensch,Roma,DEF,6.5,19,19,last_name_team_role_season
+1197339,2025,Rinaldi,Parma,GK,6.5,1,1,last_name_team_role_season
+1320863,2025,Vergara,Napoli,MID,6.5,8,8,last_name_team_role_season
+1775258,2025,Vermesan,Verona,FWD,6.5,1,1,last_name_team_role_season
+951714,2025,Bernabè,Parma,MID,6.484,32,32,last_name_team_role_season
+921921,2025,Thorstvedt,Sassuolo,MID,6.484,31,31,last_name_team_role_season
+1451196,2025,Pisilli,Roma,MID,6.477,22,22,last_name_team_role_season
+439148,2025,Thorsby,Genoa,MID,6.476,21,21,last_name_team_role
+1336582,2025,Perrone,Como,MID,6.472,36,36,last_name_team_role_season
+1320176,2025,Wesley,Roma,DEF,6.467,30,30,last_name_team_role_season
+1030646,2025,Borrelli,Cagliari,FWD,6.462,26,26,last_name_team_role_season
+822237,2025,Solomon,Fiorentina,FWD,6.462,13,13,last_name_team_role_season
+520979,2025,Garcia U.,Sassuolo,DEF,6.458,12,12,last_name_team_role_season
+1339372,2025,Casadei,Torino,MID,6.453,32,32,last_name_team_role_season
+544693,2025,Rrahmani,Napoli,DEF,6.452,21,21,last_name_team_role_season
+,2025,Giovane,Verona,FWD,6.452,31,31,unmatched
+1254297,2025,Diouf,Inter,MID,6.45,10,10,last_name_team_role_season
+1014630,2025,Holm,Bologna,DEF,6.438,16,16,last_name_team_role
+1202358,2025,Scalvini,Atalanta,DEF,6.438,24,24,last_name_team_role_season
+651435,2025,Basic,Lazio,MID,6.435,23,23,last_name_team_role_season
+957203,2025,Ederson D.S.,Atalanta,MID,6.433,30,30,last_name_team_role_season
+424614,2025,Ekuban,Genoa,FWD,6.429,28,28,last_name_team_role_season
+1473806,2025,Palestra,Cagliari,DEF,6.419,37,37,last_name_team_role_season
+1044029,2025,Cambiaghi,Bologna,FWD,6.417,24,24,last_name_team_role_season
+231176,2025,Pavoletti,Cagliari,FWD,6.417,6,6,last_name_team_role_season
+921341,2025,Saelemaekers,Milan,MID,6.414,35,35,last_name_team_role_season
+846000,2025,Caqueret,Como,MID,6.411,28,28,last_name_team_role_season
+362120,2025,Cataldi,Lazio,MID,6.407,27,27,last_name_team_role_season
+671203,2025,Hermoso,Roma,DEF,6.407,27,27,last_name_team_role_season
+521318,2025,Akanji,Inter,DEF,6.406,32,32,last_name_team_role_season
+1167529,2025,Obrador,Torino,DEF,6.406,16,16,last_name_team_role_season
+1050163,2025,Colombo,Genoa,FWD,6.405,37,37,last_name_team_role_season
+1053714,2025,Zalewski,Atalanta,MID,6.403,31,31,last_name_team_role_season
+690516,2025,Lookman,Atalanta,FWD,6.4,10,10,last_name_team_role
+866708,2025,Solet,Udinese,DEF,6.397,34,34,last_name_team_role_season
+,2025,Thuram K.,Juventus,MID,6.397,34,34,unmatched
+1215057,2025,Vitinha O.,Genoa,FWD,6.387,31,31,last_name_team_role_season
+1200591,2025,Baldanzi,Roma,MID,6.382,17,17,last_name_role_season
+1202114,2025,Gandelman,Lecce,MID,6.382,17,17,last_name_team_role_season
+1434889,2025,Diao,Como,FWD,6.375,16,16,last_name_team_role_season
+,2025,Moreno Alb.,Como,DEF,6.375,16,16,unmatched
+557325,2025,Posch,Como,DEF,6.375,8,8,last_name_role
+415539,2025,Politano,Napoli,MID,6.364,33,33,last_name_team_role_season
+1705134,2025,Vaz,Roma,FWD,6.357,7,7,last_name_team_role_season
+1131217,2025,Kalulu,Juventus,DEF,6.351,37,37,last_name_team_role_season
+665188,2025,Gudmundsson A.,Fiorentina,MID,6.344,32,32,last_name_team_role_season
+805451,2025,Bastoni,Inter,DEF,6.339,28,28,last_name_team_role_season
+939569,2025,David,Juventus,FWD,6.333,30,30,last_name_team_role_season
+161328,2025,El Shaarawy,Roma,MID,6.333,18,18,last_name_team_role_season
+414906,2025,Di Lorenzo,Napoli,DEF,6.327,26,26,last_name_team_role_season
+1595629,2025,Athekame,Milan,DEF,6.324,17,17,last_name_team_role_season
+787242,2025,N'Dicka,Roma,DEF,6.323,31,31,last_name_team_role_season
+,2025,Lang,Napoli,FWD,6.321,14,14,unmatched
+1078113,2025,Cheddira,Lecce,FWD,6.312,24,24,last_name_team_role_season
+1012842,2025,Gaetano,Cagliari,MID,6.312,32,32,last_name_team_role_season
+800609,2025,Guendouzi,Lazio,MID,6.312,16,16,last_name_team_role
+950596,2025,Brescianini,Fiorentina,MID,6.306,18,18,last_name_team_role_season
+1072054,2025,Maldini,Lazio,MID,6.306,18,18,last_name_team_role_season
+920861,2025,Benedyczak,Parma,FWD,6.3,10,10,last_name_team_role
+244811,2025,Zappacosta,Atalanta,DEF,6.3,35,35,last_name_team_role_season
+916710,2025,Zanoli,Udinese,DEF,6.289,19,19,last_name_team_role_season
+664587,2025,Coulibaly L.,Lecce,MID,6.288,33,33,last_name_team_role_season
+1146500,2025,Cancellieri,Lazio,FWD,6.286,28,28,last_name_team_role_season
+1050178,2025,Samardzic,Atalanta,MID,6.286,21,21,last_name_team_role_season
+1669628,2025,Ekhator,Genoa,FWD,6.28,25,25,last_name_team_role_season
+518346,2025,Gosens,Fiorentina,DEF,6.28,25,25,last_name_team_role_season
+,2025,Johnsen,Cremonese,FWD,6.278,9,9,unmatched
+446266,2025,Pasalic,Atalanta,MID,6.274,31,31,last_name_team_role_season
+466113,2025,Vandeputte,Cremonese,MID,6.274,31,31,last_name_team_role_season
+942549,2025,Gilmour,Napoli,MID,6.269,13,13,last_name_team_role_season
+1382000,2025,Sucic P.,Inter,MID,6.268,28,28,last_name_team_role_season
+751649,2025,Harrison,Fiorentina,MID,6.267,15,15,last_name_team_role_season
+867225,2025,Celik,Roma,DEF,6.266,32,32,last_name_team_role_season
+613334,2025,Nzola,Pisa,FWD,6.259,27,27,last_name_role_season
+888745,2025,Kuhn,Como,FWD,6.25,14,14,last_name_team_role_season
+1644302,2025,Pedro Felipe,Sassuolo,DEF,6.25,2,2,last_name_team_role_season
+,2025,Rui Modesto,Udinese,DEF,6.25,2,2,unmatched
+1017401,2025,Piccoli,Fiorentina,FWD,6.241,27,27,last_name_team_role_season
+560945,2025,Vojvoda,Como,DEF,6.241,27,27,last_name_team_role_season
+557396,2025,Buksa,Udinese,FWD,6.238,21,21,last_name_team_role_season
+933817,2025,Sottil,Lecce,MID,6.238,21,21,last_name_team_role_season
+1130691,2025,Sulemana K.,Atalanta,FWD,6.238,21,21,last_name_team_role_season
+1190029,2025,Kristensen T.,Udinese,DEF,6.232,28,28,last_name_team_role_season
+1384881,2025,Valle,Como,DEF,6.231,26,26,last_name_team_role_season
+951712,2025,Fagioli,Fiorentina,MID,6.227,33,33,last_name_team_role_season
+667790,2025,Serdar,Verona,MID,6.222,18,18,last_name_team_role_season
+1189288,2025,Gatti,Juventus,DEF,6.219,16,16,last_name_team_role_season
+299799,2025,Cristante,Roma,MID,6.216,37,37,last_name_team_role_season
+1231029,2025,Belghali,Verona,DEF,6.212,26,26,last_name_team_role_season
+822440,2025,Folorunsho,Cagliari,MID,6.212,26,26,last_name_team_role_season
+1280080,2025,Miretti,Juventus,MID,6.2,15,15,last_name_team_role_season
+624166,2025,Locatelli,Juventus,MID,6.194,36,36,last_name_team_role_season
+847357,2025,Leris,Pisa,MID,6.188,32,32,last_name_team_role_season
+149219,2025,Kabasele,Udinese,DEF,6.179,28,28,last_name_team_role_season
+941656,2025,Ricci S.,Milan,MID,6.179,28,28,last_name_team_role_season
+790732,2025,Pobega,Bologna,MID,6.174,23,23,last_name_team_role_season
+496042,2025,Mina,Cagliari,DEF,6.173,26,26,last_name_team_role_season
+1641041,2025,Bakola,Sassuolo,MID,6.167,3,3,last_name_team_role_season
+942379,2025,Gutierrez,Napoli,DEF,6.167,21,21,last_name_team_role_season
+940829,2025,Carlos Augusto,Inter,DEF,6.161,28,28,last_name_team_role_season
+1191093,2025,Bernasconi,Atalanta,DEF,6.159,22,22,last_name_team_role_season
+873573,2025,Beukema,Napoli,DEF,6.159,22,22,last_name_team_role_season
+1607014,2025,Njie,Torino,FWD,6.15,10,10,last_name_team_role_season
+1159233,2025,Fadera,Sassuolo,MID,6.146,24,24,last_name_team_role_season
+1413963,2025,Ramon,Como,DEF,6.141,32,32,last_name_team_role_season
+914103,2025,Vasquez,Genoa,DEF,6.139,36,36,last_name_team_role_season
+155066,2025,Cuadrado,Pisa,DEF,6.133,15,15,last_name_team_role_season
+885085,2025,Dallinga,Bologna,FWD,6.132,19,19,last_name_team_role_season
+116555,2025,Zapata D.,Torino,FWD,6.13,23,23,last_name_team_role_season
+641595,2025,Moro N.,Bologna,MID,6.125,28,28,last_name_team_role_season
+799230,2025,Baschirotto,Cremonese,DEF,6.121,29,29,last_name_team_role_season
+1178314,2025,Stulic,Lecce,FWD,6.117,30,30,last_name_team_role_season
+684981,2025,Martin,Genoa,DEF,6.103,29,29,last_name_team_role_season
+570434,2025,Diego Carlos,Como,DEF,6.1,25,25,last_name_team_role_season
+308517,2025,Lobotka,Napoli,MID,6.097,31,31,last_name_team_role_season
+873956,2025,Miranda J.,Bologna,DEF,6.097,31,31,last_name_team_role_season
+402830,2025,Maripan,Torino,DEF,6.096,26,26,last_name_team_role_season
+1274060,2025,El Aynaoui,Roma,MID,6.095,21,21,last_name_team_role_season
+1014496,2025,Kossounou,Atalanta,DEF,6.094,16,16,last_name_team_role_season
+1137272,2025,Musah,Atalanta,MID,6.094,16,16,last_name_team_role_season
+1214915,2025,Norton-Cuffy,Genoa,DEF,6.093,27,27,last_name_team_role_season
+1668219,2025,Idrissi R.,Cagliari,DEF,6.088,17,17,last_name_team_role_season
+1027594,2025,N'Dri,Lecce,FWD,6.088,17,17,last_name_team_role_season
+867789,2025,Valeri,Parma,DEF,6.088,34,34,last_name_team_role_season
+819215,2025,Kelly L.,Juventus,DEF,6.071,35,35,last_name_team_role_season
+1130732,2025,Mosquera,Verona,FWD,6.071,14,14,last_name_team_role_season
+1246009,2025,Ndour,Fiorentina,MID,6.067,30,30,last_name_team_role_season
+188555,2025,De Vrij,Inter,DEF,6.062,8,8,last_name_team_role_season
+954621,2025,Fofana Y.,Milan,MID,6.061,33,33,last_name_team_role_season
+822589,2025,Almqvist,Parma,FWD,6.056,9,9,last_name_team_role_season
+1239749,2025,Keita M.,Parma,MID,6.056,36,36,last_name_team_role_season
+1114635,2025,Luis Henrique,Inter,MID,6.056,27,27,last_name_team_role_season
+1385856,2025,Bartesaghi,Milan,DEF,6.048,31,31,last_name_team_role_season
+1276505,2025,Fabbian,Bologna,MID,6.045,22,22,last_name_role_season
+1596106,2025,Folino,Cremonese,DEF,6.045,11,11,last_name_team_role_season
+1316088,2025,Dominguez B.,Bologna,FWD,6.042,12,12,last_name_team_role_season
+201704,2025,Freuler,Bologna,MID,6.036,28,28,last_name_team_role_season
+750734,2025,Dodò,Fiorentina,DEF,6.028,36,36,last_name_team_role_season
+845994,2025,Nicolussi Caviglia,Parma,MID,6.022,23,23,last_name_team_role_season
+935380,2025,Delprato,Parma,DEF,6.014,35,35,last_name_team_role_season
+1574492,2025,Tiago Gabriel,Lecce,DEF,6.014,36,36,last_name_team_role_season
+1473706,2025,Albarracin,Cagliari,FWD,6.0,2,2,last_name_team_role_season
+1726757,2025,Arena A.,Roma,FWD,6.0,1,1,last_name_team_role_season
+767013,2025,Bernede,Verona,MID,6.0,31,31,last_name_team_role_season
+1199360,2025,Carboni F.,Parma,DEF,6.0,2,2,last_name_team_role_season
+,2025,Cardinali,Parma,FWD,6.0,1,1,unmatched
+,2025,Cavuoti,Cagliari,MID,6.0,1,1,unmatched
+,2025,Cocchi,Inter,DEF,6.0,1,1,unmatched
+1354177,2025,Cremaschi,Parma,MID,6.0,1,1,last_name_team_role_season
+46820,2025,Darmian,Inter,DEF,6.0,5,5,last_name_team_role_season
+198559,2025,De Roon,Atalanta,MID,6.0,34,34,last_name_team_role_season
+108381,2025,Djuric,Cremonese,FWD,6.0,9,9,last_name_team_role_season
+1305763,2025,Durosinmi,Pisa,FWD,6.0,10,10,last_name_team_role_season
+,2025,Grossi J.,Genoa,MID,6.0,1,1,unmatched
+1301633,2025,Ilkhan,Torino,MID,6.0,17,17,last_name_team_role_season
+,2025,Isaac,Verona,FWD,6.0,1,1,unmatched
+958421,2025,Joao Mario,Bologna,DEF,6.0,14,14,last_name_team_role_season
+625797,2025,Kastanos,Verona,MID,6.0,1,1,last_name_team_role
+1676901,2025,Kouadio,Fiorentina,DEF,6.0,2,2,last_name_team_role_season
+776940,2025,Kouamè,Fiorentina,FWD,6.0,1,1,last_name_team_role
+,2025,Lamptey,Fiorentina,DEF,6.0,1,1,unmatched
+,2025,Lordkipanidze D.,Cremonese,MID,6.0,1,1,unmatched
+1212630,2025,Lucca,Napoli,FWD,6.0,9,9,last_name_role
+1485180,2025,Mikolajewski,Parma,FWD,6.0,2,2,last_name_team_role_season
+277460,2025,Milik,Juventus,FWD,6.0,2,2,last_name_team_role_season
+1646520,2025,Mosconi,Inter,FWD,6.0,1,1,last_name_team_role_season
+994403,2025,Ngonge,Torino,FWD,6.0,17,17,last_name_role
+747767,2025,Openda,Juventus,FWD,6.0,14,14,last_name_team_role_season
+,2025,Ouedraogo L.,Genoa,DEF,6.0,2,2,unmatched
+1125446,2025,Pierret,Lecce,MID,6.0,1,1,last_name_team_role
+1280198,2025,Sala A.,Lecce,MID,6.0,4,4,last_name_team_role_season
+281762,2025,Terracciano,Milan,GK,6.0,2,2,last_name_team_role_season
+864006,2025,Tramoni M.,Pisa,MID,6.0,25,25,last_name_team_role_season
+1202525,2025,Zaragoza,Roma,MID,6.0,3,3,last_name_team_role_season
+1612523,2025,Zatterstrom,Genoa,DEF,6.0,2,2,last_name_team_role_season
+879065,2025,Gallo,Lecce,DEF,5.986,37,37,last_name_team_role_season
+1078846,2025,Cambiaso,Juventus,DEF,5.986,36,36,last_name_team_role_season
+949731,2025,Zappa,Cagliari,DEF,5.98,25,25,last_name_team_role_season
+1093285,2025,Parisi,Fiorentina,DEF,5.978,23,23,last_name_team_role_season
+921543,2025,Frendrup,Genoa,MID,5.972,36,36,last_name_team_role_season
+478447,2025,Marusic,Lazio,DEF,5.97,33,33,last_name_team_role_season
+741049,2025,Elmas,Napoli,MID,5.964,28,28,last_name_team_role_season
+935622,2025,Pedersen,Torino,DEF,5.964,28,28,last_name_team_role_season
+1082597,2025,Van Der Brempt,Como,DEF,5.964,14,14,last_name_team_role_season
+586474,2025,Ehizibue,Udinese,DEF,5.962,26,26,last_name_team_role_season
+541555,2025,Zaccagni,Lazio,MID,5.962,26,26,last_name_team_role_season
+1642351,2025,Fortini,Fiorentina,DEF,5.958,12,12,last_name_team_role_season
+322003,2025,Karlstrom,Udinese,MID,5.958,36,36,last_name_team_role_season
+206322,2025,Vecino,Lazio,MID,5.958,12,12,last_name_team_role
+862616,2025,Zhegrova,Juventus,MID,5.958,12,12,last_name_team_role_season
+115067,2025,Matic,Sassuolo,MID,5.956,34,34,last_name_team_role_season
+1386006,2025,Ghilardi,Roma,DEF,5.952,21,21,last_name_team_role_season
+1106074,2025,Gila,Lazio,DEF,5.952,31,31,last_name_team_role_season
+25587,2025,De Silvestri,Bologna,DEF,5.95,10,10,last_name_team_role_season
+449283,2025,Deiola,Cagliari,MID,5.95,20,20,last_name_team_role_season
+689987,2025,Piotrowski,Udinese,MID,5.95,30,30,last_name_team_role_season
+,2025,Sorensen O.,Parma,MID,5.95,30,30,unmatched
+1399969,2025,Miller L.,Udinese,MID,5.947,19,19,last_name_team_role_season
+675327,2025,Mazzocchi,Napoli,DEF,5.944,9,9,last_name_team_role_season
+1289942,2025,Angori,Pisa,DEF,5.943,35,35,last_name_team_role_season
+304345,2025,Kolasinac,Atalanta,DEF,5.941,17,17,last_name_team_role_season
+73024,2025,Acerbi,Inter,DEF,5.938,16,16,last_name_team_role_season
+639671,2025,Cutrone,Parma,FWD,5.929,14,14,last_name_role
+1532261,2025,Gueye,Udinese,FWD,5.923,13,13,last_name_team_role_season
+362195,2025,Romagnoli,Lazio,DEF,5.922,32,32,last_name_team_role_season
+1318686,2025,Circati,Parma,DEF,5.919,31,31,last_name_team_role_season
+1110045,2025,Oristanio,Parma,MID,5.917,18,18,last_name_team_role_season
+941953,2025,Coco,Torino,DEF,5.914,35,35,last_name_team_role_season
+942193,2025,Ellertsson,Genoa,MID,5.914,35,35,last_name_team_role_season
+1369279,2025,Lipani,Sassuolo,MID,5.905,21,21,last_name_team_role_season
+1189223,2025,Masini,Genoa,MID,5.905,21,21,last_name_team_role_season
+937412,2025,Idzes,Sassuolo,DEF,5.9,35,35,last_name_team_role_season
+,2025,Sarmiento J.,Cremonese,MID,5.9,5,5,unmatched
+604330,2025,Luperto,Cagliari,DEF,5.897,34,34,last_name_team_role
+1200630,2025,De Winter,Milan,DEF,5.896,24,24,last_name_team_role_season
+750880,2025,Ismajli,Torino,DEF,5.896,24,24,last_name_team_role_season
+815431,2025,Frattesi,Inter,MID,5.893,14,14,last_name_team_role_season
+860913,2025,Lucumì,Bologna,DEF,5.893,28,28,last_name_team_role_season
+1080669,2025,Zortea,Bologna,DEF,5.893,28,28,last_name_team_role_season
+474448,2025,Sanabria,Cremonese,FWD,5.891,23,23,last_name_team_role_season
+1250485,2025,Muharemovic,Sassuolo,DEF,5.891,32,32,last_name_team_role_season
+936164,2025,Adopo,Cagliari,MID,5.882,38,38,last_name_team_role_season
+823018,2025,Buongiorno,Napoli,DEF,5.875,32,32,last_name_team_role_season
+1036182,2025,Ilic,Torino,MID,5.875,8,8,last_name_team_role_season
+,2025,Pierini,Sassuolo,FWD,5.875,4,4,unmatched
+1396089,2025,Prati,Cagliari,MID,5.875,32,32,last_name_team_role
+749662,2025,Tomori,Milan,DEF,5.875,32,32,last_name_team_role_season
+1072056,2025,Barbieri,Cremonese,DEF,5.865,26,26,last_name_team_role_season
+488415,2025,Kamara H.,Udinese,DEF,5.865,26,26,last_name_team_role_season
+1198712,2025,Vitik,Bologna,DEF,5.861,18,18,last_name_team_role_season
+972120,2025,Dia,Lazio,FWD,5.86,25,25,last_name_team_role_season
+874621,2025,Payero,Cremonese,MID,5.86,25,25,last_name_team_role_season
+939780,2025,Hien,Atalanta,DEF,5.857,28,28,last_name_team_role_season
+1707510,2025,Venturino,Roma,MID,5.857,7,7,last_name_team_role_season
+909030,2025,Harroui,Verona,MID,5.853,17,17,last_name_team_role_season
+1039403,2025,Pierotti,Lecce,MID,5.851,37,37,last_name_team_role_season
+762028,2025,Ramadani,Lecce,MID,5.851,37,37,last_name_team_role_season
+1333331,2025,Provstgaard,Lazio,DEF,5.848,23,23,last_name_team_role_season
+921594,2025,Bradaric,Verona,DEF,5.845,29,29,last_name_team_role_season
+844996,2025,Gabbia,Milan,DEF,5.845,29,29,last_name_team_role_season
+485634,2025,Gagliardini,Verona,MID,5.845,29,29,last_name_team_role_season
+1258292,2025,Bertola,Udinese,DEF,5.84,25,25,last_name_team_role_season
+1353289,2025,Smolcic I.,Como,DEF,5.84,25,25,last_name_team_role_season
+824623,2025,Frese,Verona,DEF,5.839,31,31,last_name_team_role_season
+1436436,2025,Marcandalli,Genoa,DEF,5.839,31,31,last_name_team_role_season
+644738,2025,Bayo V.,Udinese,FWD,5.833,12,12,last_name_team_role_season
+1091907,2025,Dele-Bashiru,Lazio,MID,5.833,21,21,last_name_team_role_season
+1329487,2025,Fazzini,Fiorentina,MID,5.833,12,12,last_name_team_role_season
+1368061,2025,Iling Junior,Pisa,MID,5.833,3,3,last_name_team_role_season
+1296413,2025,Meister,Pisa,FWD,5.833,27,27,last_name_team_role_season
+968029,2025,Valenti,Parma,DEF,5.833,27,27,last_name_team_role_season
+1163501,2025,Terracciano F.,Cremonese,DEF,5.829,35,35,last_name_team_role_season
+1289961,2025,Obert,Cagliari,DEF,5.824,34,34,last_name_team_role_season
+1388071,2025,Belahyane,Lazio,MID,5.818,11,11,last_name_team_role_season
+902651,2025,Bellanova,Atalanta,DEF,5.818,22,22,last_name_team_role_season
+731600,2025,Tourè I.,Pisa,MID,5.817,30,30,last_name_team_role_season
+1421505,2025,Gineitis,Torino,MID,5.815,27,27,last_name_team_role_season
+1104441,2025,Nkounkou,Torino,DEF,5.812,8,8,last_name_team_role_season
+807148,2025,Pellegrini Lu.,Lazio,DEF,5.812,24,24,last_name_team_role_season
+1393542,2025,Ordonez C.,Parma,MID,5.81,21,21,last_name_team_role_season
+1481909,2025,Akinsanmiro,Pisa,MID,5.804,23,23,last_name_team_role_season
+260964,2025,Djimsiti,Atalanta,DEF,5.803,33,33,last_name_team_role_season
+792756,2025,Aebischer,Pisa,MID,5.8,35,35,last_name_team_role_season
+1450999,2025,Arizala,Udinese,DEF,5.8,5,5,last_name_team_role_season
+774716,2025,Collocolo,Cremonese,MID,5.8,5,5,last_name_team_role_season
+935550,2025,Heggem,Bologna,DEF,5.8,25,25,last_name_team_role_season
+1089744,2025,Luvumbo,Cagliari,FWD,5.8,10,10,last_name_team_role
+279879,2025,Akpa Akpro,Verona,MID,5.795,22,22,last_name_team_role_season
+815366,2025,Estevez,Parma,MID,5.795,22,22,last_name_team_role_season
+957118,2025,Tavares N.,Lazio,DEF,5.795,22,22,last_name_team_role_season
+850295,2025,Zerbin,Cremonese,MID,5.793,29,29,last_name_team_role_season
+1163219,2025,Jashari,Milan,MID,5.792,12,12,last_name_team_role_season
+935406,2025,Ranieri L.,Fiorentina,DEF,5.79,31,31,last_name_team_role_season
+823113,2025,Kulenovic,Torino,FWD,5.786,7,7,last_name_team_role_season
+888921,2025,Ferguson,Bologna,MID,5.783,23,23,last_name_team_role_season
+1396375,2025,Sulemana I.,Cagliari,MID,5.778,18,18,last_name_team_role_season
+1511063,2025,Ziolkowski,Roma,DEF,5.778,9,9,last_name_team_role_season
+276791,2025,Fullkrug,Milan,FWD,5.775,20,20,last_name_team_role_season
+195416,2025,Caracciolo A.,Pisa,DEF,5.771,35,35,last_name_team_role_season
+982633,2025,Zemura,Udinese,DEF,5.767,15,15,last_name_team_role_season
+1185260,2025,Siebert,Lecce,DEF,5.763,19,19,last_name_team_role_season
+1209987,2025,Bondo,Cremonese,MID,5.759,27,27,last_name_team_role_season
+1130330,2025,Doig,Sassuolo,DEF,5.759,27,27,last_name_team_role_season
+,2025,Ambrosino,Napoli,FWD,5.75,2,2,unmatched
+1584085,2025,Balbo,Fiorentina,DEF,5.75,4,4,last_name_team_role_season
+951765,2025,Bella-Kotchap,Verona,DEF,5.75,18,18,last_name_team_role_season
+850055,2025,Boloca,Sassuolo,MID,5.75,2,2,last_name_team_role_season
+1794209,2025,Braschi,Fiorentina,FWD,5.75,2,2,last_name_team_role_season
+1529222,2025,Comuzzo,Fiorentina,DEF,5.75,24,24,last_name_team_role_season
+1807301,2025,Liteta,Cagliari,MID,5.75,4,4,last_name_team_role_season
+557346,2025,Lovric,Verona,MID,5.75,10,10,last_name_team_role_season
+1027740,2025,Onana J.,Genoa,MID,5.75,2,2,last_name_team_role_season
+358149,2025,Patric,Lazio,DEF,5.75,10,10,last_name_team_role_season
+1367915,2025,Slotsager,Verona,DEF,5.75,6,6,last_name_team_role_season
+662205,2025,Lazzari,Lazio,DEF,5.735,17,17,last_name_team_role_season
+860592,2025,Walukiewicz,Sassuolo,DEF,5.735,34,34,last_name_team_role_season
+846006,2025,Edmundsson,Verona,DEF,5.733,15,15,last_name_team_role_season
+212472,2025,Sergi Roberto,Como,MID,5.731,13,13,last_name_team_role_season
+1299869,2025,Kaba,Lecce,MID,5.727,11,11,last_name_team_role
+1343374,2025,Loyola,Pisa,MID,5.727,11,11,last_name_team_role_season
+1529148,2025,Marianucci,Torino,DEF,5.727,11,11,last_name_team_role_season
+983199,2025,Anjorin,Torino,MID,5.722,9,9,last_name_team_role_season
+769167,2025,Ebosse,Torino,DEF,5.719,16,16,last_name_team_role_season
+1011022,2025,Niasse,Verona,MID,5.719,16,16,last_name_team_role_season
+1621219,2025,Rodriguez Ju.,Cagliari,DEF,5.719,16,16,last_name_team_role_season
+1307957,2025,Floriani Mussolini,Cremonese,DEF,5.717,23,23,last_name_team_role_season
+897315,2025,Canestrelli,Pisa,DEF,5.716,37,37,last_name_team_role_season
+688278,2025,Estupinan,Milan,DEF,5.714,14,14,last_name_team_role_season
+789243,2025,Maleh,Cremonese,MID,5.714,21,21,last_name_team_role_season
+1520184,2025,Troilo,Parma,DEF,5.714,21,21,last_name_team_role_season
+1289520,2025,Piccinini G.,Pisa,MID,5.705,22,22,last_name_team_role_season
+,2025,Bailey,Roma,MID,5.7,5,5,unmatched
+1388474,2025,Jean,Lecce,DEF,5.7,5,5,last_name_team_role_season
+321140,2025,Lazaro,Torino,DEF,5.7,30,30,last_name_team_role_season
+812549,2025,Marin M.,Pisa,MID,5.7,20,20,last_name_team_role_season
+1098817,2025,Oyegoke,Verona,DEF,5.7,10,10,last_name_team_role_season
+528440,2025,Romagna,Sassuolo,DEF,5.7,5,5,last_name_team_role_season
+1106916,2025,Zarraga,Udinese,MID,5.7,10,10,last_name_team_role_season
+1693531,2025,Britschgi,Parma,DEF,5.696,28,28,last_name_team_role_season
+575364,2025,Grassi,Cremonese,MID,5.696,28,28,last_name_team_role_season
+1306664,2025,Veiga D.,Lecce,DEF,5.694,36,36,last_name_team_role_season
+671529,2025,Tsimikas,Roma,DEF,5.692,13,13,last_name_team_role_season
+1669629,2025,Ahanor,Atalanta,DEF,5.69,21,21,last_name_team_role_season
+34029,2025,Albiol,Pisa,DEF,5.688,8,8,last_name_team_role_season
+279820,2025,Bianchetti,Cremonese,DEF,5.685,27,27,last_name_team_role_season
+822789,2025,Dossena,Cagliari,DEF,5.682,11,11,last_name_team_role_season
+729093,2025,Olivera,Napoli,DEF,5.682,22,22,last_name_team_role_season
+957107,2025,Zè Pedro,Cagliari,DEF,5.682,22,22,last_name_team_role_season
+831474,2025,Pongracic,Fiorentina,DEF,5.671,35,35,last_name_team_role_season
+1469120,2025,Amorim,Genoa,MID,5.667,9,9,last_name_team_role_season
+603537,2025,Angelino,Roma,DEF,5.667,6,6,last_name_team_role_season
+267374,2025,Hernani,Parma,MID,5.667,3,3,last_name_team_role
+1531814,2025,Mateus Lusuardi,Pisa,DEF,5.667,3,3,last_name_role
+1712223,2025,Mlacic,Udinese,DEF,5.667,3,3,last_name_team_role_season
+1332538,2025,Ngom,Lecce,MID,5.654,13,13,last_name_team_role_season
+364104,2025,Sabelli,Genoa,DEF,5.654,13,13,last_name_team_role_season
+814398,2025,Casale,Bologna,DEF,5.65,10,10,last_name_team_role_season
+543021,2025,Milinkovic-Savic V.,Napoli,GK,5.648,27,27,last_name_team_role_season
+1518451,2025,Faye,Cremonese,DEF,5.643,7,7,last_name_team_role_season
+1206806,2025,Gaspar K.,Lecce,DEF,5.643,21,21,last_name_team_role_season
+1302821,2025,Ratkov,Lazio,FWD,5.643,7,7,last_name_team_role_season
+1400859,2025,Vural,Pisa,MID,5.643,14,14,last_name_team_role_season
+1554575,2025,Camarda,Lecce,FWD,5.639,18,18,last_name_team_role_season
+1074476,2025,Coulibaly W.,Sassuolo,DEF,5.639,18,18,last_name_team_role_season
+1156568,2025,Sarr A.,Verona,FWD,5.638,29,29,last_name_team_role_season
+846761,2025,Aboukhlal,Torino,FWD,5.636,11,11,last_name_team_role_season
+1020963,2025,Rovella,Lazio,MID,5.636,11,11,last_name_team_role_season
+1109476,2025,Ondrejka,Parma,MID,5.633,15,15,last_name_team_role_season
+939593,2025,Helgason,Lecce,MID,5.625,4,4,last_name_team_role_season
+500502,2025,Masina,Torino,DEF,5.625,4,4,last_name_team_role
+,2025,Pessina Mas.,Bologna,GK,5.625,4,4,unmatched
+975242,2025,Sohm,Fiorentina,MID,5.625,24,24,last_name_role_season
+197352,2025,Juan Jesus,Napoli,DEF,5.619,21,21,last_name_team_role_season
+1123969,2025,Carboni V.,Genoa,MID,5.6,10,10,last_name_role
+769335,2025,Lirola,Verona,DEF,5.6,5,5,last_name_team_role_season
+952325,2025,Moumbagna,Cremonese,FWD,5.6,5,5,last_name_team_role_season
+1127054,2025,Suslov,Verona,MID,5.6,10,10,last_name_team_role_season
+239350,2025,Biraghi,Torino,DEF,5.591,11,11,last_name_team_role_season
+426393,2025,Tameze,Torino,MID,5.588,17,17,last_name_team_role_season
+,2025,Unai Nunez,Verona,DEF,5.588,17,17,unmatched
+1507697,2025,Goglichidze,Udinese,DEF,5.583,6,6,last_name_role
+,2025,Lovik,Parma,DEF,5.583,6,6,unmatched
+1079080,2025,Stojilkovic,Pisa,FWD,5.583,12,12,last_name_team_role_season
+1013021,2025,Carnesecchi,Atalanta,GK,5.581,37,37,last_name_team_role_season
+583659,2025,Calabresi,Pisa,DEF,5.58,25,25,last_name_team_role_season
+1249665,2025,Valentini N.,Verona,DEF,5.579,19,19,last_name_team_role_season
+649945,2025,Al-Musrati,Verona,MID,5.571,14,14,last_name_team_role_season
+1067754,2025,Vranckx,Sassuolo,MID,5.571,14,14,last_name_team_role_season
+776594,2025,Nelsson,Verona,DEF,5.568,37,37,last_name_team_role_season
+801213,2025,Tete Morente,Lecce,MID,5.567,15,15,last_name_team_role
+1041522,2025,Candè,Sassuolo,DEF,5.562,8,8,last_name_team_role_season
+,2025,Dzeko,Fiorentina,FWD,5.562,8,8,unmatched
+395914,2025,Lykogiannis,Bologna,DEF,5.562,8,8,last_name_team_role_season
+358155,2025,Rugani,Juventus,DEF,5.562,8,8,last_name_team_role
+1337009,2025,Bonfanti,Pisa,DEF,5.556,9,9,last_name_role
+866516,2025,Koopmeiners,Juventus,MID,5.552,29,29,last_name_team_role_season
+,2025,Pezzella Giu.,Cremonese,DEF,5.548,31,31,unmatched
+954092,2025,Gimenez,Milan,FWD,5.533,15,15,last_name_team_role_season
+244816,2025,Ceccherini,Cremonese,DEF,5.5,8,8,last_name_team_role_season
+688300,2025,Chukwueze,Milan,MID,5.5,1,1,last_name_team_role
+951711,2025,Di Pardo,Cagliari,DEF,5.5,1,1,last_name_team_role
+,2025,Fini,Genoa,MID,5.5,1,1,unmatched
+1285732,2025,Fofana Sa.,Lecce,MID,5.5,2,2,last_name_team_role_season
+1414124,2025,Gorter,Lecce,MID,5.5,1,1,last_name_team_role_season
+,2025,Hojholt,Pisa,MID,5.5,15,15,unmatched
+293160,2025,Hysaj,Lazio,DEF,5.5,2,2,last_name_team_role_season
+161660,2025,Immobile,Bologna,FWD,5.5,6,6,last_name_role
+,2025,Kouassi,Lecce,DEF,5.5,4,4,unmatched
+1022843,2025,Moro L.,Sassuolo,FWD,5.5,6,6,last_name_team_role_season
+1041508,2025,Ndaba,Lecce,DEF,5.5,9,9,last_name_team_role_season
+,2025,Palma,Udinese,DEF,5.5,4,4,unmatched
+1255860,2025,Richardson,Fiorentina,MID,5.5,1,1,last_name_team_role
+769644,2025,Sabiri,Fiorentina,MID,5.5,1,1,last_name_team_role_season
+800624,2025,Stengs,Pisa,MID,5.5,1,1,last_name_team_role_season
+768474,2025,Svilar,Roma,GK,5.447,38,38,last_name_team_role_season
+466439,2025,Maignan,Milan,GK,5.419,37,37,last_name_team_role_season
+1805105,2025,Cham,Verona,DEF,5.375,4,4,last_name_team_role_season
+560939,2025,Butez,Como,GK,5.368,38,38,last_name_team_role_season
+1053676,2025,Ndiaye,Parma,DEF,5.364,11,11,last_name_team_role_season
+364822,2025,Provedel,Lazio,GK,5.352,27,27,last_name_team_role_season
+1404077,2025,Otoa,Genoa,DEF,5.35,10,10,last_name_team_role_season
+766062,2025,Di Gregorio,Juventus,GK,5.333,30,30,last_name_team_role_season
+1503574,2025,Helland,Bologna,DEF,5.333,6,6,last_name_team_role_season
+1116749,2025,Viti,Fiorentina,DEF,5.333,6,6,last_name_role
+299981,2025,Marì,Fiorentina,DEF,5.3,10,10,last_name_team_role
+178732,2025,Skorupski,Bologna,GK,5.278,18,18,last_name_team_role_season
+1208969,2025,Asllani,Torino,MID,5.25,14,14,last_name_role
+1676885,2025,Denoon,Pisa,DEF,5.25,2,2,last_name_team_role_season
+,2025,Gronbaek,Genoa,MID,5.25,2,2,unmatched
+42692,2025,Padelli,Udinese,GK,5.25,2,2,last_name_team_role_season
+362200,2025,Falcone,Lecce,GK,5.224,38,38,last_name_team_role_season
+213501,2025,Morata,Como,FWD,5.206,17,17,last_name_team_role_season
+772168,2025,Martinez Jo.,Inter,GK,5.2,5,5,last_name_team_role_season
+577912,2025,Meret,Napoli,GK,5.182,11,11,last_name_team_role_season
+1621082,2025,Motta,Lazio,GK,5.167,9,9,last_name_team_role_season
+181910,2025,Perin,Juventus,GK,5.111,9,9,last_name_team_role_season
+1117310,2025,Corvi,Parma,GK,5.088,17,17,last_name_team_role_season
+1091193,2025,Okoye,Udinese,GK,5.083,30,30,last_name_team_role_season
+1354820,2025,Bozhinov,Pisa,DEF,5.062,8,8,last_name_team_role_season
+41618,2025,Sommer,Inter,GK,5.015,33,33,last_name_team_role_season
+182917,2025,De Gea,Fiorentina,GK,5.0,37,37,last_name_team_role_season
+1429871,2025,Dembelè A.,Torino,DEF,5.0,1,1,last_name_team_role
+417743,2025,Di Gennaro,Inter,GK,5.0,1,1,last_name_team_role_season
+1050325,2025,Furlanetto,Lazio,GK,5.0,2,2,last_name_team_role_season
+1526689,2025,Jimenez A.,Milan,DEF,5.0,1,1,last_name_team_role
+1766079,2025,Perez M.,Lecce,DEF,5.0,1,1,last_name_team_role_season
+869054,2025,Turati,Sassuolo,GK,5.0,6,6,last_name_team_role_season
+491784,2025,Montipò,Verona,GK,4.943,35,35,last_name_team_role_season
+602845,2025,Audero,Cremonese,GK,4.912,34,34,last_name_team_role_season
+1481098,2025,Coppola F.,Pisa,DEF,4.9,5,5,last_name_team_role_season
+958422,2025,Caprile,Cagliari,GK,4.868,38,38,last_name_team_role_season
+213299,2025,Leali,Genoa,GK,4.841,22,22,last_name_team_role_season
+721533,2025,Bijlow,Genoa,GK,4.781,16,16,last_name_team_role_season
+760752,2025,Muric,Sassuolo,GK,4.766,32,32,last_name_team_role_season
+,2025,Stanciu,Genoa,MID,4.75,4,4,unmatched
+1053679,2025,Suzuki,Parma,GK,4.75,20,20,last_name_team_role_season
+165952,2025,Silvestri,Cremonese,GK,4.625,4,4,last_name_team_role_season
+415137,2025,Paleari,Torino,GK,4.517,29,29,last_name_team_role_season
+426880,2025,Cornet,Genoa,MID,4.5,5,5,last_name_team_role_season
+,2025,Macchioni,Sassuolo,DEF,4.5,1,1,unmatched
+212630,2025,Sportiello,Atalanta,GK,4.5,1,1,last_name_team_role_season
+793041,2025,Ravaglia F.,Bologna,GK,4.382,17,17,last_name_team_role_season
+747079,2025,Semper,Pisa,GK,4.38,25,25,last_name_team_role_season
+423223,2025,Scuffet,Pisa,GK,4.071,7,7,last_name_team_role_season
+1053960,2025,Israel,Torino,GK,3.833,9,9,last_name_team_role_season
+364515,2025,Perilli,Verona,GK,3.833,3,3,last_name_team_role_season
+577914,2025,Sommariva,Genoa,GK,3.75,2,2,last_name_team_role_season
+282774,2025,Nicolas,Pisa,GK,3.583,6,6,last_name_team_role_season
+1132319,2025,Sava,Udinese,GK,3.5,7,7,last_name_team_role_season

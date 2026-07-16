@@ -1,0 +1,8 @@
+[tool.pytest.ini_options]
+testpaths = ["tests", "optimizer/tests", "auction/tests"]
+addopts = "--tb=short"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+exclude = ["artifacts/", "quotazioni/", "voti/", "scraper/"]

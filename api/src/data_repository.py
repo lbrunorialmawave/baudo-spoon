@@ -174,6 +174,11 @@ class DataRepository:
         data = await self.get_latest_results()
         return data.get("clustering_stats", {})
 
+    async def get_var_results(self) -> list[dict]:
+        """Return VAR/ESV records from the artifact if present."""
+        data = await self.get_latest_results()
+        return data.get("var_results", [])
+
     async def invalidate_cache(self) -> None:
         """Evict Redis cache entries so the next request re-reads from disk."""
         if self._redis is not None:
