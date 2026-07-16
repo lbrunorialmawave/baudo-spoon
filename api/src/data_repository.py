@@ -15,7 +15,7 @@ from typing import Any, Final, Optional
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import PlayerIdMap, PlayerQuotation
+from .models import MatchMethodEnum, PlayerIdMap, PlayerQuotation
 
 log = logging.getLogger(__name__)
 

@@ -8,7 +8,6 @@ from sqlalchemy import (
     BigInteger,
     CheckConstraint,
     DateTime,
-    Enum,
     ForeignKey,
     Index,
     Integer,
@@ -264,11 +263,7 @@ class PlayerIdMap(Base):
     team_fotmob: Mapped[str | None] = mapped_column(String(100), nullable=True)
     canonical_role: Mapped[str | None] = mapped_column(String(5), nullable=True)
     match_method: Mapped[MatchMethodEnum] = mapped_column(
-        Enum(
-            MatchMethodEnum,
-            name="match_method_enum",
-            values_callable=lambda enum_cls: [e.value for e in enum_cls],
-        ),
+        String(50),
         nullable=False,
     )
     confidence: Mapped[float] = mapped_column(Numeric(4, 3), nullable=False, default=1.0)
