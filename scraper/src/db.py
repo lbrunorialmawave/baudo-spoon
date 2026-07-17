@@ -439,7 +439,7 @@ def upsert_player_season_roles(
     ]
     stmt = pg_insert(PlayerSeasonRole).values(records)
     stmt = stmt.on_conflict_do_update(
-        constraint="uq_player_season_role",
+        index_elements=["player_fotmob_id", "season_start"],
         set_={
             "role_key": stmt.excluded.role_key,
             "canonical_role": stmt.excluded.canonical_role,

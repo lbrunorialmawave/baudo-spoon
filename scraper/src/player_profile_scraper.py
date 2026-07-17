@@ -5,12 +5,13 @@ from __future__ import annotations
 FotMob's /api/data/playerData endpoint requires an x-mas HMAC token
 computed per-request (path + timestamp) — it cannot be reused across
 player IDs or copied from DevTools. This module avoids the API entirely:
-it navigates to each player's public page and reads positionDescription
-from window.__NEXT_DATA__, embedded as inline JSON in every server-rendered
-Next.js page.
+it reads positionDescription from window.__NEXT_DATA__, embedded as
+inline JSON in every server-rendered Next.js page — but instead of a full
+page navigation per player (driver.get + hydration wait), it batches many
+players per round-trip via in-browser fetch() of the raw HTML, the same
+technique used in match_stats_batch.py and stats_scraper._fetch_league_stats.
 """
 
-import json
 import logging
 import re
 import time
@@ -23,8 +24,9 @@ from .roles_bridge import extract_profile_from_player_data
 
 log = logging.getLogger(__name__)
 
-_INTER_REQUEST_DELAY = 0.5   # seconds between page navigations
-_HYDRATION_WAIT = 1.2        # seconds after driver.get() for Next.js hydration
+_BATCH_SIZE = 15            # concurrent fetch() calls per round-trip
+_INTER_BATCH_DELAY = 0.4    # seconds between batches
+_SCRIPT_TIMEOUT = 40        # seconds, network-bound not render-bound
 
 
 def _slugify(name: str) -> str:
@@ -48,30 +50,105 @@ def _player_url(player_id: int, player_name: str, url_map: dict[int, str]) -> st
     return f"https://www.fotmob.com/players/{player_id}/overview/{slug}"
 
 
-# Tries multiple __NEXT_DATA__ paths used by different FotMob page versions.
-# Returns a JSON object {ok, positionDescription} or {error, ...debug keys}.
-_JS_EXTRACT_POSITION = """
-try {
-    const d = window.__NEXT_DATA__;
-    if (!d) return JSON.stringify({error: 'no __NEXT_DATA__'});
-    const pp = ((d.props || {}).pageProps) || {};
-    const profile =
-        pp.playerProfile
-        || pp.player
-        || pp.profileData
-        || pp.data
-        || (pp.initialProps || {}).playerProfile
-        || null;
-    if (!profile) {
-        return JSON.stringify({error: 'no profile key', ppKeys: Object.keys(pp).slice(0, 20)});
+# Fetches many player pages concurrently, extracts __NEXT_DATA__ from the
+# raw HTML text (no rendering needed) and pulls out positionDescription
+# using the same fallback path chain the old per-page script used.
+_JS_BATCH_FETCH_POSITIONS = r"""
+const [urls, done] = arguments;
+
+async function fetchOne(url) {
+    try {
+        const res = await fetch(url, { credentials: 'include' });
+        if (!res.ok) {
+            return { url, ok: false, status: res.status };
+        }
+        const html = await res.text();
+        const m = html.match(
+            /<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/
+        );
+        if (!m) {
+            return { url, ok: false, error: 'no __NEXT_DATA__' };
+        }
+        const d = JSON.parse(m[1]);
+        const pp = (d.props || {}).pageProps || {};
+        const profile =
+            pp.playerProfile
+            || pp.player
+            || pp.profileData
+            || pp.data
+            || (pp.initialProps || {}).playerProfile
+            || null;
+        if (!profile) {
+            return { url, ok: false, error: 'no profile key' };
+        }
+        const pos = profile.positionDescription || null;
+        if (!pos) {
+            return { url, ok: false, error: 'no positionDescription' };
+        }
+        return { url, ok: true, positionDescription: pos };
+    } catch (e) {
+        return { url, ok: false, error: String(e) };
     }
-    const pos = profile.positionDescription || null;
-    if (!pos) {
-        return JSON.stringify({error: 'no positionDescription', profileKeys: Object.keys(profile).slice(0, 20)});
-    }
-    return JSON.stringify({ok: true, positionDescription: pos});
-} catch(e) { return JSON.stringify({error: String(e)}); }
+}
+
+Promise.all(urls.map(fetchOne)).then(done).catch(e => done(
+    urls.map(u => ({ url: u, ok: false, error: String(e) }))
+));
 """
+
+
+def _fetch_positions_batch(
+    driver: Any,
+    urls: list[str],
+    batch_size: int = _BATCH_SIZE,
+    inter_batch_delay: float = _INTER_BATCH_DELAY,
+) -> dict[str, dict[str, Any] | None]:
+    """Fetch positionDescription for many player URLs in parallel batches.
+
+    Returns {url: positionDescription | None}.
+    """
+    results: dict[str, dict[str, Any] | None] = {}
+    if not urls:
+        return results
+
+    driver.set_script_timeout(_SCRIPT_TIMEOUT)
+    total = len(urls)
+    ok = 0
+    errors = 0
+
+    for start in range(0, total, batch_size):
+        chunk = urls[start : start + batch_size]
+        try:
+            batch_result: list[dict[str, Any]] = driver.execute_async_script(
+                _JS_BATCH_FETCH_POSITIONS, chunk
+            )
+        except Exception as exc:
+            log.warning(
+                "player_profile_batch: batch %d-%d failed entirely: %s",
+                start, start + len(chunk), exc,
+            )
+            for url in chunk:
+                results[url] = None
+            errors += len(chunk)
+            continue
+
+        for item in batch_result or []:
+            url = item.get("url")
+            if item.get("ok"):
+                results[url] = item.get("positionDescription")
+                ok += 1
+            else:
+                results[url] = None
+                errors += 1
+                log.debug("player_profile_batch: %s → %s", url, item.get("error") or item.get("status"))
+
+        log.info(
+            "player_profile: %d/%d done (ok=%d, errors=%d)",
+            min(start + batch_size, total), total, ok, errors,
+        )
+        time.sleep(inter_batch_delay)
+
+    return results
 
 
 def fetch_player_profiles(
@@ -79,77 +156,48 @@ def fetch_player_profiles(
     player_url_map: dict[int, str] | None = None,
     batch_log_interval: int = 50,
 ) -> list[dict[str, Any]]:
-    """Navigate to each player's FotMob page and extract positionDescription.
+    """Fetch positionDescription for every player and build profile dicts.
 
     Args:
         player_ids: {player_fotmob_id: player_name}
         player_url_map: {player_fotmob_id: full_page_url} collected during stats scrape.
             Players not in this map fall back to the generic /players/{id} URL.
-        batch_log_interval: Log progress every N players.
+        batch_log_interval: unused, kept for call-site compatibility.
 
     Returns:
         List of player_profiles-compatible dicts ready for upsert_player_profiles().
     """
     url_map = player_url_map or {}
-    profiles: list[dict[str, Any]] = []
     total = len(player_ids)
-    ok = 0
-    errors = 0
+
+    # Build the full url list up front so we can batch-fetch it in one pass
+    # instead of navigating to each player's page sequentially.
+    urls_by_player: dict[int, str] = {
+        player_id: _player_url(player_id, name, url_map)
+        for player_id, name in player_ids.items()
+    }
 
     with get_managed_driver() as driver:
-        driver.set_script_timeout(20)
-
         log.debug("Warming browser session at %s", FOTMOB_BASE_URL)
         driver.get(FOTMOB_BASE_URL)
         time.sleep(2)
-        log.debug("Browser ready for player profile navigation")
+        log.debug("Browser ready — starting batched position fetch (%d players)", total)
 
-        for idx, (player_id, player_name) in enumerate(player_ids.items(), 1):
-            url = _player_url(player_id, player_name, url_map)
-            try:
-                driver.get(url)
-                time.sleep(_HYDRATION_WAIT)
+        position_by_url = _fetch_positions_batch(driver, list(urls_by_player.values()))
 
-                raw: str | None = driver.execute_script(_JS_EXTRACT_POSITION)
-                if raw is None:
-                    log.warning(
-                        "player_profile: script returned None for player_id=%d (%s)",
-                        player_id, player_name,
-                    )
-                    errors += 1
-                else:
-                    result = json.loads(raw)
-                    if result.get("ok"):
-                        profile = extract_profile_from_player_data(
-                            player_id,
-                            player_name,
-                            {"positionDescription": result["positionDescription"]},
-                        )
-                        profiles.append(profile)
-                        ok += 1
-                    else:
-                        log.warning(
-                            "player_profile: extraction failed player_id=%d (%s): %s",
-                            player_id, player_name, result,
-                        )
-                        errors += 1
-            except Exception as exc:
-                log.warning(
-                    "player_profile: error for player_id=%d (%s): %s",
-                    player_id, player_name, exc,
-                )
-                errors += 1
+    profiles: list[dict[str, Any]] = []
+    ok = 0
+    errors = 0
+    for player_id, name in player_ids.items():
+        url = urls_by_player[player_id]
+        pos = position_by_url.get(url)
+        if pos is None:
+            errors += 1
+            continue
+        profiles.append(
+            extract_profile_from_player_data(player_id, name, {"positionDescription": pos})
+        )
+        ok += 1
 
-            if idx % batch_log_interval == 0:
-                log.info(
-                    "player_profile: %d/%d done (ok=%d, errors=%d)",
-                    idx, total, ok, errors,
-                )
-
-            time.sleep(_INTER_REQUEST_DELAY)
-
-    log.info(
-        "player_profile: finished — %d/%d ok, %d errors",
-        ok, total, errors,
-    )
+    log.info("player_profile: finished — %d/%d ok, %d errors", ok, total, errors)
     return profiles

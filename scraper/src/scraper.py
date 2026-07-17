@@ -14,6 +14,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 from .config import settings
 from .driver import get_managed_driver
+from .match_stats_batch import fetch_matches_batch, stats_from_next_data
 from .models import FOTMOB_BASE_URL, LEAGUE_CATALOG, SERIE_A, LeagueMeta
 from .parser import (
     create_team_rows,
@@ -21,6 +22,8 @@ from .parser import (
     extract_stat_sections,
     parse_match_link,
 )
+
+_FINISHED_STATUSES = ("FT", "HT", "AET", "PEN")
 
 log = logging.getLogger(__name__)
 
@@ -33,13 +36,11 @@ class FotMobMatchStatsScraper:
         leagues: str | Iterable[str] = SERIE_A,
         seasons: str | int | Iterable[str | int] | None = None,
         output_dir: Path = settings.output_dir,
-        start_round: int = 1,
     ) -> None:
         self.leagues = self._normalize_leagues(leagues)
         self.seasons = self._normalize_seasons(seasons)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.start_round = start_round
 
     def run(
         self,
@@ -48,52 +49,129 @@ class FotMobMatchStatsScraper:
         """Scrape all configured leagues/seasons and persist results as CSV."""
         outputs: dict[tuple[str, str], tuple[pd.DataFrame, Path]] = {}
 
-        for league_name in self.leagues:
-            meta = LEAGUE_CATALOG[league_name]
+        with get_managed_driver() as driver:
+            driver.get(FOTMOB_BASE_URL)
+            time.sleep(2)
 
-            # If no season provided, we scrape the current one (e.g. 2023-2024 or 2024-2025).
-            # For simplicity, if not provided we just use a default season string.
-            # FotMob requires the exact season string like "2023-2024".
-            seasons_to_scrape = self.seasons if self.seasons else [self._get_current_season()]
+            for league_name in self.leagues:
+                meta = LEAGUE_CATALOG[league_name]
 
-            for season in seasons_to_scrape:
-                log.info("Scraping league=%s season=%s", league_name, season)
-                all_results: list[dict[str, Any]] = []
+                # If no season provided, we scrape the current one (e.g. 2023-2024 or 2024-2025).
+                # For simplicity, if not provided we just use a default season string.
+                # FotMob requires the exact season string like "2023-2024".
+                seasons_to_scrape = self.seasons if self.seasons else [self._get_current_season()]
 
-                # Create a fresh driver for each league/season to avoid accumulating state
-                with get_managed_driver() as driver:
-                    for _round_num, round_results in self._scrape_season(driver, meta, season):
-                        if round_results:
-                            all_results.extend(round_results)
-                            if on_round_complete is not None:
-                                on_round_complete(league_name, season, pd.DataFrame(round_results))
-
-                if not all_results:
-                    log.warning("No results found for %s %s", league_name, season)
-                    continue
-
-                df = pd.DataFrame(all_results)
-                output_path = self._output_file(meta.file_stem, season)
-                df.to_csv(output_path, index=False, encoding="utf-8")
-                log.info("Wrote %d rows → %s", len(df), output_path)
-
-                outputs[(league_name, season)] = (df, output_path)
+                for season in seasons_to_scrape:
+                    result = self._scrape_season_fast(
+                        driver, meta, league_name, season, on_round_complete
+                    )
+                    if result is not None:
+                        outputs[(league_name, season)] = result
 
         return outputs
+
+    def _scrape_season_fast(
+        self,
+        driver: Any,
+        meta: LeagueMeta,
+        league_name: str,
+        season: str,
+        on_round_complete: Callable[[str, str, pd.DataFrame], None] | None,
+    ) -> tuple[pd.DataFrame, Path] | None:
+        """Two-phase scrape: (1) cheap fixture discovery per round via DOM,
+        (2) ONE batched parallel fetch pass for all match stats, replacing
+        the old per-match driver.get()+click+scroll loop.
+
+        This is the fix for the ~1h runtime: previously every single match
+        page was fully rendered and interacted with sequentially. Match
+        stats already exist as JSON inside every match page's
+        __NEXT_DATA__ blob, so we fetch that directly and in parallel via
+        the browser's authenticated fetch(), batched to stay polite.
+        """
+        log.info("Scraping league=%s season=%s", league_name, season)
+        total_rounds = 38  # Defaulting to 38 for major leagues
+
+        # Phase 1 — fixture discovery (unchanged logic, still DOM-based
+        # since it's cheap: 38 page loads regardless of match count).
+        rounds_matches: dict[int, list[dict[str, Any]]] = {}
+        for round_num in range(1, total_rounds + 1):
+            log.info("Discovering Round %d/%d for %s", round_num, total_rounds, meta.display_name)
+            try:
+                rounds_matches[round_num] = self._scrape_matches_for_round(
+                    driver, meta, season, round_num
+                )
+            except Exception as exc:
+                log.error("Error discovering Round %d: %s", round_num, exc)
+                rounds_matches[round_num] = []
+
+        # Phase 2 — collect every finished match that needs stats, then
+        # fetch all of them in one batched, parallel pass.
+        finished_urls: list[str] = [
+            match["url"]
+            for matches in rounds_matches.values()
+            for match in matches
+            if match["status"] in _FINISHED_STATUSES
+        ]
+        total_matches = sum(len(m) for m in rounds_matches.values())
+        log.info(
+            "[%s %s] fixtures discovered: %d matches (%d finished, need stats)",
+            league_name, season, total_matches, len(finished_urls),
+        )
+
+        stats_by_url = fetch_matches_batch(driver, finished_urls)
+        ok = sum(1 for v in stats_by_url.values() if v)
+        log.info(
+            "[%s %s] batch stats fetch complete: %d/%d matches",
+            league_name, season, ok, len(finished_urls),
+        )
+
+        # Phase 3 — assemble rows round by round, preserving the existing
+        # on_round_complete streaming/incremental-DB-write behaviour.
+        all_results: list[dict[str, Any]] = []
+        for round_num in range(1, total_rounds + 1):
+            round_results: list[dict[str, Any]] = []
+            for match in rounds_matches.get(round_num, []):
+                home_row, away_row = create_team_rows(match, round_num)
+
+                groups = stats_by_url.get(match["url"])
+                if groups:
+                    stats_data = stats_from_next_data(groups)
+                    for section_stats in stats_data.values():
+                        for stat_name, values in section_stats.items():
+                            home_row[stat_name] = values[0]
+                            away_row[stat_name] = values[1]
+
+                round_results.append(home_row)
+                round_results.append(away_row)
+
+            if round_results:
+                all_results.extend(round_results)
+                if on_round_complete is not None:
+                    on_round_complete(league_name, season, pd.DataFrame(round_results))
+
+        if not all_results:
+            log.warning("No results found for %s %s", league_name, season)
+            return None
+
+        df = pd.DataFrame(all_results)
+        output_path = self._output_file(meta.file_stem, season)
+        df.to_csv(output_path, index=False, encoding="utf-8")
+        log.info("Wrote %d rows → %s", len(df), output_path)
+        return df, output_path
+
+    # ------------------------------------------------------------------
+    # LEGACY / fallback path — kept for reference and as an escape hatch
+    # if FotMob ever changes __NEXT_DATA__ shape and batch fetching breaks.
+    # Not used by run() anymore; _scrape_season_fast() above replaced it.
+    # ------------------------------------------------------------------
 
     def _scrape_season(
         self, driver: Any, meta: LeagueMeta, season: str
     ) -> Iterator[tuple[int, list[dict[str, Any]]]]:
         total_rounds = 38  # Defaulting to 38 for major leagues
 
-        for round_num in range(self.start_round, total_rounds + 1):
+        for round_num in range(1, total_rounds + 1):
             log.info("Starting Round %d/%d for %s", round_num, total_rounds, meta.display_name)
-
-            # Check if driver is still alive; recover from tab crash if needed
-            if not self._ensure_driver_alive(driver, round_num):
-                log.error("Driver unrecoverable at round %d, skipping remaining rounds", round_num)
-                yield round_num, []
-                continue
 
             try:
                 round_results = self._get_matches_with_stats(driver, meta, season, round_num)
@@ -102,44 +180,7 @@ class FotMobMatchStatsScraper:
                 yield round_num, round_results
             except Exception as exc:
                 log.error("Error scraping Round %d: %s", round_num, exc)
-                # Attempt immediate recovery after crash for the NEXT round
-                if not self._recover_driver(driver, round_num):
-                    log.error("Driver unrecoverable after round %d, skipping remaining rounds", round_num)
                 yield round_num, []
-
-    @staticmethod
-    def _ensure_driver_alive(driver: Any, round_num: int) -> bool:
-        """Check if driver tab is alive and attempt recovery if crashed."""
-        try:
-            _ = driver.current_url  # cheap probe — raises if tab crashed
-            return True
-        except Exception:
-            log.warning("Tab appears crashed before round %d, attempting recovery...", round_num)
-            return FotMobMatchStatsScraper._recover_driver(driver, round_num)
-
-    @staticmethod
-    def _recover_driver(driver: Any, round_num: int) -> bool:
-        """Close crashed tab and open a fresh one."""
-        try:
-            windows = driver.window_handles
-            if len(windows) > 1:
-                driver.switch_to.window(windows[-1])
-                driver.close()
-                driver.switch_to.window(driver.window_handles[0])
-            else:
-                # Open a new tab and switch to it
-                driver.execute_script("window.open('about:blank','_blank')")
-                driver.switch_to.window(driver.window_handles[-1])
-                # Close the crashed one
-                if len(driver.window_handles) > 1:
-                    driver.close()
-                    driver.switch_to.window(driver.window_handles[0])
-            driver.get("about:blank")
-            log.info("Driver recovery successful after round %d", round_num)
-            return True
-        except Exception as exc:
-            log.error("Driver recovery failed at round %d: %s", round_num, exc)
-            return False
 
     def _get_matches_with_stats(
         self, driver: Any, meta: LeagueMeta, season: str, round_num: int
@@ -201,8 +242,7 @@ class FotMobMatchStatsScraper:
 
         except Exception as exc:
             log.warning("Error occurred fetching matches for round %d: %s", round_num, exc)
-            # Let ALL exceptions propagate so _scrape_season can attempt recovery
-            raise
+            return []
 
     def _scrape_match_stats(self, driver: Any, match_url: str) -> dict[str, Any]:
         stats_data: dict[str, Any] = {}
@@ -228,11 +268,7 @@ class FotMobMatchStatsScraper:
             return {k: v for k, v in stats_data.items() if v}
 
         except Exception as exc:
-            exc_msg = str(exc)
-            log.debug("Error scraping match stats for %s: %s", match_url, exc_msg)
-            # Propagate tab crash so _scrape_season can attempt recovery
-            if "tab crashed" in exc_msg.lower():
-                raise
+            log.debug("Error scraping match stats for %s: %s", match_url, exc)
             return {}
 
     def _click_stats_tab(self, driver: Any, wait: WebDriverWait) -> None:

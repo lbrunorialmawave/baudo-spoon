@@ -33,7 +33,7 @@ services:
       context: ./api
     environment:
       PYTHONPATH: /app:/app/scraper
-      API_DATABASE_URL: postgresql+asyncpg://fbref:${POSTGRES_PASSWORD}@db:5432/fbref
+      API_DATABASE_URL: ${API_DATABASE_URL}
       API_REDIS_URL: redis://redis:6379/0
       API_API_KEY_SECRET: ${API_KEY_SECRET:-}
       API_ARTIFACTS_DIR: /app/artifacts
@@ -59,7 +59,7 @@ services:
     build:
       context: ./scraper
     environment:
-      SCRAPER_DATABASE_URL: postgresql+psycopg2://fbref:${POSTGRES_PASSWORD}@db:5432/fbref
+      SCRAPER_DATABASE_URL: ${SCRAPER_DATABASE_URL}
       SCRAPER_LOG_LEVEL: ${LOG_LEVEL:-INFO}
       SCRAPER_CACHE_DIR: /app/downloaded_files/cache
       SCRAPER_OUTPUT_DIR: /app/downloaded_files/output
@@ -76,7 +76,7 @@ services:
     build:
       context: ./ml
     environment:
-      ML_DATABASE_URL: postgresql+psycopg2://fbref:${POSTGRES_PASSWORD}@db:5432/fbref
+      ML_DATABASE_URL: ${ML_DATABASE_URL}
       ML_LOG_LEVEL: ${LOG_LEVEL:-INFO}
       ML_ARTIFACTS_DIR: /app/artifacts
       ML_RANDOM_SEED: ${ML_RANDOM_SEED:-42}
