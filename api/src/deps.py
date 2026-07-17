@@ -52,6 +52,8 @@ async def _get_redis_client():  # type: ignore[return]
         import redis.asyncio as aioredis  # type: ignore[import]
 
         client = aioredis.from_url(settings.redis_url, decode_responses=True)
+        # Test the connection — from_url() is lazy.
+        await client.ping()
         yield client
     except (ImportError, ConnectionError, OSError) as exc:
         if not isinstance(exc, ImportError):
@@ -59,7 +61,10 @@ async def _get_redis_client():  # type: ignore[return]
         yield None
     finally:
         if client is not None:
-            await client.aclose()
+            try:
+                await client.aclose()
+            except Exception:
+                pass
 
 
 async def rate_limit(
