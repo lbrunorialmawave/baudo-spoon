@@ -460,10 +460,12 @@ async def run_id_mapping(
 
     # ── Build a sync engine ──────────────────────────────────────────────
     # On Render the env var may already be an asyncpg URL, so we strip any
-    # +asyncpg driver and fall back to psycopg2 (the default for ``postgresql://``).
+    # +asyncpg driver and fall back to psycopg2.  Also translate asyncpg's
+    # ``ssl`` parameter to psycopg2's ``sslmode``.
     sync_url = settings.database_url
     sync_url = sync_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
     sync_url = sync_url.replace("postgres+asyncpg://", "postgres+psycopg2://")
+    sync_url = sync_url.replace("?ssl=", "?sslmode=").replace("&ssl=", "&sslmode=")
     engine = sa.create_engine(sync_url, pool_pre_ping=True)
 
     try:
