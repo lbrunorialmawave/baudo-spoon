@@ -55,9 +55,10 @@ async def _get_redis_client():  # type: ignore[return]
         # Test the connection — from_url() is lazy.
         await client.ping()
         yield client
-    except (ImportError, ConnectionError, OSError) as exc:
-        if not isinstance(exc, ImportError):
-            log.warning("Redis unavailable (%s) — rate limiting disabled", exc)
+    except ImportError:
+        yield None
+    except Exception as exc:
+        log.warning("Redis unavailable (%s) — rate limiting disabled", exc)
         yield None
     finally:
         if client is not None:
