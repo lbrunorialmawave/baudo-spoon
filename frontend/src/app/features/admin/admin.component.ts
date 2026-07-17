@@ -1,5 +1,4 @@
 ﻿import { Component, inject, signal } from '@angular/core';
-import { DecimalPipe, DatePipe } from '@angular/common';
 import { MantraService } from '../../core/services/mantra.service';
 import { DataHealthSource } from '../../core/models/mantra.models';
 import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/error-boundary.component';
@@ -7,7 +6,7 @@ import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/e
 @Component({
   selector: 'app-admin',
   standalone: true,
-  imports: [DecimalPipe, DatePipe, ErrorBoundaryComponent],
+  imports: [ErrorBoundaryComponent],
   templateUrl: './admin.component.html',
 })
 export class AdminComponent {

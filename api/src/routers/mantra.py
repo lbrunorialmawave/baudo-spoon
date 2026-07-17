@@ -246,7 +246,10 @@ async def run_mantra(
         from ml.mantra.runner import run_mantra as compute
 
         # Build sync engine URL from settings (avoids URL encoding issues in bind)
-        sync_url = str(settings.async_database_url).replace("+asyncpg", "+psycopg2")
+        sync_url = settings.database_url
+        sync_url = sync_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+        sync_url = sync_url.replace("postgres+asyncpg://", "postgres+psycopg2://")
+        sync_url = sync_url.replace("?ssl=", "?sslmode=").replace("&ssl=", "&sslmode=")
         sync_engine = create_engine(sync_url)
 
         artifacts_dir = Path(settings.artifacts_dir) if hasattr(settings, 'artifacts_dir') else Path("artifacts")

@@ -44,7 +44,7 @@ async def trigger_snai(
 ) -> ORJSONResponse:
     try:
         # Don't use get_db dependency — create sync connection directly for scraper compatibility
-        sync_url = str(settings.async_database_url).replace("postgresql+asyncpg://", "postgresql://")
+        sync_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://").replace("postgres+asyncpg://", "postgres+psycopg2://").replace("?ssl=", "?sslmode=").replace("&ssl=", "&sslmode=")
         log.info(f"[trigger_snai] Using sync_url: {sync_url}")
         from scraper.snai_odds import scrape, persist
         records = scrape(season_start=season_start)
@@ -61,7 +61,7 @@ async def trigger_probabili(
 ) -> ORJSONResponse:
     try:
         # Don't use get_db dependency — create sync connection directly for scraper compatibility
-        sync_url = str(settings.async_database_url).replace("postgresql+asyncpg://", "postgresql://")
+        sync_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://").replace("postgres+asyncpg://", "postgres+psycopg2://").replace("?ssl=", "?sslmode=").replace("&ssl=", "&sslmode=")
         log.info(f"[trigger_probabili] Using sync_url: {sync_url}")
         from scraper.probabili_formazioni import scrape, persist
         records = scrape(matchday=matchday)
@@ -77,7 +77,7 @@ async def trigger_quotazioni(
     quotazioni_dir: str = Query("./quotazioni", description="Directory with XLSX files"),
 ) -> ORJSONResponse:
     try:
-        sync_url = str(settings.async_database_url).replace("postgresql+asyncpg://", "postgresql://")
+        sync_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://").replace("postgres+asyncpg://", "postgres+psycopg2://").replace("?ssl=", "?sslmode=").replace("&ssl=", "&sslmode=")
         log.info(f"[trigger_quotazioni] Using sync_url: {sync_url}")
         import subprocess
         result = subprocess.run(

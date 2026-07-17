@@ -10,6 +10,9 @@ COPY api/ .
 # ml module is required at runtime (imported by api.src.routers.auction)
 COPY ml/ /app/ml/
 
+# scraper module is required at runtime (imported by admin_scrape, matchday routers)
+COPY scraper/ /app/scraper/
+
 EXPOSE 8000
 
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

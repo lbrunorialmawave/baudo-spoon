@@ -101,8 +101,7 @@ import { PlayerDrawerComponent } from './components/player-drawer/player-drawer.
               (sortChanged)="onSort($any($event))"
               (playerSelected)="selectedPlayer.set($event)" />
           </div>
-          @let displayTotal = selectedStatus() ? filteredItems().length : total();
-      @let displayPages = displayPagesComputed();
+          @let displayPages = displayPagesComputed();
       @if (displayPages > 1) {
             <div class="mt-4 flex items-center justify-between text-sm" style="color:var(--color-text-secondary)">
               <span>Page {{ currentPage() }} of {{ displayPages }}</span>

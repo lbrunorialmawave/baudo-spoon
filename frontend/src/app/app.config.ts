@@ -1,5 +1,6 @@
 import {
   ApplicationConfig,
+  isDevMode,
   provideBrowserGlobalErrorListeners,
   provideZonelessChangeDetection,
 } from '@angular/core';
@@ -11,6 +12,14 @@ import { routes } from './app.routes';
 import { apiKeyInterceptor } from './core/interceptors/api-key.interceptor';
 import { API_BASE_URL } from './core/tokens/api-base-url.token';
 
+function apiBaseUrlFactory(): string {
+  // Use the Render API in production mode; keep localhost for dev.
+  if (isDevMode()) {
+    return 'http://localhost:8000/api/v1';
+  }
+  return 'https://baudo-spoon.onrender.com/api/v1';
+}
+
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
@@ -18,6 +27,6 @@ export const appConfig: ApplicationConfig = {
     provideRouter(routes, withViewTransitions()),
     provideClientHydration(withEventReplay()),
     provideHttpClient(withFetch(), withInterceptors([apiKeyInterceptor])),
-    { provide: API_BASE_URL, useValue: 'http://localhost:8000/api/v1' },
+    { provide: API_BASE_URL, useFactory: apiBaseUrlFactory },
   ],
 };

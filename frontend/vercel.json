@@ -1,0 +1,6 @@
+{
+  "outputDirectory": "dist/fanta-intelligence/browser",
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "framework": "angular"
+}
