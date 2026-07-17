@@ -205,7 +205,7 @@ async def trigger_matchday_scrape(
 ) -> ORJSONResponse:
     """Scrape probabili formazioni and persist to DB."""
     try:
-        sync_url = str(db.bind.url).replace("+asyncpg", "+psycopg2")
+        sync_url = str(db.bind.url).replace("+asyncpg://", "+psycopg2://").replace("?ssl=", "?sslmode=").replace("&ssl=", "&sslmode=")
         from scraper.probabili_formazioni import scrape, persist
 
         records = scrape(matchday=matchday)
