@@ -400,3 +400,147 @@ async def update_id_mapping(
             ),
         )
     return ORJSONResponse(content=PlayerIdMapSchema(**row).model_dump(by_alias=True))
+
+
+@id_mapping_router.post(
+    "/run",
+    response_class=ORJSONResponse,
+    summary="Run automatic Fantacalcio → FotMob ID mapping",
+    description=(
+        "Loads all Fantacalcio quotations from the database, runs the "
+        "3-pass automatic matching pipeline (exact → relaxed-role → fuzzy), "
+        "and persists the results to ``player_id_map``.\n\n"
+        "Existing mappings with ``match_method='manual'`` are preserved "
+        "and restored after the automatic pass so operator overrides are "
+        "never overwritten.\n\n"
+        "Optional ``season_start`` filters to a single season. "
+        "Optional ``league_name`` scopes the FotMob reference (e.g. 'Serie A')."
+    ),
+    responses={
+        200: {"description": "Mapping run completed with match statistics"},
+        500: {"description": "Mapping pipeline failed"},
+    },
+)
+async def run_id_mapping(
+    season_start: Optional[int] = Query(
+        None, ge=1990, le=2100,
+        description="Limit mapping to a single season (default: all seasons)",
+    ),
+    league_name: Optional[str] = Query(
+        None,
+        description="FotMob league filter (e.g. 'Serie A')",
+    ),
+    repo: DataRepository = Depends(get_repository),
+) -> ORJSONResponse:
+    """Execute the automatic ID-mapping pipeline (exact → relaxed → fuzzy).
+
+    Uses the same matching logic as ``ml.data.import_quotations.build_player_id_map``
+    but reads quotations from the DB instead of from XLSX files.
+    """
+    _log = logging.getLogger(__name__)
+
+    # ── Lazy imports (ML module may not be available at API startup) ──────
+    try:
+        import pandas as pd  # type: ignore[import]
+        import sqlalchemy as sa  # type: ignore[import]
+        from ml.data.import_quotations import (  # type: ignore[import]
+            apply_team_alias,
+            build_player_id_map,
+            last_name_token,
+            normalise_player_name,
+            normalise_team,
+            persist_player_id_map,
+        )
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Required ML module not available: {exc}",
+        )
+
+    # ── Build a sync engine from the async DSN ───────────────────────────
+    sync_url = str(settings.async_database_url).replace(
+        "postgresql+asyncpg://", "postgresql+psycopg2://"
+    )
+    engine = sa.create_engine(sync_url, pool_pre_ping=True)
+
+    try:
+        # ── 1. Load quotations ──────────────────────────────────────────
+        _log.info("Loading Fantacalcio quotations …")
+        where_clause = ""
+        if season_start is not None:
+            where_clause = f"WHERE season_start = {season_start}"
+
+        quotes = pd.read_sql(
+            sa.text(
+                f"""
+                SELECT fantacalcio_id, season_start, player_name, team, role
+                FROM player_quotations
+                {where_clause}
+                ORDER BY fantacalcio_id
+                """
+            ),
+            engine,
+        )
+        _log.info("  %d quotations loaded", len(quotes))
+
+        if quotes.empty:
+            return ORJSONResponse(content={
+                "status": "ok",
+                "total": 0,
+                "detail": "No quotations found to map",
+            })
+
+        # ── 2. Normalise names and teams ────────────────────────────────
+        quotes["name"] = quotes["player_name"]
+        quotes["name_norm"] = quotes["player_name"].map(normalise_player_name)
+        quotes["last_name_norm"] = quotes["name_norm"].map(last_name_token)
+        quotes["team_norm"] = quotes["team"].map(normalise_team).map(apply_team_alias)
+        quotes["canonical_role"] = quotes["role"]
+
+        # ── 3. Preserve existing manual overrides ───────────────────────
+        manual_existing = pd.read_sql(
+            sa.text(
+                "SELECT * FROM player_id_map WHERE match_method = 'manual'"
+            ),
+            engine,
+        )
+        _log.info("  %d existing manual overrides will be preserved", len(manual_existing))
+
+        # ── 4. Run the 3-pass matching pipeline ─────────────────────────
+        _log.info("Running 3-pass matching (exact → relaxed-role → fuzzy) …")
+        id_map = build_player_id_map(quotes, engine, league_name=league_name)
+
+        # ── 5. Persist automatic results ────────────────────────────────
+        _log.info("Persisting automatic mapping results …")
+        persist_player_id_map(id_map, engine)
+
+        # ── 6. Restore manual overrides ─────────────────────────────────
+        if not manual_existing.empty:
+            _log.info("Restoring %d manual overrides …", len(manual_existing))
+            persist_player_id_map(manual_existing, engine)
+
+        # ── 7. Compute match statistics ─────────────────────────────────
+        dist = id_map["match_method"].value_counts().to_dict()
+        total = len(id_map)
+        matched = total - dist.get("unmatched", 0)
+        match_rate = round(matched / total * 100, 1) if total > 0 else 0.0
+
+        _log.info("Mapping complete: %d rows, %.1f%% match rate", total, match_rate)
+
+        # ── 8. Invalidate Redis cache ───────────────────────────────────
+        await repo.invalidate_cache()
+
+        return ORJSONResponse(content={
+            "status": "ok",
+            "total": total,
+            "matched": int(matched),
+            "unmatched": int(total - matched),
+            "matchRatePct": match_rate,
+            "byMethod": {str(k): int(v) for k, v in dist.items()},
+        })
+
+    except Exception as exc:
+        _log.exception("ID mapping pipeline failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        engine.dispose()
