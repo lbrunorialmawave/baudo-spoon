@@ -314,6 +314,8 @@ class Trainer:
         return self._s3
 
     def _upload_to_r2(self, local_path: Path) -> None:
+        if not self.cfg.r2_endpoint_url:
+            return
         # Flat key: model files already embed run_id in their filename;
         # fixed-name files (results_latest.json, etc.) overwrite intentionally.
         key = local_path.name
