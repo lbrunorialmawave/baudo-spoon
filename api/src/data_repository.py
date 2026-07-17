@@ -56,6 +56,11 @@ class DataRepository:
         redis_client: An optional ``redis.asyncio`` client.  When *None*,
             caching is disabled and every read goes directly to disk.
         cache_ttl: TTL in seconds for Redis cache entries (default 1 h).
+        r2_endpoint_url: Cloudflare R2 endpoint. When set, missing local
+            files are fetched from R2 before raising FileNotFoundError.
+        r2_access_key_id: R2 access key.
+        r2_secret_access_key: R2 secret key.
+        r2_bucket_name: R2 bucket name.
     """
 
     def __init__(
@@ -63,10 +68,37 @@ class DataRepository:
         artifacts_dir: Path,
         redis_client: Any | None = None,
         cache_ttl: int = 3600,
+        r2_endpoint_url: str | None = None,
+        r2_access_key_id: str | None = None,
+        r2_secret_access_key: str | None = None,
+        r2_bucket_name: str | None = None,
     ) -> None:
         self._dir = artifacts_dir
         self._redis = redis_client
         self._ttl = cache_ttl
+        self._r2_endpoint_url = r2_endpoint_url
+        self._r2_access_key_id = r2_access_key_id
+        self._r2_secret_access_key = r2_secret_access_key
+        self._r2_bucket_name = r2_bucket_name
+
+    def _r2_client(self) -> Any:
+        if not hasattr(self, "_s3"):
+            import boto3
+            self._s3 = boto3.client(
+                "s3",
+                endpoint_url=self._r2_endpoint_url,
+                aws_access_key_id=self._r2_access_key_id,
+                aws_secret_access_key=self._r2_secret_access_key,
+            )
+        return self._s3
+
+    def _download_from_r2(self, path: Path) -> None:
+        """Download *path.name* from R2 into *path* if R2 is configured."""
+        if not self._r2_endpoint_url:
+            return
+        self._dir.mkdir(parents=True, exist_ok=True)
+        self._r2_client().download_file(self._r2_bucket_name, path.name, str(path))
+        log.info("Downloaded from R2: %s", path.name)
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
@@ -127,6 +159,9 @@ class DataRepository:
         """Load the full ``results_latest.json`` artifact (cached)."""
         path = self._dir / "results_latest.json"
         if not path.exists():
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._download_from_r2, path)
+        if not path.exists():
             raise FileNotFoundError(f"No ML artifact found at {path}")
         return await self._cached(_CACHE_KEY, path)
 
@@ -149,6 +184,9 @@ class DataRepository:
     async def get_next_season_predictions(self) -> list[dict]:
         """Return next-season predictions from the companion file if present."""
         next_path = self._dir / "next_season_predictions.json"
+        if not next_path.exists():
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._download_from_r2, next_path)
         if next_path.exists():
             data = await self._cached(_NEXT_CACHE_KEY, next_path)
             # File may itself be a list or a dict with a list inside.

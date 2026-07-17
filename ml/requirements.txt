@@ -20,3 +20,4 @@ optuna>=3.5
 lightgbm>=4.3
 catboost>=1.2
 openpyxl>=3.1
+boto3>=1.34

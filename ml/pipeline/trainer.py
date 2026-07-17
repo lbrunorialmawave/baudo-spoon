@@ -302,11 +302,30 @@ class Trainer:
     def _artifact(self, filename: str) -> Path:
         return self._artifacts_dir / filename
 
+    def _r2_client(self) -> Any:
+        if not hasattr(self, "_s3"):
+            import boto3
+            self._s3 = boto3.client(
+                "s3",
+                endpoint_url=self.cfg.r2_endpoint_url,
+                aws_access_key_id=self.cfg.r2_access_key_id,
+                aws_secret_access_key=self.cfg.r2_secret_access_key,
+            )
+        return self._s3
+
+    def _upload_to_r2(self, local_path: Path) -> None:
+        # Flat key: model files already embed run_id in their filename;
+        # fixed-name files (results_latest.json, etc.) overwrite intentionally.
+        key = local_path.name
+        self._r2_client().upload_file(str(local_path), self.cfg.r2_bucket_name, key)
+        log.info("Uploaded to R2: %s", key)
+
     def _save_json(self, data: Any, filename: str) -> None:
         path = self._artifact(filename)
         with path.open("w", encoding="utf-8") as f:
             json.dump(_json_safe(data), f, indent=2, ensure_ascii=False)
         log.info("Saved %s", path)
+        self._upload_to_r2(path)
 
     def _save_model(
         self,
@@ -334,6 +353,7 @@ class Trainer:
         model_path = self._artifact(f"{stem}.joblib")
         joblib.dump(pipeline, model_path)
         log.info("Model saved: %s", model_path)
+        self._upload_to_r2(model_path)
 
         # Companion metadata for traceability
         meta = {
@@ -379,6 +399,7 @@ class Trainer:
         with log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(_json_safe(record)) + "\n")
         log.info("Telemetry appended to %s", log_path)
+        self._upload_to_r2(log_path)
 
     # ── Role-partitioned sub-pipeline ─────────────────────────────────────────
 

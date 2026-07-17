@@ -27,6 +27,12 @@ class APISettings(BaseSettings):
         description="Directory containing ML pipeline output JSON artifacts",
     )
 
+    # ── Artifact storage (Cloudflare R2) ────────────────────────────────────
+    r2_endpoint_url: str = Field(..., description="https://<account_id>.r2.cloudflarestorage.com")
+    r2_access_key_id: str = Field(...)
+    r2_secret_access_key: str = Field(...)
+    r2_bucket_name: str = Field(default="baudo-spoon-ml-artifacts")
+
     # Redis — optional; caching is disabled when not provided.
     redis_url: str = Field(
         default="redis://localhost:6379/0",

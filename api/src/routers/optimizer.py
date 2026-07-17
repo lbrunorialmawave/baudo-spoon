@@ -224,7 +224,13 @@ async def run_multi_strategy(
     tramite :class:`DataRepository.get_player_pool`, facendo join con le
     predizioni ML di ``results_latest.json``.
     """
-    repo = DataRepository(artifacts_dir=settings.artifacts_dir)
+    repo = DataRepository(
+        artifacts_dir=settings.artifacts_dir,
+        r2_endpoint_url=settings.r2_endpoint_url,
+        r2_access_key_id=settings.r2_access_key_id,
+        r2_secret_access_key=settings.r2_secret_access_key,
+        r2_bucket_name=settings.r2_bucket_name,
+    )
     config = _build_config(req)
 
     if req.pool_override is not None:
@@ -294,7 +300,13 @@ async def run_single_strategy(
 ) -> OptimizationResultSchema:
     """Esegue l'ottimizzazione su una singola strategia (più veloce di ``/multi``)."""
     strategy = _strategy_by_name(strategy_name)
-    repo = DataRepository(artifacts_dir=settings.artifacts_dir)
+    repo = DataRepository(
+        artifacts_dir=settings.artifacts_dir,
+        r2_endpoint_url=settings.r2_endpoint_url,
+        r2_access_key_id=settings.r2_access_key_id,
+        r2_secret_access_key=settings.r2_secret_access_key,
+        r2_bucket_name=settings.r2_bucket_name,
+    )
     config = _build_config(req)
 
     if req.pool_override is not None:

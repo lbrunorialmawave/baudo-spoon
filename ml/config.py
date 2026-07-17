@@ -81,6 +81,12 @@ class MLConfig(BaseSettings):
     # ── Output ────────────────────────────────────────────────────────────────
     artifacts_dir: Path = ARTIFACTS_DIR
 
+    # ── Artifact storage (Cloudflare R2) ────────────────────────────────────
+    r2_endpoint_url: str = Field(..., description="https://<account_id>.r2.cloudflarestorage.com")
+    r2_access_key_id: str = Field(...)
+    r2_secret_access_key: str = Field(...)
+    r2_bucket_name: str = Field(default="baudo-spoon-ml-artifacts")
+
 
 # Singleton — imported by all submodules.
 settings = MLConfig()
