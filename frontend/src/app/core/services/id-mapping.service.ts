@@ -20,7 +20,9 @@ export class IdMappingService {
     seasonStart?: number;
     matchMethod?: string;
     canonicalRole?: string;
+    mantraRole?: string;
     matchedOnly?: boolean;
+    unresolvedOnly?: boolean;
     page?: number;
     size?: number;
   } = {}): Observable<IdMappingListResponse> {
@@ -30,7 +32,9 @@ export class IdMappingService {
     if (opts.seasonStart != null) params = params.set('season_start', opts.seasonStart);
     if (opts.matchMethod)         params = params.set('match_method', opts.matchMethod);
     if (opts.canonicalRole)       params = params.set('canonical_role', opts.canonicalRole);
+    if (opts.mantraRole)          params = params.set('mantra_role', opts.mantraRole);
     if (opts.matchedOnly)         params = params.set('matched_only', 'true');
+    if (opts.unresolvedOnly)      params = params.set('unresolved_only', 'true');
     return this.http.get<IdMappingListResponse>(this.endpoint, { params });
   }
 

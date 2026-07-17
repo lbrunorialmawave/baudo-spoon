@@ -52,6 +52,13 @@ def main() -> None:
         default=settings.output_dir,
     )
     parser.add_argument(
+        "--start-round",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Start scraping from this round number (default: 1)",
+    )
+    parser.add_argument(
         "--no-db",
         action="store_true",
         help="Skip database ingestion and write CSV files only (match stats mode)",
@@ -204,6 +211,7 @@ def _run_match_stats(args: argparse.Namespace) -> None:
         leagues=args.leagues,
         seasons=args.seasons,
         output_dir=args.output_dir,
+        start_round=args.start_round,
     )
 
     if args.no_db:

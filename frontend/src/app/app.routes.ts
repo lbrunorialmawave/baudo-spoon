@@ -2,6 +2,7 @@ import { Routes } from '@angular/router';
 import { apiKeyGuard } from './core/guards/api-key.guard';
 import { dataReadyResolver } from './core/resolvers/data-ready.resolver';
 import { ShellComponent } from './shared/components/shell/shell.component';
+import { AdminComponent } from './features/admin/admin.component';
 
 export const routes: Routes = [
   {
@@ -54,6 +55,10 @@ export const routes: Routes = [
         path: 'id-mapping',
         loadComponent: () =>
           import('./features/id-mapping/id-mapping.component').then(m => m.IdMappingComponent),
+      },
+      {
+        path: 'admin',
+        component: AdminComponent,
       },
     ],
   },

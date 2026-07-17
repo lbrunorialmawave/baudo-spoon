@@ -242,6 +242,8 @@ class PlayerQuotationWithMappingSchema(PlayerQuotationSchema):
     team_fotmob: Optional[str] = None
     match_method: Optional[str] = None
     confidence: Optional[float] = None
+    ruolo_primario: Optional[str] = None
+    ruoli_mantra: Optional[list[str]] = None
 
 
 class PlayerIdMapSchema(_CamelModel):
@@ -262,6 +264,9 @@ class PlayerIdMapSchema(_CamelModel):
     confidence: float
     created_at: datetime
     updated_at: datetime
+    # MANTRA 12-role fields (from player_mantra_roles, may be null)
+    ruoli_mantra: Optional[list[str]] = None
+    ruolo_primario: Optional[str] = None
 
 
 class UpdateIdMappingRequest(_CamelModel):
@@ -281,6 +286,13 @@ class UpdateIdMappingRequest(_CamelModel):
     """Override canonical role (GK/DEF/MID/FWD)."""
     note: Optional[str] = None
     """Free-text note about this override."""
+    # MANTRA role overrides (optional)
+    ruoli_mantra: Optional[list[str]] = None
+    """Override MANTRA roles (e.g. ["Dd", "E"])."""
+    ruolo_primario: Optional[str] = None
+    """Override primary MANTRA role."""
+    data_validated: Optional[bool] = None
+    """Mark as validated by the user."""
 
 
 class QuotationRoleAggregateSchema(_CamelModel):

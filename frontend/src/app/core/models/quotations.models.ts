@@ -23,6 +23,8 @@ export interface PlayerQuotation {
   teamFotmob: string | null;
   matchMethod: string | null;
   confidence: number | null;
+  ruoloPrimario: string | null;
+  ruoliMantra: string[] | null;
 }
 
 export interface QuotationRoleAggregate {
@@ -80,6 +82,9 @@ export interface PlayerIdMapping {
   confidence: number;
   createdAt: string;
   updatedAt: string;
+  // MANTRA 12-role fields
+  ruoliMantra?: string[] | null;
+  ruoloPrimario?: string | null;
 }
 
 export interface IdMappingListResponse {
@@ -105,4 +110,8 @@ export interface UpdateIdMappingRequest {
   teamFotmob?: string | null;
   canonicalRole?: string | null;
   note?: string | null;
+  // MANTRA role overrides (optional)
+  ruoliMantra?: string[] | null;
+  ruoloPrimario?: string | null;
+  dataValidated?: boolean | null;
 }

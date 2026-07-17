@@ -47,6 +47,8 @@ from typing import Optional
 import pandas as pd
 import sqlalchemy as sa
 
+from ml.mantra.roles import calcola_ruolo_primario, normalizza_rm
+
 log = logging.getLogger(__name__)
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -276,6 +278,9 @@ def load_quotation_dataframe(file: SeasonFile) -> pd.DataFrame:
     df["name_norm"] = df["name"].map(normalise_player_name)
     df["team_norm"] = df["team"].map(normalise_team).map(apply_team_alias)
     df["last_name_norm"] = df["name_norm"].map(last_name_token)
+    # Parse MANTRA roles from rm column
+    df["ruoli_mantra"] = df["rm"].apply(_parse_mantra_rm)
+    df["ruolo_primario"] = df["ruoli_mantra"].apply(_compute_ruolo_primario)
     # Ensure integer types for IDs and counts.
     int_cols = [
         "fantacalcio_id", "qt_a", "qt_i", "diff_val",
@@ -797,6 +802,60 @@ _UPSERT_MAP_SQL = sa.text("""
 """)
 
 
+# ── MANTRA helpers ─────────────────────────────────────────────────────────
+
+def _parse_mantra_rm(raw: object) -> list[str]:
+    """Parse a raw rm cell from the XLSX into a list of canonical MANTRA roles."""
+    if not raw or pd.isna(raw):
+        return []
+    return normalizza_rm(str(raw))
+
+
+def _compute_ruolo_primario(ruoli: list[str]) -> Optional[str]:
+    """Compute the primary MANTRA role (most defensive) for a player."""
+    return calcola_ruolo_primario(ruoli)
+
+
+_UPSERT_MANTRA_ROLES_SQL = sa.text("""
+    INSERT INTO player_mantra_roles (
+        fantacalcio_id, season_start, ruolo_primario, ruoli_mantra
+    )
+    VALUES (
+        :fantacalcio_id, :season_start, :ruolo_primario, :ruoli_mantra
+    )
+    ON CONFLICT (fantacalcio_id, season_start) DO UPDATE SET
+        ruolo_primario = EXCLUDED.ruolo_primario,
+        ruoli_mantra   = EXCLUDED.ruoli_mantra
+""")
+
+
+def persist_mantra_roles(quotazioni: pd.DataFrame, engine: sa.Engine) -> int:
+    """Upsert MANTRA role rows. Returns the number of rows persisted."""
+    # Filter rows that actually have parsed MANTRA roles
+    has_roles = quotazioni["ruoli_mantra"].apply(lambda r: len(r) > 0)
+    if not has_roles.any():
+        log.warning("No MANTRA roles found in the quotation data (rm column empty?)")
+        return 0
+
+    payload = quotazioni.loc[has_roles, [
+        "fantacalcio_id", "season_start", "ruolo_primario", "ruoli_mantra",
+    ]].copy()
+
+    # Convert list to PostgreSQL array literal
+    payload["ruoli_mantra"] = payload["ruoli_mantra"].apply(
+        lambda r: "{" + ",".join(r) + "}"
+    )
+    payload = payload.astype(object).where(pd.notnull(payload), None)
+    rows = payload.to_dict(orient="records")
+
+    with engine.begin() as conn:
+        conn.execute(_UPSERT_MANTRA_ROLES_SQL, rows)
+    log.info("  Persisted %d MANTRA role rows.", len(rows))
+    return len(rows)
+
+
+# ── Persistence ──────────────────────────────────────────────────────────────
+
 def persist_quotations(
     quotazioni: pd.DataFrame, engine: sa.Engine, source: str
 ) -> int:
@@ -925,6 +984,10 @@ def main() -> int:
         # Persist quotations
         n_q = persist_quotations(df, engine=engine, source=args.source)
         log.info("  Persisted %d quotation rows.", n_q)
+
+        # Persist MANTRA roles
+        n_mr = persist_mantra_roles(df, engine=engine)
+        log.info("  Persisted %d MANTRA role rows.", n_mr)
 
         # Build the id map
         id_map = build_player_id_map(df, engine=engine, league_name=args.league)

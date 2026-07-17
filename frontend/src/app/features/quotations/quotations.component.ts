@@ -12,6 +12,8 @@ const ROLE_COLORS: Record<string, string> = {
   GK: '#F59E0B', DEF: '#22C55E', MID: '#3B82F6', FWD: '#EF4444',
 };
 
+const MANTRA_ROLES = ['Por', 'Dc', 'Dd', 'Ds', 'B', 'E', 'M', 'C', 'T', 'W', 'A', 'Pc'] as const;
+
 @Component({
   selector: 'app-quotations',
   standalone: true,
@@ -42,7 +44,7 @@ const ROLE_COLORS: Record<string, string> = {
                 <div class="flex items-center justify-between mb-1">
                   <span class="badge text-white text-xs"
                         [style.background]="roleColor(rs.role)">{{ rs.role }}</span>
-                  <span class="text-xs" style="color:var(--color-text-secondary)">avg qtA</span>
+                  <span class="text-xs" style="color:var(--color-text-secondary)" title="Media Quotazione d'Acquisto">avg qtA</span>
                 </div>
                 <p class="text-2xl font-bold tabular-nums" [style.color]="roleColor(rs.role)">
                   {{ rs.avgQtA | number:'1.0-0' }}
@@ -86,15 +88,36 @@ const ROLE_COLORS: Record<string, string> = {
             <div class="flex gap-2" role="group">
               <button class="rounded-full border px-3 py-1 text-xs font-medium"
                       [style]="selectedRole() === null
-                        ? 'background:var(--color-accent);color:#fff;border-color:transparent'
+                        ? 'background:var(--color-accent);color:#fff;border-color:transparent' + (filterMode() === 'mantra' ? ';opacity:0.5' : '')
                         : 'background:var(--color-surface);color:var(--color-text-secondary);border-color:var(--color-border)'"
                       (click)="selectedRole.set(null); currentPage.set(1)">All</button>
               @for (role of ['GK','DEF','MID','FWD']; track role) {
                 <button class="rounded-full border px-3 py-1 text-xs font-medium"
                         [style]="selectedRole() === role
                           ? 'background:' + roleColor(role) + ';color:#fff;border-color:transparent'
-                          : 'background:var(--color-surface);color:var(--color-text-secondary);border-color:var(--color-border)'"
-                        (click)="selectedRole.set(role); currentPage.set(1)">{{ role }}</button>
+                          : filterMode() === 'mantra'
+                            ? 'background:var(--color-surface);color:var(--color-text-secondary);border-color:var(--color-border);opacity:0.35'
+                            : 'background:var(--color-surface);color:var(--color-text-secondary);border-color:var(--color-border)'"
+                        (click)="selectedRole.set(role); selectedRuoloPrimario.set(null); currentPage.set(1)">{{ role }}</button>
+              }
+            </div>
+
+            <!-- Mantra role filter chips -->
+            <div class="flex gap-2" role="group">
+              <button class="rounded-full border px-3 py-1 text-xs font-medium"
+                      [style]="selectedRuoloPrimario() === null
+                        ? 'background:var(--color-accent);color:#fff;border-color:transparent' + (filterMode() === 'classic' ? ';opacity:0.5' : '')
+                        : 'background:var(--color-surface);color:var(--color-text-secondary);border-color:var(--color-border)'"
+                      (click)="selectedRuoloPrimario.set(null); currentPage.set(1)"
+                      title="Filter by Mantra role">Mantra</button>
+              @for (role of mantraRoles; track $index) {
+                <button class="rounded-full border px-3 py-1 text-xs font-medium"
+                        [style]="selectedRuoloPrimario() === role
+                          ? 'background:var(--color-accent);color:#fff;border-color:transparent'
+                          : filterMode() === 'classic'
+                            ? 'background:var(--color-surface);color:var(--color-text-secondary);border-color:var(--color-border);opacity:0.35'
+                            : 'background:var(--color-surface);color:var(--color-text-secondary);border-color:var(--color-border)'"
+                        (click)="selectedRuoloPrimario.set(role); selectedRole.set(null); currentPage.set(1)">{{ role }}</button>
               }
             </div>
 
@@ -123,10 +146,11 @@ const ROLE_COLORS: Record<string, string> = {
                     <th class="px-3 py-2 text-left">Player</th>
                     <th class="px-3 py-2 text-left">Team</th>
                     <th class="px-3 py-2 text-center">Role</th>
-                    <th class="px-3 py-2 text-right">qtA</th>
-                    <th class="px-3 py-2 text-right">qtI</th>
-                    <th class="px-3 py-2 text-right">FVM</th>
-                    <th class="px-3 py-2 text-right">Diff</th>
+                    <th class="px-3 py-2 text-center" title="Ruolo primario Mantra">Mantra</th>
+                    <th class="px-3 py-2 text-right" title="Quotazione d'Acquisto — prezzo d'asta in crediti">qtA</th>
+                    <th class="px-3 py-2 text-right" title="Quotazione Iniziale — prezzo di partenza">qtI</th>
+                    <th class="px-3 py-2 text-right" title="Fantacalcio Voto Medio — media voti del giocatore">FVM</th>
+                    <th class="px-3 py-2 text-right" title="Differenza qtA - qtI (verde = plusvalenza, rosso = minusvalenza)">Diff</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -144,6 +168,9 @@ const ROLE_COLORS: Record<string, string> = {
                         <span class="badge text-white text-xs" [style.background]="roleColor(q.role)">
                           {{ q.role }}
                         </span>
+                      </td>
+                      <td class="px-3 py-2.5 text-center text-xs" style="color:var(--color-text-secondary)">
+                        {{ q.ruoloPrimario ?? '—' }}
                       </td>
                       <td class="px-3 py-2.5 text-right font-mono font-semibold"
                           style="color:var(--color-accent)">{{ q.qtA }}</td>
@@ -195,11 +222,20 @@ export class QuotationsComponent {
   readonly tableError = signal<string | null>(null);
   readonly selectedSeason = signal<number | null>(null);
   readonly selectedRole = signal<string | null>(null);
+  readonly selectedRuoloPrimario = signal<string | null>(null);
+  readonly selectedRuoloMantra = signal<string | null>(null);
   readonly searchInput = signal('');
   readonly search = signal('');
   readonly currentPage = signal(1);
 
   hoverId: number | null = null;
+  readonly mantraRoles = MANTRA_ROLES;
+
+  readonly filterMode = computed(() => {
+    if (this.selectedRole() !== null) return 'classic';
+    if (this.selectedRuoloPrimario() !== null) return 'mantra';
+    return null;
+  });
 
   readonly totalPages = computed(() => Math.ceil(this.total() / 50));
 
@@ -247,12 +283,16 @@ export class QuotationsComponent {
     effect(() => {
       const season = this.selectedSeason();
       const role = this.selectedRole();
+      const ruoloPrimario = this.selectedRuoloPrimario();
+      const ruoloMantra = this.selectedRuoloMantra();
       const page = this.currentPage();
       this.tableLoading.set(true);
       this.tableError.set(null);
       this.quotService.getQuotations({
         seasonStart: season ?? undefined,
         role: role ?? undefined,
+        ruoloPrimario: ruoloPrimario ?? undefined,
+        ruoloMantra: ruoloMantra ?? undefined,
         page,
         size: 50,
       }).subscribe({

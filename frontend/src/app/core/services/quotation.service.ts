@@ -17,6 +17,7 @@ export class QuotationService {
   getQuotations(opts: {
     seasonStart?: number; role?: string; team?: string;
     playerFotmobId?: number; minQtA?: number; maxQtA?: number;
+    ruoloPrimario?: string; ruoloMantra?: string;
     page?: number; size?: number;
   } = {}): Observable<QuotationListResponse> {
     let params = new HttpParams()
@@ -28,6 +29,8 @@ export class QuotationService {
     if (opts.playerFotmobId != null) params = params.set('player_fotmob_id', opts.playerFotmobId);
     if (opts.minQtA != null)        params = params.set('min_qt_a', opts.minQtA);
     if (opts.maxQtA != null)        params = params.set('max_qt_a', opts.maxQtA);
+    if (opts.ruoloPrimario)         params = params.set('ruolo_primario', opts.ruoloPrimario);
+    if (opts.ruoloMantra)           params = params.set('ruolo_mantra', opts.ruoloMantra);
     return this.http.get<QuotationListResponse>(`${this.baseUrl}/quotations`, { params });
   }
 

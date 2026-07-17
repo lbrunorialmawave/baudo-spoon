@@ -19,3 +19,4 @@ polars>=0.20
 optuna>=3.5
 lightgbm>=4.3
 catboost>=1.2
+openpyxl>=3.1

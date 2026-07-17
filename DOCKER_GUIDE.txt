@@ -16,6 +16,29 @@ Convenzioni shell:
     automaticamente; vanno lanciati con `docker compose --profile <nome> run --rm`).
 
 
+══════════════════════════════════════════════════════════════════════════════
+  ⚡ NOVITÀ: SCRIPT AUTOMATIZZATO
+══════════════════════════════════════════════════════════════════════════════
+
+È disponibile `run_all.ps1` che esegue l'INTERO workflow in un colpo solo:
+
+    .\run_all.ps1
+
+Esegue in sequenza: build → avvio servizi → migration → scraping match stats
+→ scraping per-season stats → import quotazioni (se presenti) → generazione
+CSV fantavoti → pipeline ML → ID mapping → MANTRA scoring → avvio frontend Angular.
+
+Per saltare fasi già completate usa i flag -Skip*:
+
+    .\run_all.ps1 -SkipBuild -SkipScraper -SkipStats -SkipFantavoto -SkipML -SkipMapping -SkipMantra
+
+Per personalizzare leghe e stagioni:
+
+    .\run_all.ps1 -League "Serie A" -Seasons "2025-2026" -StatsSeasons "2023-2024,2024-2025,2025-2026"
+
+══════════════════════════════════════════════════════════════════════════════
+
+
 ================================================================================
 1.  SETUP INIZIALE (una tantum)
 ================================================================================
@@ -65,7 +88,7 @@ Convenzioni shell:
 
 2.4 Test rapido che l'API risponda:
 
-    curl http://localhost:8000/health
+    curl http://localhost:8000/api/v1/health
     curl http://localhost:8000/docs             (Swagger UI interattiva)
 
 2.5 Fermare i servizi (mantiene volumi e immagini):
@@ -101,6 +124,8 @@ container `db` (crea le tabelle base). Le migration successive in
     type db\migrations\002_add_player_quotations.sql | docker compose exec -T db psql -U fbref -d fbref
     type db\migrations\003_add_player_season_roles.sql | docker compose exec -T db psql -U fbref -d fbref
     type db\migrations\004_extend_id_map_match_method.sql | docker compose exec -T db psql -U fbref -d fbref
+    type db\migrations\005_fix_qt_norm_precision.sql | docker compose exec -T db psql -U fbref -d fbref
+    type db\migrations\006_create_mantra_views.sql | docker compose exec -T db psql -U fbref -d fbref
 
 3.2 Verifica rapida che le tabelle esistano:
 
@@ -140,11 +165,15 @@ Il servizio `scraper` NON parte in automatico. Va lanciato manualmente con
 
     docker compose --profile scraper run --rm scraper --leagues "Serie A" --stats --roles
 
-4.6 Cambiare la directory di output CSV dentro al container:
+4.6 Partire da un round specifico (utile dopo un crash di Chrome):
+
+    docker compose --profile scraper run --rm scraper --leagues "Serie A" --seasons "2025-2026" --start-round 19
+
+4.7 Cambiare la directory di output CSV dentro al container:
 
     docker compose --profile scraper run --rm scraper -e SCRAPER_OUTPUT_DIR=/app/downloaded_files/output_serieA --leagues "Serie A" --no-db
 
-4.7 Pulizia cache scraper (file di download intermedi):
+4.8 Pulizia cache scraper (file di download intermedi):
 
     docker compose run --rm --entrypoint sh scraper -c "rm -rf /app/downloaded_files/cache/*"
     oppure (se hai il servizio fermo):
@@ -214,25 +243,86 @@ Vanno lanciati come comandi one-shot dentro il container `api`
 
 6.1 Import quotazioni dai listoni Fantagazzetta (file .xlsx in ./quotazioni/):
 
-    docker compose run --rm api python -m ml.data.import_quotations --quotazioni-dir /app/quotazioni --source listone_fantagazzetta
+    docker compose run --rm -v ${PWD}\quotazioni:/app/quotazioni:ro api python -m ml.data.import_quotations --quotazioni-dir /app/quotazioni --source listone_fantagazzetta
 
 6.2 Generazione del CSV fantavoti reali a partire dai JSON in ./voti/:
 
-    docker compose run --rm api python -m ml.data.voti_loader --voti-dir /app/voti --out /app/artifacts/fantavoto.csv
+    ⚠️  Il container `api` NON ha pandas. Usa il container `ml`:
+
+    docker compose --profile ml build --no-cache ml
+    docker compose --profile ml run --rm --entrypoint python -v ${PWD}\voti:/app/voti:ro ml -m ml.data.voti_loader --voti-dir /app/voti --out /app/artifacts/fantavoto.csv
 
     Il file `fantavoto.csv` prodotto è quello da passare a
     `--fantavoto-csv` nella pipeline ML (§5.3, §5.6).
 
 6.3 Test offline del loader (utile dopo modifiche al parser):
 
-    docker compose run --rm api python -m ml.data.test_quotations_offline
+    docker compose --profile ml run --rm --entrypoint python ml -m ml.data.test_quotations_offline
 
-NOTA: i path `/app/quotazioni`, `/app/voti`, `/app/artifacts` sono mappati
-come bind mount o volumi solo se aggiunti a `docker-compose.yml`. La
-configurazione attuale espone `/app/artifacts` (volume `ml_artifacts`)
-ma NON monta `./quotazioni` né `./voti`. Per usarli al volo:
+NOTA: i path `/app/voti` e `/app/quotazioni` NON sono montati di default.
+Vanno mountati esplicitamente con `-v ${PWD}\voti:/app/voti:ro` (Windows)
+o `-v ${PWD}/voti:/app/voti:ro` (Linux/Mac).
 
-    docker compose run --rm -v ${PWD}/quotazioni:/app/quotazioni:ro -v ${PWD}/voti:/app/voti:ro -v ml_artifacts:/app/artifacts api python -m ml.data.voti_loader --voti-dir /app/voti --out /app/artifacts/fantavoto.csv
+
+================================================================================
+6B. ID MAPPING FANTACALCIO ↔ FOTMOB
+================================================================================
+
+Dopo aver importato le quotazioni (§6.1), i giocatori Fantacalcio non sono
+ancora associati ai corrispondenti ID FotMob. Il mapping è necessario per
+recuperare le statistiche stagionali (voti, minuti, xG) usate dal calcolatore
+MANTRA.
+
+6B.1 Esegui il matching automatico:
+
+    docker compose exec -e ML_DATABASE_URL="postgresql+psycopg2://fbref:DevPassword123@db:5432/fbref" api python -m ml.data.run_id_mapping
+
+    Output atteso:
+      Pass 1: exact match on (surname, team) ...
+        matched: ~1500, unmatched: ~130
+      Pass 2: fuzzy match on surname ...
+        fuzzy hits: ~56, still unmatched: ~76
+      Match rate: ~95%
+
+6B.2 Verifica il risultato:
+
+    curl http://localhost:8000/api/v1/intelligence/id-mapping/stats
+
+    Atteso: matchRate > 0.95, pochi unmatched rimasti.
+
+6B.3 I rimanenti unmatched (~5%) possono essere corretti manualmente
+dall'interfaccia ID Mapping (/id-mapping) o modificando direttamente
+la tabella `player_id_map`.
+
+
+================================================================================
+6C. COMPUTAZIONE MANTRA (SCORING GIOCATORI)
+================================================================================
+
+Dopo aver completato l'ID mapping (§6B), si può lanciare il calcolatore
+MANTRA che produce i 4 pilastri (P1-P4), FP, VR, Prezzo e tutte le
+classificazioni (TOP, AFFARE, SCOMMESSA, ...).
+
+6C.1 Esegui la computazione:
+
+    curl -X POST http://localhost:8000/api/v1/mantra/run -H "Content-Type: application/json" -d '{}'
+
+    Output atteso:
+      {"status":"ok","season_start":2025,"n_players":532,...}
+
+6C.2 Verifica i risultati:
+
+    curl http://localhost:8000/api/v1/mantra/players?page=1&size=3
+    curl http://localhost:8000/api/v1/mantra/classifications
+
+6C.3 Se vuoi forzare il ricalcolo (es. dopo aver corretto l'ID mapping):
+
+    curl -X POST http://localhost:8000/api/v1/mantra/run -H "Content-Type: application/json" -d '{"season_start": 2025}'
+
+NOTA: la computazione MANTRA usa i dati di `player_season_aggregates`
+e `team_strength_aggregates` (viste create dalla migration 006).
+Se queste viste sono vuote, significa che i dati FotMob non sono
+stati ancora scaricati (vedi §4) o l'ID mapping non è stato eseguito.
 
 
 ================================================================================
@@ -242,24 +332,28 @@ ma NON monta `./quotazioni` né `./voti`. Per usarli al volo:
 L'optimizer non è un servizio: è esposto dall'API FastAPI. Non servono
 comandi Docker aggiuntivi oltre all'avvio dell'API (§2.1).
 
-7.1 Esempio di chiamata — strategia singola:
+7.1 Lista delle strategie disponibili:
 
-    curl -X POST http://localhost:8000/optimizer/run ^
-         -H "Content-Type: application/json" ^
-         -H "X-API-Key: $API_KEY_SECRET" ^
-         -d "{\"strategy\":\"balanced\",\"budget\":500}"
+    Invoke-RestMethod -Uri http://localhost:8000/api/v1/optimizer/strategies | ConvertTo-Json
+    oppure
+    curl http://localhost:8000/api/v1/optimizer/strategies
 
 7.2 Esempio di chiamata — tutte le 4 strategie (bilanciata, super-difensiva,
     super-offensiva, mista):
 
-    curl -X POST http://localhost:8000/optimizer/run-all ^
-         -H "Content-Type: application/json" ^
-         -H "X-API-Key: $API_KEY_SECRET" ^
-         -d "{\"budget\":500}"
+    $body = @{budget=500} | ConvertTo-Json
+    Invoke-RestMethod -Uri http://localhost:8000/api/v1/optimizer/multi `
+        -Method POST `
+        -ContentType "application/json" `
+        -Body $body | ConvertTo-Json
 
-7.3 Lista delle strategie disponibili:
+7.3 Esempio di chiamata — strategia singola:
 
-    curl http://localhost:8000/optimizer/strategies -H "X-API-Key: $API_KEY_SECRET"
+    $body = @{budget=500; strategy_names=@("balanced")} | ConvertTo-Json
+    Invoke-RestMethod -Uri http://localhost:8000/api/v1/optimizer/multi `
+        -Method POST `
+        -ContentType "application/json" `
+        -Body $body | ConvertTo-Json
 
 7.4 Documentazione interattiva completa:
 
@@ -388,15 +482,33 @@ Setup iniziale (una volta):
     docker compose up -d db redis api
     Get-Content db\migrations\*.sql | docker compose exec -T db psql -U fbref -d fbref
 
-Workflow tipico (ogni volta):
-    # 1. Scraping nuovi dati
-    docker compose --profile scraper run --rm scraper --leagues "Serie A"
-    # 2. Genera fantavoto CSV reale
-    docker compose run --rm api python -m ml.data.voti_loader --voti-dir /app/voti --out /app/artifacts/fantavoto.csv
-    # 3. Riaddestra modelli ML
+Workflow tipico con script automatizzato (ogni volta):
+    .\run_all.ps1                             # tutto in un colpo
+    .\run_all.ps1 -SkipBuild -SkipFrontend    # solo elaborazione dati
+
+Workflow manuale (ogni volta):
+    # 1. Scraping match stats (38 giornate)
+    docker compose --profile scraper run --rm scraper --leagues "Serie A" --seasons "2025-2026"
+    # 2. Scraping per-season stats (almeno 3 stagioni per ML)
+    docker compose --profile scraper run --rm scraper --leagues "Serie A" --seasons "2023-2024,2024-2025,2025-2026" --stats
+    # 3. Genera fantavoto CSV reale (usa container ml, NON api)
+    docker compose --profile ml build --no-cache ml
+    docker compose --profile ml run --rm --entrypoint python -v ${PWD}\voti:/app/voti:ro ml -m ml.data.voti_loader --voti-dir /app/voti --out /app/artifacts/fantavoto.csv
+    # 4. Riaddestra modelli ML
     docker compose --profile ml run --rm ml --league "Serie A" --fantavoto-csv /app/artifacts/fantavoto.csv --predict-next
-    # 4. Chiama optimizer via API
-    curl -X POST http://localhost:8000/optimizer/run-all -H "X-API-Key: $API_KEY_SECRET" -H "Content-Type: application/json" -d "{\"budget\":500}"
+    # 5. Avvia frontend Angular
+    Push-Location frontend; npx ng serve --host 0.0.0.0 --port 4200
+
+Ripresa dopo crash Chrome:
+    docker compose --profile scraper run --rm scraper --leagues "Serie A" --seasons "2025-2026" --start-round 19
+
+Test optimizer via API:
+    $body = @{budget=500} | ConvertTo-Json
+    Invoke-RestMethod -Uri http://localhost:8000/api/v1/optimizer/multi -Method POST -ContentType "application/json" -Body $body | ConvertTo-Json
+
+Ripristino rapido dopo aver spento tutto:
+    docker compose up -d db redis api
+    Get-Content db\migrations\*.sql | docker compose exec -T db psql -U fbref -d fbref
 
 Spegnere tutto:
     docker compose down                 (mantiene volumi e dati)
@@ -407,6 +519,7 @@ Debug:
     docker compose logs -f api
     docker compose exec db psql -U fbref -d fbref
     docker compose exec api bash
+    docker volume list | findstr baudo
 
 ================================================================================
 Fine della guida. Per dubbi, controlla sempre i docstring dei singoli script

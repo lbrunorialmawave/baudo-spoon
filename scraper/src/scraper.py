@@ -33,11 +33,13 @@ class FotMobMatchStatsScraper:
         leagues: str | Iterable[str] = SERIE_A,
         seasons: str | int | Iterable[str | int] | None = None,
         output_dir: Path = settings.output_dir,
+        start_round: int = 1,
     ) -> None:
         self.leagues = self._normalize_leagues(leagues)
         self.seasons = self._normalize_seasons(seasons)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.start_round = start_round
 
     def run(
         self,
@@ -46,35 +48,36 @@ class FotMobMatchStatsScraper:
         """Scrape all configured leagues/seasons and persist results as CSV."""
         outputs: dict[tuple[str, str], tuple[pd.DataFrame, Path]] = {}
 
-        with get_managed_driver() as driver:
-            for league_name in self.leagues:
-                meta = LEAGUE_CATALOG[league_name]
+        for league_name in self.leagues:
+            meta = LEAGUE_CATALOG[league_name]
 
-                # If no season provided, we scrape the current one (e.g. 2023-2024 or 2024-2025).
-                # For simplicity, if not provided we just use a default season string.
-                # FotMob requires the exact season string like "2023-2024".
-                seasons_to_scrape = self.seasons if self.seasons else [self._get_current_season()]
+            # If no season provided, we scrape the current one (e.g. 2023-2024 or 2024-2025).
+            # For simplicity, if not provided we just use a default season string.
+            # FotMob requires the exact season string like "2023-2024".
+            seasons_to_scrape = self.seasons if self.seasons else [self._get_current_season()]
 
-                for season in seasons_to_scrape:
-                    log.info("Scraping league=%s season=%s", league_name, season)
-                    all_results: list[dict[str, Any]] = []
+            for season in seasons_to_scrape:
+                log.info("Scraping league=%s season=%s", league_name, season)
+                all_results: list[dict[str, Any]] = []
 
+                # Create a fresh driver for each league/season to avoid accumulating state
+                with get_managed_driver() as driver:
                     for _round_num, round_results in self._scrape_season(driver, meta, season):
                         if round_results:
                             all_results.extend(round_results)
                             if on_round_complete is not None:
                                 on_round_complete(league_name, season, pd.DataFrame(round_results))
 
-                    if not all_results:
-                        log.warning("No results found for %s %s", league_name, season)
-                        continue
+                if not all_results:
+                    log.warning("No results found for %s %s", league_name, season)
+                    continue
 
-                    df = pd.DataFrame(all_results)
-                    output_path = self._output_file(meta.file_stem, season)
-                    df.to_csv(output_path, index=False, encoding="utf-8")
-                    log.info("Wrote %d rows → %s", len(df), output_path)
+                df = pd.DataFrame(all_results)
+                output_path = self._output_file(meta.file_stem, season)
+                df.to_csv(output_path, index=False, encoding="utf-8")
+                log.info("Wrote %d rows → %s", len(df), output_path)
 
-                    outputs[(league_name, season)] = (df, output_path)
+                outputs[(league_name, season)] = (df, output_path)
 
         return outputs
 
@@ -83,8 +86,14 @@ class FotMobMatchStatsScraper:
     ) -> Iterator[tuple[int, list[dict[str, Any]]]]:
         total_rounds = 38  # Defaulting to 38 for major leagues
 
-        for round_num in range(1, total_rounds + 1):
+        for round_num in range(self.start_round, total_rounds + 1):
             log.info("Starting Round %d/%d for %s", round_num, total_rounds, meta.display_name)
+
+            # Check if driver is still alive; recover from tab crash if needed
+            if not self._ensure_driver_alive(driver, round_num):
+                log.error("Driver unrecoverable at round %d, skipping remaining rounds", round_num)
+                yield round_num, []
+                continue
 
             try:
                 round_results = self._get_matches_with_stats(driver, meta, season, round_num)
@@ -93,7 +102,44 @@ class FotMobMatchStatsScraper:
                 yield round_num, round_results
             except Exception as exc:
                 log.error("Error scraping Round %d: %s", round_num, exc)
+                # Attempt immediate recovery after crash for the NEXT round
+                if not self._recover_driver(driver, round_num):
+                    log.error("Driver unrecoverable after round %d, skipping remaining rounds", round_num)
                 yield round_num, []
+
+    @staticmethod
+    def _ensure_driver_alive(driver: Any, round_num: int) -> bool:
+        """Check if driver tab is alive and attempt recovery if crashed."""
+        try:
+            _ = driver.current_url  # cheap probe — raises if tab crashed
+            return True
+        except Exception:
+            log.warning("Tab appears crashed before round %d, attempting recovery...", round_num)
+            return FotMobMatchStatsScraper._recover_driver(driver, round_num)
+
+    @staticmethod
+    def _recover_driver(driver: Any, round_num: int) -> bool:
+        """Close crashed tab and open a fresh one."""
+        try:
+            windows = driver.window_handles
+            if len(windows) > 1:
+                driver.switch_to.window(windows[-1])
+                driver.close()
+                driver.switch_to.window(driver.window_handles[0])
+            else:
+                # Open a new tab and switch to it
+                driver.execute_script("window.open('about:blank','_blank')")
+                driver.switch_to.window(driver.window_handles[-1])
+                # Close the crashed one
+                if len(driver.window_handles) > 1:
+                    driver.close()
+                    driver.switch_to.window(driver.window_handles[0])
+            driver.get("about:blank")
+            log.info("Driver recovery successful after round %d", round_num)
+            return True
+        except Exception as exc:
+            log.error("Driver recovery failed at round %d: %s", round_num, exc)
+            return False
 
     def _get_matches_with_stats(
         self, driver: Any, meta: LeagueMeta, season: str, round_num: int
@@ -155,7 +201,8 @@ class FotMobMatchStatsScraper:
 
         except Exception as exc:
             log.warning("Error occurred fetching matches for round %d: %s", round_num, exc)
-            return []
+            # Let ALL exceptions propagate so _scrape_season can attempt recovery
+            raise
 
     def _scrape_match_stats(self, driver: Any, match_url: str) -> dict[str, Any]:
         stats_data: dict[str, Any] = {}
@@ -181,7 +228,11 @@ class FotMobMatchStatsScraper:
             return {k: v for k, v in stats_data.items() if v}
 
         except Exception as exc:
-            log.debug("Error scraping match stats for %s: %s", match_url, exc)
+            exc_msg = str(exc)
+            log.debug("Error scraping match stats for %s: %s", match_url, exc_msg)
+            # Propagate tab crash so _scrape_season can attempt recovery
+            if "tab crashed" in exc_msg.lower():
+                raise
             return {}
 
     def _click_stats_tab(self, driver: Any, wait: WebDriverWait) -> None:

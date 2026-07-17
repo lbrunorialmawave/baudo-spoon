@@ -12,10 +12,11 @@ import logging
 from pathlib import Path
 from typing import Any, Final, Optional
 
+import sqlalchemy as sa
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import MatchMethodEnum, PlayerIdMap, PlayerQuotation
+from .models import MatchMethodEnum, PlayerIdMap, PlayerMantraRole, PlayerQuotation
 
 log = logging.getLogger(__name__)
 
@@ -198,6 +199,8 @@ class DataRepository:
         player_fotmob_id: Optional[int],
         min_qt_a: Optional[int],
         max_qt_a: Optional[int],
+        ruolo_primario: Optional[str] = None,
+        ruolo_mantra: Optional[str] = None,
     ) -> list:
         """Compose WHERE clauses for ``list_quotations``."""
         filters = []
@@ -213,6 +216,10 @@ class DataRepository:
             filters.append(PlayerQuotation.qt_a <= max_qt_a)
         if player_fotmob_id is not None:
             filters.append(PlayerIdMap.player_fotmob_id == player_fotmob_id)
+        if ruolo_primario is not None:
+            filters.append(PlayerMantraRole.ruolo_primario == ruolo_primario)
+        if ruolo_mantra is not None:
+            filters.append(PlayerMantraRole.ruoli_mantra.any(ruolo_mantra))
         return filters
 
     async def list_quotations(
@@ -224,6 +231,8 @@ class DataRepository:
         player_fotmob_id: Optional[int] = None,
         min_qt_a: Optional[int] = None,
         max_qt_a: Optional[int] = None,
+        ruolo_primario: Optional[str] = None,
+        ruolo_mantra: Optional[str] = None,
         page: int = 1,
         size: int = 50,
     ) -> tuple[list[dict], int]:
@@ -232,14 +241,21 @@ class DataRepository:
         Each row is a dict with both quotation and mapping fields (left join,
         so ``player_fotmob_id``/``match_method`` may be ``None``).
         """
+        mantra_filter = ruolo_primario is not None or ruolo_mantra is not None
         filters = self._build_quotation_filters(
-            season_start, role, team, player_fotmob_id, min_qt_a, max_qt_a
+            season_start, role, team, player_fotmob_id, min_qt_a, max_qt_a,
+            ruolo_primario=ruolo_primario, ruolo_mantra=ruolo_mantra,
         )
 
         # Outer join quotation ↔ id-map on (fantacalcio_id, season_start).
         join_cond = and_(
             PlayerQuotation.fantacalcio_id == PlayerIdMap.fantacalcio_id,
             PlayerQuotation.season_start == PlayerIdMap.season_start,
+        )
+
+        mantra_join_cond = and_(
+            PlayerQuotation.fantacalcio_id == PlayerMantraRole.fantacalcio_id,
+            PlayerQuotation.season_start == PlayerMantraRole.season_start,
         )
 
         base_cols = [
@@ -265,9 +281,16 @@ class DataRepository:
             PlayerIdMap.match_method,
             PlayerIdMap.confidence,
         ]
+        if mantra_filter:
+            base_cols.extend([
+                PlayerMantraRole.ruolo_primario,
+                PlayerMantraRole.ruoli_mantra,
+            ])
 
         count_stmt = select(func.count()).select_from(PlayerQuotation)
         if filters:
+            if mantra_filter:
+                count_stmt = count_stmt.join(PlayerMantraRole, mantra_join_cond)
             if player_fotmob_id is not None:
                 # Cross-table filter → must include the join.
                 count_stmt = count_stmt.join(PlayerIdMap, join_cond)
@@ -276,6 +299,8 @@ class DataRepository:
 
         stmt = select(*base_cols).select_from(PlayerQuotation)
         stmt = stmt.join(PlayerIdMap, join_cond, isouter=True)
+        if mantra_filter:
+            stmt = stmt.join(PlayerMantraRole, mantra_join_cond)
         if filters:
             stmt = stmt.where(*filters)
         stmt = stmt.order_by(
@@ -295,6 +320,8 @@ class DataRepository:
                 r["confidence"] = float(r["confidence"])
             if r.get("imported_at") is not None and not isinstance(r["imported_at"], str):
                 r["imported_at"] = r["imported_at"].isoformat()
+            if r.get("ruoli_mantra") is not None and isinstance(r["ruoli_mantra"], list):
+                r["ruoli_mantra"] = list(r["ruoli_mantra"])
         return rows, total
 
     async def get_quotation_seasons(self, db: AsyncSession) -> list[int]:
@@ -389,11 +416,14 @@ class DataRepository:
         match_method: Optional[str] = None,
         canonical_role: Optional[str] = None,
         matched_only: bool = False,
+        mantra_role: Optional[str] = None,
+        unresolved_only: bool = False,
         page: int = 1,
         size: int = 50,
     ) -> tuple[list[dict], int]:
-        """Paginated listing of ``player_id_map`` rows."""
+        """Paginated listing of ``player_id_map`` rows with MANTRA roles."""
         filters = []
+        mantra_filters = []
         if season_start is not None:
             filters.append(PlayerIdMap.season_start == season_start)
         if match_method is not None:
@@ -402,15 +432,49 @@ class DataRepository:
             filters.append(PlayerIdMap.canonical_role == canonical_role)
         if matched_only:
             filters.append(PlayerIdMap.player_fotmob_id.is_not(None))
+        if mantra_role is not None:
+            mantra_filters.append(
+                PlayerMantraRole.ruolo_primario == mantra_role
+            )
+        if unresolved_only:
+            # Unresolved = unmatched OR fuzzy OR no mantra roles OR not validated
+            filters.append(
+                sa.or_(
+                    PlayerIdMap.match_method.in_(["unmatched", "fuzzy_name"]),
+                    ~sa.exists(
+                        sa.select(PlayerMantraRole.fantacalcio_id)
+                        .where(
+                            and_(
+                                PlayerMantraRole.fantacalcio_id == PlayerIdMap.fantacalcio_id,
+                                PlayerMantraRole.season_start == PlayerIdMap.season_start,
+                            )
+                        )
+                        .correlate(PlayerIdMap)
+                    ),
+                )
+            )
 
+        # Count (without mantra join to keep it simple)
         count_stmt = select(func.count()).select_from(PlayerIdMap)
         if filters:
             count_stmt = count_stmt.where(*filters)
         total = (await db.execute(count_stmt)).scalar_one()
 
-        stmt = select(PlayerIdMap)
+        # Query: left join mantra roles
+        stmt = (
+            select(PlayerIdMap, PlayerMantraRole)
+            .outerjoin(
+                PlayerMantraRole,
+                and_(
+                    PlayerMantraRole.fantacalcio_id == PlayerIdMap.fantacalcio_id,
+                    PlayerMantraRole.season_start == PlayerIdMap.season_start,
+                ),
+            )
+        )
         if filters:
             stmt = stmt.where(*filters)
+        if mantra_filters:
+            stmt = stmt.where(*mantra_filters)
         stmt = stmt.order_by(
             PlayerIdMap.season_start.desc(),
             PlayerIdMap.fantacalcio_id,
@@ -418,7 +482,16 @@ class DataRepository:
         stmt = stmt.offset(max(0, (page - 1) * size)).limit(max(1, size))
 
         result = await db.execute(stmt)
-        rows = [m.to_dict() for m in result.scalars().all()]
+        rows = []
+        for id_map, mantra in result.all():
+            d = id_map.to_dict()
+            if mantra:
+                d["ruoli_mantra"] = list(mantra.ruoli_mantra) if mantra.ruoli_mantra else []
+                d["ruolo_primario"] = mantra.ruolo_primario
+            else:
+                d["ruoli_mantra"] = None
+                d["ruolo_primario"] = None
+            rows.append(d)
         return rows, total
 
     async def get_id_mapping(
@@ -495,8 +568,12 @@ class DataRepository:
         name_fotmob: Optional[str] = None,
         team_fotmob: Optional[str] = None,
         canonical_role: Optional[str] = None,
+        ruoli_mantra: Optional[list[str]] = None,
+        ruolo_primario: Optional[str] = None,
+        data_validated: Optional[bool] = None,
     ) -> Optional[dict]:
-        """Manually update a single row in ``player_id_map``.
+        """Manually update a single row in ``player_id_map`` and optionally
+        ``player_mantra_roles``.
 
         Sets ``match_method='manual'`` and ``confidence=1.0`` so the
         override is clearly distinguishable from automatic matches.
@@ -510,6 +587,9 @@ class DataRepository:
             name_fotmob: FotMob player name (informational).
             team_fotmob: FotMob team name override.
             canonical_role: Canonical role override (GK/DEF/MID/FWD).
+            ruoli_mantra: MANTRA roles list (e.g. ["Dd", "E"]).
+            ruolo_primario: Primary MANTRA role.
+            data_validated: Mark as validated by the user.
 
         Returns:
             The updated row dict, or ``None`` if the row was not found.
@@ -540,6 +620,32 @@ class DataRepository:
         mapping.match_method = MatchMethodEnum.MANUAL
         mapping.confidence = 1.0
         mapping.updated_at = datetime.now(tz=timezone.utc)
+
+        # Update MANTRA roles if provided
+        if ruoli_mantra is not None or ruolo_primario is not None:
+            mantra_stmt = select(PlayerMantraRole).where(
+                and_(
+                    PlayerMantraRole.fantacalcio_id == fantacalcio_id,
+                    PlayerMantraRole.season_start == season_start,
+                )
+            )
+            mantra_result = await db.execute(mantra_stmt)
+            mantra_row = mantra_result.scalar_one_or_none()
+
+            if mantra_row is None:
+                # Create new MANTRA role row
+                mantra_row = PlayerMantraRole(
+                    fantacalcio_id=fantacalcio_id,
+                    season_start=season_start,
+                    ruolo_primario=ruolo_primario or "C",
+                    ruoli_mantra=ruoli_mantra or [ruolo_primario or "C"],
+                )
+                db.add(mantra_row)
+            else:
+                if ruoli_mantra is not None:
+                    mantra_row.ruoli_mantra = ruoli_mantra
+                if ruolo_primario is not None:
+                    mantra_row.ruolo_primario = ruolo_primario
 
         await db.commit()
         await db.refresh(mapping)

@@ -5,13 +5,16 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    ARRAY,
     BigInteger,
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     Numeric,
+    PrimaryKeyConstraint,
     SmallInteger,
     String,
     UniqueConstraint,
@@ -289,4 +292,37 @@ class PlayerIdMap(Base):
             "confidence": float(self.confidence) if self.confidence is not None else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class PlayerMantraRole(Base):
+    """MANTRA 12-role system: maps each player to their primary and secondary roles.
+
+    Populated by import_quotations CLI from the ``rm`` column in the listone XLSX.
+    """
+    __tablename__ = "player_mantra_roles"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["fantacalcio_id", "season_start"],
+            ["player_quotations.fantacalcio_id", "player_quotations.season_start"],
+            ondelete="CASCADE",
+        ),
+        PrimaryKeyConstraint("fantacalcio_id", "season_start"),
+        CheckConstraint(
+            "ruolo_primario IN ('Por','Dc','Dd','Ds','B','E','M','C','T','W','A','Pc')",
+            name="chk_ruolo_primario",
+        ),
+    )
+
+    fantacalcio_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    season_start: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ruolo_primario: Mapped[str] = mapped_column(String(5), nullable=False)
+    ruoli_mantra: Mapped[list[str]] = mapped_column(ARRAY(String(5)), nullable=False, default=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "fantacalcio_id": self.fantacalcio_id,
+            "season_start": self.season_start,
+            "ruolo_primario": self.ruolo_primario,
+            "ruoli_mantra": list(self.ruoli_mantra) if self.ruoli_mantra else [],
         }

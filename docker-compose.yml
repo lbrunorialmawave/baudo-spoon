@@ -32,7 +32,8 @@ services:
     build:
       context: ./api
     environment:
-      API_DATABASE_URL: postgresql+psycopg2://fbref:${POSTGRES_PASSWORD}@db:5432/fbref
+      PYTHONPATH: /app:/app/scraper
+      API_DATABASE_URL: postgresql+asyncpg://fbref:${POSTGRES_PASSWORD}@db:5432/fbref
       API_REDIS_URL: redis://redis:6379/0
       API_API_KEY_SECRET: ${API_KEY_SECRET:-}
       API_ARTIFACTS_DIR: /app/artifacts
@@ -44,8 +45,9 @@ services:
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
-      - ml_artifacts:/app/artifacts:ro
+      - ml_artifacts:/app/artifacts
       - ./ml:/app/ml:ro
+      - ./scraper:/app/scraper:ro
     depends_on:
       db:
         condition: service_healthy

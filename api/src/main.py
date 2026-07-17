@@ -13,6 +13,7 @@ from .config import settings
 from .data_repository import DataRepository
 from .logging_cfg import configure_logging
 from .routers import auction, leagues, matches, optimizer, quotations, seasons, stats
+from .routers import admin_scrape, expert_ratings, mantra, matchday
 from .routers.intelligence import intelligence_router, predictions_router
 
 configure_logging(settings.log_level)
@@ -86,6 +87,10 @@ app.include_router(quotations.quotations_router, prefix=settings.api_prefix)
 app.include_router(quotations.id_mapping_router, prefix=settings.api_prefix)
 app.include_router(optimizer.router, prefix=settings.api_prefix)
 app.include_router(auction.router, prefix=settings.api_prefix)
+app.include_router(mantra.router, prefix=settings.api_prefix)
+app.include_router(admin_scrape.router, prefix=settings.api_prefix)
+app.include_router(matchday.router, prefix=settings.api_prefix)
+app.include_router(expert_ratings.router, prefix=settings.api_prefix)
 
 
 # ── Health check ───────────────────────────────────────────────────────────────

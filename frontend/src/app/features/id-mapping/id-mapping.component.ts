@@ -167,6 +167,7 @@ const METHOD_COLORS: Record<string, string> = {
                   </th>
                   <th class="text-left px-4 py-2.5 font-medium text-xs">Team</th>
                   <th class="text-left px-4 py-2.5 font-medium text-xs">Role</th>
+                  <th class="text-left px-4 py-2.5 font-medium text-xs">Mantra Roles</th>
                   <th class="text-left px-4 py-2.5 font-medium text-xs cursor-pointer select-none"
                       (click)="toggleSort('matchMethod')">
                     Method @if (sortField() === 'matchMethod') { {{ sortDir() === 'asc' ? '▲' : '▼' }} }
@@ -202,6 +203,16 @@ const METHOD_COLORS: Record<string, string> = {
                               [style.background]="roleColor(item.canonicalRole ?? '')">
                           {{ item.canonicalRole ?? '—' }}
                         </span>
+                      </td>
+                      <td class="px-4 py-2.5 text-xs" style="color:var(--color-text-secondary)">
+                        @if (item.ruoloPrimario) {
+                          <span class="font-medium" style="color:var(--color-text-primary)">{{ item.ruoloPrimario }}</span>
+                          @if (item.ruoliMantra && item.ruoliMantra.length > 1) {
+                            <span class="ml-1 opacity-60">{{ '{' }}{{ item.ruoliMantra.join(', ') }}{{ '}' }}</span>
+                          }
+                        } @else {
+                          <span class="italic opacity-50">—</span>
+                        }
                       </td>
                       <td class="px-4 py-2.5">
                         <span class="rounded-full px-2 py-0.5 text-xs font-medium text-white"
@@ -296,6 +307,14 @@ const METHOD_COLORS: Record<string, string> = {
                   @if (resolveItem()!.nameFotmob) { ({{ resolveItem()!.nameFotmob }}) }
                 }
               </p>
+              @if (resolveItem()!.ruoloPrimario) {
+                <p><strong style="color:var(--color-text-primary)">Mantra:</strong>
+                  {{ resolveItem()!.ruoloPrimario }}
+                  @if ((resolveItem()!.ruoliMantra?.length ?? 0) > 1) {
+                    · {{ '{' }}{{ resolveItem()!.ruoliMantra!.join(', ') }}{{ '}' }}
+                  }
+                </p>
+              }
             </div>
 
             <!-- FotMob ID input -->
@@ -340,6 +359,44 @@ const METHOD_COLORS: Record<string, string> = {
                 <option value="MID" [selected]="formRole() === 'MID'">MID</option>
                 <option value="FWD" [selected]="formRole() === 'FWD'">FWD</option>
               </select>
+            </div>
+
+            <!-- MANTRA role override -->
+            <div>
+              <label class="block text-xs font-medium mb-1"
+                     style="color:var(--color-text-secondary)">Ruolo Primario Mantra (opzionale)</label>
+              <select class="w-full rounded-lg border px-3 py-2 text-sm outline-none"
+                      style="background:var(--color-surface-raised);border-color:var(--color-border);
+                             color:var(--color-text-primary)"
+                      (change)="onFormMantraRoleChange($event)">
+                <option value="" [selected]="formMantraRole() === ''">— Keep current —</option>
+                <option value="Por" [selected]="formMantraRole() === 'Por'">Por</option>
+                <option value="Dc" [selected]="formMantraRole() === 'Dc'">Dc</option>
+                <option value="Dd" [selected]="formMantraRole() === 'Dd'">Dd</option>
+                <option value="Ds" [selected]="formMantraRole() === 'Ds'">Ds</option>
+                <option value="B" [selected]="formMantraRole() === 'B'">B</option>
+                <option value="E" [selected]="formMantraRole() === 'E'">E</option>
+                <option value="M" [selected]="formMantraRole() === 'M'">M</option>
+                <option value="C" [selected]="formMantraRole() === 'C'">C</option>
+                <option value="T" [selected]="formMantraRole() === 'T'">T</option>
+                <option value="W" [selected]="formMantraRole() === 'W'">W</option>
+                <option value="A" [selected]="formMantraRole() === 'A'">A</option>
+                <option value="Pc" [selected]="formMantraRole() === 'Pc'">Pc</option>
+              </select>
+              <p class="mt-1 text-xs" style="color:var(--color-text-secondary)">
+                Gerarchia profondità: Por ← Dc/B/Dd/Ds ← E/M ← C ← T/W ← A/Pc
+              </p>
+            </div>
+
+            <!-- Mark as validated -->
+            <div>
+              <label class="flex items-center gap-2 text-sm cursor-pointer"
+                     style="color:var(--color-text-secondary)">
+                <input type="checkbox"
+                       [checked]="formValidated()"
+                       (change)="onValidatedChange($event)" />
+                ✅ Dati verificati e corretti
+              </label>
             </div>
 
             <!-- Note -->
@@ -419,6 +476,8 @@ export class IdMappingComponent {
   readonly formFotmobName = signal<string>('');
   readonly formRole = signal<string>('');
   readonly formNote = signal<string>('');
+  readonly formMantraRole = signal<string>('');
+  readonly formValidated = signal(false);
   readonly saving = signal(false);
   readonly saveError = signal<string | null>(null);
   readonly saveSuccess = signal(false);
@@ -510,6 +569,7 @@ export class IdMappingComponent {
       matchMethod: this.selectedMethod() || undefined,
       canonicalRole: this.selectedRole() || undefined,
       matchedOnly: false,
+      unresolvedOnly: this.unresolvedOnly() || undefined,
       page: this.currentPage(),
       size: this.pageSize,
     }).subscribe({
@@ -547,6 +607,12 @@ export class IdMappingComponent {
   readonly onFormRoleChange = (e: Event) => {
     this.formRole.set((e.target as HTMLSelectElement).value);
   };
+  readonly onFormMantraRoleChange = (e: Event) => {
+    this.formMantraRole.set((e.target as HTMLSelectElement).value);
+  };
+  readonly onValidatedChange = (e: Event) => {
+    this.formValidated.set((e.target as HTMLInputElement).checked);
+  };
   readonly onNoteChange = (e: Event) => {
     this.formNote.set((e.target as HTMLInputElement).value);
   };
@@ -558,6 +624,8 @@ export class IdMappingComponent {
     this.formFotmobName.set(item.nameFotmob ?? '');
     this.formRole.set('');
     this.formNote.set('');
+    this.formMantraRole.set('');
+    this.formValidated.set(false);
     this.saveError.set(null);
     this.saveSuccess.set(false);
     this.resolving.set(true);
@@ -581,6 +649,8 @@ export class IdMappingComponent {
     body.playerFotmobId = fotmobId != null ? fotmobId : -1;
     if (this.formFotmobName()) body.nameFotmob = this.formFotmobName();
     if (this.formRole()) body.canonicalRole = this.formRole();
+    if (this.formMantraRole()) body.ruoloPrimario = this.formMantraRole();
+    if (this.formValidated()) body.dataValidated = true;
     if (this.formNote()) body.note = this.formNote();
 
     this.idMappingService.update(item.fantacalcioId, item.seasonStart, body).subscribe({

@@ -42,6 +42,7 @@ log = logging.getLogger(__name__)
 # ── Valid role / method enums (mirrors DB CHECK constraints) ─────────────────
 
 _VALID_ROLES = {"GK", "DEF", "MID", "FWD"}
+_VALID_MANTRA_ROLES = {"Por", "Dc", "Dd", "Ds", "B", "E", "M", "C", "T", "W", "A", "Pc"}
 _VALID_MATCH_METHODS = {
     "exact_name_team",
     "exact_name_role",
@@ -93,6 +94,8 @@ async def list_quotations(
     player_fotmob_id: Optional[int] = Query(None, ge=1, description="Filter by FotMob player ID"),
     min_qt_a: Optional[int] = Query(None, ge=0, description="Minimum Qt.A value (inclusive)"),
     max_qt_a: Optional[int] = Query(None, ge=0, description="Maximum Qt.A value (inclusive)"),
+    ruolo_primario: Optional[str] = Query(None, description="Filter by MANTRA primary role (Por, Dc, Dd, Ds, B, E, M, C, T, W, A, Pc)"),
+    ruolo_mantra: Optional[str] = Query(None, description="Filter by any MANTRA role (primary or secondary; e.g. 'Dd', 'M', 'A')"),
     page: int = Query(1, ge=1, description="Page number (1-based)"),
     size: int = Query(50, ge=1, le=500, description="Items per page (max 500)"),
     db: AsyncSession = Depends(get_db),
@@ -102,6 +105,16 @@ async def list_quotations(
         raise HTTPException(
             status_code=400,
             detail=f"role must be one of {sorted(_VALID_ROLES)} (got {role!r})",
+        )
+    if ruolo_primario is not None and ruolo_primario not in _VALID_MANTRA_ROLES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"ruolo_primario must be one of {sorted(_VALID_MANTRA_ROLES)} (got {ruolo_primario!r})",
+        )
+    if ruolo_mantra is not None and ruolo_mantra not in _VALID_MANTRA_ROLES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"ruolo_mantra must be one of {sorted(_VALID_MANTRA_ROLES)} (got {ruolo_mantra!r})",
         )
     if min_qt_a is not None and max_qt_a is not None and min_qt_a > max_qt_a:
         raise HTTPException(
@@ -117,6 +130,8 @@ async def list_quotations(
         player_fotmob_id=player_fotmob_id,
         min_qt_a=min_qt_a,
         max_qt_a=max_qt_a,
+        ruolo_primario=ruolo_primario,
+        ruolo_mantra=ruolo_mantra,
         page=page,
         size=size,
     )
@@ -249,7 +264,9 @@ async def list_id_mappings(
         description="Match algorithm (exact_name_team, exact_name_role, exact_relaxed_role, fuzzy_name, manual, unmatched)",
     ),
     canonical_role: Optional[str] = Query(None, description="Filter by canonical role (GK, DEF, MID, FWD)"),
+    mantra_role: Optional[str] = Query(None, description="Filter by MANTRA primary role (Por, Dc, Dd, Ds, B, E, M, C, T, W, A, Pc)"),
     matched_only: bool = Query(False, description="When true, excludes UNMATCHED rows"),
+    unresolved_only: bool = Query(False, description="When true, only rows needing validation"),
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
@@ -271,7 +288,9 @@ async def list_id_mappings(
         season_start=season_start,
         match_method=match_method,
         canonical_role=canonical_role.upper() if canonical_role else None,
+        mantra_role=mantra_role,
         matched_only=matched_only,
+        unresolved_only=unresolved_only,
         page=page,
         size=size,
     )
@@ -368,6 +387,9 @@ async def update_id_mapping(
         name_fotmob=body.name_fotmob,
         team_fotmob=body.team_fotmob,
         canonical_role=body.canonical_role,
+        ruoli_mantra=body.ruoli_mantra,
+        ruolo_primario=body.ruolo_primario,
+        data_validated=body.data_validated,
     )
     if row is None:
         raise HTTPException(
