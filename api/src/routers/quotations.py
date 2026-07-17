@@ -458,11 +458,13 @@ async def run_id_mapping(
             detail=f"Required ML module not available: {exc}",
         )
 
-    # ── Build a sync engine from the sync DSN ────────────────────────────
-    # ``database_url`` is already a sync-compatible DSN (psycopg2 or plain
-    # postgresql://).  The ``async_database_url`` computed field swaps the
-    # driver to asyncpg, so we must use the original for a sync connection.
-    engine = sa.create_engine(settings.database_url, pool_pre_ping=True)
+    # ── Build a sync engine ──────────────────────────────────────────────
+    # On Render the env var may already be an asyncpg URL, so we strip any
+    # +asyncpg driver and fall back to psycopg2 (the default for ``postgresql://``).
+    sync_url = settings.database_url
+    sync_url = sync_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+    sync_url = sync_url.replace("postgres+asyncpg://", "postgres+psycopg2://")
+    engine = sa.create_engine(sync_url, pool_pre_ping=True)
 
     try:
         # ── 1. Load quotations ──────────────────────────────────────────
