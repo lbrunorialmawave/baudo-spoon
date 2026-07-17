@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import AsyncGenerator
 
@@ -9,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import settings
 from .database import AsyncSessionLocal
+
+log = logging.getLogger(__name__)
 
 # ── Database ──────────────────────────────────────────────────────────────────
 
@@ -44,14 +47,19 @@ async def verify_api_key(
 
 async def _get_redis_client():  # type: ignore[return]
     """Return an aioredis client if redis is available, else None."""
+    client = None
     try:
         import redis.asyncio as aioredis  # type: ignore[import]
 
         client = aioredis.from_url(settings.redis_url, decode_responses=True)
         yield client
-        await client.aclose()
-    except ImportError:
+    except (ImportError, ConnectionError, OSError) as exc:
+        if not isinstance(exc, ImportError):
+            log.warning("Redis unavailable (%s) — rate limiting disabled", exc)
         yield None
+    finally:
+        if client is not None:
+            await client.aclose()
 
 
 async def rate_limit(
