@@ -97,7 +97,12 @@ class DataRepository:
         if not self._r2_endpoint_url:
             return
         self._dir.mkdir(parents=True, exist_ok=True)
-        self._r2_client().download_file(self._r2_bucket_name, path.name, str(path))
+        try:
+            self._r2_client().download_file(self._r2_bucket_name, path.name, str(path))
+        except Exception as exc:  # noqa: BLE001
+            # R2 returns 403 for missing objects (no public listing); treat as absent.
+            log.warning("R2 download skipped for %s: %s", path.name, exc)
+            return
         log.info("Downloaded from R2: %s", path.name)
 
     # ── Internal helpers ──────────────────────────────────────────────────────

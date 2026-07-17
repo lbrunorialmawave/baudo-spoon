@@ -893,6 +893,7 @@ class Trainer:
         latest_path = self._artifact("results_latest.json")
         with latest_path.open("w", encoding="utf-8") as f:
             json.dump(_json_safe(output), f, indent=2, ensure_ascii=False)
+        self._upload_to_r2(latest_path)
 
         log.info("=" * 60)
         log.info("Pipeline complete.  Results in %s", self._artifacts_dir)
