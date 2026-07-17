@@ -500,7 +500,8 @@ async def run_id_mapping(
         quotes["name_norm"] = quotes["player_name"].map(normalise_player_name)
         quotes["last_name_norm"] = quotes["name_norm"].map(last_name_token)
         quotes["team_norm"] = quotes["team"].map(normalise_team).map(apply_team_alias)
-        quotes["canonical_role"] = quotes["role"]
+        # NB: ``canonical_role`` is set by ``build_player_id_map`` internally
+        # via ``quotazioni.rename(columns={"role": "canonical_role"})``.
 
         # ── 3. Preserve existing manual overrides ───────────────────────
         manual_existing = pd.read_sql(
