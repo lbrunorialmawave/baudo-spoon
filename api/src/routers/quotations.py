@@ -27,6 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import ORJSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import settings
 from ..data_repository import DataRepository
 from ..deps import get_db, rate_limit, verify_api_key
 from ..schemas import (
