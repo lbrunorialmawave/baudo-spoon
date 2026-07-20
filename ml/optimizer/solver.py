@@ -16,6 +16,7 @@ import pulp
 
 from ml.optimizer.inflation import compute_role_percentile_map, estimate_effective_cost
 from ml.optimizer.models import (
+    MANTRA_DEFAULT_QUOTAS,
     OptimizationConfig,
     OptimizationResult,
     Player,
@@ -43,6 +44,28 @@ class PreFlightError(ValueError):
     """Raised when the pool is structurally insufficient for the request."""
 
 
+def _preflight_mantra(pool: list[Player], config: OptimizationConfig) -> None:
+    """MANTRA-specific pool checks: eligible_roles present and quota coverable."""
+    players_without_roles = [p.player_id for p in pool if not p.eligible_roles]
+    if players_without_roles:
+        raise PreFlightError(
+            f"MANTRA ruleset requires eligible_roles on every player; "
+            f"missing for: {players_without_roles[:5]}{'...' if len(players_without_roles) > 5 else ''}"
+        )
+    quotas = config.mantra_role_quotas or MANTRA_DEFAULT_QUOTAS
+    # Count how many players are eligible for each Mantra role.
+    coverage: dict[str, int] = defaultdict(int)
+    for p in pool:
+        for r in p.eligible_roles:
+            coverage[r] += 1
+    for role, quota in quotas.items():
+        if quota > 0 and coverage[role] < quota:
+            raise PreFlightError(
+                f"MANTRA pool has {coverage[role]} players eligible for role {role!r}, "
+                f"required quota is {quota}"
+            )
+
+
 def _preflight(pool: list[Player], config: OptimizationConfig) -> None:
     """Validates pool size and per-role coverage; raises PreFlightError on failure."""
     if not pool:
@@ -54,12 +77,15 @@ def _preflight(pool: list[Player], config: OptimizationConfig) -> None:
         by_role[p.role].append(p)
         by_team_pp[p.real_team].append(p)
 
-    for role, quota in ROLE_QUOTAS.items():
-        if len(by_role[role]) < quota:
-            raise PreFlightError(
-                f"Pool has {len(by_role[role])} players for role {role!r}, "
-                f"required quota is {quota}"
-            )
+    if config.ruleset == "MANTRA":
+        _preflight_mantra(pool, config)
+    else:
+        for role, quota in ROLE_QUOTAS.items():
+            if len(by_role[role]) < quota:
+                raise PreFlightError(
+                    f"Pool has {len(by_role[role])} players for role {role!r}, "
+                    f"required quota is {quota}"
+                )
 
     distinct_teams = {p.real_team for p in pool}
     if len(distinct_teams) < config.min_distinct_teams:
@@ -101,6 +127,71 @@ def _build_player_index(pool: list[Player]) -> dict[str, list[str]]:
     for p in pool:
         by_team[p.real_team].append(p.player_id)
     return dict(by_team)
+
+
+# ---------------------------------------------------------------------------
+# Role constraint builders (Classic vs Mantra)
+# ---------------------------------------------------------------------------
+
+
+def _build_role_constraints_classic(
+    prob: pulp.LpProblem,
+    x: dict[str, pulp.LpVariable],
+    pool: list[Player],
+    config: OptimizationConfig,
+) -> None:
+    """Classic: one binary variable per player, equality constraints on 4 roles."""
+    for role, quota in ROLE_QUOTAS.items():
+        prob += (
+            pulp.lpSum(x[p.player_id] for p in pool if p.role == role) == quota,
+            f"quota_{role}",
+        )
+
+
+def _build_role_constraints_mantra(
+    prob: pulp.LpProblem,
+    x: dict[str, pulp.LpVariable],
+    pool: list[Player],
+    config: OptimizationConfig,
+    x_ir: dict[tuple[str, str], pulp.LpVariable],
+) -> None:
+    """Mantra: per-(player, role) variables with multi-slot eligibility.
+
+    x_ir[(player_id, role)] == 1 iff player_id fills slot for role.
+    select_i = Σ_r x_ir[(i, r)] ≤ 1  (player fills at most one slot)
+    x[player_id] == select_i           (bridge to the main x variable for budget/team constraints)
+    Σ_i x_ir[(i, r)] == quota[r]       (role quota)
+    """
+    quotas = config.mantra_role_quotas or MANTRA_DEFAULT_QUOTAS
+
+    for p in pool:
+        eligible = p.eligible_roles if p.eligible_roles else frozenset()
+        # select_i = Σ_r x_ir[(i, r)]
+        select_expr = pulp.lpSum(
+            x_ir[(p.player_id, r)] for r in eligible if (p.player_id, r) in x_ir
+        )
+        # Bridge: x[i] == select_i (so budget/team constraints on x still hold)
+        prob += (x[p.player_id] == select_expr, f"select_{p.player_id}")
+        # At most one role slot per player
+        prob += (select_expr <= 1, f"one_slot_{p.player_id}")
+
+    for role, quota in quotas.items():
+        if quota == 0:
+            continue
+        prob += (
+            pulp.lpSum(
+                x_ir[(p.player_id, role)]
+                for p in pool
+                if (p.player_id, role) in x_ir
+            )
+            == quota,
+            f"mantra_quota_{role}",
+        )
+
+
+_ROLE_CONSTRAINT_BUILDERS = {
+    "CLASSIC": _build_role_constraints_classic,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -171,15 +262,40 @@ def solve_strategy(
         for p in pool
     }
 
-    # Objective: maximise Σ (role_weight[role] * score) * x_i
+    # MANTRA: per-(player, role) variables for multi-slot eligibility.
+    x_ir: dict[tuple[str, str], pulp.LpVariable] = {}
+    if config.ruleset == "MANTRA":
+        for p in pool:
+            for r in p.eligible_roles:
+                x_ir[(p.player_id, r)] = pulp.LpVariable(
+                    name=f"xir_{p.player_id}_{r}", cat=pulp.LpBinary
+                )
+
+    # Objective: maximise Σ role_weight * reliability * risk_adjusted_score * x_i
+    # risk_adjusted_score = projected_score - risk_aversion * prediction_std
+    # When risk_aversion=0 or prediction_std is None the term collapses to projected_score.
     prob += pulp.lpSum(
-        strategy.role_weight[p.role] * p.projected_score * x[p.player_id]
+        strategy.role_weight[p.role]
+        * (p.reliability_weight if p.reliability_weight is not None else 1.0)
+        * (
+            p.projected_score
+            - config.risk_aversion * (p.prediction_std if p.prediction_std is not None else 0.0)
+        )
+        * x[p.player_id]
         for p in pool
     )
 
     # -----------------------------------------------------------------
     # Hard constraints (common to every strategy)
     # -----------------------------------------------------------------
+
+    # must_include / exclude: fix binary variables before building anything else.
+    for pid in config.must_include:
+        if pid in x:
+            prob += (x[pid] == 1, f"must_include_{pid}")
+    for pid in config.exclude:
+        if pid in x:
+            prob += (x[pid] == 0, f"exclude_{pid}")
 
     # Budget on effective costs.
     prob += (
@@ -188,12 +304,11 @@ def solve_strategy(
         "budget_effective",
     )
 
-    # Role quotas (Fantacalcio classico: 3P, 8D, 8C, 6A).
-    for role, quota in ROLE_QUOTAS.items():
-        prob += (
-            pulp.lpSum(x[p.player_id] for p in pool if p.role == role) == quota,
-            f"quota_{role}",
-        )
+    # Role quotas — dispatched by ruleset.
+    if config.ruleset == "MANTRA":
+        _build_role_constraints_mantra(prob, x, pool, config, x_ir)
+    else:
+        _build_role_constraints_classic(prob, x, pool, config)
 
     # Max players per real team.
     by_team = _build_player_index(pool)
@@ -217,7 +332,6 @@ def solve_strategy(
     #                y_t >= x_i    for all i in team(t)
     #                Σ_t y_t >= min_distinct_teams
     y: dict[str, pulp.LpVariable] = {}
-    big_m = max(1, config.max_players_per_team)
     for team, pids in by_team.items():
         y[team] = pulp.LpVariable(name=f"y_{team}", cat=pulp.LpBinary)
         # y_t <= sum_i x_i
@@ -236,21 +350,35 @@ def solve_strategy(
         "min_distinct_teams",
     )
 
-    # Formation feasibility: per module m=(d,c,a) -> D>=d_m, C>=c_m, A>=a_m
-    # The 1-GK requirement is implicit (3 P always available given role quota).
-    for fm in config.formations:
+    # Formation feasibility: enforce only the preferred_formation (if set).
+    # All modules in config.formations are checked post-hoc in _evaluate_formations
+    # and reported in OptimizationResult.formation_feasibility, but are NOT hard
+    # constraints — this gives the solver more freedom and makes the output field
+    # genuinely informative instead of tautologically True for every module.
+    if config.preferred_formation is not None:
+        fm = config.preferred_formation
         prob += (
             pulp.lpSum(x[p.player_id] for p in pool if p.role == "D") >= fm.defenders,
-            f"fm_{fm.label}_D",
+            "preferred_fm_D",
         )
         prob += (
             pulp.lpSum(x[p.player_id] for p in pool if p.role == "C") >= fm.midfielders,
-            f"fm_{fm.label}_C",
+            "preferred_fm_C",
         )
         prob += (
             pulp.lpSum(x[p.player_id] for p in pool if p.role == "A") >= fm.forwards,
-            f"fm_{fm.label}_A",
+            "preferred_fm_A",
         )
+
+    # Budget concentration cap: no single player may consume more than
+    # max_single_player_budget_share of the total budget (effective cost).
+    single_cap = config.max_single_player_budget_share * float(config.budget)
+    for p in pool:
+        if effective_cost[p.player_id] > single_cap:
+            prob += (
+                x[p.player_id] == 0,
+                f"budget_cap_{p.player_id}",
+            )
 
     # -----------------------------------------------------------------
     # Strategy-specific constraints
@@ -335,12 +463,34 @@ def solve_strategy(
         config=config,
         elapsed_seconds=elapsed,
         status=status,
+        prob=prob,
     )
 
 
 # ---------------------------------------------------------------------------
 # Result construction
 # ---------------------------------------------------------------------------
+
+
+def _extract_mip_gap(prob: pulp.LpProblem) -> float | None:
+    """Return MIP gap % if CBC exposes the best bound, else None."""
+    try:
+        obj = prob.objective.value()
+        if obj is None or abs(obj) < 1e-10:
+            return None
+        # PuLP/CBC stores the best bound in the solver model under different
+        # attribute names depending on the version; try the most common ones.
+        solver_model = getattr(prob, "solverModel", None)
+        if solver_model is None:
+            return None
+        best_bound = getattr(solver_model, "bestBound", None)
+        if best_bound is None:
+            best_bound = getattr(solver_model, "ObjBound", None)
+        if best_bound is None:
+            return None
+        return abs(best_bound - obj) / max(abs(obj), 1e-10) * 100.0
+    except Exception:  # pragma: no cover - interface not guaranteed across versions
+        return None
 
 
 def _map_status(lp_status: str, prob: pulp.LpProblem) -> str:
@@ -367,6 +517,7 @@ def _build_result(
     config: OptimizationConfig,
     elapsed_seconds: float,
     status: str,
+    prob: pulp.LpProblem | None = None,
 ) -> OptimizationResult:
     # Enforce squad-size invariant; defensive against solver quirks.
     if len(selected) != TOTAL_SQUAD_SIZE:
@@ -422,8 +573,16 @@ def _build_result(
         distinct_teams_count=distinct_teams_count,
         big_teams_players_count=big_teams_players_count,
         formation_feasibility=formation_feasibility,
-        diagnostics={"elapsed_seconds": elapsed_seconds},
+        diagnostics={
+            "elapsed_seconds": elapsed_seconds,
+            **(
+                {"mip_gap_pct": _extract_mip_gap(prob)}
+                if status == SOLVER_STATUS_TIMEOUT and prob is not None
+                else {}
+            ),
+        },
     )
+
 
 
 def _evaluate_formations(

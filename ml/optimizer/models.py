@@ -9,10 +9,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Final, Literal
 
+from ml.mantra.roles import ALL_ROLES as _MANTRA_ALL_ROLES
+
 __all__ = [
     "Role",
+    "RulesetType",
     "StrategyName",
     "ROLE_QUOTAS",
+    "MANTRA_DEFAULT_QUOTAS",
     "TOTAL_SQUAD_SIZE",
     "DEFAULT_BUDGET",
     "SOLVER_STATUS_OPTIMAL",
@@ -36,6 +40,9 @@ __all__ = [
 Role = Literal["P", "D", "C", "A"]
 """Fantacalcio role codes: P=portiere, D=difensore, C=centrocampista, A=attaccante."""
 
+RulesetType = Literal["CLASSIC", "MANTRA"]
+"""Ruleset: CLASSIC (4 roles, single assignment) or MANTRA (12 roles, multi-slot)."""
+
 StrategyName = Literal[
     "BALANCED", "SUPER_DEFENSIVE", "SUPER_OFFENSIVE", "MIXED"
 ]
@@ -48,6 +55,17 @@ ROLE_QUOTAS: Final[dict[Role, int]] = {
     "A": 6,
 }
 """Quota fissa di giocatori per ruolo in una rosa da 25."""
+
+# Default quotas for MANTRA (12 roles, total 25).
+# MANTRA leagues vary in quota definitions; callers can override via
+# OptimizationConfig.mantra_role_quotas.
+# Por=3, defenders(Dc+B+Dd+Ds)=8, midfield(E+M+C)=8, attack(T+W+A+Pc)=6.
+MANTRA_DEFAULT_QUOTAS: Final[dict[str, int]] = {
+    "Por": 3,
+    "Dc": 3, "B": 2, "Dd": 2, "Ds": 1,
+    "E": 1, "M": 2, "C": 5,
+    "T": 1, "W": 1, "A": 2, "Pc": 2,
+}
 
 TOTAL_SQUAD_SIZE: Final[int] = 25
 """Numero totale di giocatori in rosa."""
@@ -82,6 +100,15 @@ class Player:
     cost: int
     projected_score: float
     reliability_weight: float | None = None
+    # MANTRA only: set of Mantra role codes this player can fill (e.g. {"Dd", "E"}).
+    # Must be non-empty when ruleset == "MANTRA". Ignored for CLASSIC.
+    eligible_roles: frozenset[str] = field(default_factory=frozenset)
+    # Standard deviation of the ensemble prediction. When present, used by the
+    # risk-adjusted objective: score -= risk_aversion * prediction_std.
+    prediction_std: float | None = None
+    # Picco / listino_cost from pilastro4 historical auction data. When present,
+    # blended with role_percentile in estimate_effective_cost as a player-specific prior.
+    historical_overpay_ratio: float | None = None
 
     def __post_init__(self) -> None:
         if not self.player_id:
@@ -104,6 +131,16 @@ class Player:
             raise ValueError(
                 "Player.reliability_weight must be >= 0 if provided, "
                 f"got {self.reliability_weight}"
+            )
+        if self.prediction_std is not None and self.prediction_std < 0:
+            raise ValueError(
+                "Player.prediction_std must be >= 0 if provided, "
+                f"got {self.prediction_std}"
+            )
+        if self.historical_overpay_ratio is not None and self.historical_overpay_ratio < 0:
+            raise ValueError(
+                "Player.historical_overpay_ratio must be >= 0 if provided, "
+                f"got {self.historical_overpay_ratio}"
             )
 
 
@@ -248,6 +285,27 @@ class OptimizationConfig:
         default_factory=tuple  # overridden in __post_init__
     )
     solver_timeout_seconds: int = 30
+    # Maximum share of total budget that can be spent on a single player
+    # (effective cost). Prevents the solver from concentrating budget on one
+    # player who might be sniped in auction before your turn.
+    max_single_player_budget_share: float = 0.30
+    # Player IDs that must / must not appear in the squad.
+    must_include: frozenset[str] = field(default_factory=frozenset)
+    exclude: frozenset[str] = field(default_factory=frozenset)
+    # Ruleset: CLASSIC (4 roles) or MANTRA (12 roles with multi-slot eligibility).
+    # Default CLASSIC preserves existing behaviour for all current callers.
+    ruleset: RulesetType = "CLASSIC"
+    # MANTRA only: role quotas for the 12 Mantra roles. Defaults to
+    # MANTRA_DEFAULT_QUOTAS when None and ruleset == "MANTRA".
+    mantra_role_quotas: dict[str, int] | None = None
+    # When set, the solver enforces that the squad can field this specific module.
+    # If None, no formation constraint is applied — formation_feasibility in the
+    # result is purely informational (post-hoc check, not a solver guarantee).
+    preferred_formation: Formation | None = None
+    # Risk-aversion coefficient for the objective: effective_score = projected_score
+    # - risk_aversion * prediction_std. Default 0.0 = risk-neutral (backward compat).
+    # Meaningful only when Player.prediction_std is populated by the ensemble.
+    risk_aversion: float = 0.0
 
     def __post_init__(self) -> None:
         if self.budget <= 0:
@@ -274,6 +332,26 @@ class OptimizationConfig:
         if self.solver_timeout_seconds <= 0:
             raise ValueError(
                 f"solver_timeout_seconds must be > 0, got {self.solver_timeout_seconds}"
+            )
+        if not 0.0 < self.max_single_player_budget_share <= 1.0:
+            raise ValueError(
+                "max_single_player_budget_share must be in (0, 1], got "
+                f"{self.max_single_player_budget_share}"
+            )
+        conflict = self.must_include & self.exclude
+        if conflict:
+            raise ValueError(
+                f"player_ids appear in both must_include and exclude: {sorted(conflict)}"
+            )
+        if self.ruleset == "MANTRA" and self.mantra_role_quotas is not None:
+            if sum(self.mantra_role_quotas.values()) != TOTAL_SQUAD_SIZE:
+                raise ValueError(
+                    f"mantra_role_quotas must sum to {TOTAL_SQUAD_SIZE}, got "
+                    f"{sum(self.mantra_role_quotas.values())}"
+                )
+        if self.risk_aversion < 0:
+            raise ValueError(
+                f"risk_aversion must be >= 0, got {self.risk_aversion}"
             )
         # Default strategies are injected lazily to avoid circular import
         # between strategies.py and this module.

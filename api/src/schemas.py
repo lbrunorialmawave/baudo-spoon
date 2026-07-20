@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Generic, Optional, TypeVar
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 
 T = TypeVar("T")
@@ -361,6 +361,9 @@ class PlayerSchema(_CamelModel):
     cost: int
     projected_score: float
     reliability_weight: Optional[float] = None
+    eligible_roles: list[str] = Field(default_factory=list)  # MANTRA only
+    prediction_std: Optional[float] = None  # ensemble std; drives risk_aversion penalty
+    historical_overpay_ratio: Optional[float] = None  # Picco/listino from pilastro4
 
 
 class OptimizationRequest(_CamelModel):
@@ -373,8 +376,8 @@ class OptimizationRequest(_CamelModel):
     """
 
     season_start: int
-    budget: int = 500
-    num_participants: int = 8
+    budget: int = Field(default=500, gt=0)
+    num_participants: int = Field(default=8, ge=2, le=20)
     min_qt_a: int = 1
     min_distinct_teams: int = 12
     max_players_per_team: int = 4
@@ -385,16 +388,29 @@ class OptimizationRequest(_CamelModel):
         "Napoli",
     ]
     big_teams_cap: int = 10
-    formations: list[FormationSchema] = [
-        FormationSchema(label="3-4-3", defenders=3, midfielders=4, forwards=3),
-        FormationSchema(label="4-3-3", defenders=4, midfielders=3, forwards=3),
-        FormationSchema(label="4-4-2", defenders=4, midfielders=4, forwards=2),
-        FormationSchema(label="3-5-2", defenders=3, midfielders=5, forwards=2),
-    ]
+    formations: list[FormationSchema] = Field(
+        default=[
+            FormationSchema(label="3-4-3", defenders=3, midfielders=4, forwards=3),
+            FormationSchema(label="4-3-3", defenders=4, midfielders=3, forwards=3),
+            FormationSchema(label="4-4-2", defenders=4, midfielders=4, forwards=2),
+            FormationSchema(label="3-5-2", defenders=3, midfielders=5, forwards=2),
+        ],
+        max_length=6,
+    )
     inflation_config: InflationConfigSchema = InflationConfigSchema()
-    solver_timeout_seconds: int = 30
+    solver_timeout_seconds: int = Field(default=30, ge=1, le=60)
+    max_single_player_budget_share: float = Field(default=0.30, gt=0.0, le=1.0)
+    must_include: list[str] = Field(default_factory=list, max_length=25)
+    exclude: list[str] = Field(default_factory=list, max_length=200)
+    ruleset: str = "CLASSIC"  # "CLASSIC" | "MANTRA"
+    mantra_role_quotas: Optional[dict[str, int]] = None
+    # When set, the squad is guaranteed to be able to field this module.
+    # All formations in `formations` are still evaluated post-hoc and reported
+    # in formation_feasibility, but only this one is a hard solver constraint.
+    preferred_formation: Optional[FormationSchema] = None
+    risk_aversion: float = Field(default=0.0, ge=0.0)
     strategy_names: Optional[list[str]] = None  # None ⇒ tutte e 4 di default
-    pool_override: Optional[list[PlayerSchema]] = None
+    pool_override: Optional[list[PlayerSchema]] = Field(default=None, max_length=500)
 
 
 class SquadPlayerSchema(_CamelModel):

@@ -10,6 +10,7 @@ import {
   MultiStrategyResult,
   OptimizationResult,
   SquadPlayer,
+  StrategyProfile,
 } from '../../core/models/api.models';
 import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.component';
 import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/error-boundary.component';
@@ -116,6 +117,11 @@ const ALL_FORMATIONS: FormationConfig[] = [
               <input class="field-input" type="number" min="0" max="25" step="1"
                      [(ngModel)]="bigTeamsCap" />
             </div>
+            <div class="field-group">
+              <label class="field-label">Max budget share <span class="field-hint">0–1</span></label>
+              <input class="field-input" type="number" min="0.05" max="1" step="0.05"
+                     [(ngModel)]="maxSinglePlayerBudgetShare" />
+            </div>
           </div>
 
           <div class="field-group">
@@ -123,6 +129,41 @@ const ALL_FORMATIONS: FormationConfig[] = [
             <textarea class="field-input field-textarea" rows="2"
                       [(ngModel)]="bigTeamsRaw"
                       placeholder="Inter, Milan, Juventus, Napoli"></textarea>
+          </div>
+
+          <!-- PLAYER FILTERS -->
+          <p class="section-divider">Player Filters</p>
+
+          <div class="field-group">
+            <label class="field-label">Must include <span class="field-hint">player IDs, comma-separated</span></label>
+            <textarea class="field-input field-textarea" rows="2"
+                      [(ngModel)]="mustIncludeRaw"
+                      placeholder="fm-12345, fm-67890"></textarea>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label">Exclude <span class="field-hint">player IDs, comma-separated</span></label>
+            <textarea class="field-input field-textarea" rows="2"
+                      [(ngModel)]="excludeRaw"
+                      placeholder="fm-12345, fm-67890"></textarea>
+          </div>
+
+          <!-- RULESET & RISK -->
+          <p class="section-divider">Ruleset & Risk</p>
+
+          <div class="field-row">
+            <div class="field-group">
+              <label class="field-label">Ruleset</label>
+              <select class="field-input" [(ngModel)]="ruleset">
+                <option value="CLASSIC">Classic</option>
+                <option value="MANTRA">Mantra</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label class="field-label">Risk aversion <span class="field-hint">0 = neutral</span></label>
+              <input class="field-input" type="number" min="0" max="5" step="0.1"
+                     [(ngModel)]="riskAversion" />
+            </div>
           </div>
 
           <!-- FORMATIONS -->
@@ -136,6 +177,16 @@ const ALL_FORMATIONS: FormationConfig[] = [
                 {{ f.label }}
               </label>
             }
+          </div>
+
+          <div class="field-group">
+            <label class="field-label">Preferred formation <span class="field-hint">hard constraint</span></label>
+            <select class="field-input" [(ngModel)]="preferredFormationLabel">
+              <option value="">None</option>
+              @for (f of allFormations; track f.label) {
+                <option [value]="f.label">{{ f.label }}</option>
+              }
+            </select>
           </div>
 
           <!-- INFLATION MODEL -->
@@ -171,7 +222,7 @@ const ALL_FORMATIONS: FormationConfig[] = [
           <p class="section-divider">Strategies</p>
 
           <div class="check-col">
-            @for (s of availableStrategies; track s) {
+            @for (s of availableStrategies(); track s) {
               <label class="strategy-check" [class.active]="selectedStrategies().has(s)">
                 <input type="checkbox" [checked]="selectedStrategies().has(s)"
                        (change)="toggleStrategy(s)" />
@@ -566,7 +617,9 @@ export class OptimizerComponent {
   private readonly quotationService = inject(QuotationService);
 
   readonly allFormations = ALL_FORMATIONS;
-  readonly availableStrategies = ['BALANCED', 'SUPER_DEFENSIVE', 'SUPER_OFFENSIVE', 'MIXED'];
+
+  // Strategies loaded from API; fallback to known names if unavailable
+  readonly availableStrategies = signal<string[]>(['BALANCED', 'SUPER_DEFENSIVE', 'SUPER_OFFENSIVE', 'MIXED']);
 
   // ── Basic ─────────────────────────────────────────────
   readonly seasons = signal<number[]>([]);
@@ -581,15 +634,27 @@ export class OptimizerComponent {
   readonly maxPlayersPerTeam = signal(4);
   readonly bigTeamsCap = signal(10);
   readonly bigTeamsRaw = signal('Inter, Milan, Juventus, Napoli');
+  readonly maxSinglePlayerBudgetShare = signal(0.30);
+
+  // ── Must include / exclude ─────────────────────────────
+  readonly mustIncludeRaw = signal('');
+  readonly excludeRaw = signal('');
 
   // ── Formations ────────────────────────────────────────
   readonly selectedFormations = signal(new Set(ALL_FORMATIONS.map(f => f.label)));
+  readonly preferredFormationLabel = signal<string>('');
+
+  // ── Ruleset ───────────────────────────────────────────
+  readonly ruleset = signal<'CLASSIC' | 'MANTRA'>('CLASSIC');
 
   // ── Inflation model ───────────────────────────────────
   readonly inflationPercentileThreshold = signal(0.7);
   readonly maxInflationMultiplier = signal(1.6);
   readonly baseInflationRate = signal(0.05);
   readonly baselineParticipants = signal(8);
+
+  // ── Risk ──────────────────────────────────────────────
+  readonly riskAversion = signal(0.0);
 
   // ── Strategies ────────────────────────────────────────
   readonly selectedStrategies = signal(new Set(['BALANCED', 'SUPER_DEFENSIVE', 'SUPER_OFFENSIVE', 'MIXED']));
@@ -619,6 +684,15 @@ export class OptimizerComponent {
       },
       error: () => { this.seasons.set([2024, 2023, 2022]); },
     });
+
+    this.optimizerService.getStrategies().subscribe({
+      next: res => {
+        const names = res.strategies.map((s: StrategyProfile) => s.name);
+        this.availableStrategies.set(names);
+        this.selectedStrategies.set(new Set(names));
+      },
+      error: () => { /* keep fallback */ },
+    });
   }
 
   toggleStrategy(name: string): void {
@@ -642,6 +716,17 @@ export class OptimizerComponent {
 
     const formations = ALL_FORMATIONS.filter(f => this.selectedFormations().has(f.label));
 
+    const mustInclude = this.mustIncludeRaw()
+      .split(',').map(s => s.trim()).filter(Boolean);
+
+    const exclude = this.excludeRaw()
+      .split(',').map(s => s.trim()).filter(Boolean);
+
+    const preferredLabel = this.preferredFormationLabel();
+    const preferredFormation = preferredLabel
+      ? (ALL_FORMATIONS.find(f => f.label === preferredLabel) ?? null)
+      : null;
+
     this.optimizerService.runMulti({
       seasonStart: this.seasonStart(),
       budget: this.budget(),
@@ -659,8 +744,13 @@ export class OptimizerComponent {
         baseInflationRate: this.baseInflationRate(),
         baselineParticipants: this.baselineParticipants(),
       },
+      maxSinglePlayerBudgetShare: this.maxSinglePlayerBudgetShare(),
+      mustInclude: mustInclude.length ? mustInclude : undefined,
+      exclude: exclude.length ? exclude : undefined,
+      ruleset: this.ruleset(),
+      preferredFormation,
+      riskAversion: this.riskAversion(),
       strategyNames: [...this.selectedStrategies()],
-      
     }).subscribe({
       next: res => {
         this.results.set(res);

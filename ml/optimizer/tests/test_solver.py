@@ -194,39 +194,93 @@ def test_budget_is_respected() -> None:
         assert res.total_effective_cost <= cfg.budget + 1e-6
 
 
+def test_risk_aversion_avoids_high_std_players() -> None:
+    """With risk_aversion > 0, players with high prediction_std are penalised.
+
+    Two pools of P players: one has score=8 + std=5 (risky), one score=7 + std=0 (safe).
+    risk_adjusted_score(risky) = 8 - 2*5 = -2 < 7. Solver should pick the safe players.
+    """
+    cid = 0
+
+    def make(role: str, team: str, score: float, std: float) -> Player:
+        nonlocal cid
+        cid += 1
+        return Player(f"{role}{cid}", f"{role}{cid}", role, team, 10, score, prediction_std=std)  # type: ignore[arg-type]
+
+    # Build pool: use _minimal_feasible_pool() layout but replace P players with
+    # 3 risky (score=8, std=5) from teams T10-T12 and 3 safe (score=7, std=0) from T20-T22.
+    base_pool = _minimal_feasible_pool()
+    non_p_pool = [p for p in base_pool if p.role != "P"]
+    risky_ids = set()
+    safe_ps = []
+    risky_ps = []
+    for i in range(3):
+        r = make("P", f"RiskyTeam{i}", 8.0, 5.0)
+        s = make("P", f"SafeTeam{i}", 7.0, 0.0)
+        risky_ps.append(r)
+        safe_ps.append(s)
+        risky_ids.add(r.player_id)
+    pool = non_p_pool + risky_ps + safe_ps
+
+    cfg = _cfg(
+        min_distinct_teams=5,
+        max_players_per_team=4,
+    )
+    # Use OptimizationConfig directly to pass risk_aversion
+    from ml.optimizer.models import OptimizationConfig, InflationConfig
+    risk_cfg = OptimizationConfig(
+        budget=cfg.budget,
+        formations=cfg.formations,
+        num_participants=cfg.num_participants,
+        max_players_per_team=cfg.max_players_per_team,
+        big_teams=cfg.big_teams,
+        big_teams_cap=cfg.big_teams_cap,
+        min_distinct_teams=cfg.min_distinct_teams,
+        risk_aversion=2.0,
+    )
+    res = optimize_squad(pool, risk_cfg, _balanced_strategy())
+    assert res.status == "OPTIMAL"
+    selected_p_ids = {p.player_id for p in res.squad if p.role == "P"}
+    assert not (selected_p_ids & risky_ids), "Risk-averse solver should not select high-std players"
+
+
 def _spread_pool_9_teams() -> list[Player]:
     """Pool distribuito su 9 team con max=3 selezionabili ciascuno.
 
-    Distribuzione: 3P su T0..T2, 8D su T0..T7, 8C su T0..T7, 6A su T0..T5,
-    più 1 A extra su T8. Insieme: 9 team distinti (T0..T8).
-    Capacity con max=3: 9*3 = 27 ≥ 25 selezionabili.
-
-    Vincoli:
-      * 3P, 8D, 8C, 7A (3+8+8+7 = 26, di cui 25 selezionati)
-      * Tutti costano 10 → cheapest 25 = 250 < 500
-      * 9 team distinti → con max=3, capacity = 9*3 = 27 ≥ 25
+    Ogni team ha esattamente 3 giocatori → capacity con max=3: 9*3 = 27 ≥ 25.
+    Distribuzione: T0-T2 = P+D+C, T3-T4 = D+C+A, T5 = D+C+A,
+                   T6 = D+C+A, T7 = C+A+A, T8 = A+A+A.
+    Totale: 3P + 8D + 9C + 7A = 27 ≥ 25.
     """
     pool: list[Player] = []
     cid = 0
-    # 3 P → uno per T0, T1, T2
-    for team_idx in range(3):
-        cid += 1
-        pool.append(Player(f"P{cid}", f"P{cid}", "P", f"T{team_idx}", 10, 6.0))
-    # 8 D → distribuiti su T0..T7 (1 per team)
-    for team_idx in range(8):
-        cid += 1
-        pool.append(Player(f"D{cid}", f"D{cid}", "D", f"T{team_idx}", 10, 6.0))
-    # 8 C → distribuiti su T0..T7 (1 per team)
-    for team_idx in range(8):
-        cid += 1
-        pool.append(Player(f"C{cid}", f"C{cid}", "C", f"T{team_idx}", 10, 6.0))
-    # 6 A → distribuiti su T0..T5 (1 per team)
-    for team_idx in range(6):
-        cid += 1
-        pool.append(Player(f"A{cid}", f"A{cid}", "A", f"T{team_idx}", 10, 6.0))
-    # 1 A extra su T8 → arriva a 9 team distinti
-    cid += 1
-    pool.append(Player(f"A{cid}", f"A{cid}", "A", "T8", 10, 6.0))
+
+    layout: list[tuple[int, int, int, int]] = [
+        # (P, D, C, A)
+        (1, 1, 1, 0),  # T0
+        (1, 1, 1, 0),  # T1
+        (1, 1, 1, 0),  # T2
+        (0, 1, 1, 1),  # T3
+        (0, 1, 1, 1),  # T4
+        (0, 1, 1, 1),  # T5
+        (0, 1, 1, 1),  # T6
+        (0, 1, 1, 1),  # T7
+        (0, 0, 1, 2),  # T8
+    ]
+    for team_idx, (np_, nd, nc, na) in enumerate(layout):
+        team = f"T{team_idx}"
+        for _ in range(np_):
+            cid += 1
+            pool.append(Player(f"P{cid}", f"P{cid}", "P", team, 10, 6.0))
+        for _ in range(nd):
+            cid += 1
+            pool.append(Player(f"D{cid}", f"D{cid}", "D", team, 10, 6.0))
+        for _ in range(nc):
+            cid += 1
+            pool.append(Player(f"C{cid}", f"C{cid}", "C", team, 10, 6.0))
+        for _ in range(na):
+            cid += 1
+            pool.append(Player(f"A{cid}", f"A{cid}", "A", team, 10, 6.0))
     return pool
 
 
@@ -249,27 +303,54 @@ def test_min_distinct_teams_enforced() -> None:
 
 
 def test_big_teams_cap_enforced() -> None:
-    """Pool with many Inter players + cap=2 -> at most 2 Inter selected."""
-    pool: list[Player] = []
+    """big_teams_cap=2 → at most 2 Inter players selected despite higher projected_score.
+
+    Design: 25 non-big players cover all role quotas (3P/8D/8C/6A) across 5 small teams.
+    14 Inter players (all score=9.0, tempting) padded on top. Cap=2 forces solver to use
+    at most 2 Inter → OPTIMAL with inter_count <= 2.
+    """
     cid = 0
-    # 3 P, 8 D, 8 C, 6 A. Put 6 D + 4 C + 4 A = 14 from Inter.
-    for i in range(3):
+
+    def p(role: str, team: str, score: float = 6.0) -> Player:
+        nonlocal cid
         cid += 1
-        pool.append(Player(f"P{cid}", f"P{i}", "P", "Atalanta", 10, 6.0))
-    for i in range(8):
-        cid += 1
-        team = "Inter" if i < 6 else "Roma"
-        pool.append(Player(f"D{cid}", f"D{i}", "D", team, 10, 6.0))
-    for i in range(8):
-        cid += 1
-        team = "Inter" if i < 4 else "Napoli"
-        pool.append(Player(f"C{cid}", f"C{i}", "C", team, 10, 6.0))
-    for i in range(6):
-        cid += 1
-        team = "Inter" if i < 4 else "Lazio"
-        pool.append(Player(f"A{cid}", f"A{i}", "A", team, 10, 6.0))
-    # Distinct teams: Atalanta, Inter, Roma, Napoli, Lazio = 5 -> min=3 OK
-    cfg = _cfg(big_teams_cap=2, min_distinct_teams=3, big_teams=frozenset({"Inter", "Milan", "Juventus", "Napoli"}))
+        return Player(f"{role}{cid}", f"{role}{cid}", role, team, 10, score)  # type: ignore[arg-type]
+
+    # Non-big baseline: exactly 3P+8D+8C+6A across 5 teams (5 players each).
+    small_teams = ["Atalanta", "Roma", "Lazio", "Torino", "Fiorentina"]
+    pool: list[Player] = []
+    for team in small_teams[:3]:          # 3P, one per team
+        pool.append(p("P", team))
+    for i, team in enumerate(small_teams):  # 8D: 2+2+2+1+1
+        n = 2 if i < 3 else 1
+        for _ in range(n):
+            pool.append(p("D", team))
+    for i, team in enumerate(small_teams):  # 8C: 2+2+2+1+1
+        n = 2 if i < 3 else 1
+        for _ in range(n):
+            pool.append(p("C", team))
+    for i, team in enumerate(small_teams):  # 6A: 2+2+1+1+0
+        n = [2, 2, 1, 1, 0][i]
+        for _ in range(n):
+            pool.append(p("A", team))
+
+    assert len(pool) == 25  # sanity check
+
+    # Inter players with higher score to tempt the solver.
+    for _ in range(6):
+        pool.append(p("D", "Inter", score=9.0))
+    for _ in range(4):
+        pool.append(p("C", "Inter", score=9.0))
+    for _ in range(4):
+        pool.append(p("A", "Inter", score=9.0))
+
+    big_teams = frozenset({"Inter", "Milan", "Juventus", "Napoli"})
+    cfg = _cfg(
+        big_teams_cap=2,
+        min_distinct_teams=3,
+        max_players_per_team=14,
+        big_teams=big_teams,
+    )
     res = optimize_squad(pool, cfg, _balanced_strategy())
     assert res.status == "OPTIMAL"
     assert res.big_teams_players_count <= 2

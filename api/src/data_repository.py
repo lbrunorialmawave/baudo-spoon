@@ -748,6 +748,7 @@ class DataRepository:
         *,
         season_start: int,
         min_qt_a: int = 1,
+        ruleset: str = "CLASSIC",
     ) -> list[dict]:
         """Return optimizer-ready player records joined with ML predictions.
 
@@ -764,6 +765,9 @@ class DataRepository:
         * ``cost`` — current quotation (``qt_a``).
         * ``projected_score`` — ML ``predicted_fantavoto`` if available,
           otherwise ``fantavoto_medio`` (historical mean) as fallback.
+        * ``eligible_roles`` — list of MANTRA role codes (only when
+          ``ruleset == "MANTRA"`` and the player has a row in
+          ``player_mantra_roles``; empty list otherwise).
 
         The list is *not* deduplicated; the optimizer orchestrator is
         responsible for that. The repository guarantees deterministic
@@ -777,13 +781,28 @@ class DataRepository:
             PlayerQuotation.fantacalcio_id == PlayerIdMap.fantacalcio_id,
             PlayerQuotation.season_start == PlayerIdMap.season_start,
         )
-        stmt = (
-            select(PlayerQuotation, PlayerIdMap)
-            .select_from(PlayerQuotation)
-            .join(PlayerIdMap, join_cond, isouter=True)
-            .where(PlayerQuotation.season_start == season_start)
-            .where(PlayerQuotation.qt_a >= min_qt_a)
+        mantra_join_cond = and_(
+            PlayerQuotation.fantacalcio_id == PlayerMantraRole.fantacalcio_id,
+            PlayerQuotation.season_start == PlayerMantraRole.season_start,
         )
+
+        if ruleset == "MANTRA":
+            stmt = (
+                select(PlayerQuotation, PlayerIdMap, PlayerMantraRole)
+                .select_from(PlayerQuotation)
+                .join(PlayerIdMap, join_cond, isouter=True)
+                .join(PlayerMantraRole, mantra_join_cond, isouter=True)
+                .where(PlayerQuotation.season_start == season_start)
+                .where(PlayerQuotation.qt_a >= min_qt_a)
+            )
+        else:
+            stmt = (
+                select(PlayerQuotation, PlayerIdMap)
+                .select_from(PlayerQuotation)
+                .join(PlayerIdMap, join_cond, isouter=True)
+                .where(PlayerQuotation.season_start == season_start)
+                .where(PlayerQuotation.qt_a >= min_qt_a)
+            )
         rows = (await db.execute(stmt)).all()
 
         # 2) ML predictions indexed by player_fotmob_id.
@@ -799,7 +818,9 @@ class DataRepository:
 
         # 3) Project into the optimizer-friendly shape.
         pool: list[dict] = []
-        for pq, pim in rows:
+        for row in rows:
+            pq, pim = row[0], row[1]
+            pmr: Optional[PlayerMantraRole] = row[2] if len(row) > 2 else None
             optimizer_role = self._to_optimizer_role(pq.role)
             if optimizer_role is None:
                 # Unknown / unsupported role (e.g. outdated enum) — skip.
@@ -841,6 +862,16 @@ class DataRepository:
             else:
                 real_team = self._normalise_team(pq.team or "")
 
+            pred_std: Optional[float] = None
+            if pred is not None:
+                raw_std = pred.get("prediction_std")
+                if isinstance(raw_std, (int, float)) and raw_std >= 0:
+                    pred_std = float(raw_std)
+
+            eligible_roles: list[str] = []
+            if pmr is not None and pmr.ruoli_mantra:
+                eligible_roles = list(pmr.ruoli_mantra)
+
             pool.append(
                 {
                     "player_id": player_id,
@@ -849,6 +880,8 @@ class DataRepository:
                     "real_team": real_team,
                     "cost": cost,
                     "projected_score": predicted_score,
+                    "prediction_std": pred_std,
+                    "eligible_roles": eligible_roles,
                 }
             )
 

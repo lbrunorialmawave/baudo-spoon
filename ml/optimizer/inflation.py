@@ -76,8 +76,17 @@ def estimate_effective_cost(
     if nominal < _MIN_NOMINAL_COST_FOR_INFLATION:
         return nominal
 
-    # Clamp percentile defensively (callers should already pass [0,1]).
-    percentile = min(1.0, max(0.0, float(role_percentile)))
+    # Player-specific prior: if available, blend historical_overpay_ratio with
+    # role_percentile. overpay_ratio is Picco/listino (typically 1-3); normalise
+    # to [0,1] via tanh so it doesn't overwhelm the percentile signal. The blend
+    # is a simple average so each contributes equally.
+    raw_percentile = min(1.0, max(0.0, float(role_percentile)))
+    if player.historical_overpay_ratio is not None:
+        # tanh(ratio - 1) maps: ratio=1 → 0.0, ratio=2 → 0.76, ratio=3 → 0.96
+        overpay_signal = math.tanh(max(0.0, player.historical_overpay_ratio - 1.0))
+        percentile = min(1.0, (raw_percentile + overpay_signal) / 2.0)
+    else:
+        percentile = raw_percentile
 
     threshold = config.inflation_percentile_threshold
     if percentile <= threshold:

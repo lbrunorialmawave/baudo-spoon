@@ -16,6 +16,7 @@ back. This keeps the optimizer module unaware of FastAPI/HTTP concerns.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Optional, cast
 
@@ -24,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
 from ..data_repository import DataRepository
-from ..deps import get_db, verify_api_key
+from ..deps import get_db, rate_limit, verify_api_key
 from ..schemas import (
     DefaultStrategiesResponse,
     MultiStrategyResultSchema,
@@ -41,6 +42,7 @@ from ml.optimizer.models import (
     OptimizationResult,
     Player,
     Role,
+    RulesetType,
     StrategyProfile,
 )
 from ml.optimizer.optimizer import (
@@ -56,7 +58,7 @@ log = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/optimize",
     tags=["optimizer"],
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(verify_api_key), Depends(rate_limit)],
 )
 
 
@@ -80,6 +82,16 @@ def _build_config(req: OptimizationRequest) -> OptimizationConfig:
         base_inflation_rate=req.inflation_config.base_inflation_rate,
         baseline_participants=req.inflation_config.baseline_participants,
     )
+    preferred_formation = (
+        Formation(
+            label=req.preferred_formation.label,
+            defenders=req.preferred_formation.defenders,
+            midfielders=req.preferred_formation.midfielders,
+            forwards=req.preferred_formation.forwards,
+        )
+        if req.preferred_formation is not None
+        else None
+    )
     return OptimizationConfig(
         budget=req.budget,
         formations=formations,
@@ -90,6 +102,13 @@ def _build_config(req: OptimizationRequest) -> OptimizationConfig:
         min_distinct_teams=req.min_distinct_teams,
         inflation_config=inflation,
         solver_timeout_seconds=req.solver_timeout_seconds,
+        max_single_player_budget_share=req.max_single_player_budget_share,
+        must_include=frozenset(req.must_include),
+        exclude=frozenset(req.exclude),
+        ruleset=cast(RulesetType, req.ruleset),
+        mantra_role_quotas=req.mantra_role_quotas,
+        preferred_formation=preferred_formation,
+        risk_aversion=req.risk_aversion,
     )
 
 
@@ -106,6 +125,9 @@ def _pool_from_override(req: OptimizationRequest) -> list[Player]:
             cost=p.cost,
             projected_score=p.projected_score,
             reliability_weight=p.reliability_weight,
+            eligible_roles=frozenset(p.eligible_roles),
+            prediction_std=p.prediction_std,
+            historical_overpay_ratio=p.historical_overpay_ratio,
         )
         for p in req.pool_override
     ]
@@ -124,7 +146,6 @@ def _strategy_by_name(name: str) -> StrategyProfile:
 
 
 def _filter_strategies(
-    config: OptimizationConfig,
     names: Optional[list[str]],
 ) -> list[StrategyProfile]:
     """Pick the requested subset of default strategies (or all)."""
@@ -236,7 +257,7 @@ async def run_multi_strategy(
     if req.pool_override is not None:
         pool = _pool_from_override(req)
     else:
-        rows = await repo.get_player_pool(db, season_start=req.season_start, min_qt_a=req.min_qt_a)
+        rows = await repo.get_player_pool(db, season_start=req.season_start, min_qt_a=req.min_qt_a, ruleset=req.ruleset)
         pool = [
             Player(
                 player_id=r["player_id"],
@@ -245,6 +266,8 @@ async def run_multi_strategy(
                 real_team=r["real_team"],
                 cost=int(r["cost"]),
                 projected_score=float(r["projected_score"]),
+                prediction_std=r.get("prediction_std"),
+                eligible_roles=frozenset(r.get("eligible_roles") or []),
             )
             for r in rows
         ]
@@ -260,10 +283,12 @@ async def run_multi_strategy(
             ),
         )
 
-    strategies = _filter_strategies(config, req.strategy_names)
+    strategies = _filter_strategies(req.strategy_names)
 
     try:
-        multi = optimize_multi_strategy(pool, config, strategies=strategies)
+        multi = await asyncio.to_thread(
+            optimize_multi_strategy, pool, config, strategies=strategies
+        )
     except PreFlightError as exc:
         # Pool is structurally insufficient for *every* strategy.
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -312,7 +337,7 @@ async def run_single_strategy(
     if req.pool_override is not None:
         pool = _pool_from_override(req)
     else:
-        rows = await repo.get_player_pool(db, season_start=req.season_start, min_qt_a=req.min_qt_a)
+        rows = await repo.get_player_pool(db, season_start=req.season_start, min_qt_a=req.min_qt_a, ruleset=req.ruleset)
         pool = [
             Player(
                 player_id=r["player_id"],
@@ -321,6 +346,8 @@ async def run_single_strategy(
                 real_team=r["real_team"],
                 cost=int(r["cost"]),
                 projected_score=float(r["projected_score"]),
+                prediction_std=r.get("prediction_std"),
+                eligible_roles=frozenset(r.get("eligible_roles") or []),
             )
             for r in rows
         ]
@@ -336,7 +363,7 @@ async def run_single_strategy(
         )
 
     try:
-        result = optimize_squad(pool, config, strategy)
+        result = await asyncio.to_thread(optimize_squad, pool, config, strategy)
     except PreFlightError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

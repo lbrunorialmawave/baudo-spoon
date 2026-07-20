@@ -115,6 +115,13 @@ export interface OptimizationRequest {
   formations?: FormationConfig[];
   inflationConfig?: Partial<InflationConfig>;
   solverTimeoutSeconds?: number;
+  maxSinglePlayerBudgetShare?: number;
+  mustInclude?: string[];
+  exclude?: string[];
+  ruleset?: 'CLASSIC' | 'MANTRA';
+  mantraRoleQuotas?: Record<string, number> | null;
+  preferredFormation?: FormationConfig | null;
+  riskAversion?: number;
   strategyNames?: string[] | null;
 }
 
@@ -126,6 +133,7 @@ export interface SquadPlayer {
   cost: number;
   projectedScore: number;
   effectiveCost: number;
+  predictionStd?: number | null;
 }
 
 export interface OptimizationResult {

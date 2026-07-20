@@ -474,7 +474,7 @@ class Trainer:
             "[%s] best model: %s (RMSE=%.4f)",
             role, best_name, comparison_df.iloc[0]["rmse"],
         )
-        return test_metrics, best_name, best_pipe, feature_cols
+        return test_metrics, best_name, best_pipe, feature_cols, fitted_pipelines
 
     # ── Run ───────────────────────────────────────────────────────────────────
 
@@ -564,7 +564,7 @@ class Trainer:
 
         if role_partitioned:
             # ── GK sub-pipeline ───────────────────────────────────────────────
-            gk_test_metrics, best_gk_name, best_gk_pipe, gk_feature_cols = (
+            gk_test_metrics, best_gk_name, best_gk_pipe, gk_feature_cols, gk_all_pipes = (
                 self._run_role_pipeline(
                     df_train[gk_mask_train].reset_index(drop=True),
                     df_test[gk_mask_test].reset_index(drop=True),
@@ -578,7 +578,7 @@ class Trainer:
             }
 
             # ── Outfield sub-pipeline ─────────────────────────────────────────
-            out_test_metrics, best_out_name, best_out_pipe, out_feature_cols = (
+            out_test_metrics, best_out_name, best_out_pipe, out_feature_cols, out_all_pipes = (
                 self._run_role_pipeline(
                     df_train[~gk_mask_train].reset_index(drop=True),
                     df_test[~gk_mask_test].reset_index(drop=True),
@@ -718,6 +718,35 @@ class Trainer:
             df_latest[feature_cols]
         )
 
+        # Prediction std: cross-model disagreement for each player in df_latest.
+        # Uses all fitted pipelines for the primary partition; wrapped in try/except
+        # so a missing feature column in an older model never blocks the pipeline.
+        try:
+            if role_partitioned:
+                _all_pipes_latest = out_all_pipes
+                _feat_cols_latest = out_feature_cols
+                _latest_mask = ~df_latest["canonical_role"].isin(["GK"]) if "canonical_role" in df_latest.columns else pd.Series(True, index=df_latest.index)
+            else:
+                _all_pipes_latest = fitted_pipelines  # type: ignore[possibly-undefined]
+                _feat_cols_latest = feature_cols
+                _latest_mask = pd.Series(True, index=df_latest.index)
+
+            _x_latest = df_latest.loc[_latest_mask, _feat_cols_latest]
+            if len(_all_pipes_latest) > 1 and not _x_latest.empty:
+                _preds_matrix = np.column_stack([
+                    pipe.predict(_x_latest) for pipe in _all_pipes_latest.values()
+                ])
+                _std_series = pd.Series(
+                    np.std(_preds_matrix, axis=1, ddof=0),
+                    index=_X_latest.index,
+                )
+                df_latest["prediction_std"] = _std_series.reindex(df_latest.index).fillna(0.0)
+            else:
+                df_latest["prediction_std"] = 0.0
+        except Exception as _std_exc:
+            log.warning("prediction_std computation failed (non-critical): %s", _std_exc)
+            df_latest["prediction_std"] = 0.0
+
         cluster_result = run_clustering(df_latest, cfg)
         plot_clusters(
             cluster_result,
@@ -825,6 +854,29 @@ class Trainer:
         predictions_df = df_test[cols].copy()
         predictions_df["fantavoto_medio"] = y_test_vals.values
         predictions_df["predicted_fantavoto"] = pred_test.values
+
+        # Attach cross-model prediction_std to each test-set player.
+        try:
+            if role_partitioned:
+                _pred_std = pd.Series(0.0, index=df_test.index)
+                for _idx, _pipes, _fcols in [
+                    (df_test.index[gk_mask_test], gk_all_pipes, gk_feature_cols),
+                    (df_test.index[~gk_mask_test], out_all_pipes, out_feature_cols),
+                ]:
+                    if len(_idx) == 0 or len(_pipes) <= 1:
+                        continue
+                    _m = np.column_stack([p.predict(df_test.loc[_idx, _fcols]) for p in _pipes.values()])
+                    _pred_std.loc[_idx] = np.std(_m, axis=1, ddof=0)
+            else:
+                if len(fitted_pipelines) > 1:  # type: ignore[possibly-undefined]
+                    _m = np.column_stack([p.predict(df_test[feature_cols]) for p in fitted_pipelines.values()])
+                    _pred_std = pd.Series(np.std(_m, axis=1, ddof=0), index=df_test.index)
+                else:
+                    _pred_std = pd.Series(0.0, index=df_test.index)
+            predictions_df["prediction_std"] = _pred_std.values
+        except Exception as _std_exc2:
+            log.warning("prediction_std (test set) failed (non-critical): %s", _std_exc2)
+            predictions_df["prediction_std"] = 0.0
 
         output: dict[str, Any] = {
             "run_id": self._run_id,

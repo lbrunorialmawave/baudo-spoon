@@ -1,5 +1,12 @@
 """Schedule difficulty coefficient computation.
 
+.. deprecated::
+    This module is not connected to the training pipeline or any feature set.
+    ``opponent_elo`` / ``opponent_expected_points`` columns are not produced by
+    any current data ingestion step, so ``compute_difficulty_coefficients`` is
+    never called outside of tests.  Wire it into ``ml/features/`` or the
+    trainer's feature engineering step before removing this notice.
+
 ``difficulty_coefficient`` is normalised to ``[coeff_min, coeff_max]`` where:
 
   - 1.0 = average-strength opponent
