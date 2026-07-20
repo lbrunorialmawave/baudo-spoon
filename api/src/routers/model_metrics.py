@@ -47,7 +47,7 @@ async def list_runs(
             ) AS metrics
         FROM model_runs r
         LEFT JOIN model_metrics m ON m.run_id = r.run_id
-        WHERE (:model_name IS NULL OR r.model_name = :model_name)
+        WHERE (CAST(:model_name AS TEXT) IS NULL OR r.model_name = :model_name)
         GROUP BY r.id
         ORDER BY r.trained_at DESC
         LIMIT :limit OFFSET :offset
@@ -73,7 +73,7 @@ async def metrics_history(
         JOIN model_runs r ON r.run_id = m.run_id
         WHERE m.metric_name = :metric
           AND m.split       = :split
-          AND (:model_name IS NULL OR r.model_name = :model_name)
+          AND (CAST(:model_name AS TEXT) IS NULL OR r.model_name = :model_name)
         ORDER BY r.trained_at ASC
     """), {"metric": metric, "split": split, "model_name": model_name})).fetchall()
 
