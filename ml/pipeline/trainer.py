@@ -995,15 +995,18 @@ def _git_commit() -> str | None:
 def _check_drift(conn: sa.Connection, run_id: str, model_name: str, threshold_pct: float = 10.0) -> None:
     """Mark run as 'degraded' if test RMSE exceeds the 5-run moving average by threshold_pct."""
     baseline_row = conn.execute(sa.text("""
-        SELECT AVG(mm.metric_value) AS baseline
-        FROM model_metrics mm
-        JOIN model_runs mr ON mr.run_id = mm.run_id
-        WHERE mr.model_name = :model_name
-          AND mm.metric_name = 'rmse'
-          AND mm.split = 'test'
-          AND mr.run_id != :run_id
-        ORDER BY mr.trained_at DESC
-        LIMIT 5
+        SELECT AVG(metric_value) AS baseline
+        FROM (
+            SELECT mm.metric_value
+            FROM model_metrics mm
+            JOIN model_runs mr ON mr.run_id = mm.run_id
+            WHERE mr.model_name = :model_name
+              AND mm.metric_name = 'rmse'
+              AND mm.split = 'test'
+              AND mr.run_id != :run_id
+            ORDER BY mr.trained_at DESC
+            LIMIT 5
+        ) recent
     """), {"model_name": model_name, "run_id": run_id}).fetchone()
 
     current = conn.execute(sa.text("""
