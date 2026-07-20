@@ -906,9 +906,9 @@ class Trainer:
         """Write run metadata and metrics to Postgres. Non-fatal: logs on failure."""
         import os
 
-        db_url = os.environ.get("API_DATABASE_URL")
+        db_url = os.environ.get("ML_DATABASE_URL") or os.environ.get("API_DATABASE_URL")
         if not db_url:
-            log.warning("API_DATABASE_URL not set — skipping DB metrics persist")
+            log.warning("ML_DATABASE_URL not set — skipping DB metrics persist")
             return
 
         # Trainer is sync; normalise asyncpg DSN to plain psycopg2.
