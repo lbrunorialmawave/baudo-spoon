@@ -31,8 +31,8 @@ import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/e
       @if (error()) {
         <app-error-boundary [message]="error()!" />
       } @else if (loading()) {
-        <app-skeleton [height]="280" />
-        <app-skeleton [height]="200" style="margin-top:1rem" />
+        <app-skeleton [height]="'280px'" />
+        <app-skeleton [height]="'200px'" style="margin-top:1rem" />
       } @else {
         <!-- RMSE chart -->
         <section class="card chart-card">
