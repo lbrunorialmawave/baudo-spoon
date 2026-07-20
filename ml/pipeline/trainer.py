@@ -927,8 +927,8 @@ class Trainer:
                          training_seasons, hyperparams, dependencies, git_commit)
                     VALUES
                         (:run_id, :model_name, NOW(), :season_start,
-                         :training_seasons::jsonb, :hyperparams::jsonb,
-                         :dependencies::jsonb, :git_commit)
+                         CAST(:training_seasons AS jsonb), CAST(:hyperparams AS jsonb),
+                         CAST(:dependencies AS jsonb), :git_commit)
                     ON CONFLICT (run_id) DO NOTHING
                 """), {
                     "run_id": output["run_id"],
@@ -973,7 +973,7 @@ class Trainer:
 
             log.info("Metrics persisted to DB for run %s", output["run_id"])
         except Exception as exc:
-            log.error("Failed to persist metrics to DB (non-fatal): %s", exc)
+            log.error("Failed to persist metrics to DB (non-fatal): %s", exc, exc_info=True)
 
 
 # ── Module-level helpers used by Trainer._persist_metrics_to_db ──────────────
