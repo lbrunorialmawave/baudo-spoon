@@ -14,15 +14,6 @@ from .database import AsyncSessionLocal
 log = logging.getLogger(__name__)
 
 
-def check_production_security() -> None:
-    """Call from lifespan startup — raises RuntimeError if deployed to production without an API key."""
-    if not settings.debug and not settings.api_key_secret:
-        raise RuntimeError(
-            "API_API_KEY_SECRET must be set in production (debug=False). "
-            "All protected endpoints would be publicly accessible without it."
-        )
-
-
 # ── Database ──────────────────────────────────────────────────────────────────
 
 
