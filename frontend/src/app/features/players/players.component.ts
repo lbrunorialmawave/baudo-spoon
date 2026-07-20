@@ -14,7 +14,7 @@ import { PlayerDrawerComponent } from './components/player-drawer/player-drawer.
   imports: [FormsModule, DecimalPipe, ErrorBoundaryComponent, PlayerTableComponent, PlayerDrawerComponent],
   template: `
     <div style="background:var(--color-bg);min-height:100%">
-      <div class="flex items-center justify-between border-b px-6 py-3.5"
+      <div class="flex flex-col gap-1 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-3.5"
            style="border-color:var(--color-border)">
         <div class="flex items-center gap-3">
           <h1 class="text-base font-semibold" style="color:var(--color-text-primary)">Players</h1>
@@ -26,20 +26,20 @@ import { PlayerDrawerComponent } from './components/player-drawer/player-drawer.
         }
       </div>
 
-      <div class="flex flex-wrap items-center gap-3 border-b px-6 py-3"
+      <div class="grid grid-cols-1 gap-2 border-b px-4 py-3 sm:grid-cols-2 sm:gap-3 md:flex md:flex-wrap md:items-center md:px-6"
            style="border-color:var(--color-border);background:var(--color-surface)">
-        <input class="rounded-lg border px-3 py-1.5 text-sm outline-none"
-               style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary);width:200px"
+        <input class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full md:w-50"
+               style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
                placeholder="Search player" [ngModel]="searchInput()" (ngModelChange)="searchInput.set($event)" />
 
-        <select class="rounded-lg border px-3 py-1.5 text-sm outline-none"
+        <select class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full md:w-auto"
                 style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
                 [ngModel]="selectedRuolo()" (ngModelChange)="selectedRuolo.set($event)">
           <option value="">All roles</option>
           @for (r of MANTRA_ROLES; track r) { <option [value]="r">{{ r }}</option> }
         </select>
 
-        <select class="rounded-lg border px-3 py-1.5 text-sm outline-none"
+        <select class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full md:w-auto"
                 style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
                 [ngModel]="selectedFase7()" (ngModelChange)="selectedFase7.set($event)">
           <option value="">All classifications</option>
@@ -48,7 +48,7 @@ import { PlayerDrawerComponent } from './components/player-drawer/player-drawer.
           }
         </select>
 
-        <select class="rounded-lg border px-3 py-1.5 text-sm outline-none"
+        <select class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full md:w-auto"
                 style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
                 [ngModel]="selectedStatus()" (ngModelChange)="selectedStatus.set($event)">
           <option value="">All statuses</option>
@@ -59,7 +59,7 @@ import { PlayerDrawerComponent } from './components/player-drawer/player-drawer.
           <option value="doubtful">🟡 In dubbio</option>
         </select>
 
-        <div class="flex gap-1.5 ml-auto">
+        <div class="flex flex-wrap gap-1.5 md:ml-auto">
           @for (qf of quickFilters; track qf.key) {
             <button class="rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors"
                     [style.border-color]="activeQuickFilter() === qf.key ? (FASE7_LABELS[qf.key]?.color ?? 'var(--color-accent)') : 'var(--color-border)'"
@@ -76,15 +76,15 @@ import { PlayerDrawerComponent } from './components/player-drawer/player-drawer.
       </div>
 
       @if (stats(); as s) {
-        <div class="flex gap-4 px-6 py-2 border-b text-xs"
+        <div class="flex flex-wrap gap-3 border-b px-4 py-2 text-xs sm:px-6"
              style="border-color:var(--color-border);color:var(--color-text-secondary);background:var(--color-surface)">
           <span title="Media Fantacalcio Punti di tutti i giocatori">Avg FP: <strong style="color:var(--color-accent)">{{ s.avg_fp_mantra | number:'1.1-1' }}</strong></span>
           <span title="Media Voto Ricevuto di tutti i giocatori (scala 0-100)">Avg VR: <strong>{{ s.avg_vr | number:'1.0-0' }}</strong></span>
-          <span class="ml-auto">{{ s.total_players }} scored</span>
+          <span class="md:ml-auto">{{ s.total_players }} scored</span>
         </div>
       }
 
-      <div class="p-6">
+      <div class="p-4 sm:p-6">
         @if (error()) {
           <app-error-boundary [message]="error()!" />
         } @else {

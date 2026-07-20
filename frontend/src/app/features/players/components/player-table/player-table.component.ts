@@ -8,29 +8,29 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
   standalone: true,
   imports: [SkeletonComponent, DecimalPipe],
   template: `
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm" style="border-collapse:collapse">
+    <div class="overflow-x-auto -mx-3 sm:-mx-4 md:mx-0">
+      <table class="w-full text-sm" style="border-collapse:collapse;min-width:560px">
         <thead>
           <tr class="border-b text-xs font-medium uppercase tracking-wide"
               style="border-color:var(--color-border);color:var(--color-text-secondary)">
-            <th class="px-3 py-2 text-right w-12">#</th>
+            <th class="px-3 py-2 text-right w-10 sm:w-12">#</th>
             <th class="px-3 py-2 text-left sortable" (click)="sortChanged.emit('player_name')">
               Player @if (sortColumn() === 'player_name') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
             </th>
-            <th class="px-3 py-2 text-left sortable" (click)="sortChanged.emit('team')">
+            <th class="px-3 py-2 text-left sortable hidden sm:table-cell" (click)="sortChanged.emit('team')">
               Team @if (sortColumn() === 'team') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
             </th>
             <th class="px-3 py-2 text-left sortable" (click)="sortChanged.emit('ruolo_primario')" title="Ruolo primario nel sistema Mantra (12 ruoli: Por, Dc, Dd, Ds, B, E, M, C, T, W, A, Pc)">
               Mantra @if (sortColumn() === 'ruolo_primario') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
             </th>
-            <th class="px-3 py-2 text-left" title="Categoria statistica / ruoli secondari Mantra">Category</th>
+            <th class="px-3 py-2 text-left hidden lg:table-cell" title="Categoria statistica / ruoli secondari Mantra">Category</th>
             <th class="px-3 py-2 text-right sortable" (click)="sortChanged.emit('FP_Mantra')" title="Fantacalcio Punti — punteggio complessivo calcolato su voti, bonus/malus e ruolo Mantra">
               FP @if (sortColumn() === 'FP_Mantra') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
             </th>
-            <th class="px-3 py-2 text-right sortable" (click)="sortChanged.emit('VR')" title="Voto Ricevuto — media dei voti in pagella (scala 0-100)">
+            <th class="px-3 py-2 text-right sortable hidden md:table-cell" (click)="sortChanged.emit('VR')" title="Voto Ricevuto — media dei voti in pagella (scala 0-100)">
               VR @if (sortColumn() === 'VR') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
             </th>
-            <th class="px-3 py-2 text-left" title="Stato per la prossima giornata (infortunato, squalificato, etc.)">Status</th>
+            <th class="px-3 py-2 text-left hidden md:table-cell" title="Stato per la prossima giornata (infortunato, squalificato, etc.)">Status</th>
             <th class="px-3 py-2 text-left" title="Classificazione Fase 7 del calciatore (TOP, AFFARE, CERTEZZA, SCOMMESSA, SOPRAVALUTATO, GIUSTO)">Fase 7</th>
             <th class="px-3 py-2 text-right sortable" (click)="sortChanged.emit('Prezzo_Massimo')" title="Prezzo massimo di mercato stimato in crediti">
               Prezzo @if (sortColumn() === 'Prezzo_Massimo') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
@@ -61,7 +61,7 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                 <td class="px-3 py-2.5 font-medium" style="color:var(--color-text-primary)">
                   {{ item.player_name }}
                 </td>
-                <td class="px-3 py-2.5 text-xs" style="color:var(--color-text-secondary)">
+                <td class="px-3 py-2.5 text-xs hidden sm:table-cell" style="color:var(--color-text-secondary)">
                   {{ item.team ?? item.team_name ?? '—' }}
                 </td>
                 <td class="px-3 py-2.5 text-xs">
@@ -71,18 +71,18 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                     <span class="italic opacity-50">—</span>
                   }
                 </td>
-                <td class="px-3 py-2.5 text-xs" style="color:var(--color-text-secondary)">
+                <td class="px-3 py-2.5 text-xs hidden lg:table-cell" style="color:var(--color-text-secondary)">
                   {{ item.stat_category ?? (mp?.ruoli_mantra?.join(', ') ?? '') }}
                 </td>
                 <td class="px-3 py-2.5 text-right font-mono text-sm font-semibold"
                     style="color:var(--color-accent)">
                   {{ mp?.FP_Mantra != null ? (mp.FP_Mantra | number:'1.1-1') : '—' }}
                 </td>
-                <td class="px-3 py-2.5 text-right font-mono text-xs"
+                <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell"
                     style="color:var(--color-text-secondary)">
                   {{ mp?.VR != null ? (mp.VR | number:'1.0-0') : '—' }}
                 </td>
-                <td class="px-3 py-2.5 text-xs">
+                <td class="px-3 py-2.5 text-xs hidden md:table-cell">
                   @let mds = matchdayStatus()[item.fantacalcio_id];
                   @if (mds) {
                     <span class="rounded-full px-2 py-0.5 text-xs font-medium text-white"
@@ -99,13 +99,14 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                     <span class="rounded-full px-2 py-0.5 text-xs font-medium text-white"
                           [style.background]="f7?.color ?? '#6B7280'"
                           [title]="FASE7_TOOLTIPS[mp.Fase7]">
-                      {{ f7?.icon ?? '' }} {{ f7?.label ?? mp.Fase7 }}
+                      <span class="sm:hidden">{{ f7?.icon ?? '' }} {{ mp.Fase7 }}</span>
+                      <span class="hidden sm:inline">{{ f7?.icon ?? '' }} {{ f7?.label ?? mp.Fase7 }}</span>
                     </span>
                   } @else {
                     <span class="text-xs opacity-30" title="Nessuna classificazione Fase 7 — il giocatore non rientra in nessuna categoria (dati insufficienti o profilo nella media non classificabile)">—</span>
                   }
                 </td>
-                <td class="px-3 py-2.5 text-right font-mono text-xs"
+                <td class="px-3 py-2.5 text-right font-mono text-xs whitespace-nowrap"
                     style="color:var(--color-text-secondary)">
                   {{ mp?.Pz1 != null ? (mp.Pz1 | number:'1.0-0') + ' cr' : '—' }}
                 </td>

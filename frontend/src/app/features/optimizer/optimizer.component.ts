@@ -278,8 +278,8 @@ const ALL_FORMATIONS: FormationConfig[] = [
                 <table class="squad-table">
                   <thead>
                     <tr>
-                      <th>Role</th><th>Name</th><th>Team</th>
-                      <th class="num">Cost</th><th class="num">Eff.</th><th class="num">Score</th>
+                      <th>Role</th><th>Name</th><th class="hide-sm">Team</th>
+                      <th class="num">Cost</th><th class="num hide-sm">Eff.</th><th class="num">Score</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -292,9 +292,9 @@ const ALL_FORMATIONS: FormationConfig[] = [
                           </span>
                         </td>
                         <td class="player-name">{{ p.name }}</td>
-                        <td class="team-name">{{ p.realTeam }}</td>
+                        <td class="team-name hide-sm">{{ p.realTeam }}</td>
                         <td class="num">{{ p.cost }}</td>
-                        <td class="num faded">{{ p.effectiveCost | number:'1.1-1' }}</td>
+                        <td class="num faded hide-sm">{{ p.effectiveCost | number:'1.1-1' }}</td>
                         <td class="num accent">{{ p.projectedScore | number:'1.2-2' }}</td>
                       </tr>
                     }
@@ -310,20 +310,35 @@ const ALL_FORMATIONS: FormationConfig[] = [
   `,
   styles: [`
     .optimizer-page { display:flex; flex-direction:column; height:100%; overflow:hidden; }
-    .page-header { padding:20px 24px 16px; border-bottom:1px solid var(--color-border); flex-shrink:0; }
-    .page-title { font-size:18px; font-weight:700; color:var(--color-text-primary); margin:0; }
-    .page-subtitle { font-size:12px; color:var(--color-text-secondary); margin:2px 0 0; }
+    .page-header { padding:16px; border-bottom:1px solid var(--color-border); flex-shrink:0; }
+    @media (min-width: 640px) { .page-header { padding:20px 24px 16px; } }
+    .page-title { font-size:16px; font-weight:700; color:var(--color-text-primary); margin:0; }
+    @media (min-width: 640px) { .page-title { font-size:18px; } }
+    .page-subtitle { font-size:11px; color:var(--color-text-secondary); margin:2px 0 0; }
+    @media (min-width: 640px) { .page-subtitle { font-size:12px; } }
 
     .optimizer-body {
-      display:grid; grid-template-columns:300px 1fr;
-      flex:1; overflow:hidden;
+      display:flex; flex-direction:column;
+      flex:1; overflow:hidden; min-height:0;
+    }
+    @media (min-width: 768px) {
+      .optimizer-body {
+        display:grid; grid-template-columns:300px 1fr;
+      }
     }
 
     /* Config panel */
     .config-panel {
-      border-radius:0; border-top:none; border-bottom:none; border-left:none;
-      padding:16px; overflow-y:auto;
+      border-radius:0; border-top:none; border-bottom:1px solid var(--color-border);
+      border-left:none; border-right:none;
+      padding:16px; overflow-y:auto; max-height:50vh;
       display:flex; flex-direction:column; gap:10px;
+    }
+    @media (min-width: 768px) {
+      .config-panel {
+        max-height:none; border-bottom:none;
+        border-right:1px solid var(--color-border);
+      }
     }
     .section-divider {
       font-size:10px; font-weight:700; text-transform:uppercase;
@@ -331,15 +346,18 @@ const ALL_FORMATIONS: FormationConfig[] = [
       margin:6px 0 0; padding-bottom:6px;
       border-bottom:1px solid var(--color-border);
     }
-    .field-group { display:flex; flex-direction:column; gap:4px; }
+    .field-group { display:flex; flex-direction:column; gap:4px; min-width:0; }
     .field-row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
     .field-label { font-size:11px; font-weight:500; color:var(--color-text-secondary); }
     .field-hint { font-size:10px; opacity:0.6; }
     .field-input {
       background:var(--color-bg); border:1px solid var(--color-border);
-      border-radius:6px; padding:6px 8px;
-      color:var(--color-text-primary); font-size:12px;
-      outline:none; width:100%;
+      border-radius:6px; padding:8px;
+      color:var(--color-text-primary); font-size:13px;
+      outline:none; width:100%; min-width:0;
+    }
+    @media (min-width: 640px) {
+      .field-input { padding:6px 8px; font-size:12px; }
     }
     .field-input:focus { border-color:var(--color-accent); }
     .field-textarea { resize:vertical; font-family:var(--font-sans); }
@@ -348,11 +366,12 @@ const ALL_FORMATIONS: FormationConfig[] = [
     .check-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
     .check-chip {
       display:flex; align-items:center; justify-content:center;
-      padding:6px 8px; border-radius:6px;
+      padding:8px; border-radius:6px;
       border:1px solid var(--color-border); background:var(--color-bg);
       cursor:pointer; font-size:12px; font-weight:500;
       color:var(--color-text-secondary);
       transition:border-color 100ms, color 100ms;
+      min-height:36px;
     }
     .check-chip.active {
       border-color:var(--color-accent); color:var(--color-text-primary);
@@ -364,10 +383,11 @@ const ALL_FORMATIONS: FormationConfig[] = [
     .check-col { display:flex; flex-direction:column; gap:5px; }
     .strategy-check {
       display:flex; align-items:center; gap:8px;
-      padding:7px 10px; border-radius:6px;
+      padding:8px 10px; border-radius:6px;
       border:1px solid var(--color-border); background:var(--color-bg);
       cursor:pointer; font-size:12px; color:var(--color-text-secondary);
       transition:border-color 100ms, color 100ms;
+      min-height:36px;
     }
     .strategy-check.active {
       border-color:var(--color-accent); color:var(--color-text-primary);
@@ -382,6 +402,7 @@ const ALL_FORMATIONS: FormationConfig[] = [
       border:none; cursor:pointer;
       display:flex; align-items:center; justify-content:center; gap:6px;
       transition:opacity 120ms;
+      min-height:40px;
     }
     .run-btn:disabled { opacity:0.5; cursor:not-allowed; }
     .run-btn:not(:disabled):hover { opacity:0.9; }
@@ -396,13 +417,17 @@ const ALL_FORMATIONS: FormationConfig[] = [
     /* Results panel */
     .results-panel {
       display:flex; flex-direction:column; overflow:hidden;
-      border-left:1px solid var(--color-border);
+      min-height:0;
+    }
+    @media (min-width: 768px) {
+      .results-panel { border-left:none; }
     }
     .results-placeholder {
       flex:1; display:flex; flex-direction:column;
       align-items:center; justify-content:center;
-      gap:12px; padding:32px; overflow-y:auto;
+      gap:12px; padding:24px 16px; overflow-y:auto;
     }
+    @media (min-width: 640px) { .results-placeholder { padding:32px; } }
     .placeholder-icon { font-size:40px; }
     .placeholder-text {
       font-size:13px; color:var(--color-text-secondary);
@@ -411,15 +436,19 @@ const ALL_FORMATIONS: FormationConfig[] = [
 
     .strategy-tabs {
       display:flex; border-bottom:1px solid var(--color-border);
-      flex-shrink:0; padding:0 16px; overflow-x:auto;
+      flex-shrink:0; padding:0 12px; overflow-x:auto;
+      -webkit-overflow-scrolling:touch;
     }
+    @media (min-width: 640px) { .strategy-tabs { padding:0 16px; } }
     .strategy-tab {
       display:flex; align-items:center; gap:6px;
-      padding:12px 14px; border:none; background:none;
+      padding:12px 10px; border:none; background:none;
       color:var(--color-text-secondary); font-size:12px; font-weight:500;
       border-bottom:2px solid transparent; cursor:pointer;
       white-space:nowrap; transition:color 100ms, border-color 100ms;
+      min-height:44px;
     }
+    @media (min-width: 640px) { .strategy-tab { padding:12px 14px; } }
     .strategy-tab.active { color:var(--color-accent); border-bottom-color:var(--color-accent); }
     .tab-score {
       background:var(--color-surface-raised); border-radius:9999px;
@@ -427,25 +456,41 @@ const ALL_FORMATIONS: FormationConfig[] = [
     }
 
     .summary-row {
-      display:grid; grid-template-columns:repeat(6,1fr);
+      display:grid; grid-template-columns:repeat(2,1fr);
       border-bottom:1px solid var(--color-border); flex-shrink:0;
     }
-    .stat-card { padding:12px 14px; border-right:1px solid var(--color-border); }
-    .stat-card:last-child { border-right:none; }
+    @media (min-width: 640px) { .summary-row { grid-template-columns:repeat(3,1fr); } }
+    @media (min-width: 1024px) { .summary-row { grid-template-columns:repeat(6,1fr); } }
+    .stat-card {
+      padding:10px 12px;
+      border-right:1px solid var(--color-border);
+      border-bottom:1px solid var(--color-border);
+    }
+    @media (min-width: 640px) {
+      .stat-card:nth-child(2n) { border-right:none; }
+      .stat-card:nth-last-child(-n+2) { border-bottom:none; }
+    }
+    @media (min-width: 1024px) {
+      .stat-card { padding:12px 14px; border-bottom:none; }
+      .stat-card { border-right:1px solid var(--color-border); }
+      .stat-card:last-child { border-right:none; }
+    }
     .stat-label {
       font-size:10px; font-weight:500; text-transform:uppercase;
       letter-spacing:0.06em; color:var(--color-text-secondary); margin:0 0 3px;
     }
     .stat-value {
-      font-size:16px; font-weight:700;
+      font-size:14px; font-weight:700;
       font-variant-numeric:tabular-nums; color:var(--color-text-primary); margin:0;
     }
+    @media (min-width: 1024px) { .stat-value { font-size:16px; } }
     .text-green { color:#22C55E !important; }
 
     .formation-row {
-      display:flex; align-items:center; gap:10px;
-      padding:8px 16px; border-bottom:1px solid var(--color-border); flex-shrink:0;
+      display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+      padding:8px 12px; border-bottom:1px solid var(--color-border); flex-shrink:0;
     }
+    @media (min-width: 640px) { .formation-row { padding:8px 16px; } }
     .section-label {
       font-size:10px; font-weight:600; text-transform:uppercase;
       letter-spacing:0.06em; color:var(--color-text-secondary); margin:0; white-space:nowrap;
@@ -461,30 +506,49 @@ const ALL_FORMATIONS: FormationConfig[] = [
       color:#22C55E; border-color:#22C55E;
     }
 
-    .role-breakdown { display:flex; flex-shrink:0; border-bottom:1px solid var(--color-border); }
+    .role-breakdown {
+      display:grid; grid-template-columns:repeat(2,1fr);
+      flex-shrink:0; border-bottom:1px solid var(--color-border);
+    }
+    @media (min-width: 640px) { .role-breakdown { grid-template-columns:repeat(4,1fr); } }
     .role-strip {
-      flex:1; display:flex; align-items:center; justify-content:space-between;
-      padding:6px 14px; border-right:1px solid var(--color-border);
+      display:flex; align-items:center; justify-content:space-between;
+      padding:6px 12px;
+      border-right:1px solid var(--color-border);
+      border-bottom:1px solid var(--color-border);
       border-left:3px solid transparent;
     }
+    @media (min-width: 640px) {
+      .role-strip { border-bottom:none; padding:6px 14px; }
+    }
+    .role-strip:nth-child(2n) { border-right:none; }
+    @media (min-width: 640px) { .role-strip:nth-child(2n) { border-right:1px solid var(--color-border); } }
     .role-strip:last-child { border-right:none; }
     .role-label { font-size:11px; font-weight:600; }
     .role-count { font-size:14px; font-weight:700; color:var(--color-text-primary); }
 
-    .squad-table-wrap { flex:1; overflow-y:auto; }
-    .squad-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .squad-table-wrap {
+      flex:1; overflow:auto; min-height:0;
+      margin:0 -12px;
+    }
+    @media (min-width: 640px) { .squad-table-wrap { margin:0 -16px; } }
+    .squad-table { width:100%; min-width:520px; border-collapse:collapse; font-size:13px; }
+    .hide-sm { display:none; }
+    @media (min-width: 640px) { .hide-sm { display:table-cell; } }
     .squad-table thead th {
       position:sticky; top:0; z-index:1;
-      background:var(--color-surface); padding:8px 14px; text-align:left;
+      background:var(--color-surface); padding:8px 10px; text-align:left;
       font-size:10px; font-weight:600; text-transform:uppercase;
       letter-spacing:0.05em; color:var(--color-text-secondary);
       border-bottom:1px solid var(--color-border);
     }
+    @media (min-width: 640px) { .squad-table thead th { padding:8px 14px; } }
     .squad-table tbody tr {
       border-bottom:1px solid var(--color-border); transition:background 100ms;
     }
     .squad-table tbody tr:hover { background:var(--color-surface-raised); }
-    .squad-table tbody td { padding:8px 14px; color:var(--color-text-primary); }
+    .squad-table tbody td { padding:8px 10px; color:var(--color-text-primary); }
+    @media (min-width: 640px) { .squad-table tbody td { padding:8px 14px; } }
     .squad-table .num { text-align:right; font-variant-numeric:tabular-nums; }
     .role-badge {
       display:inline-flex; align-items:center; justify-content:center;

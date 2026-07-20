@@ -43,7 +43,7 @@ import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/e
         </section>
 
         <!-- Runs table -->
-        <section class="card" style="margin-top:1.5rem">
+        <section class="card runs-card">
           <h2 class="section-title">Pipeline runs</h2>
           <div class="table-scroll">
             <table class="runs-table">
@@ -52,11 +52,11 @@ import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/e
                   <th>Run ID</th>
                   <th>Model</th>
                   <th>Trained at</th>
-                  <th>Season</th>
-                  <th>Git</th>
+                  <th class="col-season">Season</th>
+                  <th class="col-git">Git</th>
                   <th>RMSE (test)</th>
-                  <th>MAE (test)</th>
-                  <th>R² (test)</th>
+                  <th class="col-mae">MAE (test)</th>
+                  <th class="col-r2">R² (test)</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -66,11 +66,11 @@ import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/e
                     <td class="run-id-cell">{{ run.run_id }}</td>
                     <td>{{ run.model_name }}</td>
                     <td>{{ run.trained_at | date:'dd MMM yy HH:mm' }}</td>
-                    <td>{{ run.season_start ?? '—' }}</td>
-                    <td class="mono">{{ run.git_commit ?? '—' }}</td>
+                    <td class="col-season">{{ run.season_start ?? '—' }}</td>
+                    <td class="mono col-git">{{ run.git_commit ?? '—' }}</td>
                     <td class="mono">{{ metricValue(run, 'rmse', 'test') }}</td>
-                    <td class="mono">{{ metricValue(run, 'mae', 'test') }}</td>
-                    <td class="mono">{{ metricValue(run, 'r2', 'test') }}</td>
+                    <td class="mono col-mae">{{ metricValue(run, 'mae', 'test') }}</td>
+                    <td class="mono col-r2">{{ metricValue(run, 'r2', 'test') }}</td>
                     <td>
                       <span class="status-badge" [attr.data-status]="run.status">
                         {{ run.status }}
@@ -88,27 +88,56 @@ import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/e
     </div>
   `,
   styles: [`
-    .page-container { padding: 1.5rem; max-width: 1200px; margin: 0 auto; }
-    .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
-    .page-title { font-size: 1.5rem; font-weight: 700; }
-    .page-subtitle { color: var(--color-text-secondary); font-size: 0.875rem; }
-    .card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 0.75rem; padding: 1.25rem; }
-    .section-title { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; }
+    .page-container { padding: 1rem; max-width: 1200px; margin: 0 auto; }
+    @media (min-width: 640px) { .page-container { padding: 1.25rem; } }
+    @media (min-width: 768px) { .page-container { padding: 1.5rem; } }
+
+    .page-header { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
+    @media (min-width: 640px) {
+      .page-header { flex-direction: row; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 1.5rem; }
+    }
+    .page-title { font-size: 1.25rem; font-weight: 700; margin: 0; }
+    @media (min-width: 640px) { .page-title { font-size: 1.5rem; } }
+    .page-subtitle { color: var(--color-text-secondary); font-size: 0.8125rem; margin: 0.25rem 0 0; }
+    @media (min-width: 640px) { .page-subtitle { font-size: 0.875rem; margin: 0; } }
+
+    .card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 0.75rem; padding: 1rem; }
+    @media (min-width: 640px) { .card { padding: 1.25rem; } }
+    .section-title { font-size: 0.9375rem; font-weight: 600; margin: 0 0 0.75rem; }
+    @media (min-width: 640px) { .section-title { font-size: 1rem; margin: 0 0 1rem; } }
     .chart-wrap { width: 100%; }
     .chart-svg { display: block; width: 100%; }
     .degraded-badge {
       background: #fef2f2; color: #dc2626; border: 1px solid #fecaca;
-      padding: 0.375rem 0.75rem; border-radius: 0.5rem; font-size: 0.875rem; font-weight: 600;
+      padding: 0.375rem 0.75rem; border-radius: 0.5rem; font-size: 0.8125rem; font-weight: 600;
+      align-self: flex-start;
     }
-    .table-scroll { overflow-x: auto; }
-    .runs-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
-    .runs-table th { text-align: left; padding: 0.5rem 0.75rem; color: var(--color-text-secondary); font-weight: 500; border-bottom: 1px solid var(--color-border); white-space: nowrap; }
-    .runs-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--color-border); }
-    .run-id-cell { font-family: monospace; font-size: 0.8rem; }
+    @media (min-width: 640px) { .degraded-badge { font-size: 0.875rem; align-self: auto; } }
+
+    .runs-card { margin-top: 1rem; }
+    @media (min-width: 640px) { .runs-card { margin-top: 1.5rem; } }
+    .table-scroll { overflow-x: auto; margin: 0 -1rem; padding: 0 1rem; -webkit-overflow-scrolling: touch; }
+    @media (min-width: 640px) { .table-scroll { margin: 0 -1.25rem; padding: 0 1.25rem; } }
+    .runs-table { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 0.8125rem; }
+    @media (min-width: 640px) { .runs-table { font-size: 0.875rem; } }
+    .runs-table th { text-align: left; padding: 0.5rem 0.625rem; color: var(--color-text-secondary); font-weight: 500; border-bottom: 1px solid var(--color-border); white-space: nowrap; }
+    @media (min-width: 640px) { .runs-table th { padding: 0.5rem 0.75rem; } }
+    .runs-table td { padding: 0.5rem 0.625rem; border-bottom: 1px solid var(--color-border); }
+    @media (min-width: 640px) { .runs-table td { padding: 0.5rem 0.75rem; } }
+    .run-id-cell { font-family: monospace; font-size: 0.75rem; }
+    @media (min-width: 640px) { .run-id-cell { font-size: 0.8rem; } }
     .mono { font-family: monospace; }
     .degraded-row td { background: #fff7ed; }
+
+    /* Hide non-essential columns on small screens */
+    .col-git, .col-mae, .col-r2 { display: none; }
+    @media (min-width: 768px) {
+      .col-git, .col-mae, .col-r2 { display: table-cell; }
+    }
+
     .empty-row { text-align: center; color: var(--color-text-secondary); padding: 2rem; }
-    .status-badge { padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
+    .status-badge { padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; white-space: nowrap; }
+    @media (min-width: 640px) { .status-badge { font-size: 0.75rem; } }
     .status-badge[data-status="ok"] { background: #dcfce7; color: #16a34a; }
     .status-badge[data-status="degraded"] { background: #fef9c3; color: #a16207; }
     .status-badge[data-status="error"] { background: #fef2f2; color: #dc2626; }

@@ -40,13 +40,13 @@ const METHOD_COLORS: Record<string, string> = {
   template: `
     <div style="background:var(--color-bg);min-height:100%">
       <!-- Header -->
-      <div class="flex items-center justify-between border-b px-6 py-3.5"
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b px-4 py-3 sm:px-6 sm:py-3.5"
            style="border-color:var(--color-border)">
-        <div class="flex items-center gap-3">
-          <h1 class="text-base font-semibold" style="color:var(--color-text-primary)">
+        <div class="flex items-center gap-3 min-w-0">
+          <h1 class="text-base font-semibold truncate" style="color:var(--color-text-primary)">
             ID Mapping
           </h1>
-          <span class="rounded-full px-2 py-0.5 text-xs font-medium"
+          <span class="rounded-full px-2 py-0.5 text-xs font-medium shrink-0"
                 style="background:var(--color-surface-raised);color:var(--color-text-secondary)">
             Fantacalcio ↔ FotMob
           </span>
@@ -61,40 +61,40 @@ const METHOD_COLORS: Record<string, string> = {
 
       <!-- Stats cards -->
       @if (statsLoading()) {
-        <div class="grid grid-cols-4 gap-3 p-6">
+        <div class="grid grid-cols-2 gap-3 p-4 sm:p-6 lg:grid-cols-4">
           @for (_ of [1,2,3,4]; track $index) {
             <div class="card h-20 animate-pulse" style="background:var(--color-surface)"></div>
           }
         </div>
       } @else {
-        <div class="grid grid-cols-4 gap-3 p-6">
+        <div class="grid grid-cols-2 gap-3 p-4 sm:p-6 lg:grid-cols-4">
           <div class="card">
             <p class="text-xs" style="color:var(--color-text-secondary)">Match Rate</p>
-            <p class="text-2xl font-bold" style="color:var(--color-accent)">
+            <p class="text-xl sm:text-2xl font-bold" style="color:var(--color-accent)">
               {{ matchRate() | number:'1.0-1' }}%
             </p>
           </div>
           <div class="card">
             <p class="text-xs" style="color:var(--color-text-secondary)">Unmatched</p>
-            <p class="text-2xl font-bold" style="color:#EF4444">{{ unmatchedCount() }}</p>
+            <p class="text-xl sm:text-2xl font-bold" style="color:#EF4444">{{ unmatchedCount() }}</p>
           </div>
           <div class="card">
             <p class="text-xs" style="color:var(--color-text-secondary)">Manual</p>
-            <p class="text-2xl font-bold" style="color:#8B5CF6">{{ manualCount() }}</p>
+            <p class="text-xl sm:text-2xl font-bold" style="color:#8B5CF6">{{ manualCount() }}</p>
           </div>
           <div class="card">
             <p class="text-xs" style="color:var(--color-text-secondary)">Total</p>
-            <p class="text-2xl font-bold" style="color:var(--color-text-primary)">{{ stats()?.total ?? 0 }}</p>
+            <p class="text-xl sm:text-2xl font-bold" style="color:var(--color-text-primary)">{{ stats()?.total ?? 0 }}</p>
           </div>
         </div>
       }
 
       <!-- Filters -->
-      <div class="flex flex-wrap items-center gap-3 border-b px-6 py-3"
+      <div class="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3 border-b px-4 py-3 sm:px-6"
            style="border-color:var(--color-border);background:var(--color-surface)">
         <!-- Season -->
         @if (seasons().length) {
-          <select class="rounded-lg border px-3 py-1.5 text-sm outline-none"
+          <select class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full sm:w-auto"
                   style="background:var(--color-surface-raised);border-color:var(--color-border);
                          color:var(--color-text-primary)"
                   (change)="onSeasonChange($event)">
@@ -106,7 +106,7 @@ const METHOD_COLORS: Record<string, string> = {
         }
 
         <!-- Match method -->
-        <select class="rounded-lg border px-3 py-1.5 text-sm outline-none"
+        <select class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full sm:w-auto"
                 style="background:var(--color-surface-raised);border-color:var(--color-border);
                        color:var(--color-text-primary)"
                 (change)="onMethodChange($event)">
@@ -121,7 +121,7 @@ const METHOD_COLORS: Record<string, string> = {
         </select>
 
         <!-- Role -->
-        <select class="rounded-lg border px-3 py-1.5 text-sm outline-none"
+        <select class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full sm:w-auto"
                 style="background:var(--color-surface-raised);border-color:var(--color-border);
                        color:var(--color-text-primary)"
                 (change)="onRoleChange($event)">
@@ -133,7 +133,7 @@ const METHOD_COLORS: Record<string, string> = {
         </select>
 
         <!-- Quick filter: only unresolved -->
-        <label class="flex items-center gap-1.5 text-sm cursor-pointer"
+        <label class="flex items-center gap-1.5 text-sm cursor-pointer shrink-0"
                style="color:var(--color-text-secondary)">
           <input type="checkbox"
                  [checked]="unresolvedOnly()"
@@ -142,117 +142,125 @@ const METHOD_COLORS: Record<string, string> = {
         </label>
 
         @if (total()) {
-          <span class="text-xs ml-auto" style="color:var(--color-text-secondary)">
+          <span class="text-xs sm:ml-auto" style="color:var(--color-text-secondary)">
             Page {{ currentPage() }} of {{ totalPages() }}
           </span>
         }
       </div>
 
       <!-- Table -->
-      <div class="p-6">
+      <div class="p-4 sm:p-6">
         @if (error()) {
           <app-error-boundary [message]="error()!" />
         } @else {
           <div class="card p-0 overflow-hidden">
-            <table class="w-full text-sm">
-              <thead>
-                <tr style="color:var(--color-text-secondary);border-color:var(--color-border)">
-                  <th class="text-left px-4 py-2.5 font-medium text-xs cursor-pointer select-none"
-                      (click)="toggleSort('nameFantacalcio')">
-                    Fantacalcio @if (sortField() === 'nameFantacalcio') { {{ sortDir() === 'asc' ? '▲' : '▼' }} }
-                  </th>
-                  <th class="text-left px-4 py-2.5 font-medium text-xs cursor-pointer select-none"
-                      (click)="toggleSort('seasonStart')">
-                    Season @if (sortField() === 'seasonStart') { {{ sortDir() === 'asc' ? '▲' : '▼' }} }
-                  </th>
-                  <th class="text-left px-4 py-2.5 font-medium text-xs">Team</th>
-                  <th class="text-left px-4 py-2.5 font-medium text-xs">Role</th>
-                  <th class="text-left px-4 py-2.5 font-medium text-xs">Mantra Roles</th>
-                  <th class="text-left px-4 py-2.5 font-medium text-xs cursor-pointer select-none"
-                      (click)="toggleSort('matchMethod')">
-                    Method @if (sortField() === 'matchMethod') { {{ sortDir() === 'asc' ? '▲' : '▼' }} }
-                  </th>
-                  <th class="text-left px-4 py-2.5 font-medium text-xs">FotMob Name</th>
-                  <th class="text-left px-4 py-2.5 font-medium text-xs">FotMob ID</th>
-                  <th class="text-right px-4 py-2.5 font-medium text-xs">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                @if (loading()) {
-                  @for (_ of [1,2,3,4,5]; track $index) {
-                    <tr><td colspan="8" class="px-4 py-3"><div class="h-4 animate-pulse rounded" style="background:var(--color-surface)"></div></td></tr>
-                  }
-                } @else if (sortedItems().length === 0) {
-                  <tr><td colspan="8" class="px-4 py-8 text-center text-sm" style="color:var(--color-text-secondary)">
-                    No rows found.
-                  </td></tr>
-                } @else {
-                  @for (item of sortedItems(); track item.id) {
-                    <tr class="border-t" style="border-color:var(--color-border)">
-                      <td class="px-4 py-2.5 font-medium" style="color:var(--color-text-primary)">
-                        {{ item.nameFantacalcio }}
-                      </td>
-                      <td class="px-4 py-2.5 font-mono text-xs" style="color:var(--color-text-secondary)">
-                        {{ item.seasonStart }}/{{ item.seasonStart + 1 }}
-                      </td>
-                      <td class="px-4 py-2.5 text-xs" style="color:var(--color-text-secondary)">
-                        {{ item.teamFantacalcio }}
-                      </td>
-                      <td class="px-4 py-2.5">
-                        <span class="rounded-full px-2 py-0.5 text-xs font-medium text-white"
-                              [style.background]="roleColor(item.canonicalRole ?? '')">
-                          {{ item.canonicalRole ?? '—' }}
-                        </span>
-                      </td>
-                      <td class="px-4 py-2.5 text-xs" style="color:var(--color-text-secondary)">
-                        @if (item.ruoloPrimario) {
-                          <span class="font-medium" style="color:var(--color-text-primary)">{{ item.ruoloPrimario }}</span>
-                          @if (item.ruoliMantra && item.ruoliMantra.length > 1) {
-                            <span class="ml-1 opacity-60">{{ '{' }}{{ item.ruoliMantra.join(', ') }}{{ '}' }}</span>
+            <div class="table-scroll">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr style="color:var(--color-text-secondary);border-color:var(--color-border)">
+                    <th class="text-left px-3 py-2 sm:px-4 sm:py-2.5 font-medium text-xs cursor-pointer select-none"
+                        (click)="toggleSort('nameFantacalcio')">
+                      Fantacalcio @if (sortField() === 'nameFantacalcio') { {{ sortDir() === 'asc' ? '▲' : '▼' }} }
+                    </th>
+                    <th class="text-left px-3 py-2 sm:px-4 sm:py-2.5 font-medium text-xs cursor-pointer select-none hidden md:table-cell"
+                        (click)="toggleSort('seasonStart')">
+                      Season @if (sortField() === 'seasonStart') { {{ sortDir() === 'asc' ? '▲' : '▼' }} }
+                    </th>
+                    <th class="text-left px-3 py-2 sm:px-4 sm:py-2.5 font-medium text-xs hidden lg:table-cell">Team</th>
+                    <th class="text-left px-3 py-2 sm:px-4 sm:py-2.5 font-medium text-xs">Role</th>
+                    <th class="text-left px-3 py-2 sm:px-4 sm:py-2.5 font-medium text-xs hidden lg:table-cell">Mantra Roles</th>
+                    <th class="text-left px-3 py-2 sm:px-4 sm:py-2.5 font-medium text-xs cursor-pointer select-none"
+                        (click)="toggleSort('matchMethod')">
+                      Method @if (sortField() === 'matchMethod') { {{ sortDir() === 'asc' ? '▲' : '▼' }} }
+                    </th>
+                    <th class="text-left px-3 py-2 sm:px-4 sm:py-2.5 font-medium text-xs hidden lg:table-cell">FotMob Name</th>
+                    <th class="text-left px-3 py-2 sm:px-4 sm:py-2.5 font-medium text-xs hidden lg:table-cell">FotMob ID</th>
+                    <th class="text-right px-3 py-2 sm:px-4 sm:py-2.5 font-medium text-xs">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @if (loading()) {
+                    @for (_ of [1,2,3,4,5]; track $index) {
+                      <tr><td colspan="9" class="px-3 py-3 sm:px-4"><div class="h-4 animate-pulse rounded" style="background:var(--color-surface)"></div></td></tr>
+                    }
+                  } @else if (sortedItems().length === 0) {
+                    <tr><td colspan="9" class="px-3 py-8 sm:px-4 text-center text-sm" style="color:var(--color-text-secondary)">
+                      No rows found.
+                    </td></tr>
+                  } @else {
+                    @for (item of sortedItems(); track item.id) {
+                      <tr class="border-t" style="border-color:var(--color-border)">
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 font-medium" style="color:var(--color-text-primary)">
+                          <div class="min-w-0">
+                            <div class="truncate">{{ item.nameFantacalcio }}</div>
+                            <div class="md:hidden text-xs" style="color:var(--color-text-secondary)">
+                              {{ item.seasonStart }}/{{ item.seasonStart + 1 }}
+                              @if (item.teamFantacalcio) { · {{ item.teamFantacalcio }} }
+                            </div>
+                          </div>
+                        </td>
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 font-mono text-xs hidden md:table-cell" style="color:var(--color-text-secondary)">
+                          {{ item.seasonStart }}/{{ item.seasonStart + 1 }}
+                        </td>
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs hidden lg:table-cell" style="color:var(--color-text-secondary)">
+                          {{ item.teamFantacalcio }}
+                        </td>
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5">
+                          <span class="rounded-full px-2 py-0.5 text-xs font-medium text-white whitespace-nowrap"
+                                [style.background]="roleColor(item.canonicalRole ?? '')">
+                            {{ item.canonicalRole ?? '—' }}
+                          </span>
+                        </td>
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs hidden lg:table-cell" style="color:var(--color-text-secondary)">
+                          @if (item.ruoloPrimario) {
+                            <span class="font-medium" style="color:var(--color-text-primary)">{{ item.ruoloPrimario }}</span>
+                            @if (item.ruoliMantra && item.ruoliMantra.length > 1) {
+                              <span class="ml-1 opacity-60">{{ '{' }}{{ item.ruoliMantra.join(', ') }}{{ '}' }}</span>
+                            }
+                          } @else {
+                            <span class="italic opacity-50">—</span>
                           }
-                        } @else {
-                          <span class="italic opacity-50">—</span>
-                        }
-                      </td>
-                      <td class="px-4 py-2.5">
-                        <span class="rounded-full px-2 py-0.5 text-xs font-medium text-white"
-                              [style.background]="methodColor(item.matchMethod)">
-                          {{ methodLabel(item.matchMethod) }}
-                        </span>
-                      </td>
-                      <td class="px-4 py-2.5 text-xs" style="color:var(--color-text-secondary)">
-                        {{ item.nameFotmob ?? '—' }}
-                      </td>
-                      <td class="px-4 py-2.5 font-mono text-xs" style="color:var(--color-text-secondary)">
-                        {{ item.playerFotmobId ?? '—' }}
-                      </td>
-                      <td class="px-4 py-2.5 text-right">
-                        @if (item.matchMethod === 'unmatched' || item.matchMethod === 'fuzzy_name') {
-                          <button class="rounded-lg border px-3 py-1 text-xs font-medium"
-                                  style="border-color:var(--color-accent);color:var(--color-accent)"
-                                  (click)="openResolver(item)">
-                            Resolve
-                          </button>
-                        } @else if (item.matchMethod === 'manual') {
-                          <button class="rounded-lg border px-3 py-1 text-xs font-medium"
-                                  style="border-color:var(--color-border);color:var(--color-text-secondary)"
-                                  (click)="openResolver(item)">
-                            Edit
-                          </button>
-                        } @else {
-                          <span class="text-xs" style="color:var(--color-text-secondary)">OK</span>
-                        }
-                      </td>
-                    </tr>
+                        </td>
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5">
+                          <span class="rounded-full px-2 py-0.5 text-xs font-medium text-white whitespace-nowrap"
+                                [style.background]="methodColor(item.matchMethod)">
+                            {{ methodLabel(item.matchMethod) }}
+                          </span>
+                        </td>
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs hidden lg:table-cell" style="color:var(--color-text-secondary)">
+                          {{ item.nameFotmob ?? '—' }}
+                        </td>
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 font-mono text-xs hidden lg:table-cell" style="color:var(--color-text-secondary)">
+                          {{ item.playerFotmobId ?? '—' }}
+                        </td>
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-right">
+                          @if (item.matchMethod === 'unmatched' || item.matchMethod === 'fuzzy_name') {
+                            <button class="rounded-lg border px-3 py-1 text-xs font-medium whitespace-nowrap"
+                                    style="border-color:var(--color-accent);color:var(--color-accent)"
+                                    (click)="openResolver(item)">
+                              Resolve
+                            </button>
+                          } @else if (item.matchMethod === 'manual') {
+                            <button class="rounded-lg border px-3 py-1 text-xs font-medium whitespace-nowrap"
+                                    style="border-color:var(--color-border);color:var(--color-text-secondary)"
+                                    (click)="openResolver(item)">
+                              Edit
+                            </button>
+                          } @else {
+                            <span class="text-xs" style="color:var(--color-text-secondary)">OK</span>
+                          }
+                        </td>
+                      </tr>
+                    }
                   }
-                }
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <!-- Pagination -->
           @if (totalPages() > 1) {
-            <div class="mt-4 flex items-center justify-between text-sm"
+            <div class="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm"
                  style="color:var(--color-text-secondary)">
               <span>Page {{ currentPage() }} of {{ totalPages() }}</span>
               <div class="flex gap-2">
@@ -273,24 +281,26 @@ const METHOD_COLORS: Record<string, string> = {
 
     <!-- Resolve modal -->
     @if (resolving()) {
-      <div class="fixed inset-0 z-50 flex items-center justify-center"
+      <div class="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4"
            style="background:rgba(0,0,0,0.4)"
            (click)="closeResolver()">
         <div class="rounded-xl shadow-xl w-full max-w-lg mx-4 overflow-hidden"
-             style="background:var(--color-bg);border:1px solid var(--color-border)"
+             style="background:var(--color-bg);border:1px solid var(--color-border);max-height:90vh;display:flex;flex-direction:column"
              (click)="$event.stopPropagation()">
           <!-- Modal header -->
-          <div class="flex items-center justify-between px-5 py-4 border-b"
+          <div class="flex items-center justify-between px-4 py-3 sm:px-5 sm:py-4 border-b shrink-0"
                style="border-color:var(--color-border)">
             <h2 class="text-sm font-semibold" style="color:var(--color-text-primary)">
               Resolve ID Mapping
             </h2>
-            <button class="text-lg leading-none" style="color:var(--color-text-secondary)"
+            <button class="text-lg leading-none px-2 py-1 min-h-8 min-w-8"
+                    style="color:var(--color-text-secondary)"
+                    aria-label="Close modal"
                     (click)="closeResolver()">✕</button>
           </div>
 
           <!-- Modal body -->
-          <div class="p-5 space-y-4">
+          <div class="p-4 sm:p-5 space-y-4 overflow-y-auto">
             <!-- Current data (read-only) -->
             <div class="rounded-lg p-3 text-xs space-y-1"
                  style="background:var(--color-surface);color:var(--color-text-secondary)">

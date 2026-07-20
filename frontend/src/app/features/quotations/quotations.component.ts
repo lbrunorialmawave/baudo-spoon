@@ -21,7 +21,7 @@ const MANTRA_ROLES = ['Por', 'Dc', 'Dd', 'Ds', 'B', 'E', 'M', 'C', 'T', 'W', 'A'
   template: `
     <div style="background:var(--color-bg);min-height:100%">
       <!-- Page header -->
-      <div class="flex items-center justify-between border-b px-6 py-3.5"
+      <div class="flex flex-col gap-1 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-3.5"
            style="border-color:var(--color-border)">
         <h1 class="text-base font-semibold" style="color:var(--color-text-primary)">Quotations</h1>
         @if (selectedSeason()) {
@@ -31,7 +31,7 @@ const MANTRA_ROLES = ['Por', 'Dc', 'Dd', 'Ds', 'B', 'E', 'M', 'C', 'T', 'W', 'A'
         }
       </div>
 
-      <div class="p-6 space-y-6">
+      <div class="p-4 space-y-4 sm:p-6 sm:space-y-6">
         <!-- Summary cards -->
         @if (statsLoading()) {
           <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -69,10 +69,10 @@ const MANTRA_ROLES = ['Por', 'Dc', 'Dd', 'Ds', 'B', 'E', 'M', 'C', 'T', 'W', 'A'
 
         <!-- Filters -->
         <div class="card">
-          <div class="flex flex-wrap gap-3 items-center mb-4">
+          <div class="flex flex-col gap-3 mb-4 sm:flex-row sm:flex-wrap sm:items-center">
             <!-- Season selector -->
             @if (seasons().length) {
-              <select class="rounded-lg border px-3 py-1.5 text-sm outline-none"
+              <select class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full sm:w-auto"
                       style="background:var(--color-surface-raised);border-color:var(--color-border);
                              color:var(--color-text-primary)"
                       [ngModel]="selectedSeason()"
@@ -85,7 +85,7 @@ const MANTRA_ROLES = ['Por', 'Dc', 'Dd', 'Ds', 'B', 'E', 'M', 'C', 'T', 'W', 'A'
             }
 
             <!-- Role filter chips -->
-            <div class="flex gap-2" role="group">
+            <div class="flex flex-wrap gap-2" role="group">
               <button class="rounded-full border px-3 py-1 text-xs font-medium"
                       [style]="selectedRole() === null
                         ? 'background:var(--color-accent);color:#fff;border-color:transparent' + (filterMode() === 'mantra' ? ';opacity:0.5' : '')
@@ -103,7 +103,7 @@ const MANTRA_ROLES = ['Por', 'Dc', 'Dd', 'Ds', 'B', 'E', 'M', 'C', 'T', 'W', 'A'
             </div>
 
             <!-- Mantra role filter chips -->
-            <div class="flex gap-2" role="group">
+            <div class="flex flex-wrap gap-2" role="group">
               <button class="rounded-full border px-3 py-1 text-xs font-medium"
                       [style]="selectedRuoloPrimario() === null
                         ? 'background:var(--color-accent);color:#fff;border-color:transparent' + (filterMode() === 'classic' ? ';opacity:0.5' : '')
@@ -122,9 +122,9 @@ const MANTRA_ROLES = ['Por', 'Dc', 'Dd', 'Ds', 'B', 'E', 'M', 'C', 'T', 'W', 'A'
             </div>
 
             <!-- Search -->
-            <input class="rounded-lg border px-3 py-1.5 text-sm outline-none ml-auto"
+            <input class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full sm:ml-auto sm:w-50"
                    style="background:var(--color-surface-raised);border-color:var(--color-border);
-                          color:var(--color-text-primary);width:200px"
+                          color:var(--color-text-primary)"
                    placeholder="Search player…"
                    [ngModel]="searchInput()"
                    (ngModelChange)="searchInput.set($event)" />
@@ -138,18 +138,18 @@ const MANTRA_ROLES = ['Por', 'Dc', 'Dd', 'Ds', 'B', 'E', 'M', 'C', 'T', 'W', 'A'
           } @else if (tableError()) {
             <app-error-boundary [message]="tableError()!" />
           } @else {
-            <div class="overflow-x-auto">
-              <table class="w-full text-sm" style="border-collapse:collapse">
+            <div class="overflow-x-auto -mx-3 sm:-mx-4 md:mx-0">
+              <table class="w-full text-sm" style="border-collapse:collapse;min-width:520px">
                 <thead>
                   <tr class="border-b text-xs font-medium uppercase tracking-wide"
                       style="border-color:var(--color-border);color:var(--color-text-secondary)">
                     <th class="px-3 py-2 text-left">Player</th>
-                    <th class="px-3 py-2 text-left">Team</th>
+                    <th class="px-3 py-2 text-left hidden sm:table-cell">Team</th>
                     <th class="px-3 py-2 text-center">Role</th>
-                    <th class="px-3 py-2 text-center" title="Ruolo primario Mantra">Mantra</th>
+                    <th class="px-3 py-2 text-center hidden md:table-cell" title="Ruolo primario Mantra">Mantra</th>
                     <th class="px-3 py-2 text-right" title="Quotazione d'Acquisto — prezzo d'asta in crediti">qtA</th>
-                    <th class="px-3 py-2 text-right" title="Quotazione Iniziale — prezzo di partenza">qtI</th>
-                    <th class="px-3 py-2 text-right" title="Fantacalcio Voto Medio — media voti del giocatore">FVM</th>
+                    <th class="px-3 py-2 text-right hidden sm:table-cell" title="Quotazione Iniziale — prezzo di partenza">qtI</th>
+                    <th class="px-3 py-2 text-right hidden md:table-cell" title="Fantacalcio Voto Medio — media voti del giocatore">FVM</th>
                     <th class="px-3 py-2 text-right" title="Differenza qtA - qtI (verde = plusvalenza, rosso = minusvalenza)">Diff</th>
                   </tr>
                 </thead>
@@ -163,22 +163,22 @@ const MANTRA_ROLES = ['Por', 'Dc', 'Dd', 'Ds', 'B', 'E', 'M', 'C', 'T', 'W', 'A'
                       <td class="px-3 py-2.5 font-medium" style="color:var(--color-text-primary)">
                         {{ q.playerName }}
                       </td>
-                      <td class="px-3 py-2.5 text-xs" style="color:var(--color-text-secondary)">{{ q.team }}</td>
+                      <td class="px-3 py-2.5 text-xs hidden sm:table-cell" style="color:var(--color-text-secondary)">{{ q.team }}</td>
                       <td class="px-3 py-2.5 text-center">
                         <span class="badge text-white text-xs" [style.background]="roleColor(q.role)">
                           {{ q.role }}
                         </span>
                       </td>
-                      <td class="px-3 py-2.5 text-center text-xs" style="color:var(--color-text-secondary)">
+                      <td class="px-3 py-2.5 text-center text-xs hidden md:table-cell" style="color:var(--color-text-secondary)">
                         {{ q.ruoloPrimario ?? '—' }}
                       </td>
-                      <td class="px-3 py-2.5 text-right font-mono font-semibold"
+                      <td class="px-3 py-2.5 text-right font-mono font-semibold whitespace-nowrap"
                           style="color:var(--color-accent)">{{ q.qtA }}</td>
-                      <td class="px-3 py-2.5 text-right font-mono text-xs"
+                      <td class="px-3 py-2.5 text-right font-mono text-xs hidden sm:table-cell"
                           style="color:var(--color-text-secondary)">{{ q.qtI }}</td>
-                      <td class="px-3 py-2.5 text-right font-mono text-xs"
+                      <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell"
                           style="color:var(--color-text-secondary)">{{ q.fvm ?? '—' }}</td>
-                      <td class="px-3 py-2.5 text-right font-mono text-xs"
+                      <td class="px-3 py-2.5 text-right font-mono text-xs whitespace-nowrap"
                           [style.color]="q.diffVal > 0 ? '#22C55E' : q.diffVal < 0 ? '#EF4444' : 'var(--color-text-secondary)'">
                         {{ q.diffVal > 0 ? '+' : '' }}{{ q.diffVal }}
                       </td>

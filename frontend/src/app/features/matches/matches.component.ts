@@ -14,7 +14,7 @@ import { MatchDetailComponent } from './components/match-detail/match-detail.com
   template: `
     <div style="background:var(--color-bg);min-height:100%">
       <!-- Page header -->
-      <div class="flex items-center justify-between border-b px-6 py-3.5"
+      <div class="flex flex-col gap-1 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-3.5"
            style="border-color:var(--color-border)">
         <h1 class="text-base font-semibold" style="color:var(--color-text-primary)">Matches</h1>
         @if (total()) {
@@ -23,17 +23,17 @@ import { MatchDetailComponent } from './components/match-detail/match-detail.com
       </div>
 
       <!-- Filters -->
-      <div class="flex flex-wrap items-center gap-3 border-b px-6 py-3"
+      <div class="grid grid-cols-1 gap-2 border-b px-4 py-3 sm:flex sm:flex-wrap sm:items-center sm:gap-3 sm:px-6"
            style="border-color:var(--color-border);background:var(--color-surface)">
-        <input class="rounded-lg border px-3 py-1.5 text-sm outline-none"
+        <input class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full sm:w-45"
                style="background:var(--color-surface-raised);border-color:var(--color-border);
-                      color:var(--color-text-primary);width:180px"
+                      color:var(--color-text-primary)"
                placeholder="Search team…"
                [ngModel]="teamFilter()"
                (ngModelChange)="teamFilter.set($event); currentPage.set(1)" />
 
         @if (leagues().length) {
-          <select class="rounded-lg border px-3 py-1.5 text-sm outline-none"
+          <select class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full sm:w-auto"
                   style="background:var(--color-surface-raised);border-color:var(--color-border);
                          color:var(--color-text-primary)"
                   [ngModel]="leagueFilter()"
@@ -46,7 +46,7 @@ import { MatchDetailComponent } from './components/match-detail/match-detail.com
         }
 
         @if (seasons().length) {
-          <select class="rounded-lg border px-3 py-1.5 text-sm outline-none"
+          <select class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full sm:w-auto"
                   style="background:var(--color-surface-raised);border-color:var(--color-border);
                          color:var(--color-text-primary)"
                   [ngModel]="seasonFilter()"
@@ -60,7 +60,7 @@ import { MatchDetailComponent } from './components/match-detail/match-detail.com
       </div>
 
       <!-- Content -->
-      <div class="p-6">
+      <div class="p-4 sm:p-6">
         @if (error()) {
           <app-error-boundary [message]="error()!" />
         } @else if (loading()) {

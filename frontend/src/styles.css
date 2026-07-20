@@ -66,15 +66,127 @@
 }
 
 /* ── Base Styles ─────────────────────────────────────────── */
+
+/* Mobile-first: ensure full-height layout uses dynamic viewport unit
+   (100dvh accounts for mobile browser chrome that comes and goes).
+   Fall back to 100vh for older browsers via @supports. */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100dvh;
+}
+
 html {
   background-color: var(--color-bg);
   color: var(--color-text-primary);
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Improve mobile tap UX: prevent 300ms delay & tap highlight flash */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  /* Smooth anchor scrolling on mobile */
+  scroll-behavior: smooth;
+  /* Prevent iOS text size inflation on landscape orientation change */
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: 0.875rem; /* 14px mobile baseline — scales up at md */
+  line-height: 1.5;
+  /* CRITICAL: stop horizontal overflow that breaks mobile layouts */
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+/* Allow media elements (tables, charts) to shrink instead of overflow */
+img, svg, video, canvas, iframe, embed, object {
+  display: block;
+  max-width: 100%;
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* Universal content containers must never exceed viewport on mobile */
+.card,
+[data-responsive-card] {
+  max-width: 100%;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Tables (used in player lists) must be scrollable horizontally on mobile
+   instead of forcing the page to overflow. */
+.responsive-table {
+  width: 100%;
+  display: block;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+@media (min-width: 64rem /* 1024px lg */) {
+  .responsive-table {
+    display: table;
+  }
+}
+
+/* Form controls: full-width on mobile by default, inline ≥ md */
+.responsive-form-control {
+  display: block;
+  width: 100%;
+  min-height: 44px; /* iOS tap target guideline */
+}
+@media (min-width: 40rem /* 640px sm */) {
+  .responsive-form-control {
+    display: inline-block;
+    width: auto;
+  }
+}
+
+/* Touch targets — minimum 44x44 for accessibility on all breakpoints */
+button,
+[role="button"],
+a,
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+/* Focus styles: visible, not just on keyboard nav (mobile = no hover) */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Hide elements that should be mobile-only or desktop-only */
+.show-mobile { display: initial; }
+.hide-mobile { display: none; }
+@media (min-width: 64rem /* 1024px lg */) {
+  .show-mobile { display: none; }
+  .hide-mobile { display: initial; }
+}
+
+/* Responsive root font-size: scale from 14px mobile → 15px sm → 16px lg */
+html {
+  font-size: 14px;
+}
+@media (min-width: 40rem /* 640px sm */) {
+  html { font-size: 14.5px; }
+}
+@media (min-width: 48rem /* 768px md */) {
+  html { font-size: 15px; }
+}
+@media (min-width: 64rem /* 1024px lg */) {
+  html { font-size: 15.5px; }
+}
+@media (min-width: 80rem /* 1280px xl */) {
+  html { font-size: 16px; }
 }
 
 ::-webkit-scrollbar {

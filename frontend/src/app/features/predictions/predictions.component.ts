@@ -16,15 +16,15 @@ const SCORE_MAX = 9.0;
   template: `
     <div style="background:var(--color-bg);min-height:100%">
       <!-- Page header -->
-      <div class="flex items-center justify-between border-b px-6 py-3.5"
+      <div class="flex flex-col gap-2 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-3.5"
            style="border-color:var(--color-border)">
         <h1 class="text-base font-semibold" style="color:var(--color-text-primary)">Predictions</h1>
         <!-- Tab switcher -->
-        <div class="flex rounded-lg border p-0.5"
+        <div class="flex rounded-lg border p-0.5 self-start sm:self-auto"
              style="border-color:var(--color-border);background:var(--color-surface)">
           @for (tab of tabs; track tab.id) {
             <button
-              class="rounded-md px-4 py-1.5 text-xs font-medium transition-colors"
+              class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors sm:px-4"
               [style]="selectedTab() === tab.id
                 ? 'background:var(--color-accent);color:#fff'
                 : 'color:var(--color-text-secondary)'"
@@ -37,7 +37,7 @@ const SCORE_MAX = 9.0;
 
       <!-- ── Current Season tab ──────────────────────────── -->
       @if (selectedTab() === 'current') {
-        <div class="p-6">
+        <div class="p-4 sm:p-6">
           <!-- Model info strip -->
           @if (meta(); as m) {
             <div class="mb-4 rounded-lg border px-4 py-3 text-xs"
@@ -54,15 +54,15 @@ const SCORE_MAX = 9.0;
           }
 
           <!-- Filters -->
-          <div class="mb-4 flex flex-wrap gap-3 items-center">
-            <input class="rounded-lg border px-3 py-1.5 text-sm outline-none"
+          <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+            <input class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full sm:w-55"
                    style="background:var(--color-surface-raised);border-color:var(--color-border);
-                          color:var(--color-text-primary);width:220px"
+                          color:var(--color-text-primary)"
                    placeholder="Search player…"
                    [ngModel]="currentSearch()"
                    (ngModelChange)="currentSearch.set($event)" />
 
-            <div class="flex gap-2" role="group">
+            <div class="flex flex-wrap gap-2" role="group">
               <button class="rounded-full border px-3 py-1 text-xs font-medium"
                       [style]="currentRole() === null
                         ? 'background:var(--color-accent);color:#fff;border-color:transparent'
@@ -117,11 +117,11 @@ const SCORE_MAX = 9.0;
 
       <!-- ── Next Season tab ─────────────────────────────── -->
       @if (selectedTab() === 'next') {
-        <div class="p-6">
+        <div class="p-4 sm:p-6">
           <div class="mb-4">
-            <input class="rounded-lg border px-3 py-1.5 text-sm outline-none"
+            <input class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full sm:w-55"
                    style="background:var(--color-surface-raised);border-color:var(--color-border);
-                          color:var(--color-text-primary);width:220px"
+                          color:var(--color-text-primary)"
                    placeholder="Search player…"
                    [ngModel]="nextSearch()"
                    (ngModelChange)="nextSearch.set($event)" />

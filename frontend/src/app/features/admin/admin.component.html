@@ -1,11 +1,11 @@
 <div style="background:var(--color-bg);min-height:100%">
   <!-- Header -->
-  <div class="flex items-center justify-between border-b px-6 py-3.5"
+  <div class="flex items-center justify-between border-b px-4 py-3 sm:px-6 sm:py-3.5"
        style="border-color:var(--color-border)">
     <h1 class="text-base font-semibold" style="color:var(--color-text-primary)">Administration</h1>
   </div>
 
-  <div class="p-6 space-y-6 max-w-4xl">
+  <div class="p-4 space-y-4 sm:p-6 sm:space-y-6 max-w-4xl">
 
     <!-- DATA HEALTH -->
     <section>
@@ -21,11 +21,11 @@
       } @else {
         <div class="grid gap-3">
           @for (source of healthSources(); track source.name) {
-            <div class="card flex items-center justify-between p-4">
-              <div class="flex items-center gap-3">
-                <span class="text-lg">{{ statusIcon(source.status) }}</span>
-                <div>
-                  <p class="text-sm font-medium" style="color:var(--color-text-primary)">
+            <div class="card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div class="flex items-center gap-3 min-w-0">
+                <span class="text-lg shrink-0">{{ statusIcon(source.status) }}</span>
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm font-medium truncate" style="color:var(--color-text-primary)">
                     {{ sourceLabel(source.name) }}
                   </p>
                   <p class="text-xs" style="color:var(--color-text-secondary)">
@@ -33,7 +33,7 @@
                   </p>
                 </div>
               </div>
-              <div class="text-right">
+              <div class="text-right sm:text-right">
                 <span class="text-sm font-mono font-semibold"
                       [style.color]="statusColor(source.status)">
                   {{ source.total_rows ?? 0 }}
@@ -50,11 +50,11 @@
 
         <div class="mt-4 card p-4">
           @let ready = allOk();
-          <div class="flex items-center justify-between">
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <span class="text-sm font-medium" style="color:var(--color-text-primary)">
               MANTRA Readiness
             </span>
-            <span class="rounded-full px-3 py-1 text-xs font-bold text-white"
+            <span class="rounded-full px-3 py-1 text-xs font-bold text-white self-start sm:self-auto"
                   [style.background]="ready ? '#22C55E' : '#F59E0B'">
               {{ ready ? 'Ready' : 'Incomplete' }}
             </span>
@@ -73,8 +73,8 @@
       </h2>
       <div class="grid gap-3">
         @for (sc of scrapers; track sc.name) {
-          <div class="card flex items-center justify-between p-4">
-            <div>
+          <div class="card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div class="min-w-0 flex-1">
               <p class="text-sm font-medium" style="color:var(--color-text-primary)">
                 {{ sc.label }}
               </p>
@@ -82,12 +82,12 @@
                 {{ sc.description }} &middot; Frequency: {{ sc.frequency }}
               </p>
               @if (sc.params.length) {
-                <div class="flex gap-2 mt-2">
+                <div class="flex flex-wrap gap-2 mt-2">
                   @for (param of sc.params; track param.key) {
                     <label class="flex items-center gap-1 text-xs"
                            style="color:var(--color-text-secondary)">
                       {{ param.label }}:
-                      <input class="rounded border px-2 py-0.5 text-xs outline-none w-24"
+                      <input class="rounded border px-2 py-0.5 text-xs outline-none w-full sm:w-24"
                              style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
                              [placeholder]="param.placeholder"
                              [value]="param.value()"
@@ -97,7 +97,7 @@
                 </div>
               }
             </div>
-            <button class="rounded-lg px-4 py-2 text-sm text-white font-medium"
+            <button class="rounded-lg px-4 py-2 text-sm text-white font-medium shrink-0 self-start sm:self-center"
                     style="background:var(--color-accent)"
                     [disabled]="sc.running()"
                     (click)="runScraper(sc)">
@@ -130,8 +130,8 @@
         MANTRA Computation
       </h2>
       <div class="card p-4">
-        <div class="flex items-center justify-between">
-          <div>
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div class="min-w-0">
             <p class="text-sm" style="color:var(--color-text-primary)">
               Run the full MANTRA scoring pipeline
             </p>
@@ -139,7 +139,7 @@
               Computes P1-P4, FP, VR, Prezzo, and all classifications.
             </p>
           </div>
-          <button class="rounded-lg px-5 py-2.5 text-sm text-white font-medium"
+          <button class="rounded-lg px-5 py-2.5 text-sm text-white font-medium shrink-0 self-start sm:self-center"
                   style="background:var(--color-accent)"
                   [disabled]="mantraRunning()"
                   (click)="runMantra()">

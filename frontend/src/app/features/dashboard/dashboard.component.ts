@@ -28,12 +28,12 @@ import { PlayerCardComponent } from './components/player-card/player-card.compon
   template: `
     <div style="background:var(--color-bg)">
       <!-- ── Page header ──────────────────────────────────── -->
-      <div class="flex items-center justify-between border-b px-6 py-3.5"
+      <div class="flex flex-col gap-2 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-3.5"
            style="border-color:var(--color-border)">
         <h1 class="text-base font-semibold" style="color:var(--color-text-primary)">Dashboard</h1>
         <!-- Cluster meta chips -->
         @if (clusterData(); as cd) {
-          <div class="flex items-center gap-2 text-xs font-mono"
+          <div class="flex flex-wrap items-center gap-1.5 text-xs font-mono sm:gap-2"
                style="color:var(--color-text-secondary)">
             <span class="rounded px-2 py-1" style="background:var(--color-surface-raised)">
               {{ cd.items.length }} giocatori
@@ -58,14 +58,15 @@ import { PlayerCardComponent } from './components/player-card/player-card.compon
       </div>
 
       <!-- ── Main grid ─────────────────────────────────────── -->
-      <main class="grid grid-cols-1 gap-6 p-6 xl:grid-cols-3">
+      <main class="grid grid-cols-1 gap-4 p-4 sm:gap-6 sm:p-6 xl:grid-cols-3">
 
         <!-- ── PCA Scatter (2/3) ──────────────────────────── -->
-        <section class="card xl:col-span-2" aria-label="Cluster Map">
-          <div class="mb-1 flex items-center justify-between">
+        <section class="card p-3 sm:p-4 xl:col-span-2" aria-label="Cluster Map">
+          <div class="mb-1 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <h2 class="font-semibold" style="color:var(--color-text-primary)">Cluster Map</h2>
             <p class="text-xs" style="color:var(--color-text-secondary)">
-              Scroll to zoom · Drag to pan · Click to inspect
+              <span class="hidden sm:inline">Scroll to zoom · Drag to pan · Click to inspect</span>
+              <span class="sm:hidden">Tap to inspect</span>
             </p>
           </div>
 
