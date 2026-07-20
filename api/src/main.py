@@ -13,7 +13,8 @@ from .config import settings
 from .data_repository import DataRepository
 from .logging_cfg import configure_logging
 from .routers import auction, leagues, matches, optimizer, quotations, seasons, stats
-from .routers import admin_scrape, expert_ratings, mantra, matchday
+from .deps import check_production_security
+from .routers import admin_scrape, expert_ratings, mantra, matchday, model_metrics
 from .routers.intelligence import intelligence_router, predictions_router
 
 configure_logging(settings.log_level)
@@ -26,6 +27,8 @@ log = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Initialise shared resources (Redis client, DataRepository) at startup."""
+    check_production_security()
+
     redis_client: Any = None
     try:
         import redis.asyncio as aioredis  # type: ignore[import]
@@ -95,6 +98,7 @@ app.include_router(mantra.router, prefix=settings.api_prefix)
 app.include_router(admin_scrape.router, prefix=settings.api_prefix)
 app.include_router(matchday.router, prefix=settings.api_prefix)
 app.include_router(expert_ratings.router, prefix=settings.api_prefix)
+app.include_router(model_metrics.router, prefix=settings.api_prefix)
 
 
 # ── Health check ───────────────────────────────────────────────────────────────

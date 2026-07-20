@@ -5,7 +5,6 @@ Endpoints
 POST /admin/scrape/snai           — Trigger Snai odds scraper
 POST /admin/scrape/probabili      — Trigger probabili formazioni scraper
 POST /admin/scrape/quotazioni     — Re-import listoni XLSX
-POST /admin/scrape/voti           — Re-parse voti JSON
 GET  /admin/scrape/status         — Status of all scrapers
 GET  /admin/scrape/logs/{name}    — Last execution log
 GET  /admin/data-health           — Data coverage overview for all sources
@@ -45,14 +44,14 @@ async def trigger_snai(
     try:
         # Don't use get_db dependency — create sync connection directly for scraper compatibility
         sync_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://").replace("postgres+asyncpg://", "postgres+psycopg2://").replace("?ssl=", "?sslmode=").replace("&ssl=", "&sslmode=")
-        log.info(f"[trigger_snai] Using sync_url: {sync_url}")
+        log.info("[trigger_snai] Starting scrape")
         from scraper.snai_odds import scrape, persist
         records = scrape(season_start=season_start)
         n = persist(records, sync_url)
         return ORJSONResponse({"scraper": "snai", "records": n, "status": "ok"})
-    except Exception as e:
+    except Exception:
         log.exception("Snai scraper failed")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Snai scraper failed. Check server logs.")
 
 
 @router.post("/scrape/probabili", summary="Trigger probabili formazioni scraper")
@@ -62,14 +61,14 @@ async def trigger_probabili(
     try:
         # Don't use get_db dependency — create sync connection directly for scraper compatibility
         sync_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://").replace("postgres+asyncpg://", "postgres+psycopg2://").replace("?ssl=", "?sslmode=").replace("&ssl=", "&sslmode=")
-        log.info(f"[trigger_probabili] Using sync_url: {sync_url}")
+        log.info("[trigger_probabili] Starting scrape")
         from scraper.probabili_formazioni import scrape, persist
         records = scrape(matchday=matchday)
         n = persist(records, sync_url)
         return ORJSONResponse({"scraper": "probabili", "records": n, "status": "ok"})
-    except Exception as e:
+    except Exception:
         log.exception("Probabili formazioni scraper failed")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Probabili formazioni scraper failed. Check server logs.")
 
 
 @router.post("/scrape/quotazioni", summary="Re-import listoni XLSX")
@@ -92,8 +91,9 @@ async def trigger_quotazioni(
             "stdout": result.stdout[-500:],
             "stderr": result.stderr[-500:],
         })
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        log.exception("Quotazioni import failed")
+        raise HTTPException(status_code=500, detail="Quotazioni import failed. Check server logs.")
 
 
 # ── Data Health ──────────────────────────────────────────────────────────────

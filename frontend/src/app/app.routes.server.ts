@@ -7,6 +7,7 @@ export const serverRoutes: ServerRoute[] = [
   { path: 'matches',     renderMode: RenderMode.Client },
   { path: 'predictions', renderMode: RenderMode.Client },
   { path: 'optimizer',  renderMode: RenderMode.Client },
-  { path: 'auction',   renderMode: RenderMode.Client },
-  { path: '**',          renderMode: RenderMode.Prerender },
+  { path: 'auction',           renderMode: RenderMode.Client },
+  { path: 'model-monitoring', renderMode: RenderMode.Client },
+  { path: '**',               renderMode: RenderMode.Prerender },
 ];

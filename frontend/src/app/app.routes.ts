@@ -60,6 +60,11 @@ export const routes: Routes = [
         path: 'admin',
         component: AdminComponent,
       },
+      {
+        path: 'model-monitoring',
+        loadComponent: () =>
+          import('./features/model-monitoring/model-monitoring.component').then(m => m.ModelMonitoringComponent),
+      },
     ],
   },
   {

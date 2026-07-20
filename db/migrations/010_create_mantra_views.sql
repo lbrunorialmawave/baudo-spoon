@@ -5,7 +5,7 @@
 -- from player_season_stats / team_season_stats into wide columns.
 --
 -- Apply:
---   type db\migrations\006_create_mantra_views.sql | docker compose exec -T db psql -U fbref -d fbref
+--   type db\migrations\010_create_mantra_views.sql | docker compose exec -T db psql -U fbref -d fbref
 
 CREATE OR REPLACE VIEW player_season_aggregates AS
 SELECT

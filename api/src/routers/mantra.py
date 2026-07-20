@@ -133,7 +133,7 @@ async def list_mantra_players(
                     "" if sort_by in ("player_name", "team") else -999999
                 )), reverse=reverse)
         except Exception:
-            pass  # fallback: no sort on unknown column
+            log.warning("Sort failed for sort_by=%r — skipping", sort_by)
 
     total = len(players)
     start = (page - 1) * size

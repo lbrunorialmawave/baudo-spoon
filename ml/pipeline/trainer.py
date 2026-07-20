@@ -82,6 +82,7 @@ from ..preprocessing.features import (
     select_features_rfe,
 )
 from ..preprocessing.pipeline import build_preprocessor, get_feature_names
+from ..optimizer.models import DEFAULT_BUDGET, ROLE_QUOTAS, TOTAL_SQUAD_SIZE
 
 log = logging.getLogger(__name__)
 
@@ -316,11 +317,12 @@ class Trainer:
     def _upload_to_r2(self, local_path: Path) -> None:
         if not self.cfg.r2_endpoint_url:
             return
-        # Flat key: model files already embed run_id in their filename;
-        # fixed-name files (results_latest.json, etc.) overwrite intentionally.
         key = local_path.name
-        self._r2_client().upload_file(str(local_path), self.cfg.r2_bucket_name, key)
-        log.info("Uploaded to R2: %s", key)
+        try:
+            self._r2_client().upload_file(str(local_path), self.cfg.r2_bucket_name, key)
+            log.info("Uploaded to R2: %s", key)
+        except Exception as exc:
+            log.warning("R2 upload failed (non-fatal): %s — %s", key, exc)
 
     def _save_json(self, data: Any, filename: str) -> None:
         path = self._artifact(filename)
@@ -750,15 +752,14 @@ class Trainer:
                 by_role[p["role"]].append(p)
 
             demand = DemandCurve()  # calibrated=False by design
-            total_slots = 25  # Fantacalcio classico roster size
-            role_slots = {"P": 3, "D": 8, "C": 8, "A": 6}
+            role_slots = dict(ROLE_QUOTAS)
 
             for role, role_ps in by_role.items():
                 scores = [p["projected_score"] for p in role_ps]
                 rl = ReplacementLevel.from_player_pool(role, scores)
                 positive_vars = [s - rl.score for s in scores if s > rl.score]
                 baseline_var = sum(positive_vars) / len(positive_vars) if positive_vars else 1.0
-                budget_per_slot = 500.0 / total_slots
+                budget_per_slot = float(DEFAULT_BUDGET) / TOTAL_SQUAD_SIZE
 
                 for p in role_ps:
                     v = VAR.compute(p["player_id"], role, p["projected_score"], rl)
@@ -895,6 +896,142 @@ class Trainer:
             json.dump(_json_safe(output), f, indent=2, ensure_ascii=False)
         self._upload_to_r2(latest_path)
 
+        self._persist_metrics_to_db(output)
+
         log.info("=" * 60)
         log.info("Pipeline complete.  Results in %s", self._artifacts_dir)
         return output
+
+    def _persist_metrics_to_db(self, output: dict) -> None:
+        """Write run metadata and metrics to Postgres. Non-fatal: logs on failure."""
+        import os
+
+        db_url = os.environ.get("API_DATABASE_URL")
+        if not db_url:
+            log.warning("API_DATABASE_URL not set — skipping DB metrics persist")
+            return
+
+        # Trainer is sync; normalise asyncpg DSN to plain psycopg2.
+        sync_url = (
+            db_url
+            .replace("postgresql+asyncpg://", "postgresql://")
+            .replace("postgres+asyncpg://", "postgresql://")
+        )
+
+        try:
+            engine = sa.create_engine(sync_url, future=True)
+            with engine.begin() as conn:
+                conn.execute(sa.text("""
+                    INSERT INTO model_runs
+                        (run_id, model_name, trained_at, season_start,
+                         training_seasons, hyperparams, dependencies, git_commit)
+                    VALUES
+                        (:run_id, :model_name, NOW(), :season_start,
+                         :training_seasons::jsonb, :hyperparams::jsonb,
+                         :dependencies::jsonb, :git_commit)
+                    ON CONFLICT (run_id) DO NOTHING
+                """), {
+                    "run_id": output["run_id"],
+                    "model_name": output["best_model"],
+                    "season_start": output.get("metadata", {}).get("config", {}).get("season_start"),
+                    "training_seasons": json.dumps(output.get("config", {}).get("test_seasons", [])),
+                    "hyperparams": json.dumps(output.get("metadata", {}).get("best_params", {})),
+                    "dependencies": json.dumps(output.get("metadata", {}).get("dependencies", {})),
+                    "git_commit": _git_commit(),
+                })
+
+                best = next(
+                    (m for m in output.get("model_comparison", [])
+                     if m.get("model") == output["best_model"]),
+                    None,
+                )
+                if best:
+                    for metric in ("rmse", "mae", "r2"):
+                        if best.get(metric) is not None:
+                            conn.execute(sa.text("""
+                                INSERT INTO model_metrics
+                                    (run_id, metric_name, metric_value, split)
+                                VALUES (:run_id, :metric_name, :metric_value, 'test')
+                                ON CONFLICT DO NOTHING
+                            """), {"run_id": output["run_id"],
+                                   "metric_name": metric,
+                                   "metric_value": best[metric]})
+
+                bt = output.get("backtest", {})
+                for metric, col in (("rmse", "mean_rmse"), ("mae", "mean_mae"), ("r2", "mean_r2")):
+                    if bt.get(col) is not None:
+                        conn.execute(sa.text("""
+                            INSERT INTO model_metrics
+                                (run_id, metric_name, metric_value, split)
+                            VALUES (:run_id, :metric_name, :metric_value, 'backtest')
+                            ON CONFLICT DO NOTHING
+                        """), {"run_id": output["run_id"],
+                               "metric_name": metric,
+                               "metric_value": bt[col]})
+
+                _check_drift(conn, output["run_id"], output["best_model"])
+
+            log.info("Metrics persisted to DB for run %s", output["run_id"])
+        except Exception as exc:
+            log.error("Failed to persist metrics to DB (non-fatal): %s", exc)
+
+
+# ── Module-level helpers used by Trainer._persist_metrics_to_db ──────────────
+
+
+def _git_commit() -> str | None:
+    """Return the short git commit hash, or None if git is unavailable."""
+    import subprocess
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except Exception:
+        return None
+
+
+def _check_drift(conn: sa.Connection, run_id: str, model_name: str, threshold_pct: float = 10.0) -> None:
+    """Mark run as 'degraded' if test RMSE exceeds the 5-run moving average by threshold_pct."""
+    baseline_row = conn.execute(sa.text("""
+        SELECT AVG(mm.metric_value) AS baseline
+        FROM model_metrics mm
+        JOIN model_runs mr ON mr.run_id = mm.run_id
+        WHERE mr.model_name = :model_name
+          AND mm.metric_name = 'rmse'
+          AND mm.split = 'test'
+          AND mr.run_id != :run_id
+        ORDER BY mr.trained_at DESC
+        LIMIT 5
+    """), {"model_name": model_name, "run_id": run_id}).fetchone()
+
+    current = conn.execute(sa.text("""
+        SELECT metric_value FROM model_metrics
+        WHERE run_id = :run_id AND metric_name = 'rmse' AND split = 'test'
+        LIMIT 1
+    """), {"run_id": run_id}).scalar()
+
+    if not (baseline_row and baseline_row.baseline and current):
+        return
+
+    pct_change = (current - baseline_row.baseline) / baseline_row.baseline * 100
+    if pct_change > threshold_pct:
+        conn.execute(sa.text(
+            "UPDATE model_runs SET status = 'degraded' WHERE run_id = :run_id"
+        ), {"run_id": run_id})
+        conn.execute(sa.text("""
+            INSERT INTO model_drift_alerts
+                (run_id, metric_name, current_value, baseline_value, pct_change, threshold_pct)
+            VALUES (:run_id, 'rmse', :current, :baseline, :pct, :threshold)
+        """), {
+            "run_id": run_id,
+            "current": current,
+            "baseline": baseline_row.baseline,
+            "pct": pct_change,
+            "threshold": threshold_pct,
+        })
+        log.warning(
+            "Model drift detected for run %s: RMSE %.4f vs baseline %.4f (+%.1f%%)",
+            run_id, current, baseline_row.baseline, pct_change,
+        )
