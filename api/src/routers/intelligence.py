@@ -8,7 +8,7 @@ GET  /predictions/hybrid                   — Paginated hybrid MANTRA+ML predic
 GET  /predictions/hybrid/stats             — Hybrid aggregate statistics.
 GET  /predictions/hybrid/config            — Current hybrid configuration.
 PUT  /predictions/hybrid/config            — Update hybrid configuration (admin).
-POST /predictions/hybrid/run               — (Re)generate hybrid results (admin).
+POST /predictions/hybrid/run               — (Re)generate hybrid results.
 GET  /predictions/hybrid/preview           — Preview-only hybrid results (admin).
 GET  /intelligence/clustering/players      — Full cluster membership list.
 GET  /intelligence/clustering/alternatives — Low-cost player clones (requires API key).
@@ -560,8 +560,8 @@ async def update_hybrid_config(
 @predictions_router.post(
     "/hybrid/run",
     response_class=ORJSONResponse,
-    summary="(Re)generate hybrid results (admin)",
-    dependencies=[Depends(require_role("admin"))],
+    summary="(Re)generate hybrid results",
+    dependencies=[Depends(require_role("member"))],
 )
 async def run_hybrid(
     season_start: int = Query(2025, ge=2020, le=2030),
