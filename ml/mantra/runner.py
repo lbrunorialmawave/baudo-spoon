@@ -245,8 +245,15 @@ def run_mantra(
     # 6. Build output
     players_out: list[dict] = []
     for idx in df.index:
+        # player_fotmob_id may be NaN when the LEFT JOIN on player_id_map
+        # does not find a match; map to None so the JSON round-trips cleanly.
+        raw_fotmob = df.at[idx, "player_fotmob_id"]
+        player_fotmob_id: int | None = (
+            int(raw_fotmob) if pd.notna(raw_fotmob) else None
+        )
         players_out.append({
             "fantacalcio_id": int(df.at[idx, "fantacalcio_id"]),
+            "player_fotmob_id": player_fotmob_id,
             "season_start": int(df.at[idx, "season_start"]),
             "player_name": str(df.at[idx, "player_name"]),
             "team": str(df.at[idx, "team"]),

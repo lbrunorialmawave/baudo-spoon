@@ -178,3 +178,61 @@ export interface ProblemDetails {
   detail: string;
   instance?: string;
 }
+
+// ── Hybrid MANTRA+ML Predictions ───────────────────────────
+export interface HybridPlayerPrediction {
+  playerName: string;
+  team: string | null;
+  canonicalRole: string | null;
+  ruoloPrimario: string | null;
+  ruoliMantra: string[];
+  P1: number | null;
+  P2: number | null;
+  P3: number | null;
+  P4: number | null;
+  FP_Corr: number | null;
+  VR: number | null;
+  predictedFantavoto: number | null;
+  expectedMinutes: number | null;
+  confidenceScore: number | null;
+  mlBoost: number | null;
+  fpGap: number | null;
+  fpIbrido: number | null;
+  expectedValue: number | null;
+  prezzoMassimo: number | null;
+  hybridLabels: string[];
+  hasMlData: boolean;
+}
+
+export interface HybridPredictionsResponse {
+  total: number;
+  page: number;
+  size: number;
+  items: HybridPlayerPrediction[];
+  meta: {
+    seasonStart: number;
+    generatedAt: string;
+    config: Record<string,number>;
+    nPlayersWithMl: number;
+    nPlayersWithoutMl: number;
+  };
+}
+
+export interface HybridStatsResponse {
+  totalPlayers: number;
+  pctWithMl: number;
+  avgFpIbrido: number;
+  avgConfidenceScore: number;
+  avgFpGap: number;
+  classificationCounts: Record<string,number>;
+}
+
+export interface HybridConfig {
+  PESO_MANTRA: number;
+  PESO_ML: number;
+  W_PREDICTION_STD: number;
+  W_MINUTES: number;
+  EV_SCALE_FACTOR: number;
+  SOGLIA_CONFIDENZA_MIN: number;
+  SOGLIA_GAP_ALERT: number;
+}

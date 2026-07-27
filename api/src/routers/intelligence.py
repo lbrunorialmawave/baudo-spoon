@@ -4,6 +4,12 @@ Routes
 ------
 GET  /predictions/players                  — Paginated player predictions (ML + DB metadata).
 GET  /predictions/next-season              — Next-season projected ratings.
+GET  /predictions/hybrid                   — Paginated hybrid MANTRA+ML predictions.
+GET  /predictions/hybrid/stats             — Hybrid aggregate statistics.
+GET  /predictions/hybrid/config            — Current hybrid configuration.
+PUT  /predictions/hybrid/config            — Update hybrid configuration (admin).
+POST /predictions/hybrid/run               — (Re)generate hybrid results (admin).
+GET  /predictions/hybrid/preview           — Preview-only hybrid results (admin).
 GET  /intelligence/clustering/players      — Full cluster membership list.
 GET  /intelligence/clustering/alternatives — Low-cost player clones (requires API key).
 POST /intelligence/cache/invalidate        — Evict Redis cache (requires API key).
@@ -11,16 +17,20 @@ POST /intelligence/cache/invalidate        — Evict Redis cache (requires API k
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import Optional
+from enum import Enum
+from pathlib import Path
+from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import ORJSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..data_repository import DataRepository
 from ..deps import get_db, rate_limit, require_role
+from ..config import settings
 from ..models import PlayerSeasonStat, Season
 from ..schemas import (
     AlternativesResponse,
@@ -33,6 +43,8 @@ from ..schemas import (
     PlayerVarSchema,
     VarResultsResponse,
 )
+
+log = logging.getLogger(__name__)
 
 log = logging.getLogger(__name__)
 
@@ -329,3 +341,301 @@ async def invalidate_cache(
 ) -> ORJSONResponse:
     await repo.invalidate_cache()
     return ORJSONResponse(content={"detail": "Cache invalidated"})
+
+
+# ── Hybrid endpoints (under /predictions) ─────────────────────────────────────
+
+
+class HybridSortField(str, Enum):
+    fp_ibrido = "fpIbrido"
+    confidence_score = "confidenceScore"
+    expected_value = "expectedValue"
+    fp_gap = "fpGap"
+    predicted_fantavoto = "predictedFantavoto"
+    fp_corr = "FP_Corr"
+    vr = "VR"
+
+
+def _load_hybrid_results(season: int) -> dict[str, Any]:
+    """Load the hybrid artefact from disk (fall back to R2)."""
+    from ml.mantra_ibrido.runner import run_hybrid_computation
+
+    artifacts_dir = Path(settings.artifacts_dir)
+    path = artifacts_dir / f"mantra_ibrido_results_{season}.json"
+
+    if not path.exists():
+        # Try to download from R2 if configured
+        if settings.r2_endpoint_url:
+            import boto3
+            try:
+                boto3.client(
+                    "s3",
+                    endpoint_url=settings.r2_endpoint_url,
+                    aws_access_key_id=settings.r2_access_key_id,
+                    aws_secret_access_key=settings.r2_secret_access_key,
+                ).download_file(settings.r2_bucket_name, path.name, str(path))
+            except Exception:
+                pass
+
+    if path.exists():
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+
+    # Lazy init: run hybrid computation on the fly
+    mantra_path = artifacts_dir / f"mantra_results_{season}.json"
+    ml_path = artifacts_dir / "results_latest.json"
+
+    if not mantra_path.exists():
+        raise FileNotFoundError(
+            f"MANTRA results not found for season {season}. Run POST /mantra/run first."
+        )
+
+    result = run_hybrid_computation(mantra_path, ml_path, artifacts_dir)
+    return result
+
+
+def _find_hybrid_path(artifacts_dir: Path) -> tuple[int, Path]:
+    """Find the latest available hybrid result file (season fallback)."""
+    for season in [2026, 2025, 2024]:
+        path = artifacts_dir / f"mantra_ibrido_results_{season}.json"
+        if path.exists():
+            return season, path
+    raise FileNotFoundError(
+        "No hybrid results found. Run POST /predictions/hybrid/run first."
+    )
+
+
+@predictions_router.get(
+    "/hybrid",
+    response_class=ORJSONResponse,
+    summary="Paginated hybrid MANTRA+ML predictions",
+    description=(
+        "Returns every player scored with both MANTRA pillars and ML predictions, "
+        "plus computed hybrid scores (FP_Ibrido, Confidence, Expected Value, etc.) "
+        "and classification labels."
+    ),
+    responses={
+        200: {"description": "Paginated hybrid predictions"},
+        503: {"description": "Hybrid artefact not available"},
+    },
+)
+async def list_hybrid_predictions(
+    ruolo: Optional[str] = Query(None, description="Filter by MANTRA primary role"),
+    search: Optional[str] = Query(None, description="Search by player name"),
+    confidence_min: Optional[float] = Query(None, ge=0, le=100, alias="confidenceMin"),
+    label: Optional[str] = Query(None, description="Filter by hybrid label (e.g. ML_Confirmed)"),
+    sort_by: Optional[HybridSortField] = Query(None, alias="sortBy"),
+    sort_dir: Optional[str] = Query("asc", alias="sortDir"),
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=200),
+) -> ORJSONResponse:
+    try:
+        _, path = _find_hybrid_path(Path(settings.artifacts_dir))
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    players = data.get("players", [])
+
+    # Filters
+    if ruolo:
+        players = [p for p in players if p.get("ruolo_primario") == ruolo]
+    if search:
+        q = search.lower()
+        players = [p for p in players if q in str(p.get("player_name", "")).lower()]
+    if confidence_min is not None:
+        players = [p for p in players if (p.get("confidenceScore") or 0) >= confidence_min]
+    if label:
+        players = [p for p in players if label in p.get("hybridLabels", [])]
+
+    # Sorting
+    if sort_by:
+        reverse = sort_dir == "desc"
+        players.sort(
+            key=lambda p: (
+                p.get(sort_by.value) if p.get(sort_by.value) is not None
+                else -999999
+            ),
+            reverse=reverse,
+        )
+
+    total = len(players)
+    start = (page - 1) * size
+    items = players[start:start + size]
+
+    return ORJSONResponse({
+        "total": total,
+        "page": page,
+        "size": size,
+        "items": items,
+        "meta": data.get("meta"),
+    })
+
+
+@predictions_router.get(
+    "/hybrid/stats",
+    response_class=ORJSONResponse,
+    summary="Hybrid aggregate statistics",
+)
+async def get_hybrid_stats() -> ORJSONResponse:
+    try:
+        _, path = _find_hybrid_path(Path(settings.artifacts_dir))
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    players = data.get("players", [])
+    if not players:
+        return ORJSONResponse({"totalPlayers": 0})
+
+    n_total = len(players)
+    n_with_ml = sum(1 for p in players if p.get("has_ml_data"))
+
+    fp_scores = [p["fpIbrido"] for p in players if p.get("fpIbrido") is not None]
+    conf_scores = [p["confidenceScore"] for p in players if p.get("confidenceScore") is not None]
+    gaps = [p["fpGap"] for p in players if p.get("fpGap") is not None]
+
+    classifications = data.get("classifications", {})
+    classification_counts = {k: len(v) for k, v in classifications.items()}
+
+    return ORJSONResponse({
+        "totalPlayers": n_total,
+        "pctWithMl": round(n_with_ml / max(n_total, 1), 2),
+        "avgFpIbrido": round(sum(fp_scores) / max(len(fp_scores), 1), 2) if fp_scores else None,
+        "avgConfidenceScore": round(sum(conf_scores) / max(len(conf_scores), 1), 2) if conf_scores else None,
+        "avgFpGap": round(sum(gaps) / max(len(gaps), 1), 2) if gaps else None,
+        "classificationCounts": classification_counts,
+    })
+
+
+@predictions_router.get(
+    "/hybrid/config",
+    response_class=ORJSONResponse,
+    summary="Current hybrid configuration",
+)
+async def get_hybrid_config() -> ORJSONResponse:
+    from ml.mantra_ibrido.config_store import load_config
+
+    cfg = load_config()
+    return ORJSONResponse({
+        "PESO_MANTRA": cfg.PESO_MANTRA,
+        "PESO_ML": cfg.PESO_ML,
+        "W_PREDICTION_STD": cfg.W_PREDICTION_STD,
+        "W_MINUTES": cfg.W_MINUTES,
+        "EV_SCALE_FACTOR": cfg.EV_SCALE_FACTOR,
+        "SOGLIA_CONFIDENZA_MIN": cfg.SOGLIA_CONFIDENZA_MIN,
+        "SOGLIA_GAP_ALERT": cfg.SOGLIA_GAP_ALERT,
+    })
+
+
+@predictions_router.put(
+    "/hybrid/config",
+    response_class=ORJSONResponse,
+    summary="Update hybrid configuration (admin)",
+    dependencies=[Depends(require_role("admin"))],
+)
+async def update_hybrid_config(
+    body: dict[str, Any] = Body(...),
+) -> ORJSONResponse:
+    from ml.mantra_ibrido.config_store import update_config
+
+    try:
+        cfg = update_config(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    return ORJSONResponse({
+        "PESO_MANTRA": cfg.PESO_MANTRA,
+        "PESO_ML": cfg.PESO_ML,
+        "W_PREDICTION_STD": cfg.W_PREDICTION_STD,
+        "W_MINUTES": cfg.W_MINUTES,
+        "EV_SCALE_FACTOR": cfg.EV_SCALE_FACTOR,
+        "SOGLIA_CONFIDENZA_MIN": cfg.SOGLIA_CONFIDENZA_MIN,
+        "SOGLIA_GAP_ALERT": cfg.SOGLIA_GAP_ALERT,
+    })
+
+
+@predictions_router.post(
+    "/hybrid/run",
+    response_class=ORJSONResponse,
+    summary="(Re)generate hybrid results (admin)",
+    dependencies=[Depends(require_role("admin"))],
+)
+async def run_hybrid(
+    season_start: int = Query(2025, ge=2020, le=2030),
+    persist: bool = Query(True, description="If false, writes to preview file only"),
+    overrides: Optional[dict[str, Any]] = Body(None),
+) -> ORJSONResponse:
+    from ml.mantra_ibrido.config_store import load_config, update_config
+    from ml.mantra_ibrido.runner import run_hybrid_computation
+
+    artifacts_dir = Path(settings.artifacts_dir)
+    mantra_path = artifacts_dir / f"mantra_results_{season_start}.json"
+    ml_path = artifacts_dir / "results_latest.json"
+
+    if not mantra_path.exists():
+        raise HTTPException(
+            status_code=503,
+            detail=f"MANTRA results not found for season {season_start}. Run POST /mantra/run first.",
+        )
+
+    try:
+        if persist:
+            # Save overrides permanently if provided
+            config = update_config(overrides) if overrides else load_config()
+            result = run_hybrid_computation(
+                mantra_path, ml_path, artifacts_dir,
+                config=config,
+                output_filename=None,  # production file
+            )
+        else:
+            # Ephemeral: merge overrides in memory, write to preview file only
+            base = load_config()
+            from dataclasses import asdict, replace
+            effective = replace(
+                base,
+                **{k: v for k, v in (overrides or {}).items()
+                   if hasattr(base, k)},
+            )
+            result = run_hybrid_computation(
+                mantra_path, ml_path, artifacts_dir,
+                config=effective,
+                output_filename=f"mantra_ibrido_preview_{season_start}.json",
+            )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    return ORJSONResponse({
+        "status": "ok",
+        "season": season_start,
+        "nPlayers": len(result["players"]),
+        "generatedAt": result["meta"]["generatedAt"],
+        "persisted": persist,
+    })
+
+
+@predictions_router.get(
+    "/hybrid/preview",
+    response_class=ORJSONResponse,
+    summary="Preview-only hybrid results (admin)",
+    dependencies=[Depends(require_role("admin"))],
+)
+async def get_hybrid_preview(
+    season_start: Optional[int] = Query(None, ge=2020, le=2030, alias="seasonStart"),
+) -> ORJSONResponse:
+    artifacts_dir = Path(settings.artifacts_dir)
+    target_season = season_start or 2025
+    path = artifacts_dir / f"mantra_ibrido_preview_{target_season}.json"
+
+    if not path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="No preview available. Run POST /predictions/hybrid/run with persist=false first.",
+        )
+
+    with path.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    return ORJSONResponse(data)

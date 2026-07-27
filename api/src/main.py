@@ -75,7 +75,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET", "OPTIONS", "POST"],
+    allow_methods=["GET", "OPTIONS", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 

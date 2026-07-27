@@ -1,8 +1,8 @@
 """DataRepository: decouples ML artifact I/O from API route logic.
 
 Reads ``results_latest.json`` (and optionally ``next_season_predictions.json``)
-produced by the ML trainer pipeline.  A Redis cache layer avoids repeated disk
-access for the same static file.
+produced by the ML trainer pipeline, and dispatches hybrid MANTRA+ML scoring.
+A Redis cache layer avoids repeated disk access for the same static file.
 """
 
 from __future__ import annotations
@@ -231,6 +231,40 @@ class DataRepository:
                 log.info("ML result cache invalidated")
             except Exception:
                 log.warning("Cache invalidation failed")
+
+    # ── Hybrid MANTRA+ML ─────────────────────────────────────────────────────
+
+    async def get_hybrid_predictions(self, season: int = 2025) -> dict:
+        """Load or lazy-init the hybrid MANTRA+ML artefact.
+
+        Falls back to R2 if the file is missing locally; if still missing,
+        runs the merger + scoring on the fly.
+        """
+        path = self._dir / f"mantra_ibrido_results_{season}.json"
+
+        if not path.exists():
+            self._download_from_r2(path)
+
+        if path.exists():
+            return await self._read_json(path)
+
+        # Lazy init
+        mantra_path = self._dir / f"mantra_results_{season}.json"
+        ml_path = self._dir / "results_latest.json"
+
+        if not mantra_path.exists():
+            self._download_from_r2(mantra_path)
+
+        if not mantra_path.exists():
+            raise FileNotFoundError(
+                f"MANTRA results not found for season {season}. "
+                "Run POST /mantra/run first."
+            )
+
+        from ml.mantra_ibrido.runner import run_hybrid_computation
+
+        result = run_hybrid_computation(mantra_path, ml_path, self._dir)
+        return result
 
     # ── Quotations (DB-backed) ────────────────────────────────────────────────
 
