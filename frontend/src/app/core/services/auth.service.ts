@@ -49,6 +49,16 @@ export class AuthService {
     );
   }
 
+  register(email: string, password: string): Observable<LoginResponse> {
+    return this.http.post<LoginResponse>('/api/v1/auth/register', { email, password }).pipe(
+      tap(res => {
+        localStorage.setItem(ACCESS_KEY, res.access_token);
+        localStorage.setItem(REFRESH_KEY, res.refresh_token);
+        this._syncFromStorage();
+      })
+    );
+  }
+
   logout(): Observable<void> {
     const refreshToken = localStorage.getItem(REFRESH_KEY) ?? '';
     return this.http.post<void>('/api/v1/auth/logout', { refresh_token: refreshToken }).pipe(

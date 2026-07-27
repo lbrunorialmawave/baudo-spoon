@@ -11,7 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
@@ -31,6 +32,11 @@ _bearer = HTTPBearer(auto_error=False)
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8)
 
 
 class TokenResponse(BaseModel):
@@ -64,6 +70,31 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+async def _issue_tokens(
+    db: AsyncSession, user_id: str, email: str, role: str
+) -> TokenResponse:
+    """Create an access token and persist a new opaque refresh token for the user.
+
+    Shared by ``/login`` and ``/register`` so both flows issue tokens identically.
+    """
+    access_token = _create_access_token(user_id, email, role)
+
+    opaque = secrets.token_urlsafe(32)
+    token_hash = _hash_token(opaque)
+    expires_at = datetime.now(UTC) + timedelta(days=settings.jwt_refresh_token_expire_days)
+
+    await db.execute(
+        sa.text(
+            "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) "
+            "VALUES (:user_id, :token_hash, :expires_at)"
+        ),
+        {"user_id": user_id, "token_hash": token_hash, "expires_at": expires_at},
+    )
+    await db.commit()
+
+    return TokenResponse(access_token=access_token, refresh_token=opaque)
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 
@@ -84,22 +115,41 @@ async def login(
     if not user or not _pwd_ctx.verify(body.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    access_token = _create_access_token(str(user["id"]), body.email, user["role"])
+    return await _issue_tokens(db, str(user["id"]), body.email, user["role"])
 
-    opaque = secrets.token_urlsafe(32)
-    token_hash = _hash_token(opaque)
-    expires_at = datetime.now(UTC) + timedelta(days=settings.jwt_refresh_token_expire_days)
 
-    await db.execute(
-        sa.text(
-            "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) "
-            "VALUES (:user_id, :token_hash, :expires_at)"
-        ),
-        {"user_id": user["id"], "token_hash": token_hash, "expires_at": expires_at},
-    )
-    await db.commit()
+@router.post("/register", response_model=TokenResponse)
+async def register(
+    body: RegisterRequest,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _rl: Annotated[None, Depends(rate_limit)],
+) -> TokenResponse:
+    """Public self-service registration.
 
-    return TokenResponse(access_token=access_token, refresh_token=opaque)
+    Always creates a ``role='member'`` account — the client cannot request a
+    role. Admin accounts are provisioned out-of-band via
+    ``scripts/create_admin_user.py``. Auto-logs-in on success (same response
+    shape as ``/login``).
+    """
+    password_hash = _pwd_ctx.hash(body.password)
+
+    try:
+        row = await db.execute(
+            sa.text(
+                "INSERT INTO users (email, password_hash, role) "
+                "VALUES (:email, :password_hash, 'member') "
+                "RETURNING id"
+            ),
+            {"email": body.email, "password_hash": password_hash},
+        )
+        user_id = row.scalar_one()
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Email already registered")
+
+    return await _issue_tokens(db, str(user_id), body.email, "member")
 
 
 @router.post("/refresh", response_model=AccessTokenResponse)
