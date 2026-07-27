@@ -226,7 +226,7 @@ const METHOD_COLORS: Record<string, string> = {
                                 [style.background]="methodColor(item.matchMethod)">
                             {{ methodLabel(item.matchMethod) }}
                           </span>
-                          @if ((item as any).resolvedFromHistory) {
+                          @if (showFromHistory(item)) {
                             <span class="rounded-full px-2 py-0.5 text-xs font-medium ml-1 whitespace-nowrap"
                                   style="background:#8B5CF6;color:white">
                               From history
@@ -534,6 +534,10 @@ export class IdMappingComponent {
 
   readonly methodColor = (m: string): string => METHOD_COLORS[m] ?? '#6B7280';
   readonly methodLabel = (m: string): string => METHOD_LABELS[m] ?? m;
+
+  /** Type-safe check for the optional `resolvedFromHistory` field. */
+  readonly showFromHistory = (item: PlayerIdMapping): boolean =>
+    'resolvedFromHistory' in item && (item as Record<string, unknown>).resolvedFromHistory === true;
 
   readonly toggleSort = (field: SortField) => {
     if (this.sortField() === field) {

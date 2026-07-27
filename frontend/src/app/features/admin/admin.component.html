@@ -36,7 +36,7 @@
               <div class="text-right sm:text-right">
                 <span class="text-sm font-mono font-semibold"
                       [style.color]="statusColor(source.status)">
-                  {{ source.total_rows ?? 0 }}
+                  {{ source.total_rows }}
                 </span>
                 @if (source.match_rate_pct != null) {
                   <p class="text-xs" style="color:var(--color-text-secondary)">
