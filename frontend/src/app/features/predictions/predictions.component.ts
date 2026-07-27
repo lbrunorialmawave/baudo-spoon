@@ -1,6 +1,6 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { DecimalPipe, PercentPipe } from '@angular/common';
+import { DatePipe, DecimalPipe, PercentPipe } from '@angular/common';
 import {
   NextSeasonPrediction,
   ModelComparison,
@@ -30,7 +30,7 @@ const HYBRID_LABELS = [
 @Component({
   selector: 'app-predictions',
   standalone: true,
-  imports: [FormsModule, DecimalPipe, PercentPipe, SkeletonComponent, ErrorBoundaryComponent],
+  imports: [FormsModule, DatePipe, DecimalPipe, PercentPipe, SkeletonComponent, ErrorBoundaryComponent],
   template: `
     <div style="background:var(--color-bg);min-height:100%">
       <!-- Page header -->
