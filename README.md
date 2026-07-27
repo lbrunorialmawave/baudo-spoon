@@ -57,6 +57,7 @@
 | `ml`       | scikit-learn, XGBoost, pandas | Role-partitioned regression + K-Means/PCA clustering     |
 | `api`      | FastAPI, asyncpg, Redis       | REST API serving predictions and intelligence endpoints  |
 | `db`       | PostgreSQL 16                 | Persistent storage for raw stats and player profiles     |
+| —          | `manual_resolutions` (table)  | Permanent history of manually resolved Fantacalcio↔FotMob ID mappings. Survives re-mapping runs and is reused as Pass 0 in the matching pipeline. |
 
 ---
 

@@ -226,6 +226,12 @@ const METHOD_COLORS: Record<string, string> = {
                                 [style.background]="methodColor(item.matchMethod)">
                             {{ methodLabel(item.matchMethod) }}
                           </span>
+                          @if ((item as any).resolvedFromHistory) {
+                            <span class="rounded-full px-2 py-0.5 text-xs font-medium ml-1 whitespace-nowrap"
+                                  style="background:#8B5CF6;color:white">
+                              From history
+                            </span>
+                          }
                         </td>
                         <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs hidden lg:table-cell" style="color:var(--color-text-secondary)">
                           {{ item.nameFotmob ?? '—' }}

@@ -4,9 +4,11 @@ import enum
 from datetime import datetime
 from decimal import Decimal
 
+import sqlalchemy as sa
 from sqlalchemy import (
     ARRAY,
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -17,6 +19,7 @@ from sqlalchemy import (
     PrimaryKeyConstraint,
     SmallInteger,
     String,
+    Text,
     UniqueConstraint,
     func,
 )
@@ -271,6 +274,9 @@ class PlayerIdMap(Base):
         nullable=False,
     )
     confidence: Mapped[float] = mapped_column(Numeric(4, 3), nullable=False, default=1.0)
+    resolved_from_history: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, default=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -291,8 +297,60 @@ class PlayerIdMap(Base):
             "canonical_role": self.canonical_role,
             "match_method": self.match_method.value if isinstance(self.match_method, MatchMethodEnum) else self.match_method,
             "confidence": float(self.confidence) if self.confidence is not None else None,
+            "resolved_from_history": bool(self.resolved_from_history),
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class ManualResolution(Base):
+    """Permanent record of a manually resolved Fantacalcio ↔ FotMob association.
+
+    Unlike ``player_id_map`` which is per-season and overwritable, this table
+    is cross-season and append-only.  The matching pipeline consults it as
+    "Pass 0" — before any automatic matching — so that once the operator
+    resolves a player, the mapping is never forgotten.
+
+    See ``db/migrations/013_add_manual_resolutions.sql`` for the schema.
+    """
+    __tablename__ = "manual_resolutions"
+    __table_args__ = (
+        UniqueConstraint("fantacalcio_id", "player_fotmob_id", name="uq_mr_association"),
+        Index("idx_mr_fantacalcio", "fantacalcio_id"),
+        Index("idx_mr_fotmob", "player_fotmob_id"),
+        Index("idx_mr_season", "season_start"),
+        Index("idx_mr_created", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    fantacalcio_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    player_fotmob_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    season_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    name_fantacalcio: Mapped[str] = mapped_column(String(200), nullable=False)
+    team_fantacalcio: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    canonical_role: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    name_fotmob: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    team_fotmob: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    resolved_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    note: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "fantacalcio_id": self.fantacalcio_id,
+            "player_fotmob_id": self.player_fotmob_id,
+            "season_start": self.season_start,
+            "name_fantacalcio": self.name_fantacalcio,
+            "team_fantacalcio": self.team_fantacalcio,
+            "canonical_role": self.canonical_role,
+            "name_fotmob": self.name_fotmob,
+            "team_fotmob": self.team_fotmob,
+            "resolved_by": self.resolved_by,
+            "note": self.note,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 

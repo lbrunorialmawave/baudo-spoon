@@ -16,6 +16,9 @@ GET /quotations/stats                        — Aggregate statistics across all
 GET /intelligence/id-mapping                 — Paginated list of Fantacalcio↔FotMob mappings (API key).
 GET /intelligence/id-mapping/{id}            — Single mapping lookup (API key).
 GET /intelligence/id-mapping/stats           — Match rate + per-method counts (API key).
+GET /intelligence/id-mapping/resolutions     — Paginated manual resolution history (API key).
+GET /intelligence/id-mapping/resolutions/stats — Manual resolution aggregate stats (API key).
+DELETE /intelligence/id-mapping/resolutions/{id} — Remove a manual resolution (API key).
 """
 
 from __future__ import annotations
@@ -32,6 +35,8 @@ from ..data_repository import DataRepository
 from ..deps import get_db, rate_limit, require_role
 from ..schemas import (
     IdMappingStatsResponse,
+    ManualResolutionSchema,
+    ManualResolutionStatsResponse,
     PlayerIdMapSchema,
     PlayerQuotationWithMappingSchema,
     QuotationStatsResponse,
@@ -550,3 +555,86 @@ async def run_id_mapping(
         raise HTTPException(status_code=500, detail=str(exc))
     finally:
         engine.dispose()
+
+
+# ── Manual Resolutions endpoints ──────────────────────────────────────────────
+
+
+@id_mapping_router.get(
+    "/resolutions",
+    response_class=ORJSONResponse,
+    summary="Paginated manual resolution history",
+    description=(
+        "Returns the permanent record of manually resolved Fantacalcio ↔ FotMob "
+        "associations. These entries come from operator overrides in the ID Mapping "
+        "UI and are independent of the current player_id_map — they survive "
+        "re-mapping runs and are reused as Pass 0 in the matching pipeline."
+    ),
+    responses={
+        200: {"description": "Paginated list of manual resolutions"},
+    },
+)
+async def list_manual_resolutions(
+    season_start: Optional[int] = Query(None, ge=1990, le=2100, description="Filter by season"),
+    fantacalcio_id: Optional[int] = Query(None, ge=1, description="Filter by Fantacalcio ID"),
+    player_fotmob_id: Optional[int] = Query(None, ge=1, description="Filter by FotMob player ID"),
+    search: Optional[str] = Query(None, min_length=2, description="Search by Fantacalcio player name (ILIKE)"),
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    repo: DataRepository = Depends(get_repository),
+) -> ORJSONResponse:
+    rows, total = await repo.list_manual_resolutions(
+        db=db,
+        season_start=season_start,
+        fantacalcio_id=fantacalcio_id,
+        player_fotmob_id=player_fotmob_id,
+        search=search,
+        page=page,
+        size=size,
+    )
+    items = [ManualResolutionSchema(**r).model_dump(by_alias=True) for r in rows]
+    return ORJSONResponse(content={"total": total, "page": page, "size": size, "items": items})
+
+
+@id_mapping_router.get(
+    "/resolutions/stats",
+    response_class=ORJSONResponse,
+    summary="Manual resolution aggregate statistics",
+    description=(
+        "Returns total count, unique resolved players, and a per-season "
+        "breakdown of manual resolutions."
+    ),
+)
+async def get_manual_resolution_stats(
+    db: AsyncSession = Depends(get_db),
+    repo: DataRepository = Depends(get_repository),
+) -> ORJSONResponse:
+    stats = await repo.get_manual_resolution_stats(db=db)
+    payload = ManualResolutionStatsResponse(**stats).model_dump(by_alias=True)
+    return ORJSONResponse(content=payload)
+
+
+@id_mapping_router.delete(
+    "/resolutions/{resolution_id}",
+    response_class=ORJSONResponse,
+    summary="Remove a manual resolution",
+    description=(
+        "Permanently deletes a manual resolution record. Use this to correct "
+        "an erroneous association made in the past. Does NOT affect the current "
+        "player_id_map — it only removes the entry from Pass 0 history."
+    ),
+    responses={
+        200: {"description": "Resolution deleted"},
+        404: {"description": "Resolution not found"},
+    },
+)
+async def delete_manual_resolution(
+    resolution_id: int,
+    db: AsyncSession = Depends(get_db),
+    repo: DataRepository = Depends(get_repository),
+) -> ORJSONResponse:
+    deleted = await repo.delete_manual_resolution(db=db, resolution_id=resolution_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Resolution {resolution_id} not found")
+    return ORJSONResponse(content={"status": "deleted", "id": resolution_id})

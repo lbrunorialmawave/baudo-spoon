@@ -60,6 +60,12 @@ const NAV_ITEMS: readonly NavItem[] = [
     icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12M8 12h12M8 17h12M4 7h.01M4 12h.01M4 17h.01"/></svg>`,
   },
   {
+    path: '/id-mapping/resolutions',
+    label: 'Res. History',
+    shortLabel: 'History',
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`,
+  },
+  {
     path: '/model-monitoring',
     label: 'Model Monitoring',
     shortLabel: 'Models',

@@ -80,6 +80,7 @@ export interface PlayerIdMapping {
   canonicalRole: string | null;
   matchMethod: string;
   confidence: number;
+  resolvedFromHistory?: boolean;
   createdAt: string;
   updatedAt: string;
   // MANTRA 12-role fields
@@ -101,6 +102,36 @@ export interface IdMappingStatsResponse {
   matchRate: number;
   bySeason: Record<string, Record<string, number>>;
   byMethod: Record<string, number>;
+}
+
+// ── Manual Resolution History ──────────────────────────────────────────────
+
+export interface ManualResolution {
+  id: number;
+  fantacalcioId: number;
+  playerFotmobId: number;
+  seasonStart: number;
+  nameFantacalcio: string;
+  teamFantacalcio: string | null;
+  canonicalRole: string | null;
+  nameFotmob: string | null;
+  teamFotmob: string | null;
+  resolvedBy: string | null;
+  note: string | null;
+  createdAt: string;
+}
+
+export interface ManualResolutionListResponse {
+  total: number;
+  page: number;
+  size: number;
+  items: ManualResolution[];
+}
+
+export interface ManualResolutionStatsResponse {
+  total: number;
+  uniquePlayers: number;
+  bySeason: Record<string, number>;
 }
 
 /** Request body per aggiornare manualmente un mapping. */

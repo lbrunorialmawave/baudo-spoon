@@ -61,6 +61,14 @@ export const routes: Routes = [
           import('./features/id-mapping/id-mapping.component').then((m) => m.IdMappingComponent),
       },
       {
+        path: 'id-mapping/resolutions',
+        canActivate: [adminGuard],
+        loadComponent: () =>
+          import('./features/id-mapping/resolution-history.component').then(
+            (m) => m.ResolutionHistoryComponent
+          ),
+      },
+      {
         path: 'admin',
         canActivate: [adminGuard],
         loadComponent: () =>

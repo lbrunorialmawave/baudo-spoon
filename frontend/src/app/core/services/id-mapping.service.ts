@@ -4,6 +4,8 @@ import { Observable } from 'rxjs';
 import {
   IdMappingListResponse,
   IdMappingStatsResponse,
+  ManualResolutionListResponse,
+  ManualResolutionStatsResponse,
   PlayerIdMapping,
   UpdateIdMappingRequest,
 } from '../models/quotations.models';
@@ -58,5 +60,36 @@ export class IdMappingService {
   ): Observable<PlayerIdMapping> {
     const params = new HttpParams().set('season_start', seasonStart);
     return this.http.put<PlayerIdMapping>(`${this.endpoint}/${fantacalcioId}`, body, { params });
+  }
+
+  // ── Manual Resolution History ──────────────────────────────────────────
+
+  /** Elenco paginato delle risoluzioni manuali storiche. */
+  listResolutions(opts: {
+    seasonStart?: number;
+    fantacalcioId?: number;
+    playerFotmobId?: number;
+    search?: string;
+    page?: number;
+    size?: number;
+  } = {}): Observable<ManualResolutionListResponse> {
+    let params = new HttpParams()
+      .set('page', opts.page ?? 1)
+      .set('size', opts.size ?? 50);
+    if (opts.seasonStart != null)    params = params.set('season_start', opts.seasonStart);
+    if (opts.fantacalcioId != null)  params = params.set('fantacalcio_id', opts.fantacalcioId);
+    if (opts.playerFotmobId != null) params = params.set('player_fotmob_id', opts.playerFotmobId);
+    if (opts.search)                 params = params.set('search', opts.search);
+    return this.http.get<ManualResolutionListResponse>(`${this.endpoint}/resolutions`, { params });
+  }
+
+  /** Statistiche aggregate delle risoluzioni manuali. */
+  getResolutionStats(): Observable<ManualResolutionStatsResponse> {
+    return this.http.get<ManualResolutionStatsResponse>(`${this.endpoint}/resolutions/stats`);
+  }
+
+  /** Elimina una risoluzione manuale. */
+  deleteResolution(id: number): Observable<{ status: string; id: number }> {
+    return this.http.delete<{ status: string; id: number }>(`${this.endpoint}/resolutions/${id}`);
   }
 }

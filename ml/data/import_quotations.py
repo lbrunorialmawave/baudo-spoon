@@ -620,6 +620,32 @@ def _fuzzy_match_one(
     return best_id, best_name, best_team, float(best_score)
 
 
+def _load_manual_resolutions(engine: sa.Engine) -> pd.DataFrame:
+    """Load all rows from the ``manual_resolutions`` history table.
+
+    Returns an empty DataFrame if the table does not exist or has no rows.
+    """
+    try:
+        df = pd.read_sql(
+            sa.text(
+                "SELECT fantacalcio_id, player_fotmob_id, season_start, "
+                "name_fantacalcio, team_fantacalcio, canonical_role, "
+                "name_fotmob, team_fotmob "
+                "FROM manual_resolutions "
+                "ORDER BY season_start DESC, created_at DESC"
+            ),
+            engine,
+        )
+        log.info("  loaded %d historical manual resolutions", len(df))
+        return df
+    except Exception:  # noqa: BLE001
+        log.warning(
+            "manual_resolutions table not available — skipping Pass 0. "
+            "Apply migration 013_add_manual_resolutions.sql."
+        )
+        return pd.DataFrame()
+
+
 def build_player_id_map(
     quotazioni: pd.DataFrame, engine: sa.Engine, league_name: Optional[str]
 ) -> pd.DataFrame:
@@ -634,13 +660,71 @@ def build_player_id_map(
         len(ref), int(ref["canonical_role"].notna().sum()),
     )
 
+    results: list[dict] = []
+    matched_keys: set[tuple[int, int]] = set()
+
+    # ── Pass 0: historical manual resolutions (permanent operator overrides) ─
+    log.info("Pass 0: applying historical manual resolutions …")
+    historical = _load_manual_resolutions(engine)
+    if not historical.empty:
+        # Build lookup: latest resolution per fantacalcio_id
+        historical = historical.sort_values(
+            ["fantacalcio_id", "season_start", "player_fotmob_id"],
+            ascending=[True, False, False],
+        )
+        # Deduplicate: keep the most recent resolution per fantacalcio_id
+        latest_per_id = historical.drop_duplicates(
+            subset="fantacalcio_id", keep="first"
+        )
+
+        # Join with quotazioni on fantacalcio_id
+        merged = quotazioni.merge(
+            latest_per_id[["fantacalcio_id", "player_fotmob_id",
+                           "name_fotmob", "team_fotmob",
+                           "canonical_role"]],
+            on="fantacalcio_id",
+            how="inner",
+            suffixes=("", "_hist"),
+        )
+        # Use the canonical_role from the resolution if the quotation has none
+        merged["canonical_role"] = merged["canonical_role"].fillna(
+            merged.get("role")
+        )
+
+        for _, row in merged.iterrows():
+            key = (int(row["fantacalcio_id"]), int(row["season_start"]))
+            matched_keys.add(key)
+            results.append({
+                "fantacalcio_id": key[0],
+                "season_start": key[1],
+                "player_fotmob_id": int(row["player_fotmob_id"]),
+                "name_fantacalcio": row["name"],
+                "name_fotmob": row.get("name_fotmob"),
+                "team_fantacalcio": row["team"],
+                "team_fotmob": row.get("team_fotmob"),
+                "canonical_role": row.get("canonical_role"),
+                "match_method": "manual",
+                "confidence": 1.0,
+            "resolved_from_history": True,
+        log.info(
+            "  historical matches applied: %d (from %d resolutions)",
+            len(results), len(historical),
+        )
+
     # ── Pass 1: exact match on (last_name, team, role) ──────────────────
-    log.info("Pass 1: exact match on (surname, team, role) …")
-    quotazioni_with_role = quotazioni.rename(columns={"role": "canonical_role"})
+    # Exclude players already matched by Pass 0.
+    remaining = quotazioni[
+        ~quotazioni.apply(
+            lambda r: (int(r["fantacalcio_id"]), int(r["season_start"])) in matched_keys,
+            axis=1,
+        )
+    ].copy()
+
+    log.info("Pass 1: exact match on (surname, team, role) … (%d remaining)", len(remaining))
+    quotazioni_with_role = remaining.rename(columns={"role": "canonical_role"})
     matched, unmatched = _exact_match(quotazioni_with_role, ref)
     log.info("  matched: %d, unmatched: %d", len(matched), len(unmatched))
 
-    results: list[dict] = []
     for _, row in matched.iterrows():
         results.append({
             "fantacalcio_id": int(row["fantacalcio_id"]),
@@ -653,6 +737,7 @@ def build_player_id_map(
             "canonical_role": row["canonical_role"],
             "match_method": "exact_name_team",
             "confidence": 1.0,
+            "resolved_from_history": False,
         })
 
     # ── Pass 1b: exact match relaxed on (surname, team), role ignored ──
@@ -676,6 +761,7 @@ def build_player_id_map(
             "canonical_role": row["canonical_role"],
             "match_method": "exact_relaxed_role",
             "confidence": 0.95,
+            "resolved_from_history": False,
         })
 
     # ── Pass 2: fuzzy match on (surname, role) ───────────────────────────
@@ -709,6 +795,7 @@ def build_player_id_map(
             "canonical_role": row["canonical_role"],
             "match_method": "fuzzy_name",
             "confidence": round(score, 3),
+            "resolved_from_history": False,
         })
         fuzzy_hits += 1
     log.info("  fuzzy hits: %d, still unmatched: %d",
@@ -746,6 +833,7 @@ def build_player_id_map(
             "canonical_role": case["canonical_role"],
             "match_method": "unmatched",
             "confidence": 0.0,
+            "resolved_from_history": False,
         })
 
     return pd.DataFrame(results)
@@ -784,21 +872,24 @@ _UPSERT_MAP_SQL = sa.text("""
         fantacalcio_id, season_start, player_fotmob_id,
         name_fantacalcio, name_fotmob,
         team_fantacalcio, team_fotmob,
-        canonical_role, match_method, confidence
+        canonical_role, match_method, confidence,
+        resolved_from_history
     )
     VALUES (
         :fantacalcio_id, :season_start, :player_fotmob_id,
         :name_fantacalcio, :name_fotmob,
         :team_fantacalcio, :team_fotmob,
-        :canonical_role, :match_method, :confidence
+        :canonical_role, :match_method, :confidence,
+        :resolved_from_history
     )
     ON CONFLICT (fantacalcio_id, season_start) DO UPDATE SET
-        player_fotmob_id = EXCLUDED.player_fotmob_id,
-        name_fotmob      = EXCLUDED.name_fotmob,
-        team_fotmob      = EXCLUDED.team_fotmob,
-        match_method     = EXCLUDED.match_method,
-        confidence       = EXCLUDED.confidence,
-        updated_at       = NOW()
+        player_fotmob_id    = EXCLUDED.player_fotmob_id,
+        name_fotmob         = EXCLUDED.name_fotmob,
+        team_fotmob         = EXCLUDED.team_fotmob,
+        match_method        = EXCLUDED.match_method,
+        confidence          = EXCLUDED.confidence,
+        resolved_from_history = EXCLUDED.resolved_from_history,
+        updated_at          = NOW()
 """)
 
 

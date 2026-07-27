@@ -262,6 +262,7 @@ class PlayerIdMapSchema(_CamelModel):
     canonical_role: Optional[str] = None
     match_method: str
     confidence: float
+    resolved_from_history: bool = False
     created_at: datetime
     updated_at: datetime
     # MANTRA 12-role fields (from player_mantra_roles, may be null)
@@ -317,6 +318,31 @@ class QuotationStatsResponse(_CamelModel):
     by_season_role: list[QuotationRoleAggregateSchema]
     n_teams: int
     coverage: dict[str, int]  # mapping method → row count
+
+
+class ManualResolutionSchema(_CamelModel):
+    """A single manual resolution record."""
+
+    id: int
+    fantacalcio_id: int
+    player_fotmob_id: int
+    season_start: int
+    name_fantacalcio: str
+    team_fantacalcio: Optional[str] = None
+    canonical_role: Optional[str] = None
+    name_fotmob: Optional[str] = None
+    team_fotmob: Optional[str] = None
+    resolved_by: Optional[str] = None
+    note: Optional[str] = None
+    created_at: datetime
+
+
+class ManualResolutionStatsResponse(_CamelModel):
+    """Response of ``GET /intelligence/id-mapping/resolutions/stats``."""
+
+    total: int
+    unique_players: int
+    by_season: dict[str, int]
 
 
 class IdMappingStatsResponse(_CamelModel):

@@ -176,7 +176,12 @@ if (-not $SkipMapping) {
     docker compose exec -e ML_DATABASE_URL="postgresql+psycopg2://fbref:${pgPassword}@db:5432/fbref" api python -m ml.data.run_id_mapping
     CheckLastExitCode
     Log "✅ ID Mapping completato"
-} else { Log "⏭️  STEP 9 — ID Mapping saltato" }
+
+    # Backfill manual resolutions (idempotent, safe to run every time)
+    Log "   Backfill risoluzioni manuali in manual_resolutions..."
+    docker compose exec -e ML_DATABASE_URL="postgresql+psycopg2://fbref:${pgPassword}@db:5432/fbref" api python scripts/backfill_manual_resolutions.py
+    Log "✅ Backfill risoluzioni completato"
+} else { Log "⏭️  STEP 9 — ID Mapping + backfill saltato" }
 
 # ── 10. MANTRA Computation ───────────────────────────────────────────────
 if (-not $SkipMantra) {

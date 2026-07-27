@@ -601,6 +601,168 @@ class DataRepository:
             "by_method": by_method,
         }
 
+    # ── Manual Resolutions (history) ──────────────────────────────────────────
+
+    async def list_manual_resolutions(
+        self,
+        db: AsyncSession,
+        *,
+        season_start: Optional[int] = None,
+        fantacalcio_id: Optional[int] = None,
+        player_fotmob_id: Optional[int] = None,
+        search: Optional[str] = None,
+        page: int = 1,
+        size: int = 50,
+    ) -> tuple[list[dict], int]:
+        """Paginated listing of ``manual_resolutions`` rows."""
+        from .models import ManualResolution
+
+        filters = []
+        if season_start is not None:
+            filters.append(ManualResolution.season_start == season_start)
+        if fantacalcio_id is not None:
+            filters.append(ManualResolution.fantacalcio_id == fantacalcio_id)
+        if player_fotmob_id is not None:
+            filters.append(ManualResolution.player_fotmob_id == player_fotmob_id)
+        if search:
+            filters.append(ManualResolution.name_fantacalcio.ilike(f"%{search}%"))
+
+        count_stmt = select(func.count()).select_from(ManualResolution)
+        if filters:
+            count_stmt = count_stmt.where(*filters)
+        total = (await db.execute(count_stmt)).scalar_one()
+
+        stmt = select(ManualResolution)
+        if filters:
+            stmt = stmt.where(*filters)
+        stmt = stmt.order_by(ManualResolution.created_at.desc())
+        stmt = stmt.offset(max(0, (page - 1) * size)).limit(max(1, size))
+
+        result = await db.execute(stmt)
+        rows = [r.to_dict() for r in result.scalars().all()]
+        return rows, total
+
+    async def get_manual_resolution(
+        self,
+        db: AsyncSession,
+        resolution_id: int,
+    ) -> Optional[dict]:
+        """Get a single resolution by ID."""
+        from .models import ManualResolution
+
+        stmt = select(ManualResolution).where(ManualResolution.id == resolution_id)
+        result = await db.execute(stmt)
+        row = result.scalar_one_or_none()
+        return row.to_dict() if row is not None else None
+
+    async def create_manual_resolution(
+        self,
+        db: AsyncSession,
+        *,
+        fantacalcio_id: int,
+        player_fotmob_id: int,
+        season_start: int,
+        name_fantacalcio: str,
+        team_fantacalcio: Optional[str] = None,
+        canonical_role: Optional[str] = None,
+        name_fotmob: Optional[str] = None,
+        team_fotmob: Optional[str] = None,
+        resolved_by: Optional[str] = None,
+        note: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Insert a manual resolution. Returns the created row or ``None`` if
+        the (fantacalcio_id, player_fotmob_id) pair already exists (ON CONFLICT
+        DO NOTHING)."""
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        from .models import ManualResolution
+
+        stmt = pg_insert(ManualResolution).values(
+            fantacalcio_id=fantacalcio_id,
+            player_fotmob_id=player_fotmob_id,
+            season_start=season_start,
+            name_fantacalcio=name_fantacalcio,
+            team_fantacalcio=team_fantacalcio,
+            canonical_role=canonical_role,
+            name_fotmob=name_fotmob,
+            team_fotmob=team_fotmob,
+            resolved_by=resolved_by,
+            note=note,
+        )
+        stmt = stmt.on_conflict_do_nothing(
+            index_elements=["fantacalcio_id", "player_fotmob_id"],
+        )
+        await db.execute(stmt)
+        await db.commit()
+
+        # Fetch the row we just inserted (or the existing one)
+        return await self.get_manual_resolution_for_fantacalcio(
+            db, fantacalcio_id=fantacalcio_id, player_fotmob_id=player_fotmob_id,
+        )
+
+    async def get_manual_resolution_for_fantacalcio(
+        self,
+        db: AsyncSession,
+        *,
+        fantacalcio_id: int,
+        player_fotmob_id: int,
+    ) -> Optional[dict]:
+        """Lookup a resolution by (fantacalcio_id, player_fotmob_id)."""
+        from .models import ManualResolution
+
+        stmt = select(ManualResolution).where(
+            and_(
+                ManualResolution.fantacalcio_id == fantacalcio_id,
+                ManualResolution.player_fotmob_id == player_fotmob_id,
+            )
+        ).order_by(ManualResolution.created_at.desc()).limit(1)
+        result = await db.execute(stmt)
+        row = result.scalar_one_or_none()
+        return row.to_dict() if row is not None else None
+
+    async def delete_manual_resolution(
+        self,
+        db: AsyncSession,
+        resolution_id: int,
+    ) -> bool:
+        """Delete a resolution by ID. Returns ``True`` if deleted."""
+        from .models import ManualResolution
+
+        stmt = select(ManualResolution).where(ManualResolution.id == resolution_id)
+        result = await db.execute(stmt)
+        row = result.scalar_one_or_none()
+        if row is None:
+            return False
+        await db.delete(row)
+        await db.commit()
+        return True
+
+    async def get_manual_resolution_stats(self, db: AsyncSession) -> dict:
+        """Aggregate statistics for manual resolutions."""
+        from .models import ManualResolution
+
+        total = (await db.execute(
+            select(func.count()).select_from(ManualResolution)
+        )).scalar_one()
+
+        unique_players = (await db.execute(
+            select(func.count(func.distinct(ManualResolution.fantacalcio_id)))
+            .select_from(ManualResolution)
+        )).scalar_one()
+
+        by_season_rows = (await db.execute(
+            select(ManualResolution.season_start, func.count().label("n"))
+            .select_from(ManualResolution)
+            .group_by(ManualResolution.season_start)
+            .order_by(ManualResolution.season_start.desc())
+        )).all()
+        by_season = {str(r.season_start): int(r.n) for r in by_season_rows}
+
+        return {
+            "total": int(total),
+            "unique_players": int(unique_players),
+            "by_season": by_season,
+        }
+
     async def update_id_mapping(
         self,
         db: AsyncSession,
@@ -692,6 +854,32 @@ class DataRepository:
 
         await db.commit()
         await db.refresh(mapping)
+
+        # If a valid FotMob ID was assigned, record it in the permanent history.
+        final_fotmob_id: int | None = mapping.player_fotmob_id
+        if final_fotmob_id is None and player_fotmob_id is not None and player_fotmob_id != -1:
+            final_fotmob_id = player_fotmob_id
+        if final_fotmob_id is not None:
+            try:
+                await self.create_manual_resolution(
+                    db,
+                    fantacalcio_id=fantacalcio_id,
+                    player_fotmob_id=final_fotmob_id,
+                    season_start=season_start,
+                    name_fantacalcio=mapping.name_fantacalcio,
+                    team_fantacalcio=mapping.team_fantacalcio,
+                    canonical_role=mapping.canonical_role,
+                    name_fotmob=mapping.name_fotmob or name_fotmob,
+                    team_fotmob=mapping.team_fotmob or team_fotmob,
+                    note=None,  # caller can pass note via the method if needed
+                )
+            except Exception:
+                log.warning(
+                    "Failed to record manual resolution for "
+                    "fantacalcio_id=%d / fotmob_id=%d",
+                    fantacalcio_id, final_fotmob_id,
+                )
+
         return mapping.to_dict()
 
     async def get_player_fotmob_history(

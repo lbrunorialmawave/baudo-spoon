@@ -126,8 +126,18 @@ container `db` (crea le tabelle base). Le migration successive in
     type db\migrations\004_extend_id_map_match_method.sql | docker compose exec -T db psql -U fbref -d fbref
     type db\migrations\005_fix_qt_norm_precision.sql | docker compose exec -T db psql -U fbref -d fbref
     type db\migrations\006_create_mantra_views.sql | docker compose exec -T db psql -U fbref -d fbref
+    type db\migrations\013_add_manual_resolutions.sql | docker compose exec -T db psql -U fbref -d fbref
+    type db\migrations\014_add_resolved_from_history.sql | docker compose exec -T db psql -U fbref -d fbref
 
-3.2 Verifica rapida che le tabelle esistano:
+    ⚠️  Le migration 007-012 non sono elencate qui perché dipendono da
+    contesto specifico; applicarle singolarmente se necessario.
+
+3.2 Dopo aver applicato le migration 013-014, backfillare le risoluzioni
+    manuali esistenti nella nuova tabella ``manual_resolutions``:
+
+    docker compose exec -e ML_DATABASE_URL="postgresql+psycopg2://fbref:DevPassword123@db:5432/fbref" api python scripts/backfill_manual_resolutions.py
+
+3.3 Verifica rapida che le tabelle esistano:
 
     docker compose exec db psql -U fbref -d fbref -c "\dt"
 
@@ -293,6 +303,41 @@ MANTRA.
 6B.3 I rimanenti unmatched (~5%) possono essere corretti manualmente
 dall'interfaccia ID Mapping (/id-mapping) o modificando direttamente
 la tabella `player_id_map`.
+
+
+================================================================================
+6B.4 SISTEMA DI RESOLUTION HISTORY (MANUAL RESOLUTIONS)
+================================================================================
+
+Le risoluzioni manuali fatte dall'operatore tramite UI o CSV vengono
+registrate nella tabella ``manual_resolutions`` (migration 013). Questo
+permette al pipeline di mapping di ricordare le associazioni anche dopo
+un nuovo scraping o re-mapping.
+
+Come funziona:
+  - **Pass 0** nel matching pipeline: prima dei 3 pass automatici
+    (exact → relaxed → fuzzy), il sistema carica tutte le risoluzioni
+    storiche da ``manual_resolutions`` e le applica direttamente.
+  - **Preservazione esplicita**: dopo il pass automatico, gli storici
+    vengono ri-applicati sopra (sia in ``run_id_mapping.py`` CLI che
+    nell'endpoint ``POST /intelligence/id-mapping/run``).
+  - **Registrazione automatica**: quando modifichi un mapping via UI
+    (PUT /intelligence/id-mapping/{id}), il sistema registra
+    automaticamente la risoluzione nella history.
+
+Endpoint API:
+  - ``GET /intelligence/id-mapping/resolutions`` — lista paginata
+  - ``GET /intelligence/id-mapping/resolutions/stats`` — statistiche
+  - ``DELETE /intelligence/id-mapping/resolutions/{id}`` — rimuovere
+    una risoluzione errata
+
+UI disponibile in: ``/id-mapping/resolutions`` (sezione "Res. History").
+
+Backfill iniziale (una tantum):
+  Dopo aver applicato la migration 013, backfillare le risoluzioni
+  manuali esistenti (match_method='manual') nella nuova tabella:
+
+    docker compose exec -e ML_DATABASE_URL="postgresql+psycopg2://fbref:DevPassword123@db:5432/fbref" api python scripts/backfill_manual_resolutions.py
 
 
 ================================================================================
@@ -509,6 +554,7 @@ Test optimizer via API:
 Ripristino rapido dopo aver spento tutto:
     docker compose up -d db redis api
     Get-Content db\migrations\*.sql | docker compose exec -T db psql -U fbref -d fbref
+    docker compose exec -e ML_DATABASE_URL="postgresql+psycopg2://fbref:DevPassword123@db:5432/fbref" api python scripts/backfill_manual_resolutions.py
 
 Spegnere tutto:
     docker compose down                 (mantiene volumi e dati)
