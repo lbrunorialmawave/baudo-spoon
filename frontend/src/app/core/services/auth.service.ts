@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { isPlatformBrowser } from '@angular/common';
 import { tap } from 'rxjs/operators';
 import { Observable } from 'rxjs';
+import { API_BASE_URL } from '../tokens/api-base-url.token';
 
 const ACCESS_KEY = 'fanta_access_token';
 const REFRESH_KEY = 'fanta_refresh_token';
@@ -29,7 +30,8 @@ interface RefreshResponse {
 export class AuthService {
   private readonly http = inject(HttpClient);
   private readonly platformId = inject(PLATFORM_ID);
-
+  private readonly baseUrl = inject(API_BASE_URL);
+  private readonly endpoint = `${this.baseUrl}/auth/`;
   readonly role = signal<'admin' | 'member' | null>(null);
   readonly isAuthenticated = signal(false);
 
@@ -40,7 +42,7 @@ export class AuthService {
   }
 
   login(email: string, password: string): Observable<LoginResponse> {
-    return this.http.post<LoginResponse>('/api/v1/auth/login', { email, password }).pipe(
+    return this.http.post<LoginResponse>(`${this.endpoint}login`, { email, password }).pipe(
       tap(res => {
         localStorage.setItem(ACCESS_KEY, res.access_token);
         localStorage.setItem(REFRESH_KEY, res.refresh_token);
@@ -50,7 +52,7 @@ export class AuthService {
   }
 
   register(email: string, password: string): Observable<LoginResponse> {
-    return this.http.post<LoginResponse>('/api/v1/auth/register', { email, password }).pipe(
+    return this.http.post<LoginResponse>(`${this.endpoint}register`, { email, password }).pipe(
       tap(res => {
         localStorage.setItem(ACCESS_KEY, res.access_token);
         localStorage.setItem(REFRESH_KEY, res.refresh_token);
@@ -61,14 +63,14 @@ export class AuthService {
 
   logout(): Observable<void> {
     const refreshToken = localStorage.getItem(REFRESH_KEY) ?? '';
-    return this.http.post<void>('/api/v1/auth/logout', { refresh_token: refreshToken }).pipe(
+    return this.http.post<void>(`${this.endpoint}logout`, { refresh_token: refreshToken }).pipe(
       tap(() => this._clear())
     );
   }
 
   refresh(): Observable<RefreshResponse> {
     const refreshToken = localStorage.getItem(REFRESH_KEY) ?? '';
-    return this.http.post<RefreshResponse>('/api/v1/auth/refresh', { refresh_token: refreshToken }).pipe(
+    return this.http.post<RefreshResponse>(`${this.endpoint}refresh`, { refresh_token: refreshToken }).pipe(
       tap(res => {
         localStorage.setItem(ACCESS_KEY, res.access_token);
         this._syncFromStorage();
