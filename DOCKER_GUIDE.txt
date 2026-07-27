@@ -2,6 +2,8 @@
                     DOCKER GUIDE — Fantacalcio Analysis Project
 ================================================================================
 
+d
+
 Stack: PostgreSQL 16 + Redis 7 + FastAPI (uvicorn) + ML pipeline + Selenium scraper.
 Tutti i comandi vanno eseguiti dalla root del progetto (dove si trova
 `docker-compose.yml`), salvo dove indicato diversamente.
