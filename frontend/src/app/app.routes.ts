@@ -19,64 +19,70 @@ export const routes: Routes = [
         path: 'dashboard',
         resolve: { clusterData: dataReadyResolver },
         loadComponent: () =>
-          import('./features/dashboard/dashboard.component').then(m => m.DashboardComponent),
+          import('./features/dashboard/dashboard.component').then((m) => m.DashboardComponent),
       },
       {
         path: 'players',
         loadComponent: () =>
-          import('./features/players/players.component').then(m => m.PlayersComponent),
+          import('./features/players/players.component').then((m) => m.PlayersComponent),
       },
       {
         path: 'quotations',
         loadComponent: () =>
-          import('./features/quotations/quotations.component').then(m => m.QuotationsComponent),
+          import('./features/quotations/quotations.component').then((m) => m.QuotationsComponent),
       },
       {
         path: 'matches',
+        canActivate: [adminGuard],
         loadComponent: () =>
-          import('./features/matches/matches.component').then(m => m.MatchesComponent),
+          import('./features/matches/matches.component').then((m) => m.MatchesComponent),
       },
       {
         path: 'predictions',
         loadComponent: () =>
-          import('./features/predictions/predictions.component').then(m => m.PredictionsComponent),
+          import('./features/predictions/predictions.component').then(
+            (m) => m.PredictionsComponent,
+          ),
       },
       {
         path: 'optimizer',
         loadComponent: () =>
-          import('./features/optimizer/optimizer.component').then(m => m.OptimizerComponent),
+          import('./features/optimizer/optimizer.component').then((m) => m.OptimizerComponent),
       },
       {
         path: 'auction',
         loadComponent: () =>
-          import('./features/auction/auction.component').then(m => m.AuctionComponent),
+          import('./features/auction/auction.component').then((m) => m.AuctionComponent),
       },
       {
         path: 'id-mapping',
+        canActivate: [adminGuard],
         loadComponent: () =>
-          import('./features/id-mapping/id-mapping.component').then(m => m.IdMappingComponent),
+          import('./features/id-mapping/id-mapping.component').then((m) => m.IdMappingComponent),
       },
       {
         path: 'admin',
         canActivate: [adminGuard],
         loadComponent: () =>
-          import('./features/admin/admin.component').then(m => m.AdminComponent),
+          import('./features/admin/admin.component').then((m) => m.AdminComponent),
       },
       {
         path: 'model-monitoring',
+        canActivate: [adminGuard],
         loadComponent: () =>
-          import('./features/model-monitoring/model-monitoring.component').then(m => m.ModelMonitoringComponent),
+          import('./features/model-monitoring/model-monitoring.component').then(
+            (m) => m.ModelMonitoringComponent,
+          ),
       },
     ],
   },
   {
     path: 'setup',
-    loadComponent: () =>
-      import('./features/setup/setup.component').then(m => m.SetupComponent),
+    loadComponent: () => import('./features/setup/setup.component').then((m) => m.SetupComponent),
   },
   {
     path: '**',
     loadComponent: () =>
-      import('./features/not-found/not-found.component').then(m => m.NotFoundComponent),
+      import('./features/not-found/not-found.component').then((m) => m.NotFoundComponent),
   },
 ];
