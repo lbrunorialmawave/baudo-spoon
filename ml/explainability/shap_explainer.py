@@ -110,6 +110,7 @@ class ShapExplainer:
         prediction: float,
         variance: float,
         prediction_interval: tuple[float, float],
+        external_features: dict[str, float] | None = None,
     ) -> PredictionExplanation:
         """Produce a PredictionExplanation for a single row (or batch average).
 
@@ -118,10 +119,18 @@ class ShapExplainer:
             prediction: The model's point prediction for this row.
             variance: Variance across ensemble base models.
             prediction_interval: (low, high) tuple.
+            external_features: Optional dict of extra feature columns to inject
+                into X_row before explanation (e.g. expert_rating,
+                bookmaker_signal from MultiSourceEnsemble). These appear as
+                named contributions in feature_contributions / shap_values.
 
         Returns:
             PredictionExplanation with SHAP values and coherence verified.
         """
+        if external_features:
+            X_row = X_row.copy()
+            for col, val in external_features.items():
+                X_row[col] = val
         if not _HAS_SHAP or self._explainer is None or self._preprocessor is None:
             return self._empty_explanation(prediction, variance, prediction_interval)
 

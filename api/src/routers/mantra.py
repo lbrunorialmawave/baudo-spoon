@@ -25,7 +25,7 @@ from fastapi.responses import ORJSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
-from ..deps import get_db, verify_api_key
+from ..deps import get_db, require_role
 
 log = logging.getLogger(__name__)
 
@@ -260,8 +260,8 @@ async def get_watchlist() -> ORJSONResponse:
 @router.post(
     "/run",
     response_class=ORJSONResponse,
-    summary="Execute MANTRA computation (API key required)",
-    dependencies=[Depends(verify_api_key)],
+    summary="Execute MANTRA computation (admin required)",
+    dependencies=[Depends(require_role("admin"))],
 )
 async def run_mantra(
     season_start: int = Query(2025, ge=2020, le=2030),

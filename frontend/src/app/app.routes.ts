@@ -1,8 +1,8 @@
 import { Routes } from '@angular/router';
 import { apiKeyGuard } from './core/guards/api-key.guard';
+import { adminGuard } from './core/guards/role.guard';
 import { dataReadyResolver } from './core/resolvers/data-ready.resolver';
 import { ShellComponent } from './shared/components/shell/shell.component';
-import { AdminComponent } from './features/admin/admin.component';
 
 export const routes: Routes = [
   {
@@ -58,7 +58,9 @@ export const routes: Routes = [
       },
       {
         path: 'admin',
-        component: AdminComponent,
+        canActivate: [adminGuard],
+        loadComponent: () =>
+          import('./features/admin/admin.component').then(m => m.AdminComponent),
       },
       {
         path: 'model-monitoring',

@@ -8,7 +8,7 @@ preserving its single-operator, single-process semantics:
 * The client owns the lifecycle: ``init`` → ``record`` / ``undo`` /
   ``projection`` / ``alternatives`` / ``summary`` / ``serialize`` →
   ``discard`` (or rely on server restart to clear all sessions).
-* All endpoints require a valid API key (``verify_api_key``).
+* All endpoints require a valid JWT with at least the ``member`` role.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
 from ..data_repository import DataRepository
-from ..deps import get_db, verify_api_key
+from ..deps import get_db, require_role
 from ..schemas import (
     AlternativesConfigSchema,
     AlternativesResponse,
@@ -40,6 +40,8 @@ from ..schemas import (
     RecordAssignmentRequest,
     RecordAssignmentResponse,
     SerializedAuctionStateResponse,
+    VarRankingItemSchema,
+    VarRankingResponse,
 )
 from ml.auction.models import (
     AlternativesConfig,
@@ -53,7 +55,8 @@ from ml.auction.orchestrator import (
     AuctionSession,
     deserialize_state,
 )
-from ml.auction.price_drift import classify_tier
+from ml.auction.price_drift import classify_tier, get_current_projection
+from ml.auction.var import VarEngine
 from ml.optimizer.inflation import InflationConfig
 from ml.optimizer.models import Player
 
@@ -202,7 +205,7 @@ def _get_session(request: Request, session_id: str) -> AuctionSession:
     "/init",
     response_model=InitializeAuctionResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(require_role("member"))],
 )
 async def init_auction(
     payload: InitializeAuctionRequest,
@@ -283,7 +286,7 @@ async def init_auction(
 @router.post(
     "/{session_id}/record",
     response_model=RecordAssignmentResponse,
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(require_role("member"))],
 )
 def record_assignment_endpoint(
     session_id: str,
@@ -319,7 +322,7 @@ def record_assignment_endpoint(
 @router.post(
     "/{session_id}/undo",
     response_model=AuctionSummarySchema,
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(require_role("member"))],
 )
 def undo_last_assignment_endpoint(
     session_id: str,
@@ -345,7 +348,7 @@ def undo_last_assignment_endpoint(
 @router.get(
     "/{session_id}/projection/{player_id}",
     response_model=ProjectionResponse,
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(require_role("member"))],
 )
 def get_projection_endpoint(
     session_id: str,
@@ -381,7 +384,7 @@ def get_projection_endpoint(
 @router.get(
     "/{session_id}/alternatives/{player_id}",
     response_model=AlternativesResponse,
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(require_role("member"))],
 )
 def get_alternatives_endpoint(
     session_id: str,
@@ -417,7 +420,7 @@ def get_alternatives_endpoint(
 @router.get(
     "/{session_id}/summary",
     response_model=AuctionSummarySchema,
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(require_role("member"))],
 )
 def get_summary_endpoint(
     session_id: str,
@@ -436,7 +439,7 @@ def get_summary_endpoint(
 @router.get(
     "/{session_id}/pool",
     response_model=list[AuctionPlayerSummarySchema],
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(require_role("member"))],
 )
 def list_pool_endpoint(
     session_id: str,
@@ -467,7 +470,7 @@ def list_pool_endpoint(
 @router.get(
     "/{session_id}/serialize",
     response_model=SerializedAuctionStateResponse,
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(require_role("member"))],
 )
 def serialize_session_endpoint(
     session_id: str,
@@ -483,7 +486,7 @@ def serialize_session_endpoint(
     "/deserialize",
     response_model=InitializeAuctionResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(require_role("member"))],
 )
 def deserialize_session_endpoint(
     payload: dict[str, object],
@@ -517,7 +520,7 @@ def deserialize_session_endpoint(
 @router.delete(
     "/{session_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(require_role("member"))],
 )
 def discard_session_endpoint(
     session_id: str,
@@ -532,3 +535,68 @@ def discard_session_endpoint(
         )
     del store[session_id]
     logger.info("auction_session_discarded session_id=%s", session_id)
+
+
+@router.get(
+    "/{session_id}/var-ranking",
+    response_model=VarRankingResponse,
+    dependencies=[Depends(require_role("member"))],
+    summary="VAR/ESV ranking of available players",
+)
+def get_var_ranking(
+    session_id: str,
+    request: Request,
+) -> VarRankingResponse:
+    """Returns available players ranked by Expected Surplus Value (ESV descending).
+
+    Uses EWMA price projections from the live session when available
+    (price_drift.get_current_projection), bypassing the uncalibrated DemandCurve.
+    """
+    store = _get_session_store(request)
+    if session_id not in store:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"session_id {session_id!r} not found",
+        )
+    session: AuctionSession = store[session_id]
+    state = session.state
+    pool = list(state.available_pool)
+
+    if not pool:
+        return VarRankingResponse(session_id=session_id, items=[], using_live_prices=True)
+
+    # Build EWMA price overrides for every available player
+    price_overrides: dict[str, float] = {
+        p.player_id: get_current_projection(state, p.player_id, pool)
+        for p in pool
+    }
+
+    players_input = [
+        {"player_id": p.player_id, "role": p.role, "projected_score": p.projected_score}
+        for p in pool
+    ]
+
+    engine = VarEngine(
+        total_budget=state.config.budget_initial,
+        roster_slots=dict(state.config.role_quotas),
+    )
+    results = engine.evaluate(players_input, price_overrides=price_overrides)
+
+    items = [
+        VarRankingItemSchema(
+            player_id=r.player_id,
+            role=r.role,
+            projected_score=next(
+                p.projected_score for p in pool if p.player_id == r.player_id
+            ),
+            var_score=r.var_score,
+            expected_price=r.expected_price,
+            esv=r.esv,
+            calibrated=r.calibrated,
+            buy_signal=r.esv > 0,
+        )
+        for r in results
+    ]
+
+    logger.info("var_ranking session_id=%s n=%d", session_id, len(items))
+    return VarRankingResponse(session_id=session_id, items=items, using_live_prices=True)

@@ -1,7 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-
-const API_KEY_STORAGE_KEY = 'fanta_api_key';
+import { AuthService } from '../../core/services/auth.service';
 
 @Component({
   selector: 'app-setup',
@@ -18,38 +17,63 @@ const API_KEY_STORAGE_KEY = 'fanta_api_key';
             FantaIntelligence
           </h1>
           <p class="mt-1 text-sm" style="color: var(--color-text-secondary)">
-            Enter your API key to continue
+            Accedi per continuare
           </p>
         </div>
 
         <form (submit)="onSubmit($event)" class="space-y-4">
           <div>
-            <label for="api-key" class="block text-sm font-medium mb-1.5"
+            <label for="email" class="block text-sm font-medium mb-1.5"
                    style="color: var(--color-text-secondary)">
-              API Key
+              Email
             </label>
             <input
-              id="api-key"
-              type="password"
-              autocomplete="current-password"
-              class="w-full rounded-lg border px-3 py-2 text-sm font-mono outline-none
+              id="email"
+              type="email"
+              autocomplete="email"
+              class="w-full rounded-lg border px-3 py-2 text-sm outline-none
                      focus:ring-2 focus:ring-brand-500/50 transition"
               style="background: var(--color-surface); border-color: var(--color-border);
                      color: var(--color-text-primary)"
-              placeholder="sk-..."
-              [value]="apiKey()"
-              (input)="apiKey.set($any($event.target).value)"
+              placeholder="you@example.com"
+              [value]="email()"
+              (input)="email.set($any($event.target).value)"
             />
           </div>
+
+          <div>
+            <label for="password" class="block text-sm font-medium mb-1.5"
+                   style="color: var(--color-text-secondary)">
+              Password
+            </label>
+            <input
+              id="password"
+              type="password"
+              autocomplete="current-password"
+              class="w-full rounded-lg border px-3 py-2 text-sm outline-none
+                     focus:ring-2 focus:ring-brand-500/50 transition"
+              style="background: var(--color-surface); border-color: var(--color-border);
+                     color: var(--color-text-primary)"
+              placeholder="••••••••"
+              [value]="password()"
+              (input)="password.set($any($event.target).value)"
+            />
+          </div>
+
+          @if (error()) {
+            <p class="text-sm" style="color: var(--color-danger, #ef4444)">
+              {{ error() }}
+            </p>
+          }
 
           <button
             type="submit"
             class="w-full rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold
                    text-white transition hover:bg-brand-600 focus:outline-none
                    focus:ring-2 focus:ring-brand-500/50 disabled:opacity-50"
-            [disabled]="!apiKey().trim()"
+            [disabled]="loading() || !email().trim() || !password().trim()"
           >
-            Continue to Dashboard
+            {{ loading() ? 'Accesso in corso…' : 'Accedi' }}
           </button>
         </form>
       </div>
@@ -57,14 +81,27 @@ const API_KEY_STORAGE_KEY = 'fanta_api_key';
   `,
 })
 export class SetupComponent {
-  readonly apiKey = signal('');
+  readonly email = signal('');
+  readonly password = signal('');
+  readonly loading = signal(false);
+  readonly error = signal('');
+
+  private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
 
   onSubmit(event: Event): void {
     event.preventDefault();
-    const key = this.apiKey().trim();
-    if (!key) return;
-    localStorage.setItem(API_KEY_STORAGE_KEY, key);
-    this.router.navigate(['/dashboard']);
+    if (!this.email().trim() || !this.password().trim()) return;
+
+    this.loading.set(true);
+    this.error.set('');
+
+    this.auth.login(this.email().trim(), this.password().trim()).subscribe({
+      next: () => this.router.navigate(['/dashboard']),
+      error: () => {
+        this.error.set('Email o password errati');
+        this.loading.set(false);
+      },
+    });
   }
 }

@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
 from ..data_repository import DataRepository
-from ..deps import get_db, rate_limit, verify_api_key
+from ..deps import get_db, rate_limit, require_role
 from ..schemas import (
     DefaultStrategiesResponse,
     MultiStrategyResultSchema,
@@ -35,6 +35,7 @@ from ..schemas import (
     StrategyProfileSchema,
 )
 from ml.optimizer.inflation import compute_role_percentile_map, estimate_effective_cost
+from ml.optimizer.win_probability import WinProbabilityConfig, estimate_completion_probability
 from ml.optimizer.models import (
     Formation,
     InflationConfig,
@@ -58,7 +59,7 @@ log = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/optimize",
     tags=["optimizer"],
-    dependencies=[Depends(verify_api_key), Depends(rate_limit)],
+    dependencies=[Depends(require_role("member")), Depends(rate_limit)],
 )
 
 
@@ -165,9 +166,32 @@ def _filter_strategies(
     return selected
 
 
+def _custom_strategies(schemas: list[StrategyProfileSchema]) -> list[StrategyProfile]:
+    """Convert client-supplied StrategyProfileSchema list → StrategyProfile dataclasses."""
+    out: list[StrategyProfile] = []
+    for s in schemas:
+        mbsr = (
+            (frozenset(s.min_budget_share_by_roles[0]), s.min_budget_share_by_roles[1])
+            if s.min_budget_share_by_roles is not None
+            else None
+        )
+        try:
+            out.append(StrategyProfile(
+                name=s.name,
+                role_weight=dict(s.role_weight),
+                min_budget_share_by_roles=mbsr,
+                max_top_tier_players=s.max_top_tier_players,
+                top_tier_cost_threshold=s.top_tier_cost_threshold,
+            ))
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid custom strategy {s.name!r}: {exc}") from exc
+    return out
+
+
 def _serialize_result(
     result: OptimizationResult,
     effective_cost_lookup: dict[str, float],
+    win_probability: Optional[float] = None,
 ) -> OptimizationResultSchema:
     """Translate the optimizer dataclass to the Pydantic response schema."""
     squad = [
@@ -196,6 +220,7 @@ def _serialize_result(
         big_teams_players_count=result.big_teams_players_count,
         formation_feasibility=result.formation_feasibility,
         diagnostics=result.diagnostics,
+        win_probability=win_probability,
     )
 
 
@@ -283,7 +308,11 @@ async def run_multi_strategy(
             ),
         )
 
-    strategies = _filter_strategies(req.strategy_names)
+    strategies = (
+        _custom_strategies(req.custom_strategies)
+        if req.custom_strategies
+        else _filter_strategies(req.strategy_names)
+    )
 
     try:
         multi = await asyncio.to_thread(
@@ -306,8 +335,16 @@ async def run_multi_strategy(
         for p in pool
     }
 
+    wp_config = WinProbabilityConfig()
     serialized = {
-        name: _serialize_result(res, effective_lookup)
+        name: _serialize_result(
+            res,
+            effective_lookup,
+            win_probability=await asyncio.to_thread(
+                estimate_completion_probability,
+                res.squad, config.budget, wp_config, config.inflation_config, config.num_participants,
+            ) if res.squad else None,
+        )
         for name, res in multi.results.items()
     }
     return MultiStrategyResultSchema(results=serialized)
@@ -320,11 +357,18 @@ async def run_multi_strategy(
 )
 async def run_single_strategy(
     req: OptimizationRequest,
-    strategy_name: str,
+    strategy_name: str = "",
     db: AsyncSession = Depends(get_db),
 ) -> OptimizationResultSchema:
     """Esegue l'ottimizzazione su una singola strategia (più veloce di ``/multi``)."""
-    strategy = _strategy_by_name(strategy_name)
+    if req.custom_strategies:
+        if len(req.custom_strategies) != 1:
+            raise HTTPException(status_code=422, detail="custom_strategies must have exactly 1 entry for /single")
+        strategy = _custom_strategies(req.custom_strategies)[0]
+    elif strategy_name:
+        strategy = _strategy_by_name(strategy_name)
+    else:
+        raise HTTPException(status_code=422, detail="Provide strategy_name or custom_strategies")
     repo = DataRepository(
         artifacts_dir=settings.artifacts_dir,
         r2_endpoint_url=settings.r2_endpoint_url,
@@ -377,4 +421,8 @@ async def run_single_strategy(
         )
         for p in pool
     }
-    return _serialize_result(result, effective_lookup)
+    wp = await asyncio.to_thread(
+        estimate_completion_probability,
+        result.squad, config.budget, WinProbabilityConfig(), config.inflation_config, config.num_participants,
+    ) if result.squad else None
+    return _serialize_result(result, effective_lookup, win_probability=wp)

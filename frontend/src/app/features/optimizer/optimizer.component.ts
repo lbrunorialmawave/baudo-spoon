@@ -2,7 +2,7 @@ import {
   Component, computed, inject, signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { DecimalPipe } from '@angular/common';
+import { DecimalPipe, PercentPipe } from '@angular/common';
 import { OptimizerService } from '../../core/services/optimizer.service';
 import { QuotationService } from '../../core/services/quotation.service';
 import {
@@ -41,7 +41,7 @@ const ALL_FORMATIONS: FormationConfig[] = [
 @Component({
   selector: 'app-optimizer',
   standalone: true,
-  imports: [FormsModule, DecimalPipe, SkeletonComponent, ErrorBoundaryComponent],
+  imports: [FormsModule, DecimalPipe, PercentPipe, SkeletonComponent, ErrorBoundaryComponent],
   template: `
     <div class="optimizer-page">
 
@@ -232,6 +232,28 @@ const ALL_FORMATIONS: FormationConfig[] = [
             }
           </div>
 
+          @if (singleStrategySelected()) {
+            <button class="advanced-toggle" style="margin-top:4px"
+                    (click)="showCustomWeights.set(!showCustomWeights())">
+              Personalizza pesi {{ showCustomWeights() ? '▲' : '▼' }}
+            </button>
+            @if (showCustomWeights()) {
+              <div class="custom-weights-panel">
+                @for (role of ['P','D','C','A']; track role) {
+                  <div class="field-group">
+                    <label class="field-label" style="display:flex;justify-content:space-between">
+                      <span>{{ role }}</span>
+                      <span class="field-hint">{{ customWeights()[role] | number:'1.2-2' }}</span>
+                    </label>
+                    <input type="range" min="0.1" max="3" step="0.05"
+                           [ngModel]="customWeights()[role]"
+                           (ngModelChange)="setCustomWeight(role, $event)" />
+                  </div>
+                }
+              </div>
+            }
+          }
+
           <button class="run-btn" (click)="run()" [disabled]="running() || !canRun()">
             @if (running()) {
               <span class="spinner"></span> Running…
@@ -303,6 +325,15 @@ const ALL_FORMATIONS: FormationConfig[] = [
                   <p class="stat-label">Status</p>
                   <p class="stat-value" [class.text-green]="r.status === 'Optimal'">{{ r.status }}</p>
                 </div>
+                @if (r.winProbability != null) {
+                  <div class="stat-card" title="Simulazione Monte Carlo — stima parametrica">
+                    <p class="stat-label">Budget OK est.</p>
+                    <p class="stat-value" [class.text-green]="r.winProbability >= 0.7"
+                       [style.color]="r.winProbability < 0.4 ? '#EF4444' : r.winProbability < 0.7 ? '#F59E0B' : ''">
+                      {{ r.winProbability | percent:'1.0-0' }}
+                    </p>
+                  </div>
+                }
               </div>
 
               <div class="formation-row">
@@ -658,6 +689,11 @@ export class OptimizerComponent {
 
   // ── Strategies ────────────────────────────────────────
   readonly selectedStrategies = signal(new Set(['BALANCED', 'SUPER_DEFENSIVE', 'SUPER_OFFENSIVE', 'MIXED']));
+  readonly strategyProfilesMap = signal<Record<string, StrategyProfile>>({});
+  readonly showCustomWeights = signal(false);
+  readonly customWeights = signal<Record<string, number>>({ P: 1, D: 1, C: 1, A: 1 });
+
+  readonly singleStrategySelected = computed(() => this.selectedStrategies().size === 1);
 
   // ── Results ───────────────────────────────────────────
   readonly running = signal(false);
@@ -690,6 +726,9 @@ export class OptimizerComponent {
         const names = res.strategies.map((s: StrategyProfile) => s.name);
         this.availableStrategies.set(names);
         this.selectedStrategies.set(new Set(names));
+        const map: Record<string, StrategyProfile> = {};
+        res.strategies.forEach((s: StrategyProfile) => { map[s.name] = s; });
+        this.strategyProfilesMap.set(map);
       },
       error: () => { /* keep fallback */ },
     });
@@ -699,6 +738,12 @@ export class OptimizerComponent {
     this.selectedStrategies.update(s => {
       const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n;
     });
+    const sel = this.selectedStrategies();
+    if (sel.size === 1) {
+      const profile = this.strategyProfilesMap()[[...sel][0]];
+      if (profile) this.customWeights.set({ ...profile.roleWeight });
+    }
+    if (sel.size !== 1) this.showCustomWeights.set(false);
   }
 
   toggleFormation(label: string): void {
@@ -750,7 +795,8 @@ export class OptimizerComponent {
       ruleset: this.ruleset(),
       preferredFormation,
       riskAversion: this.riskAversion(),
-      strategyNames: [...this.selectedStrategies()],
+      strategyNames: this.showCustomWeights() ? null : [...this.selectedStrategies()],
+      customStrategies: this.showCustomWeights() ? this._buildCustomStrategies() : null,
     }).subscribe({
       next: res => {
         this.results.set(res);
@@ -762,6 +808,22 @@ export class OptimizerComponent {
         this.running.set(false);
       },
     });
+  }
+
+  setCustomWeight(role: string, value: number): void {
+    this.customWeights.update(w => ({ ...w, [role]: +value }));
+  }
+
+  private _buildCustomStrategies(): StrategyProfile[] {
+    const [name] = [...this.selectedStrategies()];
+    const base = this.strategyProfilesMap()[name];
+    return [{
+      name,
+      roleWeight: { ...this.customWeights() },
+      minBudgetShareByRoles: base?.minBudgetShareByRoles ?? null,
+      maxTopTierPlayers: base?.maxTopTierPlayers ?? null,
+      topTierCostThreshold: base?.topTierCostThreshold ?? null,
+    }];
   }
 
   resultFor(name: string): OptimizationResult | null {

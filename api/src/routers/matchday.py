@@ -20,7 +20,7 @@ from fastapi.responses import ORJSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 import sqlalchemy as sa
 
-from ..deps import get_db, verify_api_key
+from ..deps import get_db, require_admin, require_role
 
 log = logging.getLogger(__name__)
 
@@ -198,7 +198,7 @@ async def list_consigliati(
     return ORJSONResponse({"matchday": matchday, "min_probability": min_probability, "count": len(rows), "items": rows})
 
 
-@router.post("/scrape", summary="Trigger scraper (API key required)", dependencies=[Depends(verify_api_key)])
+@router.post("/scrape", summary="Trigger scraper (admin required)", dependencies=[Depends(require_admin)])
 async def trigger_matchday_scrape(
     matchday: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),

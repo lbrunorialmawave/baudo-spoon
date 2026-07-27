@@ -3,9 +3,10 @@ import { isPlatformBrowser } from '@angular/common';
 import { CanActivateFn, Router } from '@angular/router';
 import { AuthService } from '../services/auth.service';
 
-/** Guards any authenticated route — redirects to /setup if no valid token. */
-export const apiKeyGuard: CanActivateFn = () => {
+/** Guards admin-only routes — redirects to /dashboard if role is not admin. */
+export const adminGuard: CanActivateFn = () => {
   if (!isPlatformBrowser(inject(PLATFORM_ID))) return true;
   const auth = inject(AuthService);
-  return auth.isAuthenticated() ? true : inject(Router).createUrlTree(['/setup']);
+  if (!auth.isAuthenticated()) return inject(Router).createUrlTree(['/setup']);
+  return auth.role() === 'admin' ? true : inject(Router).createUrlTree(['/dashboard']);
 };

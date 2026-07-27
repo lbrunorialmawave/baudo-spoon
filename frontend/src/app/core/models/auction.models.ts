@@ -177,3 +177,22 @@ export interface SerializedAuctionStateResponse {
 export interface DeserializeAuctionRequest {
   payload: Readonly<Record<string, unknown>>;
 }
+
+// ── VAR / ESV ranking ────────────────────────────────────────────────────────
+
+export interface VarRankingItem {
+  playerId: string;
+  role: AuctionRole;
+  projectedScore: number;
+  varScore: number;
+  expectedPrice: number;
+  esv: number;
+  calibrated: boolean;
+  buySignal: boolean;
+}
+
+export interface VarRankingResponse {
+  sessionId: string;
+  items: VarRankingItem[];
+  usingLivePrices: boolean;
+}

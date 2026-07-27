@@ -410,6 +410,7 @@ class OptimizationRequest(_CamelModel):
     preferred_formation: Optional[FormationSchema] = None
     risk_aversion: float = Field(default=0.0, ge=0.0)
     strategy_names: Optional[list[str]] = None  # None ⇒ tutte e 4 di default
+    custom_strategies: Optional[list["StrategyProfileSchema"]] = None  # overrides strategy_names
     pool_override: Optional[list[PlayerSchema]] = Field(default=None, max_length=500)
 
 
@@ -441,6 +442,7 @@ class OptimizationResultSchema(_CamelModel):
     big_teams_players_count: int
     formation_feasibility: dict[str, bool]
     diagnostics: dict[str, Any]
+    win_probability: Optional[float] = None
 
 
 class MultiStrategyResultSchema(_CamelModel):
@@ -662,3 +664,24 @@ class SerializedAuctionStateResponse(_CamelModel):
     """Response di ``GET /auction/{session_id}/serialize``."""
 
     payload: dict[str, object]
+
+
+class VarRankingItemSchema(_CamelModel):
+    """Single player entry in the VAR/ESV ranking."""
+
+    player_id: str
+    role: str
+    projected_score: float
+    var_score: float
+    expected_price: float
+    esv: float
+    calibrated: bool
+    buy_signal: bool  # esv > 0
+
+
+class VarRankingResponse(_CamelModel):
+    """Response of ``GET /auction/{session_id}/var-ranking``."""
+
+    session_id: str
+    items: list[VarRankingItemSchema]
+    using_live_prices: bool

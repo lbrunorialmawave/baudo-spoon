@@ -371,6 +371,12 @@
 }
 .faded { color:var(--color-text-secondary); }
 .accent { color:var(--color-accent); font-weight:600; }
+.esv-badge {
+  display:inline-block; padding:1px 6px; border-radius:4px;
+  font-size:10px; font-weight:700; letter-spacing:.04em;
+  &.esv-buy { background:#22C55E22; color:#22C55E; border:1px solid #22C55E55; }
+  &.esv-hold { background:transparent; color:var(--color-text-secondary); border:1px solid var(--color-border); }
+}
 
 /* Cards (generic) */
 .card {

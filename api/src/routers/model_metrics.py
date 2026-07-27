@@ -15,12 +15,12 @@ from fastapi.responses import ORJSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..deps import get_db, verify_api_key
+from ..deps import get_db, require_role
 
 router = APIRouter(
     prefix="/model-metrics",
     tags=["model-metrics"],
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(require_role("member"))],
 )
 
 

@@ -34,6 +34,26 @@ INTEGRATION BOUNDARY (ml rearchitecture):
   It does NOT replace or duplicate the dynamic EWMA price drift model.
   The boundary is: PlayerV2.expected_auction_price → baseline_cost (input) → price_drift
   (dynamic adjustment during the live auction).
+
+PRICE MODEL BOUNDARY (three co-existing models):
+
+  1. ml.optimizer.inflation.estimate_effective_cost
+     Used for: pre-auction squad cost estimation in the optimizer.
+     Input: Player.cost, role_percentile, InflationConfig.
+     NOT used during a live auction.
+
+  2. ml.auction.price_drift (EWMA)
+     Used for: live session price projections, updated after every assignment.
+     Entry points: get_current_projection(), compute_expected_price().
+     This is the authoritative expected price during an active session.
+
+  3. ml.auction.var.DemandCurve
+     Used for: pre-session ESV/VAR ranking when no auction history exists.
+     During a live session, bypass with override_expected_price from (2).
+     Entry: VarEngine.evaluate(players, price_overrides={id: price, ...}).
+
+  Consumers (e.g. bookmaker signals from Phase 6) should enter at (2) as an
+  additional input to compute_baseline_cost, not by replacing the EWMA layer.
 """
 
 from __future__ import annotations

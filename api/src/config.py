@@ -49,6 +49,15 @@ class APISettings(BaseSettings):
         description="Secret token for /intelligence route authentication (set API_API_KEY_SECRET)",
     )
 
+    # JWT auth (set API_JWT_SECRET to a long random string in production)
+    jwt_secret: str = Field(
+        default="dev-insecure-secret-change-me",
+        description="HMAC-SHA256 secret for signing JWTs (set API_JWT_SECRET)",
+    )
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 15
+    jwt_refresh_token_expire_days: int = 30
+
     # Rate limiting (sliding-window via Redis INCR + EXPIRE)
     rate_limit_requests: int = Field(
         default=60,

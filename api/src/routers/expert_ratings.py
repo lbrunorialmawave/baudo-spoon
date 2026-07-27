@@ -18,7 +18,7 @@ from fastapi.responses import ORJSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
-from ..deps import get_db, verify_api_key
+from ..deps import get_db, require_role
 
 log = logging.getLogger(__name__)
 
@@ -116,7 +116,7 @@ async def get_player_expert_ratings(
     })
 
 
-@router.post("/ratings", summary="Add or update an expert rating", dependencies=[Depends(verify_api_key)])
+@router.post("/ratings", summary="Add or update an expert rating", dependencies=[Depends(require_role("member"))])
 async def create_expert_rating(
     body: ExpertRatingCreate,
     db: AsyncSession = Depends(get_db),

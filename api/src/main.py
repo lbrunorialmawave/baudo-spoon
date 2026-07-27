@@ -13,7 +13,7 @@ from .config import settings
 from .data_repository import DataRepository
 from .logging_cfg import configure_logging
 from .routers import auction, leagues, matches, optimizer, quotations, seasons, stats
-from .routers import admin_scrape, expert_ratings, mantra, matchday, model_metrics
+from .routers import admin_scrape, auth, expert_ratings, mantra, matchday, model_metrics
 from .routers.intelligence import intelligence_router, predictions_router
 
 configure_logging(settings.log_level)
@@ -81,6 +81,7 @@ app.add_middleware(
 
 # ── Routers ────────────────────────────────────────────────────────────────────
 
+app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(matches.router, prefix=settings.api_prefix)
 app.include_router(leagues.router, prefix=settings.api_prefix)
 app.include_router(seasons.router, prefix=settings.api_prefix)

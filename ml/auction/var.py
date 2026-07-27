@@ -196,6 +196,7 @@ class ExpectedSurplusValue:
         demand_curve: DemandCurve,
         budget_per_slot: float,
         baseline_var: float,
+        override_expected_price: float | None = None,
     ) -> "ExpectedSurplusValue":
         """Compute ESV for a player.
 
@@ -204,11 +205,15 @@ class ExpectedSurplusValue:
             demand_curve: Parametric or fitted demand curve.
             budget_per_slot: Credits allocated per roster slot for this role.
             baseline_var: Normalisation factor (e.g. mean positive VAR in role).
+            override_expected_price: If provided, use this price instead of
+                demand_curve.expected_price(). Pass the EWMA projection from
+                price_drift when inside a live session.
 
         Returns:
             ExpectedSurplusValue with esv = perf_value - expected_price.
         """
-        expected_px = demand_curve.expected_price(var.var_score)
+        expected_px = override_expected_price if override_expected_price is not None \
+            else demand_curve.expected_price(var.var_score)
 
         # Performance value: fraction of budget proportional to VAR above replacement
         # Uses baseline_var to normalise; clamped at 0 for negative VAR players
@@ -258,11 +263,18 @@ class VarEngine:
         self.roster_slots = roster_slots or {"P": 3, "D": 8, "C": 8, "A": 6}
         self.percentile_threshold = percentile_threshold
 
-    def evaluate(self, players: list[dict]) -> list[ExpectedSurplusValue]:
+    def evaluate(
+        self,
+        players: list[dict],
+        price_overrides: dict[str, float] | None = None,
+    ) -> list[ExpectedSurplusValue]:
         """Compute VAR and ESV for all players.
 
         Args:
             players: List of dicts with player_id, role, projected_score.
+            price_overrides: Optional map of player_id → expected_price.
+                When provided (e.g. from EWMA price_drift in a live session),
+                bypasses DemandCurve for those players.
 
         Returns:
             List of ExpectedSurplusValue sorted by ESV descending.
@@ -276,6 +288,7 @@ class VarEngine:
         budget_per_slot = self.total_budget / total_slots if total_slots > 0 else self.total_budget
 
         results: list[ExpectedSurplusValue] = []
+        overrides = price_overrides or {}
 
         for role, role_players in by_role.items():
             scores = [float(p["projected_score"]) for p in role_players]
@@ -295,7 +308,11 @@ class VarEngine:
 
             for v in vars_:
                 esv = ExpectedSurplusValue.compute(
-                    v, self.demand_curve, budget_per_slot, baseline_var
+                    v,
+                    self.demand_curve,
+                    budget_per_slot,
+                    baseline_var,
+                    override_expected_price=overrides.get(v.player_id),
                 )
                 results.append(esv)
 

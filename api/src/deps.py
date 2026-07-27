@@ -3,9 +3,11 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import AsyncGenerator
+from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, Request
-from fastapi.security import APIKeyHeader
+from fastapi import Depends, HTTPException, Request
+from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import settings
@@ -42,6 +44,88 @@ async def verify_api_key(
             headers={"WWW-Authenticate": "ApiKey"},
         )
     return api_key
+
+
+# ── JWT role-based auth ───────────────────────────────────────────────────────
+
+_bearer_scheme = HTTPBearer(auto_error=False)
+
+_ROLE_HIERARCHY = {"member": 0, "admin": 1}
+
+
+def require_role(required: str):
+    """FastAPI dependency that requires a JWT Bearer token with at least the given role.
+
+    Role hierarchy: admin > member.
+    Raises 401 if token missing/invalid, 403 if role insufficient.
+    """
+    async def _dep(
+        credentials: Annotated[
+            HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)
+        ],
+    ) -> dict:
+        if credentials is None:
+            raise HTTPException(
+                status_code=401,
+                detail="Missing Authorization header",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        try:
+            payload = jwt.decode(
+                credentials.credentials,
+                settings.jwt_secret,
+                algorithms=[settings.jwt_algorithm],
+            )
+        except JWTError:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid or expired token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        role = payload.get("role", "")
+        if _ROLE_HIERARCHY.get(role, -1) < _ROLE_HIERARCHY.get(required, 0):
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        return payload
+
+    return _dep
+
+
+async def require_admin(
+    api_key: Annotated[str | None, Depends(_api_key_scheme)] = None,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)] = None,
+) -> dict:
+    """Accept either a valid API key (machine-to-machine / cron) or an admin JWT.
+
+    Used on scraper-trigger endpoints so scheduled jobs can authenticate with
+    the static API key while human admins use their JWT.
+    """
+    # API key path (cron / machine-to-machine)
+    if api_key and settings.api_key_secret and api_key == settings.api_key_secret:
+        return {"role": "admin", "sub": "api-key"}
+
+    # JWT path
+    if credentials:
+        try:
+            payload = jwt.decode(
+                credentials.credentials,
+                settings.jwt_secret,
+                algorithms=[settings.jwt_algorithm],
+            )
+            if _ROLE_HIERARCHY.get(payload.get("role", ""), -1) >= _ROLE_HIERARCHY["admin"]:
+                return payload
+            raise HTTPException(status_code=403, detail="Admin role required")
+        except JWTError:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid or expired token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    raise HTTPException(
+        status_code=401,
+        detail="Authentication required (API key or Bearer token)",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 # ── Rate limiting (fixed-window via atomic Redis Lua) ────────────────────────

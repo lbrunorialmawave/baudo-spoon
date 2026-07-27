@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
 from ..data_repository import DataRepository
-from ..deps import get_db, rate_limit, verify_api_key
+from ..deps import get_db, rate_limit, require_role
 from ..schemas import (
     IdMappingStatsResponse,
     PlayerIdMapSchema,
@@ -240,7 +240,7 @@ async def get_quotation_stats(
 id_mapping_router = APIRouter(
     prefix="/intelligence/id-mapping",
     tags=["id-mapping"],
-    dependencies=[Depends(verify_api_key), Depends(rate_limit)],
+    dependencies=[Depends(require_role("member")), Depends(rate_limit)],
 )
 
 

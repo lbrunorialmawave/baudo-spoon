@@ -1,6 +1,7 @@
 import { Component, signal, afterRenderEffect, inject, PLATFORM_ID, computed, HostListener } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { isPlatformBrowser } from '@angular/common';
+import { AuthService } from '../../../core/services/auth.service';
 
 interface NavItem {
   path: string;
@@ -114,7 +115,7 @@ const NAV_ITEMS: readonly NavItem[] = [
 
         <!-- Nav -->
         <nav class="sidebar-nav">
-          @for (item of navItems; track item.path) {
+          @for (item of navItems(); track item.path) {
             <a
               [routerLink]="item.path"
               routerLinkActive="nav-link--active"
@@ -133,10 +134,10 @@ const NAV_ITEMS: readonly NavItem[] = [
 
         <!-- API key status -->
         <div class="sidebar-footer">
-          <div class="status-dot" [class.status-dot--ok]="apiKeyPresent()"></div>
+          <div class="status-dot" [class.status-dot--ok]="isAuthenticated()"></div>
           @if (!collapsed()) {
             <span class="status-label">
-              {{ apiKeyPresent() ? 'API Key Set' : 'No API Key' }}
+              {{ isAuthenticated() ? (isAdmin() ? 'Admin' : 'Member') : 'Not logged in' }}
             </span>
           }
         </div>
@@ -197,7 +198,7 @@ const NAV_ITEMS: readonly NavItem[] = [
             </button>
           </div>
           <nav class="mobile-menu-nav">
-            @for (item of navItems; track item.path) {
+            @for (item of navItems(); track item.path) {
               <a
                 [routerLink]="item.path"
                 routerLinkActive="mobile-menu-link--active"
@@ -211,9 +212,9 @@ const NAV_ITEMS: readonly NavItem[] = [
             }
           </nav>
           <div class="mobile-menu-footer">
-            <div class="status-dot" [class.status-dot--ok]="apiKeyPresent()"></div>
+            <div class="status-dot" [class.status-dot--ok]="isAuthenticated()"></div>
             <span class="status-label">
-              {{ apiKeyPresent() ? 'API Key Set' : 'No API Key' }}
+              {{ isAuthenticated() ? (isAdmin() ? 'Admin' : 'Member') : 'Not logged in' }}
             </span>
           </div>
         </div>
@@ -559,23 +560,26 @@ const NAV_ITEMS: readonly NavItem[] = [
   ],
 })
 export class ShellComponent {
-  readonly navItems = NAV_ITEMS;
+  private readonly auth = inject(AuthService);
+  private readonly platformId = inject(PLATFORM_ID);
+
   readonly collapsed = signal(false);
   readonly menuOpen = signal(false);
-  readonly apiKeyPresent = signal(false);
 
-  /** Mobile bottom bar: max 4 items + "More" button. */
-  readonly mobileNavItems = computed<readonly NavItem[]>(() => NAV_ITEMS.slice(0, 4));
+  readonly isAuthenticated = this.auth.isAuthenticated;
+  readonly isAdmin = computed(() => this.auth.role() === 'admin');
 
-  private readonly platformId = inject(PLATFORM_ID);
+  /** Filter Admin nav item for non-admins. Server-side guard is the real enforcement. */
+  readonly navItems = computed<readonly NavItem[]>(() =>
+    this.isAdmin() ? NAV_ITEMS : NAV_ITEMS.filter(n => n.path !== '/admin')
+  );
+
+  /** Mobile bottom bar: max 4 items from visible nav + "More" button. */
+  readonly mobileNavItems = computed<readonly NavItem[]>(() => this.navItems().slice(0, 4));
 
   constructor() {
     afterRenderEffect(() => {
       if (!isPlatformBrowser(this.platformId)) return;
-
-      this.apiKeyPresent.set(!!localStorage.getItem('fanta_api_key'));
-
-      // Auto-collapse sidebar below md breakpoint on initial load.
       if (window.innerWidth < 1024) {
         this.collapsed.set(true);
       }

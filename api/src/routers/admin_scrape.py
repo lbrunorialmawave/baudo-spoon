@@ -23,14 +23,14 @@ from fastapi.responses import ORJSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
-from ..deps import get_db, verify_api_key
+from ..deps import get_db, require_admin
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/admin",
     tags=["admin"],
-    dependencies=[Depends(verify_api_key)],
+    dependencies=[Depends(require_admin)],
 )
 
 

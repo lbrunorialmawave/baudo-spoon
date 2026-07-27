@@ -123,6 +123,7 @@ export interface OptimizationRequest {
   preferredFormation?: FormationConfig | null;
   riskAversion?: number;
   strategyNames?: string[] | null;
+  customStrategies?: StrategyProfile[] | null;
 }
 
 export interface SquadPlayer {
@@ -150,6 +151,7 @@ export interface OptimizationResult {
   bigTeamsPlayersCount: number;
   formationFeasibility: Record<string, boolean>;
   diagnostics: Record<string, unknown>;
+  winProbability: number | null;
 }
 
 export interface MultiStrategyResult {

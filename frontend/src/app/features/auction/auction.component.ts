@@ -18,6 +18,7 @@ import {
   AuctionTier,
   ProjectionResponse,
   AlternativesResponse,
+  VarRankingItem,
 } from '../../core/models/auction.models';
 import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.component';
 import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/error-boundary.component';
@@ -309,6 +310,51 @@ function makeParticipants(
               </div>
             }
 
+            <!-- VAR/ESV ranking -->
+            @if (varRanking().length || varLoading()) {
+              <div class="card">
+                <p class="card-section-label">
+                  Migliori affari
+                  @if (varLoading()) { <span class="spinner-sm" style="margin-left:6px"></span> }
+                </p>
+                @if (varRanking().length) {
+                  <div class="history-table-wrap">
+                    <table class="squad-table">
+                      <thead>
+                        <tr>
+                          <th>Player</th><th>R</th>
+                          <th class="num">ESV</th><th class="num">E.Price</th><th>Signal</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (v of varRanking(); track v.playerId) {
+                          <tr>
+                            <td>{{ v.playerId }}</td>
+                            <td>
+                              <span class="role-badge"
+                                    [style.color]="roleColor(v.role)"
+                                    [style.border-color]="roleColor(v.role)">{{ v.role }}</span>
+                            </td>
+                            <td class="num" [style.color]="v.esv > 0 ? 'var(--color-success, #22C55E)' : 'var(--color-text-secondary)'">
+                              {{ v.esv | number:'1.1-1' }}
+                            </td>
+                            <td class="num faded">{{ v.expectedPrice | number:'1.0-0' }}</td>
+                            <td>
+                              @if (v.buySignal) {
+                                <span class="esv-badge esv-buy">BUY</span>
+                              } @else {
+                                <span class="esv-badge esv-hold">—</span>
+                              }
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                }
+              </div>
+            }
+
           </main>
         </div>
       </div>
@@ -545,6 +591,9 @@ export class AuctionComponent {
   readonly recordError = signal<string | null>(null);
   readonly recordRejectionCode = signal<string | null>(null);
   readonly undoLoading = signal(false);
+
+  readonly varRanking = signal<VarRankingItem[]>([]);
+  readonly varLoading = signal(false);
 
   // ── Pool autocomplete ─────────────────────────────────────────────────
   readonly poolSuggestions = signal<AuctionPlayerSummary[]>([]);
@@ -820,8 +869,19 @@ export class AuctionComponent {
             }
           });
         }
+        this.refreshVarRanking();
       },
       error: () => this.summaryLoading.set(false),
+    });
+  }
+
+  refreshVarRanking(): void {
+    const sid = this.sessionId();
+    if (!sid) return;
+    this.varLoading.set(true);
+    this.auctionService.varRanking(sid).subscribe({
+      next: res => { this.varRanking.set(res.items); this.varLoading.set(false); },
+      error: () => this.varLoading.set(false),
     });
   }
 

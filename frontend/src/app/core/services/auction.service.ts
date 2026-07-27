@@ -14,6 +14,7 @@ import {
   RecordAssignmentRequest,
   RecordAssignmentResponse,
   SerializedAuctionStateResponse,
+  VarRankingResponse,
 } from '../models/auction.models';
 
 /**
@@ -143,5 +144,12 @@ export class AuctionService {
   /** DELETE /auction/{sessionId} — drop a session (204 on success). */
   discard(sessionId: string): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/auction/${sessionId}`);
+  }
+
+  /** GET /auction/{sessionId}/var-ranking — ESV-ranked available players. */
+  varRanking(sessionId: string): Observable<VarRankingResponse> {
+    return this.http.get<VarRankingResponse>(
+      `${this.baseUrl}/auction/${sessionId}/var-ranking`,
+    );
   }
 }

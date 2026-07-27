@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..data_repository import DataRepository
-from ..deps import get_db, rate_limit, verify_api_key
+from ..deps import get_db, rate_limit, require_role
 from ..models import PlayerSeasonStat, Season
 from ..schemas import (
     AlternativesResponse,
@@ -179,7 +179,7 @@ async def list_next_season_predictions(
 intelligence_router = APIRouter(
     prefix="/intelligence",
     tags=["intelligence"],
-    dependencies=[Depends(verify_api_key), Depends(rate_limit)],
+    dependencies=[Depends(require_role("member")), Depends(rate_limit)],
 )
 
 
