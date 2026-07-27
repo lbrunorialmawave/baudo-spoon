@@ -537,7 +537,7 @@ export class IdMappingComponent {
 
   /** Type-safe check for the optional `resolvedFromHistory` field. */
   readonly showFromHistory = (item: PlayerIdMapping): boolean =>
-    'resolvedFromHistory' in item && (item as Record<string, unknown>).resolvedFromHistory === true;
+    (item as unknown as Record<string, unknown>)['resolvedFromHistory'] === true;
 
   readonly toggleSort = (field: SortField) => {
     if (this.sortField() === field) {
