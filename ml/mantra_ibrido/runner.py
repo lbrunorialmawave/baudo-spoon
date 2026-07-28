@@ -69,7 +69,9 @@ def run_hybrid_computation(
              config.PESO_MANTRA, config.PESO_ML)
 
     # ── Merge ─────────────────────────────────────────────────────────────────
-    merged = merge_datasets(mantra_path, ml_path)
+    # Optional ID-map file bridges fantacalcio_id → player_fotmob_id
+    id_map_path = output_dir / "player_id_map.json"
+    merged = merge_datasets(mantra_path, ml_path, id_map_path=id_map_path)
 
     season = merged["meta"].get("season_start")
     if season is None:

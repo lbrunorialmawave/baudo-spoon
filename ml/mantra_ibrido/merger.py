@@ -3,6 +3,10 @@
 The merger aligns the two datasets on ``player_fotmob_id`` (primary key) and
 falls back to normalised player-name matching when the ID is unavailable.
 
+An optional **id-map file** (exported from ``player_id_map`` DB table) bridges
+``fantacalcio_id → player_fotmob_id`` so that players without a pre-resolved
+``player_fotmob_id`` in the MANTRA artefact can still be matched.
+
 Edge cases handled
 ------------------
 *   ``results_latest.json`` does not exist → all players marked without ML data
@@ -26,7 +30,35 @@ def _normalise(name: str) -> str:
     return re.sub(r"\s+", " ", name.strip().lower())
 
 
-def merge_datasets(mantra_path: Path, ml_path: Path) -> dict[str, Any]:
+def load_id_map(id_map_path: Path | str | None) -> dict[int, int]:
+    """Load a ``{fantacalcio_id: player_fotmob_id}`` mapping from a JSON file.
+
+    Expected JSON format (list of objects):
+    ``[{"fantacalcio_id": 123, "player_fotmob_id": 456, ...}, ...]``
+    """
+    if id_map_path is None:
+        return {}
+    path = Path(id_map_path) if isinstance(id_map_path, str) else id_map_path
+    if not path.exists():
+        log.warning("ID map not found at %s — skipping fantacalcio_id bridge", path)
+        return {}
+    with path.open("r", encoding="utf-8") as f:
+        rows: list[dict[str, Any]] = json.load(f)
+    mapping: dict[int, int] = {}
+    for row in rows:
+        fc_id = row.get("fantacalcio_id")
+        fm_id = row.get("player_fotmob_id")
+        if fc_id is not None and fm_id is not None:
+            mapping[int(fc_id)] = int(fm_id)
+    log.info("Loaded ID map: %d entries", len(mapping))
+    return mapping
+
+
+def merge_datasets(
+    mantra_path: Path,
+    ml_path: Path,
+    id_map_path: Path | None = None,
+) -> dict[str, Any]:
     """Merge MANTRA and ML JSON artefacts into a single enriched structure.
 
     Parameters
@@ -35,6 +67,10 @@ def merge_datasets(mantra_path: Path, ml_path: Path) -> dict[str, Any]:
         Path to ``mantra_results_{season}.json``.
     ml_path:
         Path to ``results_latest.json``.
+    id_map_path:
+        Optional path to a JSON file with the ``player_id_map`` table contents.
+        When provided, the merger uses it to resolve ``fantacalcio_id →
+        player_fotmob_id`` for MANTRA players that lack the field.
 
     Returns
     -------
@@ -50,6 +86,9 @@ def merge_datasets(mantra_path: Path, ml_path: Path) -> dict[str, Any]:
     mantra_players: list[dict[str, Any]] = mantra.get("players", [])
     mantra_meta: dict[str, Any] = mantra.get("meta", {})
     mantra_classifications: dict[str, Any] = mantra.get("classifications", {})
+
+    # ── Load optional ID map ──────────────────────────────────────────────────
+    fc_to_fm: dict[int, int] = load_id_map(id_map_path)
 
     # ── Load ML (optional — no crash if missing) ──────────────────────────────
     ml_predictions: list[dict[str, Any]] = []
@@ -110,22 +149,30 @@ def merge_datasets(mantra_path: Path, ml_path: Path) -> dict[str, Any]:
     # ── Enrich each MANTRA player ─────────────────────────────────────────────
     match_by_id = 0
     match_by_name = 0
+    match_by_bridge = 0
     no_ml = 0
 
     for player in mantra_players:
         pid = player.get("player_fotmob_id")
+        fc_id = player.get("fantacalcio_id")
+
+        # Bridge via ID map if direct fotmob_id is missing
+        if pid is None and fc_id is not None and int(fc_id) in fc_to_fm:
+            pid = fc_to_fm[int(fc_id)]
+            player["player_fotmob_id"] = pid  # enrich the player dict
+            log.debug("Bridged fantacalcio_id=%s → fotmob_id=%s for %s",
+                      fc_id, pid, player.get("player_name"))
+
         pname = _normalise(str(player.get("player_name", "")))
         pteam = _normalise(str(player.get("team", "")))
 
         matched: dict[str, Any] | None = None
-        match_key: str | None = None
 
         # 1. Primary: match by fotmob_id
         if pid is not None:
             matched = ml_by_id.get(int(pid))
             if matched is not None:
                 match_by_id += 1
-                match_key = "fotmob_id"
 
         # 2. Fallback: match by normalised name + team
         if matched is None:
@@ -134,8 +181,10 @@ def merge_datasets(mantra_path: Path, ml_path: Path) -> dict[str, Any]:
                 cand_team = _normalise(str(candidate.get("teamName", candidate.get("team_name", ""))))
                 if not pteam or not cand_team or pteam == cand_team:
                     matched = candidate
-                    match_by_name += 1
-                    match_key = "name"
+                    if pid is not None and int(pid) == candidate.get("player_fotmob_id"):
+                        match_by_bridge += 1
+                    else:
+                        match_by_name += 1
 
         if matched is not None:
             player["has_ml_data"] = True
@@ -144,8 +193,9 @@ def merge_datasets(mantra_path: Path, ml_path: Path) -> dict[str, Any]:
             player["expected_minutes"] = matched.get("expected_minutes") or matched.get("expectedMinutes")
 
             # Enrich with VAR data
-            if pid is not None and int(pid) in var_by_id:
-                v = var_by_id[int(pid)]
+            resolved_id = pid if pid is not None else matched.get("player_fotmob_id")
+            if resolved_id is not None and int(resolved_id) in var_by_id:
+                v = var_by_id[int(resolved_id)]
                 player["var_score"] = v.get("var_score")
                 player["esv"] = v.get("esv")
 
@@ -164,8 +214,8 @@ def merge_datasets(mantra_path: Path, ml_path: Path) -> dict[str, Any]:
             no_ml += 1
 
     log.info(
-        "Merge complete: %d matched by fotmob_id, %d by name, %d without ML data",
-        match_by_id, match_by_name, no_ml,
+        "Merge complete: %d by fotmob_id, %d by bridge, %d by name, %d without ML data",
+        match_by_id, match_by_bridge, match_by_name, no_ml,
     )
 
     # ── Assemble merged meta ──────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
   IdMappingListResponse,
+  IdMappingRunResponse,
   IdMappingStatsResponse,
   ManualResolutionListResponse,
   ManualResolutionStatsResponse,
@@ -91,5 +92,31 @@ export class IdMappingService {
   /** Elimina una risoluzione manuale. */
   deleteResolution(id: number): Observable<{ status: string; id: number }> {
     return this.http.delete<{ status: string; id: number }>(`${this.endpoint}/resolutions/${id}`);
+  }
+
+  /** Esporta tutti i mapping come array JSON (per il merger ibrido). */
+  exportMappings(): Observable<Array<{
+    fantacalcio_id: number;
+    player_fotmob_id: number;
+    season_start: number;
+    match_method: string;
+  }>> {
+    return this.http.get<Array<{
+      fantacalcio_id: number;
+      player_fotmob_id: number;
+      season_start: number;
+      match_method: string;
+    }>>(`${this.endpoint}/export`);
+  }
+
+  /** Avvia il pipeline automatico di ID mapping. */
+  runAutoMapping(opts: {
+    seasonStart?: number;
+    leagueName?: string;
+  } = {}): Observable<IdMappingRunResponse> {
+    let params = new HttpParams();
+    if (opts.seasonStart != null) params = params.set('season_start', opts.seasonStart);
+    if (opts.leagueName)          params = params.set('league_name', opts.leagueName);
+    return this.http.post<IdMappingRunResponse>(`${this.endpoint}/run`, null, { params });
   }
 }

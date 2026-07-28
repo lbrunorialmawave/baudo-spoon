@@ -148,7 +148,7 @@ const HYBRID_LABELS = [
           } @else {
             <div class="overflow-x-auto rounded-lg border"
                  style="border-color:var(--color-border)">
-              <table class="w-full text-sm">
+              <table class="w-full text-sm" style="border-collapse:collapse">
                 <thead>
                   <tr style="background:var(--color-surface)">
                     <th class="w-8 px-3 py-2 text-left font-medium text-xs"
@@ -156,24 +156,23 @@ const HYBRID_LABELS = [
                     <th class="px-3 py-2 text-left font-medium text-xs cursor-pointer"
                         style="color:var(--color-text-secondary)"
                         (click)="setSort('playerName')">Player</th>
-                    <th class="px-3 py-2 text-left font-medium text-xs hidden sm:table-cell"
+                    <th class="px-3 py-2 text-left font-medium text-xs"
+                        style="color:var(--color-text-secondary)">Team</th>
+                    <th class="px-3 py-2 text-left font-medium text-xs"
                         style="color:var(--color-text-secondary)">Ruolo</th>
                     <th class="px-3 py-2 text-right font-medium text-xs cursor-pointer"
                         style="color:var(--color-text-secondary)"
                         (click)="setSort('FP_Corr')">FP Corr</th>
                     <th class="px-3 py-2 text-right font-medium text-xs cursor-pointer"
                         style="color:var(--color-text-secondary)"
-                        (click)="setSort('predictedFantavoto')">Predicted</th>
+                        (click)="setSort('predictedFantavoto')">Pred</th>
                     <th class="px-3 py-2 text-right font-medium text-xs cursor-pointer"
                         style="color:var(--color-text-secondary)"
-                        (click)="setSort('fpIbrido')">FP Ibrido</th>
-                    <th class="px-3 py-2 text-right font-medium text-xs hidden md:table-cell cursor-pointer"
+                        (click)="setSort('fpIbrido')">FP Ib</th>
+                    <th class="px-3 py-2 text-right font-medium text-xs cursor-pointer"
                         style="color:var(--color-text-secondary)"
                         (click)="setSort('confidenceScore')">Conf</th>
-                    <th class="px-3 py-2 text-right font-medium text-xs hidden lg:table-cell cursor-pointer"
-                        style="color:var(--color-text-secondary)"
-                        (click)="setSort('expectedValue')">Pts Stag</th>
-                    <th class="px-3 py-2 text-right font-medium text-xs hidden lg:table-cell cursor-pointer"
+                    <th class="px-3 py-2 text-right font-medium text-xs cursor-pointer"
                         style="color:var(--color-text-secondary)"
                         (click)="setSort('fpGap')">Gap</th>
                     <th class="px-3 py-2 text-left font-medium text-xs"
@@ -185,24 +184,25 @@ const HYBRID_LABELS = [
                     <tr class="cursor-pointer hover:opacity-80"
                         style="border-color:var(--color-border)"
                         (click)="selectedPlayer.set(p)">
-                      <td class="w-8 px-3 py-2 text-xs font-mono"
+                      <td class="w-8 px-3 py-2 text-xs font-mono align-top pt-3"
                           style="color:var(--color-text-secondary)">{{ i + 1 }}</td>
                       <td class="px-3 py-2">
-                        <p class="font-medium truncate max-w-36 sm:max-w-52"
+                        <p class="font-medium text-sm truncate max-w-32"
                            style="color:var(--color-text-primary)">{{ p.playerName }}</p>
-                        <p class="text-xs truncate" style="color:var(--color-text-secondary)">{{ p.team }}</p>
                       </td>
-                      <td class="px-3 py-2 hidden sm:table-cell"
+                      <td class="px-3 py-2 text-xs align-top pt-3"
+                          style="color:var(--color-text-secondary)">{{ p.team }}</td>
+                      <td class="px-3 py-2 text-xs align-top pt-3"
                           style="color:var(--color-text-secondary)">{{ p.ruoloPrimario }}</td>
-                      <td class="px-3 py-2 text-right font-mono text-xs"
+                      <td class="px-3 py-2 text-right text-xs font-mono align-top pt-3"
                           style="color:var(--color-text-secondary)">{{ (p.FP_Corr ?? '—') | number:'1.1-1' }}</td>
-                      <td class="px-3 py-2 text-right font-mono text-xs"
+                      <td class="px-3 py-2 text-right text-xs font-mono align-top pt-3"
                           style="color:var(--color-accent);font-weight:600">
                         {{ (p.predictedFantavoto ?? '—') | number:'1.2-2' }}
                       </td>
-                      <td class="px-3 py-2 text-right">
-                        <div class="flex items-center justify-end gap-1.5">
-                          <div class="w-14 h-1.5 rounded-full overflow-hidden"
+                      <td class="px-3 py-2 text-right align-top pt-3">
+                        <div class="flex items-center justify-end gap-1">
+                          <div class="w-10 h-1.5 rounded-full overflow-hidden shrink-0"
                                style="background:var(--color-surface-raised)">
                             <div class="h-full rounded-full"
                                  [style]="'background:var(--color-accent);width:' + (p.fpIbrido ?? 0) + '%'"></div>
@@ -212,49 +212,37 @@ const HYBRID_LABELS = [
                           </span>
                         </div>
                       </td>
-                      <td class="px-3 py-2 text-right hidden md:table-cell">
+                      <td class="px-3 py-2 text-right align-top pt-3 whitespace-nowrap">
                         @if (p.confidenceScore != null) {
-                          <div class="flex items-center justify-end gap-1.5">
-                            <div class="w-12 h-1.5 rounded-full overflow-hidden"
-                                 style="background:var(--color-surface-raised)">
-                              <div class="h-full rounded-full"
-                                   [style]="'width:' + p.confidenceScore + '%;background:'
-                                   + (p.confidenceScore >= 70 ? '#16a34a' : p.confidenceScore >= 40 ? '#d97706' : '#dc2626')">
-                              </div>
-                            </div>
-                            <span class="font-mono text-xs"
-                                  [style]="'color:' + (p.confidenceScore >= 70 ? '#16a34a' : p.confidenceScore >= 40 ? '#d97706' : '#dc2626')">
-                              {{ p.confidenceScore | number:'1.0-0' }}
-                            </span>
-                          </div>
+                          <span class="inline-flex items-center gap-1 font-mono text-xs"
+                                [style]="'color:' + (p.confidenceScore >= 70 ? '#16a34a' : p.confidenceScore >= 40 ? '#d97706' : '#dc2626')">
+                            <span class="inline-block w-2 h-2 rounded-full shrink-0"
+                                  [style]="'background:' + (p.confidenceScore >= 70 ? '#16a34a' : p.confidenceScore >= 40 ? '#d97706' : '#dc2626')"></span>
+                            {{ p.confidenceScore | number:'1.0-0' }}
+                          </span>
                         } @else { <span style="color:var(--color-text-secondary)">—</span> }
                       </td>
-                      <td class="px-3 py-2 text-right font-mono text-xs hidden lg:table-cell"
-                          style="color:var(--color-text-secondary)">
-                        {{ p.expectedValue != null ? (p.expectedValue | number:'1.0-0') : '—' }}
-                      </td>
-                      <td class="px-3 py-2 text-right hidden lg:table-cell">
+                      <td class="px-3 py-2 text-right align-top pt-3">
                         @if (p.fpGap != null) {
                           <span class="inline-flex items-center gap-0.5 font-mono text-xs"
                                 [style]="'color:' + (p.fpGap >= 0 ? '#16a34a' : '#ea580c')">
-                            @if (p.fpGap >= 0) {
-                              <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><path d="M5 0l5 8H0z"/></svg>
-                            } @else {
-                              <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><path d="M0 2h10L5 10z"/></svg>
-                            }
+                            @if (p.fpGap >= 0) { <span>▲</span> } @else { <span>▼</span> }
                             {{ p.fpGap | number:'1.1-1' }}
                           </span>
                         } @else { <span style="color:var(--color-text-secondary)">—</span> }
                       </td>
-                      <td class="px-3 py-2">
+                      <td class="px-3 py-2 align-top pt-3">
                         <div class="flex flex-wrap gap-1">
                           @for (l of p.hybridLabels; track l) {
                             @if (labelColor(l); as c) {
-                              <span class="inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                              <span class="inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap"
                                     [style]="'background:' + c + '22;color:' + c + ';border:1px solid ' + c + '44'">
                                 {{ l }}
                               </span>
                             }
+                          }
+                          @if (!p.hasMlData && p.hybridLabels.length === 0) {
+                            <span class="text-[10px]" style="color:var(--color-text-secondary)">no ML</span>
                           }
                         </div>
                       </td>
@@ -267,7 +255,7 @@ const HYBRID_LABELS = [
             <!-- Pagination -->
             <div class="mt-3 flex items-center justify-between text-xs"
                  style="color:var(--color-text-secondary)">
-              <span>{{ filteredHybrid().length }} players</span>
+              <span>{{ totalDisplayed }} / {{ filterTotal }} players</span>
               <div class="flex gap-2">
                 <button class="rounded border px-3 py-1 disabled:opacity-40"
                         [disabled]="hybridPage() <= 1"
@@ -445,7 +433,26 @@ export class PredictionsComponent {
     { label: '<30', value: -1 },
   ];
 
-  readonly totalPages = computed(() => Math.max(1, Math.ceil(this.filteredHybrid().length / this.hybridPageSize())));
+  readonly totalPages = computed(() => Math.max(1, Math.ceil(this.filterTotal() / this.hybridPageSize())));
+  readonly filterTotal = computed(() => {
+    let items = this.hybridItems();
+    const q = this.hybridSearch().toLowerCase();
+    const ruolo = this.hybridRuolo();
+    const confMin = this.hybridConfidenceMin();
+    const labels = this.activeLabels();
+    if (q) items = items.filter(p => p.playerName.toLowerCase().includes(q));
+    if (ruolo) items = items.filter(p => p.ruoloPrimario === ruolo);
+    if (confMin !== null) {
+      if (confMin === -1) items = items.filter(p => (p.confidenceScore ?? 100) < 30);
+      else items = items.filter(p => (p.confidenceScore ?? 0) >= confMin);
+    }
+    if (labels.size > 0) {
+      items = items.filter(p => p.hybridLabels.some(l => labels.has(l)));
+    }
+    return items.length;
+  });
+
+  readonly totalDisplayed = computed(() => this.filteredHybrid().length);
 
   readonly filteredHybrid = computed(() => {
     let items = this.hybridItems();
@@ -621,6 +628,18 @@ export class PredictionsComponent {
     // Load hybrid data on init
     this.loadHybridData();
     this.loadConfig();
+
+    // Reload hybrid data when page or sort changes
+    effect(() => {
+      // Read signals to track them as dependencies
+      this.hybridPage();
+      this.sortField();
+      this.sortDir();
+      // Debounce: only reload if not the initial load
+      if (!this.hybridLoading()) {
+        this.loadHybridData();
+      }
+    });
 
     // Load next season lazily when tab selected
     effect(() => {

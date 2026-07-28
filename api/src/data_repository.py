@@ -508,6 +508,32 @@ class DataRepository:
         if canonical_role is not None:
             filters.append(PlayerIdMap.canonical_role == canonical_role)
         if matched_only:
+
+    # ── Export all ID mappings ────────────────────────────────────────────────
+
+    async def export_id_mappings(self, db: AsyncSession) -> list[dict]:
+        """Return all ``player_id_map`` rows where ``player_fotmob_id`` is set.
+
+        Used by the hybrid merger to bridge ``fantacalcio_id → player_fotmob_id``.
+        """
+        result = await db.execute(
+            select(
+                PlayerIdMap.fantacalcio_id,
+                PlayerIdMap.player_fotmob_id,
+                PlayerIdMap.season_start,
+                PlayerIdMap.match_method,
+            ).where(PlayerIdMap.player_fotmob_id.is_not(None))
+        )
+        rows = result.all()
+        return [
+            {
+                "fantacalcio_id": int(r.fantacalcio_id),
+                "player_fotmob_id": int(r.player_fotmob_id),
+                "season_start": int(r.season_start),
+                "match_method": str(r.match_method),
+            }
+            for r in rows
+        ]
             filters.append(PlayerIdMap.player_fotmob_id.is_not(None))
         if mantra_role is not None:
             mantra_filters.append(

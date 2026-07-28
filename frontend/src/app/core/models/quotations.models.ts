@@ -146,3 +146,13 @@ export interface UpdateIdMappingRequest {
   ruoloPrimario?: string | null;
   dataValidated?: boolean | null;
 }
+
+/** Risposta dal pipeline automatico di ID mapping. */
+export interface IdMappingRunResponse {
+  status: string;
+  total: number;
+  matched: number;
+  unmatched: number;
+  matchRatePct: number;
+  byMethod: Record<string, number>;
+}

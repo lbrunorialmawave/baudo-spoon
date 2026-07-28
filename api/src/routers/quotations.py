@@ -638,3 +638,24 @@ async def delete_manual_resolution(
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Resolution {resolution_id} not found")
     return ORJSONResponse(content={"status": "deleted", "id": resolution_id})
+
+
+@id_mapping_router.get(
+    "/export",
+    response_class=ORJSONResponse,
+    summary="Export all ID mappings as JSON",
+    description=(
+        "Returns a compact JSON array of ``{fantacalcio_id, player_fotmob_id, "
+        "season_start, match_method}`` suitable for download and offline use. "
+        "Use this file as the ``id_map_path`` parameter of the hybrid merger."
+    ),
+    responses={
+        200: {"description": "List of ID mappings"},
+    },
+)
+async def export_id_mappings(
+    repo: DataRepository = Depends(get_repository),
+    db: AsyncSession = Depends(get_db),
+) -> ORJSONResponse:
+    mappings = await repo.export_id_mappings(db=db)
+    return ORJSONResponse(content=mappings)
