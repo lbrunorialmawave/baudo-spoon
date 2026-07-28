@@ -762,7 +762,8 @@ def build_player_id_map(
                 "canonical_role": row.get("canonical_role"),
                 "match_method": "manual",
                 "confidence": 1.0,
-            "resolved_from_history": True,
+                "resolved_from_history": True,
+            })
         log.info(
             "  historical matches applied: %d (from %d resolutions)",
             len(results), len(historical),
