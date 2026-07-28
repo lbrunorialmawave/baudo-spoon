@@ -486,15 +486,25 @@ async def list_hybrid_predictions(
         "expected_value": "expectedValue",
         "prezzo_massimo": "prezzoMassimo",
         "hybrid_labels": "hybridLabels",
+        # Mixed-case keys that must pass through unchanged
+        "FP_Corr": "FP_Corr",
+        "CP_Corr": "CP_Corr",
+        "FP_Mantra": "FP_Mantra",
+        "Prezzo_Massimo": "prezzoMassimo",
+        "Fase7": "Fase7",
     }
 
     def _to_camel(key: str) -> str:
         if key in _CAMEL_OVERRIDES:
             return _CAMEL_OVERRIDES[key]
-        # Keys already camelCase or with mixed case (FP_Corr) pass through
+        # Keys already camelCase pass through unchanged
         if "_" not in key:
             return key
-        # Generic snake_case fallback
+        # Mixed-case keys with underscore (FP_Corr, CP_Corr, FP_Mantra, Prezzo_Massimo, Fase7)
+        # contain acronym parts — pass them through as-is
+        if any(c.isupper() for c in key):
+            return key
+        # Generic snake_case → camelCase
         parts = key.split("_")
         return parts[0] + "".join(p.capitalize() for p in parts[1:])
 
