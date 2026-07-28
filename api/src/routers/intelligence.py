@@ -464,11 +464,21 @@ async def list_hybrid_predictions(
     start = (page - 1) * size
     items = players[start:start + size]
 
+    # Transform snake_case keys to camelCase for the frontend
+    def _to_camel(key: str) -> str:
+        parts = key.split("_")
+        return parts[0] + "".join(p.capitalize() for p in parts[1:])
+
+    camel_items = [
+        {_to_camel(k): v for k, v in p.items()}
+        for p in items
+    ]
+
     return ORJSONResponse({
         "total": total,
         "page": page,
         "size": size,
-        "items": items,
+        "items": camel_items,
         "meta": data.get("meta"),
     })
 
