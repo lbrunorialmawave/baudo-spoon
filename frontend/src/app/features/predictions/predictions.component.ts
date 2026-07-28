@@ -539,7 +539,7 @@ export class PredictionsComponent {
   readonly HYBRID_LABELS = HYBRID_LABELS;
 
   // ── Derived status messages ───────────────────────────
-  readonly readinessMessage = computed<string | null>(() => {
+  readonly readinessMessage = computed<string[] | null>(() => {
     const status = this.hybridStatus();
     if (!status) return null;
 
