@@ -21,6 +21,7 @@ const METHOD_LABELS: Record<string, string> = {
   exact_relaxed_role: 'Exact (relaxed role)',
   fuzzy_name: 'Fuzzy',
   fotmob_suggest: '🔍 Suggest',
+  propagated: '🔄 Propagated',
   manual: '👤 Manual',
   unmatched: '❌ Unmatched',
 };
@@ -29,6 +30,7 @@ const METHOD_COLORS: Record<string, string> = {
   unmatched: '#EF4444',
   fuzzy_name: '#F59E0B',
   fotmob_suggest: '#06B6D4',
+  propagated: '#14B8A6',
   exact_relaxed_role: '#22C55E',
   exact_name_team_role_season: '#3B82F6',
   exact_name_team: '#3B82F6',

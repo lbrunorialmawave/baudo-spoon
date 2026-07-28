@@ -769,8 +769,11 @@ def build_player_id_map(
             len(results), len(historical),
         )
 
-    # ── Pass 1: exact match on (last_name, team, role) ──────────────────
-    # Exclude players already matched by Pass 0.
+    # ── Pass 0.5: propagate high-confidence mappings across seasons ──────
+    # If the same fantacalcio_id was already matched in a previous season
+    # (e.g. via Pass 0 manual resolutions or a previous season's run),
+    # re-use that mapping for all later seasons without re-running matching.
+    # Exclude fuzzy_name and unmatched since they're not reliable enough.
     remaining = quotazioni[
         ~quotazioni.apply(
             lambda r: (int(r["fantacalcio_id"]), int(r["season_start"])) in matched_keys,
@@ -778,6 +781,45 @@ def build_player_id_map(
         )
     ].copy()
 
+    log.info(
+        "Pass 0.5: propagating high-confidence mappings across seasons …"
+        " (%d already matched)", len(matched_keys),
+    )
+    propagated = 0
+    still_remaining_mask = [True] * len(remaining)
+    for idx, (_, row) in enumerate(remaining.iterrows()):
+        fc_id = int(row["fantacalcio_id"])
+        existing = [
+            r for r in results
+            if r["fantacalcio_id"] == fc_id
+            and r["match_method"] not in ("unmatched", "fuzzy_name")
+        ]
+        if not existing:
+            continue
+        best = max(existing, key=lambda r: r["confidence"])
+        season_key = (fc_id, int(row["season_start"]))
+        if season_key in matched_keys:
+            continue
+        matched_keys.add(season_key)
+        still_remaining_mask[idx] = False
+        results.append({
+            "fantacalcio_id": fc_id,
+            "season_start": int(row["season_start"]),
+            "player_fotmob_id": best["player_fotmob_id"],
+            "name_fantacalcio": row["name"],
+            "name_fotmob": best["name_fotmob"],
+            "team_fantacalcio": row["team"],
+            "team_fotmob": best.get("team_fotmob"),
+            "canonical_role": row["canonical_role"],
+            "match_method": "propagated",
+            "confidence": round(min(best["confidence"] * 0.95, 0.99), 3),
+            "resolved_from_history": best.get("resolved_from_history", False),
+        })
+        propagated += 1
+    log.info("  propagated: %d", propagated)
+    remaining = remaining[still_remaining_mask].copy()
+
+    # ── Pass 1: exact match on (last_name, team, role) ──────────────────
     log.info("Pass 1: exact match on (surname, team, role) … (%d remaining)", len(remaining))
     quotazioni_with_role = remaining.rename(columns={"role": "canonical_role"})
     matched, unmatched = _exact_match(quotazioni_with_role, ref)
@@ -836,6 +878,7 @@ def build_player_id_map(
         if best is None:
             still_unmatched.append({
                 "fantacalcio_id": int(row["fantacalcio_id"]),
+                "season_start": int(row["season_start"]),
                 "name": row["name"],
                 "team": row["team"],
                 "canonical_role": row["canonical_role"],
@@ -890,7 +933,7 @@ def build_player_id_map(
         if len(candidates) == 1:
             # Single unambiguous result — accept it automatically.
             c = candidates[0]
-            key = (case["fantacalcio_id"], int(unmatched["season_start"].iloc[0]))
+            key = (case["fantacalcio_id"], case["season_start"])
             if key in {(r["fantacalcio_id"], r["season_start"]) for r in results}:
                 continue
             results.append({
@@ -917,10 +960,9 @@ def build_player_id_map(
         (r["fantacalcio_id"], r["season_start"]) for r in results
     }
     for case in still_unmatched:
-        key = (case["fantacalcio_id"], int(unmatched["season_start"].iloc[0]))
+        key = (case["fantacalcio_id"], case["season_start"])
         if key in matched_keys:
             continue
-        # Re-derive the team_fantacalcio for the missing row.
         results.append({
             "fantacalcio_id": key[0],
             "season_start": key[1],
