@@ -25,9 +25,14 @@ log = logging.getLogger(__name__)
 
 
 def _normalise(name: str) -> str:
-    """Lower-case, strip, and collapse whitespace for fuzzy matching."""
+    """Lower-case, strip, drop accents/apostrophes/hyphens, collapse whitespace."""
     import re
-    return re.sub(r"\s+", " ", name.strip().lower())
+    import unicodedata
+    nfkd = unicodedata.normalize("NFKD", str(name))
+    ascii_str = nfkd.encode("ascii", "ignore").decode("ascii")
+    # Drop apostrophes, hyphens, dots so "D'Ambrosio" → "dambrosio", "De Ketelaere" → "de ketelaere"
+    ascii_str = re.sub(r"['`.\-]", "", ascii_str)
+    return re.sub(r"\s+", " ", ascii_str.strip().lower())
 
 
 def load_id_map(id_map_path: Path | str | None) -> dict[int, int]:
@@ -115,6 +120,7 @@ def merge_datasets(
     # Also build a name-based index for fallback matching.
     ml_by_id: dict[int, dict[str, Any]] = {}
     ml_by_name: dict[str, dict[str, Any]] = {}
+    ml_by_surname: dict[str, list[dict[str, Any]]] = {}
 
     for pred in ml_predictions:
         pid = pred.get("player_fotmob_id")
@@ -127,6 +133,11 @@ def merge_datasets(
             key = _normalise(str(pname))
             if key not in ml_by_name:
                 ml_by_name[key] = pred
+            # Also index by surname (last token) for fallback matching
+            tokens = key.split()
+            if tokens:
+                surname = tokens[-1]
+                ml_by_surname.setdefault(surname, []).append(pred)
 
     # Index VAR by player_id (stored as "fm-{fotmob_id}" in VAR output)
     var_by_id: dict[int, dict[str, Any]] = {}
@@ -185,6 +196,26 @@ def merge_datasets(
                         match_by_bridge += 1
                     else:
                         match_by_name += 1
+
+        # 3. Fallback: match by surname only (last name token)
+        if matched is None:
+            surname = pname.split()[-1] if pname else ""
+            if surname and surname in ml_by_surname:
+                candidates = ml_by_surname[surname]
+                if len(candidates) == 1:
+                    # Single candidate with matching surname — accept it
+                    matched = candidates[0]
+                    match_by_name += 1
+                    log.debug("Surname match for %s → %s",
+                              player.get("player_name"), candidates[0].get("player_name"))
+                elif len(candidates) > 1 and pteam:
+                    # Multiple candidates — disambiguate by team
+                    for c in candidates:
+                        cand_team = _normalise(str(c.get("teamName", c.get("team_name", ""))))
+                        if pteam and cand_team and pteam == cand_team:
+                            matched = c
+                            match_by_name += 1
+                            break
 
         if matched is not None:
             player["has_ml_data"] = True

@@ -855,6 +855,15 @@ class Trainer:
         predictions_df["fantavoto_medio"] = y_test_vals.values
         predictions_df["predicted_fantavoto"] = pred_test.values
 
+        # Attach expected_minutes from train data (mins_played in test season)
+        # as a simple estimate — the last known minutes for each player.
+        if "mins_played" in df_test.columns:
+            predictions_df["expected_minutes"] = pd.to_numeric(
+                df_test["mins_played"], errors="coerce"
+            ).fillna(0).values
+        else:
+            predictions_df["expected_minutes"] = 0
+
         # Attach cross-model prediction_std to each test-set player.
         try:
             if role_partitioned:
