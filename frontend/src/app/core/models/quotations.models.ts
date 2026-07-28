@@ -156,3 +156,19 @@ export interface IdMappingRunResponse {
   matchRatePct: number;
   byMethod: Record<string, number>;
 }
+
+// ── FotMob Search (suggest API) ─────────────────────────────────────────────
+
+export interface FotmobSearchItem {
+  playerFotmobId: number;
+  name: string;
+  teamId: number | null;
+  teamName: string | null;
+  score: number;
+}
+
+export interface FotmobSearchResponse {
+  term: string;
+  total: number;
+  items: FotmobSearchItem[];
+}

@@ -6,7 +6,7 @@ directory and persists them into two PostgreSQL tables:
 * ``player_quotations``  — raw Qt.A / Qt.I / FVM values
 * ``player_id_map``      — Fantacalcio-id ↔ player_fotmob_id bridge
 
-The FotMob-side resolution happens in three passes:
+The FotMob-side resolution happens in four passes:
 
 1. **Deterministic exact match** on (normalised name, normalised team,
    canonical_role). Uses ``player_profiles`` joined with
@@ -19,6 +19,12 @@ The FotMob-side resolution happens in three passes:
 
 3. **Fuzzy fallback** (optional) using ``difflib.SequenceMatcher`` for
    players that didn't match exactly.
+
+4. **FotMob suggest API** — for players still unmatched after the fuzzy
+   pass, calls FotMob's public ``/api/data/search/suggest`` endpoint.
+   If exactly **one** result is returned for the full player name it is
+   accepted automatically. Multiple candidates are left for manual
+   resolution via the ID Mapping UI.
 
 After automatic matching, **manual overrides** (``--overrides``) are applied
 from a CSV file.  See :mod:`ml.data.match_override` for the CSV format and
@@ -646,6 +652,57 @@ def _load_manual_resolutions(engine: sa.Engine) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+# ── FotMob suggest API helper ────────────────────────────────────────────────
+
+
+def _fotmob_suggest_api(term: str, hits: int = 5) -> list[dict]:
+    """Call FotMob's public suggest API and return player suggestions.
+
+    Returns a list of dicts with keys ``id``, ``name``, ``team_id``,
+    ``team_name``, ``score``. Returns an empty list on any error.
+    """
+    import json
+    import urllib.request
+    import urllib.parse
+
+    url = (
+        "https://www.fotmob.com/api/data/search/suggest"
+        f"?hits={hits}&lang=it%2Cen%2Cfr&term={urllib.parse.quote(term)}"
+    )
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/125.0.0.0 Safari/537.36"
+            ),
+            "Accept": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+
+    seen_ids: set[int] = set()
+    players: list[dict] = []
+    for group in data:
+        for s in group.get("suggestions", []):
+            if s.get("type") != "player":
+                continue
+            pid = int(s["id"])
+            if pid in seen_ids:
+                continue
+            seen_ids.add(pid)
+            players.append({
+                "id": pid,
+                "name": s["name"],
+                "team_id": s.get("teamId"),
+                "team_name": s.get("teamName"),
+                "score": s.get("score", 0),
+            })
+    return players
+
+
 def build_player_id_map(
     quotazioni: pd.DataFrame, engine: sa.Engine, league_name: Optional[str]
 ) -> pd.DataFrame:
@@ -813,7 +870,48 @@ def build_player_id_map(
                 last_name_token(normalise_player_name(case["name"])),
             )
 
-    # ── Pass 3: record unmatched rows (operator will resolve manually) ──
+    # ── Pass 3: FotMob suggest API for still-unmatched players ──────────
+    #   For players that didn't match via DB-based fuzzy, try the live
+    #   FotMob suggest API. If exactly one result comes back for the full
+    #   player name, accept it as a high-confidence match.
+    #   When multiple candidates are returned, leave the row unmatched so
+    #   the operator can decide via the ID mapping UI.
+    log.info("Pass 3: FotMob suggest API for %d still-unmatched …", len(still_unmatched))
+    suggest_hits = 0
+    for case in still_unmatched:
+        name = case["name"]
+        try:
+            candidates = _fotmob_suggest_api(name)
+        except Exception:
+            log.warning("  suggest API call failed for %r, skipping", name)
+            continue
+
+        if len(candidates) == 1:
+            # Single unambiguous result — accept it automatically.
+            c = candidates[0]
+            key = (case["fantacalcio_id"], int(unmatched["season_start"].iloc[0]))
+            if key in {(r["fantacalcio_id"], r["season_start"]) for r in results}:
+                continue
+            results.append({
+                "fantacalcio_id": key[0],
+                "season_start": key[1],
+                "player_fotmob_id": c["id"],
+                "name_fantacalcio": case["name"],
+                "name_fotmob": c["name"],
+                "team_fantacalcio": case["team"],
+                "team_fotmob": c.get("team_name"),
+                "canonical_role": case["canonical_role"],
+                "match_method": "fotmob_suggest",
+                "confidence": 0.85,
+                "resolved_from_history": False,
+            })
+            suggest_hits += 1
+        # else: multiple candidates → leave for manual resolution
+
+    log.info("  suggest API hits: %d, still unmatched: %d",
+             suggest_hits, len(still_unmatched) - suggest_hits)
+
+    # ── Pass 4: record unmatched rows (operator will resolve manually) ──
     matched_keys = {
         (r["fantacalcio_id"], r["season_start"]) for r in results
     }

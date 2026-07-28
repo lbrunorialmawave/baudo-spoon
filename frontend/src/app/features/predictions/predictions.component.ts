@@ -7,6 +7,7 @@ import {
   HybridPlayerPrediction,
   HybridStatsResponse,
   HybridConfig,
+  HybridStatus,
 } from '../../core/models/api.models';
 import { PredictionService } from '../../core/services/prediction.service';
 import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.component';
@@ -133,19 +134,35 @@ const HYBRID_LABELS = [
             }
           </div>
 
+          <!-- Readiness banner (shown when computations are missing) -->
+          @if (!statusLoading() && readinessMessage(); as msg) {
+            <div class="mb-4 rounded-lg border px-4 py-3 text-sm"
+                 style="background:#fef3c7;border-color:#f59e0b;color:#92400e">
+              <p class="font-medium mb-1">⚙️ Calcoli non ancora eseguiti</p>
+              <ul class="list-disc list-inside space-y-0.5 text-xs">
+                @for (m of msg; track m) {
+                  <li>{{ m }}</li>
+                }
+              </ul>
+              <p class="text-xs mt-1">
+                Vai su <strong>Pipeline Info</strong> per verificare e generare i dati necessari.
+              </p>
+            </div>
+          }
+
           <!-- Loading / Error / Table -->
-          @if (hybridLoading()) {
+          @if (hybridLoading() && !hybridError()) {
             <div class="space-y-2">
               @for (_ of skeletonRows; track $index) { <app-skeleton height="52px" /> }
             </div>
           } @else if (hybridError()) {
             <app-error-boundary [message]="hybridError()!" />
-          } @else if (filteredHybrid().length === 0) {
+          } @else if (filteredHybrid().length === 0 && !readinessMessage()) {
             <div class="rounded-lg border px-6 py-12 text-center text-sm"
                  style="border-color:var(--color-border);color:var(--color-text-secondary)">
               No hybrid predictions available.
             </div>
-          } @else {
+          } @else if (filteredHybrid().length > 0) {
             <div class="overflow-x-auto rounded-lg border"
                  style="border-color:var(--color-border)">
               <table class="w-full text-sm" style="border-collapse:collapse">
@@ -409,6 +426,7 @@ export class PredictionsComponent {
   ];
   readonly skeletonRows = Array.from({ length: 8 });
   readonly selectedTab = signal<'hybrid' | 'next' | 'pipeline'>('hybrid');
+  private initialLoadDone = false;
 
   // ── Hybrid tab state ──────────────────────────────────
   readonly hybridItems = signal<HybridPlayerPrediction[]>([]);
@@ -425,6 +443,10 @@ export class PredictionsComponent {
   readonly activeLabels = signal(new Set<string>());
   readonly selectedPlayer = signal<HybridPlayerPrediction | null>(null);
   readonly lastGenerated = signal<string | null>(null);
+
+  // ── Readiness status ─────────────────────────────────
+  readonly hybridStatus = signal<HybridStatus | null>(null);
+  readonly statusLoading = signal(true);
 
   readonly confidencePresets = [
     { label: 'All', value: null as number | null },
@@ -516,6 +538,22 @@ export class PredictionsComponent {
   readonly MANTRA_ROLES = MANTRA_ROLES;
   readonly HYBRID_LABELS = HYBRID_LABELS;
 
+  // ── Derived status messages ───────────────────────────
+  readonly readinessMessage = computed<string | null>(() => {
+    const status = this.hybridStatus();
+    if (!status) return null;
+
+    const missing: string[] = [];
+    if (!status.mlPredictionsReady) missing.push('calcolo ML predictions (risultati del modello)');
+    if (status.mantraResults.length === 0) missing.push('calcolo MANTRA (voti storici)');
+    if (!status.hybridReady) {
+      if (status.mantraResults.length > 0 && status.mlPredictionsReady) {
+        missing.push('calcolo ibrido MANTRA+ML (esegui "Salva e Rigenera" nella sezione Pipeline Info)');
+      }
+    }
+    return missing.length > 0 ? missing : null;
+  });
+
   // ── Methods ──────────────────────────────────────────
 
   scorePct(v: number): number {
@@ -588,6 +626,20 @@ export class PredictionsComponent {
     });
   }
 
+  private loadStatus() {
+    this.statusLoading.set(true);
+    this.predService.getHybridStatus().subscribe({
+      next: s => {
+        this.hybridStatus.set(s);
+        this.statusLoading.set(false);
+      },
+      error: () => {
+        this.hybridStatus.set(null);
+        this.statusLoading.set(false);
+      },
+    });
+  }
+
   private loadHybridData() {
     this.hybridLoading.set(true);
     this.hybridError.set(null);
@@ -603,14 +655,24 @@ export class PredictionsComponent {
         const ts = res.meta?.generatedAt;
         if (ts) this.lastGenerated.set(ts);
       },
-      error: () => {
-        this.hybridError.set('Could not load hybrid predictions.');
+      error: err => {
+        const detail = err.error?.detail || '';
+        if (detail.includes('MANTRA results not found')) {
+          this.hybridError.set('Calcolo MANTRA non ancora eseguito. Esegui prima il calcolo MANTRA.');
+        } else if (detail.includes('ML') || detail.includes('predictions')) {
+          this.hybridError.set('Calcolo ML predictions non ancora eseguito. Avvia la pipeline ML.');
+        } else {
+          this.hybridError.set('Calcolo ibrido non disponibile. Verifica che MANTRA e ML predictions siano stati generati.');
+        }
         this.hybridLoading.set(false);
       },
     });
 
     this.predService.getHybridStats().subscribe({
       next: s => this.hybridStats.set(s),
+      error: () => {
+        // Stats is best-effort — no error shown if it fails
+      },
     });
   }
 
@@ -621,24 +683,30 @@ export class PredictionsComponent {
         this.config.set(c);
         this.configLoading.set(false);
       },
+      error: () => {
+        this.configLoading.set(false);
+      },
     });
   }
 
   constructor() {
-    // Load hybrid data on init
+    // Check readiness first, then load data
+    this.loadStatus();
     this.loadHybridData();
     this.loadConfig();
 
     // Reload hybrid data when page or sort changes
     effect(() => {
-      // Read signals to track them as dependencies
       this.hybridPage();
       this.sortField();
       this.sortDir();
-      // Debounce: only reload if not the initial load
-      if (!this.hybridLoading()) {
+      // Skip effect on initial run — handled by constructor above.
+      // Reading hybridLoading() inside the condition would register it as a
+      // dependency, causing a loop when HTTP responses flip it to false.
+      if (this.initialLoadDone) {
         this.loadHybridData();
       }
+      this.initialLoadDone = true;
     });
 
     // Load next season lazily when tab selected
@@ -668,6 +736,9 @@ export class PredictionsComponent {
           rolePartitioned: res.rolePartitioned,
           modelComparison: res.modelComparison,
         });
+      },
+      error: () => {
+        // Pipeline meta is best-effort
       },
     });
   }

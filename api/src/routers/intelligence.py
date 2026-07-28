@@ -511,6 +511,42 @@ async def get_hybrid_stats() -> ORJSONResponse:
 
 
 @predictions_router.get(
+    "/hybrid/status",
+    response_class=ORJSONResponse,
+    summary="Check availability of MANTRA, ML predictions, and hybrid results",
+    description=(
+        "Returns the readiness status of each computation layer without throwing errors. "
+        "Use this to show meaningful messages in the UI instead of crashing."
+    ),
+)
+async def get_hybrid_status() -> ORJSONResponse:
+    artifacts_dir = Path(settings.artifacts_dir)
+
+    ml_exists = (artifacts_dir / "results_latest.json").exists()
+    mantra_available: list[dict[str, Any]] = []
+    hybrid_available: list[dict[str, Any]] = []
+
+    for season in [2026, 2025, 2024]:
+        mantra_path = artifacts_dir / f"mantra_results_{season}.json"
+        if mantra_path.exists():
+            mantra_available.append({"season": season, "path": str(mantra_path)})
+        hybrid_path = artifacts_dir / f"mantra_ibrido_results_{season}.json"
+        if hybrid_path.exists():
+            hybrid_available.append({"season": season, "path": str(hybrid_path)})
+
+    return ORJSONResponse({
+        "mlPredictionsReady": ml_exists,
+        "mantraResults": mantra_available,
+        "hybridResults": hybrid_available,
+        "hybridReady": (
+            ml_exists
+            and len(mantra_available) > 0
+            and any(h["season"] in {m["season"] for m in mantra_available} for h in hybrid_available)
+        ),
+    })
+
+
+@predictions_router.get(
     "/hybrid/config",
     response_class=ORJSONResponse,
     summary="Current hybrid configuration",

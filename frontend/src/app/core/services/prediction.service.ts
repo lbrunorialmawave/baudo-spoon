@@ -7,6 +7,7 @@ import {
   HybridPredictionsResponse,
   HybridStatsResponse,
   HybridConfig,
+  HybridStatus,
 } from '../models/api.models';
 import { API_BASE_URL } from '../tokens/api-base-url.token';
 
@@ -50,6 +51,10 @@ export class PredictionService {
       if (params.sortDir) httpParams = httpParams.set('sortDir', params.sortDir);
     }
     return this.http.get<HybridPredictionsResponse>(`${this.baseUrl}/predictions/hybrid`, { params: httpParams });
+  }
+
+  getHybridStatus(): Observable<HybridStatus> {
+    return this.http.get<HybridStatus>(`${this.baseUrl}/predictions/hybrid/status`);
   }
 
   getHybridStats(): Observable<HybridStatsResponse> {

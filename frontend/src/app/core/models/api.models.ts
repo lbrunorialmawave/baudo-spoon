@@ -227,6 +227,13 @@ export interface HybridStatsResponse {
   classificationCounts: Record<string,number>;
 }
 
+export interface HybridStatus {
+  mlPredictionsReady: boolean;
+  mantraResults: { season: number; path: string }[];
+  hybridResults: { season: number; path: string }[];
+  hybridReady: boolean;
+}
+
 export interface HybridConfig {
   PESO_MANTRA: number;
   PESO_ML: number;

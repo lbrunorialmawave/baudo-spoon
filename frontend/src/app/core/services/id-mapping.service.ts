@@ -2,6 +2,7 @@ import { inject, Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
+  FotmobSearchResponse,
   IdMappingListResponse,
   IdMappingRunResponse,
   IdMappingStatsResponse,
@@ -118,5 +119,13 @@ export class IdMappingService {
     if (opts.seasonStart != null) params = params.set('season_start', opts.seasonStart);
     if (opts.leagueName)          params = params.set('league_name', opts.leagueName);
     return this.http.post<IdMappingRunResponse>(`${this.endpoint}/run`, null, { params });
+  }
+
+  /** Cerca giocatori su FotMob tramite suggest API. */
+  fotmobSearch(term: string, hits: number = 10): Observable<FotmobSearchResponse> {
+    const params = new HttpParams()
+      .set('term', term)
+      .set('hits', hits);
+    return this.http.get<FotmobSearchResponse>(`${this.endpoint}/fotmob-search`, { params });
   }
 }

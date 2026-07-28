@@ -4,10 +4,10 @@ import { IdMappingService } from '../../core/services/id-mapping.service';
 import { QuotationService } from '../../core/services/quotation.service';
 import {
   IdMappingListResponse,
-  IdMappingRunResponse,
   IdMappingStatsResponse,
   PlayerIdMapping,
   UpdateIdMappingRequest,
+  FotmobSearchItem,
 } from '../../core/models/quotations.models';
 import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/error-boundary.component';
 
@@ -20,6 +20,7 @@ const METHOD_LABELS: Record<string, string> = {
   exact_name_role: 'Exact (name+role)',
   exact_relaxed_role: 'Exact (relaxed role)',
   fuzzy_name: 'Fuzzy',
+  fotmob_suggest: '🔍 Suggest',
   manual: '👤 Manual',
   unmatched: '❌ Unmatched',
 };
@@ -27,6 +28,7 @@ const METHOD_LABELS: Record<string, string> = {
 const METHOD_COLORS: Record<string, string> = {
   unmatched: '#EF4444',
   fuzzy_name: '#F59E0B',
+  fotmob_suggest: '#06B6D4',
   exact_relaxed_role: '#22C55E',
   exact_name_team_role_season: '#3B82F6',
   exact_name_team: '#3B82F6',
@@ -308,7 +310,7 @@ const METHOD_COLORS: Record<string, string> = {
       </div>
     </div>
 
-    <!-- Verify FotMob panel -->
+    <!-- Verify FotMob panel (suggest API) -->
     @if (verifyMode()) {
       <div class="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4"
            style="background:rgba(0,0,0,0.4)"
@@ -319,7 +321,7 @@ const METHOD_COLORS: Record<string, string> = {
           <div class="flex items-center justify-between px-4 py-3 sm:px-5 sm:py-4 border-b"
                style="border-color:var(--color-border)">
             <h2 class="text-sm font-semibold" style="color:var(--color-text-primary)">
-              Verifica su FotMob
+              Cerca su FotMob
             </h2>
             <button class="text-lg leading-none px-2 py-1 min-h-8 min-w-8"
                     style="color:var(--color-text-secondary)"
@@ -327,19 +329,73 @@ const METHOD_COLORS: Record<string, string> = {
           </div>
           <div class="p-4 sm:p-5 space-y-3">
             <p class="text-xs" style="color:var(--color-text-secondary)">
-              Cerca <strong>{{ verifyItem()?.nameFantacalcio }}</strong> su FotMob,
-              apri la sua pagina, copia la URL e incollala qui sotto.
+              Cerca <strong>{{ verifyItem()?.nameFantacalcio }}</strong>
+              @if (verifyItem()?.teamFantacalcio) {
+                ({{ verifyItem()!.teamFantacalcio }})
+              }
             </p>
-            <input class="w-full rounded-lg border px-3 py-2 text-sm outline-none"
-                   style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
-                   placeholder="https://www.fotmob.com/players/314605/alberto-moreno"
-                   [value]="verifyUrl()"
-                   (input)="verifyUrl.set(($any($event.target).value))" />
+
+            <!-- Search input -->
             <div class="flex gap-2">
+              <input class="flex-1 rounded-lg border px-3 py-2 text-sm outline-none"
+                     style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
+                     placeholder="Nome giocatore…"
+                     [value]="verifySearchTerm()"
+                     (input)="verifySearchTerm.set(($any($event.target).value))"
+                     (keydown.enter)="doFotmobSearch()" />
+              <button class="rounded-lg border px-4 py-2 text-xs font-medium"
+                      style="background:var(--color-accent);color:#fff;border-color:transparent"
+                      [disabled]="verifySearching()"
+                      (click)="doFotmobSearch()">
+                @if (verifySearching()) { Caricamento… } @else { Cerca }
+              </button>
+            </div>
+
+            <!-- Loading -->
+            @if (verifySearching()) {
+              <div class="text-xs py-4 text-center" style="color:var(--color-text-secondary)">
+                Ricerca in corso…
+              </div>
+            }
+
+            <!-- Error -->
+            @if (verifySearchError()) {
+              <div class="rounded-lg border px-3 py-2 text-xs"
+                   style="border-color:#EF4444;background:#FEF2F2;color:#DC2626">
+                {{ verifySearchError() }}
+              </div>
+            }
+
+            <!-- Results list -->
+            @if (verifyResults().length > 0) {
+              <div class="space-y-1 max-h-64 overflow-y-auto">
+                @for (r of verifyResults(); track r.playerFotmobId) {
+                  <button class="w-full rounded-lg border px-3 py-2 text-left text-xs transition-colors"
+                          [style]="verifySelectedId() === r.playerFotmobId
+                            ? 'border-color:var(--color-accent);background:var(--color-accent);color:#fff'
+                            : 'border-color:var(--color-border);background:var(--color-surface);color:var(--color-text-primary)'"
+                          (click)="selectFotmobResult(r)">
+                    <div class="flex items-center justify-between">
+                      <span class="font-medium">{{ r.name }}</span>
+                      <span class="opacity-70">{{ r.teamName }}</span>
+                    </div>
+                    <span class="text-[10px] opacity-60">ID {{ r.playerFotmobId }}</span>
+                  </button>
+                }
+              </div>
+            } @else if (!verifySearching() && !verifySearchError() && verifySearchTerm()) {
+              <div class="text-xs py-4 text-center" style="color:var(--color-text-secondary)">
+                Nessun risultato. Prova con un termine diverso.
+              </div>
+            }
+
+            <!-- Actions -->
+            <div class="flex gap-2 pt-1">
               <button class="rounded-lg border px-4 py-1.5 text-xs font-medium"
                       style="background:var(--color-accent);color:#fff;border-color:transparent"
-                      (click)="parseFotmobUrl()">
-                Analizza URL
+                      [disabled]="verifySelectedId() === null"
+                      (click)="useFotmobSearchResult()">
+                Usa e apri risoluzione
               </button>
               <button class="rounded-lg border px-4 py-1.5 text-xs font-medium"
                       style="background:var(--color-surface-raised);color:var(--color-text-primary);border-color:var(--color-border)"
@@ -347,18 +403,6 @@ const METHOD_COLORS: Record<string, string> = {
                 Annulla
               </button>
             </div>
-            @if (verifyResult(); as r) {
-              <div class="rounded-lg border p-3 text-xs space-y-1"
-                   style="border-color:#22c55e44;background:#22c55e11;color:#16a34a">
-                <p><strong>ID FotMob:</strong> {{ r.id }}</p>
-                <p><strong>Nome:</strong> {{ r.name }}</p>
-                <button class="mt-2 rounded-lg border px-4 py-1.5 text-xs font-medium"
-                        style="background:var(--color-accent);color:#fff;border-color:transparent"
-                        (click)="useVerifyResult()">
-                  Usa e apri risoluzione
-                </button>
-              </div>
-            }
           </div>
         </div>
       </div>
@@ -393,7 +437,7 @@ const METHOD_COLORS: Record<string, string> = {
                 {{ resolveItem()!.nameFantacalcio }}
                 @if (resolveItem()!.teamFantacalcio) { · {{ resolveItem()!.teamFantacalcio }} }
                 @if (resolveItem()!.canonicalRole) { · {{ resolveItem()!.canonicalRole }} }
-                · {{ resolveItem()!.seasonStart }}/{{ resolveItem()!.seasonStart! + 1 }}
+                · {{ resolveItem()!.seasonStart }}/{{ resolveItem()!.seasonStart + 1 }}
               </p>
               <p><strong style="color:var(--color-text-primary)">Current match:</strong>
                 {{ methodLabel(resolveItem()!.matchMethod) }}
@@ -801,43 +845,67 @@ export class IdMappingComponent {
     });
   };
 
-  // ── Verify on FotMob ──────────────────────────────────────────────────────
+  // ── Verify on FotMob (suggest API) ─────────────────────────────────────
   readonly verifyMode = signal(false);
-  readonly verifyUrl = signal('');
+  readonly verifySearchTerm = signal('');
+  readonly verifySearching = signal(false);
+  readonly verifySearchError = signal<string | null>(null);
+  readonly verifyResults = signal<FotmobSearchItem[]>([]);
+  readonly verifySelectedId = signal<number | null>(null);
   readonly verifyItem = signal<PlayerIdMapping | null>(null);
-  readonly verifyResult = signal<{ id: number; name: string } | null>(null);
 
   readonly verifyOnFotmob = (item: PlayerIdMapping) => {
     this.verifyItem.set(item);
+    this.verifySearchTerm.set(item.nameFantacalcio);
+    this.verifyResults.set([]);
+    this.verifySelectedId.set(null);
+    this.verifySearchError.set(null);
     this.verifyMode.set(true);
-    this.verifyUrl.set('');
-    this.verifyResult.set(null);
-    const query = encodeURIComponent(item.nameFantacalcio);
-    window.open(`https://www.fotmob.com/search?q=${query}`, '_blank');
+    // Auto-search immediately
+    setTimeout(() => this.doFotmobSearch(), 100);
   };
 
-  readonly parseFotmobUrl = () => {
-    const url = this.verifyUrl();
-    const match = url.match(/\/players\/(\d+)\/([a-z0-9-]+)/i);
-    if (!match) {
-      alert('URL non valida. Deve essere del tipo: https://www.fotmob.com/players/314605/alberto-moreno');
-      return;
-    }
-    const id = parseInt(match[1], 10);
-    const name = match[2]
-      .split('-')
-      .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
-      .join(' ');
-    this.verifyResult.set({ id, name });
+  readonly doFotmobSearch = () => {
+    const term = this.verifySearchTerm().trim();
+    if (!term) return;
+
+    this.verifySearching.set(true);
+    this.verifySearchError.set(null);
+    this.verifyResults.set([]);
+    this.verifySelectedId.set(null);
+
+    this.idMappingService.fotmobSearch(term, 10).subscribe({
+      next: res => {
+        this.verifyResults.set(res.items);
+        this.verifySearching.set(false);
+        // Auto-select if exactly one result
+        if (res.items.length === 1) {
+          this.verifySelectedId.set(res.items[0].playerFotmobId);
+        }
+      },
+      error: err => {
+        this.verifySearchError.set(err.error?.detail || 'Errore durante la ricerca su FotMob');
+        this.verifySearching.set(false);
+      },
+    });
   };
 
-  readonly useVerifyResult = () => {
-    const res = this.verifyResult();
+  readonly selectFotmobResult = (item: FotmobSearchItem) => {
+    this.verifySelectedId.set(
+      this.verifySelectedId() === item.playerFotmobId ? null : item.playerFotmobId
+    );
+  };
+
+  readonly useFotmobSearchResult = () => {
+    const selectedId = this.verifySelectedId();
     const item = this.verifyItem();
-    if (!res || !item) return;
+    const results = this.verifyResults();
+    if (!selectedId || !item) return;
+
+    const selected = results.find(r => r.playerFotmobId === selectedId);
     this.openResolver(item);
-    this.formFotmobId.set(res.id);
-    this.formFotmobName.set(res.name);
+    this.formFotmobId.set(selectedId);
+    this.formFotmobName.set(selected?.name ?? '');
     this.verifyMode.set(false);
   };
 }
