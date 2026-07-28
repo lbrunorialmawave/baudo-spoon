@@ -241,12 +241,14 @@ async def get_quotation_stats(
     return ORJSONResponse(content=payload)
 
 
-# ── ID-mapping router (API-key protected + rate-limited) ─────────────────────
+# ── ID-mapping router (API-key protected) ────────────────────────────────────
+# Note: rate_limit is applied per-endpoint only on mutation routes (PUT, POST, DELETE)
+# so that read-only endpoints like fotmob-search don't fail when Redis is down.
 
 id_mapping_router = APIRouter(
     prefix="/intelligence/id-mapping",
     tags=["id-mapping"],
-    dependencies=[Depends(require_role("member")), Depends(rate_limit)],
+    dependencies=[Depends(require_role("member"))],
 )
 
 
@@ -348,28 +350,33 @@ async def fotmob_search(
     term: str = Query(..., min_length=1, description="Search term (player name)"),
     hits: int = Query(10, ge=1, le=50, description="Max suggestions per category"),
 ) -> ORJSONResponse:
-    import httpx
+    import urllib.parse
+    import urllib.request
+    import json as _json
 
-    encoded_term = httpx.utils.quote(term, safe="")
+    encoded_term = urllib.parse.quote(term, safe="")
     url = (
         f"https://www.fotmob.com/api/data/search/suggest"
         f"?hits={hits}&lang=it%2Cen%2Cfr&term={encoded_term}"
     )
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/125.0.0.0 Safari/537.36"
-        ),
-        "Accept": "application/json",
-    }
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/125.0.0.0 Safari/537.36"
+            ),
+            "Accept": "application/json",
+        },
+    )
 
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(url, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-    except httpx.RequestError as exc:
+        import asyncio
+        loop = asyncio.get_event_loop()
+        resp = await loop.run_in_executor(None, lambda: urllib.request.urlopen(req, timeout=10))
+        data = _json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
         raise HTTPException(
             status_code=502,
             detail=f"FotMob suggest API unreachable: {exc}",
@@ -458,6 +465,7 @@ async def update_id_mapping(
     fantacalcio_id: int,
     body: UpdateIdMappingRequest,
     season_start: int = Query(..., ge=1990, le=2100, description="Season start year"),
+    _rate: None = Depends(rate_limit),
     db: AsyncSession = Depends(get_db),
     repo: DataRepository = Depends(get_repository),
 ) -> ORJSONResponse:
@@ -512,6 +520,7 @@ async def run_id_mapping(
         None,
         description="FotMob league filter (e.g. 'Serie A')",
     ),
+    _rate: None = Depends(rate_limit),
     repo: DataRepository = Depends(get_repository),
 ) -> ORJSONResponse:
     """Execute the automatic ID-mapping pipeline (exact → relaxed → fuzzy).
@@ -707,6 +716,7 @@ async def get_manual_resolution_stats(
 )
 async def delete_manual_resolution(
     resolution_id: int,
+    _rate: None = Depends(rate_limit),
     db: AsyncSession = Depends(get_db),
     repo: DataRepository = Depends(get_repository),
 ) -> ORJSONResponse:
