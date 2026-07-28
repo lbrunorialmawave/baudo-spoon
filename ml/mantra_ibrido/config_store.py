@@ -35,8 +35,17 @@ DEFAULTS: dict[str, Any] = {
     "W_PREDICTION_STD": 0.6,
     "W_MINUTES": 0.4,
     "EV_SCALE_FACTOR": 1.0,
-    "SOGLIA_CONFIDENZA_MIN": 0.3,
-    "SOGLIA_GAP_ALERT": 25.0,
+    "CONFIDENZA_SOGLIA": 57.0,
+    "ML_BOOST_SOGLIA": 70.0,
+    "ML_BOOST_FP_CORR_MAX": 60.0,
+    "ML_TOP_PRED_MIN": 6.7,
+    "ML_TOP_BOOST_MIN": 65.0,
+    "SOGLIA_GAP_ALERT": 30.0,
+    "SLEEPER_FP_CORR_MAX": 30.0,
+    "SLEEPER_ML_NORM_MIN": 45.0,
+    "BEST_VALUE_VR_MIN": 110.0,
+    "BEST_VALUE_FP_IBRIDO_MIN": 50.0,
+    "MINUTES_RISK_MAX": 900.0,
 }
 
 # ── Validation ────────────────────────────────────────────────────────────────
@@ -56,7 +65,12 @@ def validate_config(data: dict[str, Any]) -> None:
         if not isinstance(v, (int, float)) or not 0.0 <= v <= 1.0:
             raise ValueError(f"{k} deve essere in [0, 1], got {v!r}")
 
-    for k in ("SOGLIA_CONFIDENZA_MIN", "SOGLIA_GAP_ALERT", "EV_SCALE_FACTOR"):
+    for k in ("CONFIDENZA_SOGLIA", "ML_BOOST_SOGLIA", "ML_BOOST_FP_CORR_MAX",
+              "ML_TOP_PRED_MIN", "ML_TOP_BOOST_MIN",
+              "SOGLIA_GAP_ALERT", "EV_SCALE_FACTOR",
+              "SLEEPER_FP_CORR_MAX", "SLEEPER_ML_NORM_MIN",
+              "BEST_VALUE_VR_MIN", "BEST_VALUE_FP_IBRIDO_MIN",
+              "MINUTES_RISK_MAX"):
         v = data[k]
         if not isinstance(v, (int, float)) or v <= 0:
             raise ValueError(f"{k} deve essere > 0, got {v!r}")
