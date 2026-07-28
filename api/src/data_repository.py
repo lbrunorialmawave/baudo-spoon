@@ -508,6 +508,7 @@ class DataRepository:
         if canonical_role is not None:
             filters.append(PlayerIdMap.canonical_role == canonical_role)
         if matched_only:
+            pass
 
     # ── Export all ID mappings ────────────────────────────────────────────────
 
