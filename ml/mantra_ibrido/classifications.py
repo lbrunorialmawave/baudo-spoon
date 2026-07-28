@@ -46,6 +46,7 @@ def compute_hybrid_classifications(
         "ML_Confirmed": [],
         "ML_Risky": [],
         "ML_Boosted": [],
+        "ML_Top": [],
         "Contradiction": [],
         "Minutes_Risk": [],
         "Best_Value": [],
@@ -67,6 +68,7 @@ def compute_hybrid_classifications(
         fp_corr = p.get("FP_Corr")
         ml_score_norm = p.get("ml_score_norm")
         vr = p.get("VR")
+        fp_ibrido = p.get("fpIbrido")
 
         # Safe numeric conversions
         predicted = float(predicted) if predicted is not None else None
@@ -77,38 +79,52 @@ def compute_hybrid_classifications(
         fp_corr = float(fp_corr) if fp_corr is not None else None
         ml_score_norm = float(ml_score_norm) if ml_score_norm is not None else None
         vr = float(vr) if vr is not None else None
+        fp_ibrido = float(fp_ibrido) if fp_ibrido is not None else None
 
         # ── ML_Confirmed ─────────────────────────────────────────────────────
-        soglia_conf = config.SOGLIA_CONFIDENZA_MIN * 100  # convert 0.3 → 30
+        # High predicted value + decent confidence + enough minutes
         if (predicted is not None and predicted > 6.5
-                and confidence is not None and confidence >= soglia_conf * 2
+                and confidence is not None and confidence >= config.CONFIDENZA_SOGLIA
                 and expected_min is not None and expected_min > 1500):
             labels["ML_Confirmed"].append(name)
 
         # ── ML_Risky ──────────────────────────────────────────────────────────
-        if confidence is not None and confidence < soglia_conf:
+        # Very low confidence → unreliable prediction
+        if confidence is not None and confidence < 50.0:
             labels["ML_Risky"].append(name)
 
         # ── ML_Boosted ────────────────────────────────────────────────────────
-        if ml_boost is not None and ml_boost > 65:
+        # ML significantly above role mean AND player is not already top-rated
+        # by MANTRA (FP_Corr not high) → "hidden gem" signal
+        if (ml_boost is not None and ml_boost > config.ML_BOOST_SOGLIA
+                and fp_corr is not None and fp_corr < config.ML_BOOST_FP_CORR_MAX):
             labels["ML_Boosted"].append(name)
 
+        # ── ML_Top ────────────────────────────────────────────────────────────
+        # High predicted value + ML above role mean → top player
+        if (predicted is not None and predicted >= config.ML_TOP_PRED_MIN
+                and ml_boost is not None and ml_boost >= config.ML_TOP_BOOST_MIN):
+            labels["ML_Top"].append(name)
+
         # ── Contradiction ─────────────────────────────────────────────────────
+        # Strong disagreement between MANTRA and ML
         if fp_gap is not None and abs(fp_gap) > config.SOGLIA_GAP_ALERT:
             labels["Contradiction"].append(name)
 
         # ── Minutes_Risk ──────────────────────────────────────────────────────
-        if expected_min is not None and expected_min < 900:
+        if expected_min is not None and expected_min < config.MINUTES_RISK_MAX:
             labels["Minutes_Risk"].append(name)
 
         # ── Best_Value ────────────────────────────────────────────────────────
-        if (vr is not None and vr > 140
-                and expected_min is not None and expected_min > 1500):
+        # High VR (Value Rating) and decent hybrid score
+        if (vr is not None and vr >= config.BEST_VALUE_VR_MIN
+                and fp_ibrido is not None and fp_ibrido >= config.BEST_VALUE_FP_IBRIDO_MIN):
             labels["Best_Value"].append(name)
 
         # ── Sleeper ───────────────────────────────────────────────────────────
-        if (fp_corr is not None and fp_corr < 50
-                and ml_score_norm is not None and ml_score_norm > 40):
+        # Low MANTRA score but decent ML prediction → could be undervalued
+        if (fp_corr is not None and fp_corr < config.SLEEPER_FP_CORR_MAX
+                and ml_score_norm is not None and ml_score_norm > config.SLEEPER_ML_NORM_MIN):
             labels["Sleeper"].append(name)
 
     log.info(

@@ -21,7 +21,8 @@ const MANTRA_ROLES = ['Por', 'Dc', 'Dd', 'Ds', 'B', 'E', 'M', 'C', 'T', 'W', 'A'
 const HYBRID_LABELS = [
   { id: 'ML_Confirmed', label: 'ML Confirmed', color: '#16a34a' },
   { id: 'ML_Risky', label: 'ML Risky', color: '#dc2626' },
-  { id: 'ML_Boosted', label: 'ML Boosted', color: '#7c3aed' },
+  { id: 'ML_Top', label: 'ML Top', color: '#7c3aed' },
+  { id: 'ML_Boosted', label: 'ML Boosted', color: '#a855f7' },
   { id: 'Contradiction', label: 'Contradiction', color: '#d97706' },
   { id: 'Minutes_Risk', label: 'Minutes Risk', color: '#f97316' },
   { id: 'Best_Value', label: 'Best Value', color: '#22c55e' },
@@ -407,8 +408,17 @@ const HYBRID_LABELS = [
                   <label>Prediction STD weight: <strong>{{ cfg.W_PREDICTION_STD }}</strong></label>
                   <label>Minutes weight: <strong>{{ cfg.W_MINUTES }}</strong></label>
                   <label>EV Scale Factor: <strong>{{ cfg.EV_SCALE_FACTOR }}</strong></label>
-                  <label>Confidence min: <strong>{{ cfg.SOGLIA_CONFIDENZA_MIN }}</strong></label>
+                  <label>Confidence soglia: <strong>{{ cfg.CONFIDENZA_SOGLIA }}</strong></label>
                   <label>Gap alert: <strong>{{ cfg.SOGLIA_GAP_ALERT }}</strong></label>
+                  <label>Boost soglia: <strong>{{ cfg.ML_BOOST_SOGLIA }}</strong></label>
+                  <label>Boost FP_Corr max: <strong>{{ cfg.ML_BOOST_FP_CORR_MAX }}</strong></label>
+                  <label>Top pred min: <strong>{{ cfg.ML_TOP_PRED_MIN }}</strong></label>
+                  <label>Top boost min: <strong>{{ cfg.ML_TOP_BOOST_MIN }}</strong></label>
+                  <label>Sleeper FP_Corr max: <strong>{{ cfg.SLEEPER_FP_CORR_MAX }}</strong></label>
+                  <label>Sleeper ML norm min: <strong>{{ cfg.SLEEPER_ML_NORM_MIN }}</strong></label>
+                  <label>Best Value VR min: <strong>{{ cfg.BEST_VALUE_VR_MIN }}</strong></label>
+                  <label>Best Value FP Ibrido min: <strong>{{ cfg.BEST_VALUE_FP_IBRIDO_MIN }}</strong></label>
+                  <label>Minutes Risk max: <strong>{{ cfg.MINUTES_RISK_MAX }}</strong></label>
                 </div>
               </div>
               <div class="mt-3 flex gap-2">
@@ -610,13 +620,14 @@ export class PredictionsComponent {
 
   labelDescription(labelId: string): string {
     const map: Record<string, string> = {
-      ML_Confirmed: 'ML concorde col MANTRA — prediction affidabile (≥6.5, conf≥60, min>1500)',
-      ML_Risky: 'Prediction poco affidabile — pochi dati storici (confidence<30)',
-      ML_Boosted: 'ML sopra la media del ruolo — il modello vede potenziale superiore alla media',
-      Contradiction: 'Disaccordo MANTRA vs ML — i voti storici dicono una cosa, la prediction un\'altra',
-      Minutes_Risk: 'Rischio minutaggio — il modello prevede pochi minuti in stagione (<900)',
-      Best_Value: 'Miglior rapporto qualità/prezzo — VR alto e minutaggio garantito',
-      Sleeper: 'Sottovalutato dal MANTRA ma con prediction decente — può sorprendere',
+      ML_Confirmed: 'Prediction affidabile — ML concorde col MANTRA, minutaggio garantito',
+      ML_Risky: 'Prediction poco affidabile — pochi dati, confidence bassa',
+      ML_Top: 'Giocatore top — ML prediction alta e sopra la media del ruolo',
+      ML_Boosted: 'ML significativamente sopra la media del ruolo — possibile sorpresa nascosta',
+      Contradiction: 'Forte disaccordo MANTRA vs ML — valutare con cautela',
+      Minutes_Risk: 'Rischio minutaggio — pochi minuti previsti in stagione',
+      Best_Value: 'Miglior rapporto qualità/prezzo all\'asta',
+      Sleeper: 'Sottovalutato dal MANTRA ma con prediction decente',
     };
     return map[labelId] ?? labelId;
   }
@@ -657,6 +668,7 @@ export class PredictionsComponent {
         this.previewMessage.set('Config saved and results regenerated.');
         this.previewOk.set(true);
         this.pendingOverrides = {};
+        this.loadStatus();
         this.loadHybridData();
         this.loadConfig();
       },

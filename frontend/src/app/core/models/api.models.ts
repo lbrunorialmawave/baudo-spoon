@@ -250,6 +250,15 @@ export interface HybridConfig {
   W_PREDICTION_STD: number;
   W_MINUTES: number;
   EV_SCALE_FACTOR: number;
-  SOGLIA_CONFIDENZA_MIN: number;
+  CONFIDENZA_SOGLIA: number;
+  ML_BOOST_SOGLIA: number;
+  ML_BOOST_FP_CORR_MAX: number;
+  ML_TOP_PRED_MIN: number;
+  ML_TOP_BOOST_MIN: number;
   SOGLIA_GAP_ALERT: number;
+  SLEEPER_FP_CORR_MAX: number;
+  SLEEPER_ML_NORM_MIN: number;
+  BEST_VALUE_VR_MIN: number;
+  BEST_VALUE_FP_IBRIDO_MIN: number;
+  MINUTES_RISK_MAX: number;
 }
