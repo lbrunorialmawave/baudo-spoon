@@ -54,6 +54,7 @@ _PLAYER_DATA_SQL = sa.text("""
         pq.fvm  AS "Pz3",
         pmr.ruolo_primario,
         pmr.ruoli_mantra,
+        pim.player_fotmob_id,
         -- Stats from player_season_stats (aggregated)
         pss.minutes_avg       AS "Min_annuo",
         pss.vote_avg          AS "V",
