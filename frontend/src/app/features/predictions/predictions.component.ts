@@ -212,10 +212,12 @@ const HYBRID_LABELS = [
                       <td class="px-3 py-2 text-xs align-top pt-3"
                           style="color:var(--color-text-secondary)">{{ p.ruoloPrimario ?? '—' }}</td>
                       <td class="px-3 py-2 text-right text-xs font-mono align-top pt-3"
-                          style="color:var(--color-text-secondary)">{{ (p.FP_Corr ?? '—') | number:'1.1-1' }}</td>
+                          style="color:var(--color-text-secondary)">
+                        @if (p.FP_Corr != null) { {{ p.FP_Corr | number:'1.1-1' }} } @else { — }
+                      </td>
                       <td class="px-3 py-2 text-right text-xs font-mono align-top pt-3"
                           style="color:var(--color-accent);font-weight:600">
-                        {{ (p.predictedFantavoto ?? '—') | number:'1.2-2' }}
+                        @if (p.predictedFantavoto != null) { {{ p.predictedFantavoto | number:'1.2-2' }} } @else { — }
                       </td>
                       <td class="px-3 py-2 text-right align-top pt-3">
                         <div class="flex items-center justify-end gap-1">
@@ -225,7 +227,7 @@ const HYBRID_LABELS = [
                                  [style]="'background:var(--color-accent);width:' + (p.fpIbrido ?? 0) + '%'"></div>
                           </div>
                           <span class="font-mono text-xs font-semibold" style="color:var(--color-accent)">
-                            {{ (p.fpIbrido ?? '—') | number:'1.1-1' }}
+                            @if (p.fpIbrido != null) { {{ p.fpIbrido | number:'1.1-1' }} } @else { — }
                           </span>
                         </div>
                       </td>
