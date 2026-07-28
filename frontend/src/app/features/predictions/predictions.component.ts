@@ -128,11 +128,34 @@ const HYBRID_LABELS = [
                       [style]="activeLabels().has(l.id)
                         ? 'background:' + l.color + ';color:#fff;border-color:transparent'
                         : 'background:var(--color-surface);color:var(--color-text-secondary);border-color:var(--color-border);opacity:0.7'"
+                      [title]="labelTooltip(l.id)"
                       (click)="toggleLabel(l.id)">
                 {{ l.label }}
               </button>
             }
           </div>
+
+          <!-- Label legend (collapsible) -->
+          <details class="mb-4 text-xs" style="color:var(--color-text-secondary)">
+            <summary class="cursor-pointer font-medium" style="color:var(--color-text-secondary)">
+              📖 Legenda etichette
+            </summary>
+            <div class="mt-2 flex flex-wrap gap-2 rounded-lg border p-3"
+                 style="border-color:var(--color-border);background:var(--color-surface)">
+              @for (l of HYBRID_LABELS; track l.id) {
+                <div class="flex items-center gap-1.5 min-w-36">
+                  <span class="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+                        [style]="'background:' + l.color"></span>
+                  <span><strong>{{ l.label }}</strong>: {{ labelDescription(l.id) }}</span>
+                </div>
+              }
+              <div class="flex items-center gap-1.5 min-w-36">
+                <span class="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+                      style="background:#6B7280"></span>
+                <span><strong>No ML</strong>: giocatore senza dati ML</span>
+              </div>
+            </div>
+          </details>
 
           <!-- Readiness banner (shown when computations are missing) -->
           @if (!statusLoading() && readinessMessage(); as msg) {
@@ -176,21 +199,27 @@ const HYBRID_LABELS = [
                     <th class="px-3 py-2 text-left font-medium text-xs"
                         style="color:var(--color-text-secondary)">Team</th>
                     <th class="px-3 py-2 text-left font-medium text-xs"
-                        style="color:var(--color-text-secondary)">Ruolo</th>
+                        style="color:var(--color-text-secondary)"
+                        title="MANTRA primary role (Por/Dc/Dd/Ds/B/E/M/C/T/W/A/Pc)">Ruolo</th>
                     <th class="px-3 py-2 text-right font-medium text-xs cursor-pointer"
                         style="color:var(--color-text-secondary)"
+                        title="Fantapunteggio corretto con penalità ammonizioni/esclusioni"
                         (click)="setSort('FP_Corr')">FP Corr</th>
                     <th class="px-3 py-2 text-right font-medium text-xs cursor-pointer"
                         style="color:var(--color-text-secondary)"
+                        title="ML predicted rating (modello ML sul fantavoto storico)"
                         (click)="setSort('predictedFantavoto')">Pred</th>
                     <th class="px-3 py-2 text-right font-medium text-xs cursor-pointer"
                         style="color:var(--color-text-secondary)"
+                        title="Punteggio ibrido MANTRA+ML (pesato dalla config)"
                         (click)="setSort('fpIbrido')">FP Ib</th>
                     <th class="px-3 py-2 text-right font-medium text-xs cursor-pointer"
                         style="color:var(--color-text-secondary)"
+                        title="Confidence score della prediction ML (0-100)"
                         (click)="setSort('confidenceScore')">Conf</th>
                     <th class="px-3 py-2 text-right font-medium text-xs cursor-pointer"
                         style="color:var(--color-text-secondary)"
+                        title="Differenza FP_Ibrido - Predicted (segnala sopravvalutati/sottovalutati)"
                         (click)="setSort('fpGap')">Gap</th>
                     <th class="px-3 py-2 text-left font-medium text-xs"
                         style="color:var(--color-text-secondary)">Labels</th>
@@ -428,7 +457,6 @@ export class PredictionsComponent {
   ];
   readonly skeletonRows = Array.from({ length: 8 });
   readonly selectedTab = signal<'hybrid' | 'next' | 'pipeline'>('hybrid');
-  private initialLoadDone = false;
 
   // ── Hybrid tab state ──────────────────────────────────
   readonly hybridItems = signal<HybridPlayerPrediction[]>([]);
@@ -567,6 +595,24 @@ export class PredictionsComponent {
     return found ? found.color : null;
   }
 
+  labelTooltip(labelId: string): string {
+    const desc = this.labelDescription(labelId);
+    return `${labelId}: ${desc}`;
+  }
+
+  labelDescription(labelId: string): string {
+    const map: Record<string, string> = {
+      ML_Confirmed: 'ML concorde col MANTRA — prediction affidabile',
+      ML_Risky: 'ML discordante dal MANTRA — prediction rischiosa',
+      ML_Boosted: 'ML molto più alta del MANTRA — possibile sorpresa',
+      Contradiction: 'MANTRA e ML in forte disaccordo — valutare con cautela',
+      Minutes_Risk: 'Rischio minutaggio — pochi minuti previsti',
+      Best_Value: 'Miglior rapporto qualità/prezzo all\'asta',
+      Sleeper: 'Giocatore sottovalutato — potenziale affare',
+    };
+    return map[labelId] ?? labelId;
+  }
+
   setSort(field: string) {
     if (this.sortField() === field) {
       this.sortDir.set(this.sortDir() === 'desc' ? 'asc' : 'desc');
@@ -645,11 +691,11 @@ export class PredictionsComponent {
   private loadHybridData() {
     this.hybridLoading.set(true);
     this.hybridError.set(null);
+    // Fetch ALL data in one request (max page size = 200) — pagination,
+    // filtering and sorting are done client-side for responsiveness.
     this.predService.getHybridPredictions({
-      page: this.hybridPage(),
-      size: this.hybridPageSize(),
-      sortBy: this.sortField() || undefined,
-      sortDir: this.sortDir() === 'desc' ? 'desc' : 'asc',
+      page: 1,
+      size: 2000,
     }).subscribe({
       next: res => {
         this.hybridItems.set(res.items);
@@ -696,20 +742,6 @@ export class PredictionsComponent {
     this.loadStatus();
     this.loadHybridData();
     this.loadConfig();
-
-    // Reload hybrid data when page or sort changes
-    effect(() => {
-      this.hybridPage();
-      this.sortField();
-      this.sortDir();
-      // Skip effect on initial run — handled by constructor above.
-      // Reading hybridLoading() inside the condition would register it as a
-      // dependency, causing a loop when HTTP responses flip it to false.
-      if (this.initialLoadDone) {
-        this.loadHybridData();
-      }
-      this.initialLoadDone = true;
-    });
 
     // Load next season lazily when tab selected
     effect(() => {

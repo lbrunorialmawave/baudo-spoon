@@ -347,6 +347,7 @@ async def invalidate_cache(
 
 
 class HybridSortField(str, Enum):
+    player_name = "playerName"
     fp_ibrido = "fpIbrido"
     confidence_score = "confidenceScore"
     expected_value = "expectedValue"
@@ -427,7 +428,7 @@ async def list_hybrid_predictions(
     sort_by: Optional[HybridSortField] = Query(None, alias="sortBy"),
     sort_dir: Optional[str] = Query("asc", alias="sortDir"),
     page: int = Query(1, ge=1),
-    size: int = Query(50, ge=1, le=200),
+    size: int = Query(50, ge=1, le=2000),
 ) -> ORJSONResponse:
     try:
         _, path = _find_hybrid_path(Path(settings.artifacts_dir))
