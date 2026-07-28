@@ -226,7 +226,7 @@ const HYBRID_LABELS = [
                   </tr>
                 </thead>
                 <tbody class="divide-y" style="border-color:var(--color-border)">
-                  @for (p of filteredHybrid(); track p.playerName; let i = $index) {
+                  @for (p of paginatedHybrid(); track p.playerName; let i = $index) {
                     <tr class="cursor-pointer hover:opacity-80"
                         style="border-color:var(--color-border)"
                         (click)="selectedPlayer.set(p)">
@@ -504,7 +504,7 @@ export class PredictionsComponent {
     return items.length;
   });
 
-  readonly totalDisplayed = computed(() => this.filteredHybrid().length);
+  readonly totalDisplayed = computed(() => this.paginatedHybrid().length);
 
   readonly filteredHybrid = computed(() => {
     let items = this.hybridItems();
@@ -534,6 +534,14 @@ export class PredictionsComponent {
     }
 
     return items;
+  });
+
+  /** Items for the current page (sliced from filteredHybrid). */
+  readonly paginatedHybrid = computed(() => {
+    const all = this.filteredHybrid();
+    const page = this.hybridPage();
+    const size = this.hybridPageSize();
+    return all.slice((page - 1) * size, page * size);
   });
 
   // ── Next season tab state ─────────────────────────────
@@ -602,13 +610,13 @@ export class PredictionsComponent {
 
   labelDescription(labelId: string): string {
     const map: Record<string, string> = {
-      ML_Confirmed: 'ML concorde col MANTRA — prediction affidabile',
-      ML_Risky: 'ML discordante dal MANTRA — prediction rischiosa',
-      ML_Boosted: 'ML molto più alta del MANTRA — possibile sorpresa',
-      Contradiction: 'MANTRA e ML in forte disaccordo — valutare con cautela',
-      Minutes_Risk: 'Rischio minutaggio — pochi minuti previsti',
-      Best_Value: 'Miglior rapporto qualità/prezzo all\'asta',
-      Sleeper: 'Giocatore sottovalutato — potenziale affare',
+      ML_Confirmed: 'ML concorde col MANTRA — prediction affidabile (≥6.5, conf≥60, min>1500)',
+      ML_Risky: 'Prediction poco affidabile — pochi dati storici (confidence<30)',
+      ML_Boosted: 'ML sopra la media del ruolo — il modello vede potenziale superiore alla media',
+      Contradiction: 'Disaccordo MANTRA vs ML — i voti storici dicono una cosa, la prediction un\'altra',
+      Minutes_Risk: 'Rischio minutaggio — il modello prevede pochi minuti in stagione (<900)',
+      Best_Value: 'Miglior rapporto qualità/prezzo — VR alto e minutaggio garantito',
+      Sleeper: 'Sottovalutato dal MANTRA ma con prediction decente — può sorprendere',
     };
     return map[labelId] ?? labelId;
   }

@@ -465,8 +465,36 @@ async def list_hybrid_predictions(
     start = (page - 1) * size
     items = players[start:start + size]
 
-    # Transform snake_case keys to camelCase for the frontend
+    # Transform selected snake_case keys to camelCase for the frontend.
+    # Explicit mapping ensures FP_Corr, CP_Corr etc. are handled correctly.
+    _CAMEL_OVERRIDES = {
+        "player_name": "playerName",
+        "player_fotmob_id": "playerFotmobId",
+        "season_start": "seasonStart",
+        "ruolo_primario": "ruoloPrimario",
+        "ruoli_mantra": "ruoliMantra",
+        "has_ml_data": "hasMlData",
+        "predicted_fantavoto": "predictedFantavoto",
+        "prediction_std": "predictionStd",
+        "expected_minutes": "expectedMinutes",
+        "var_score": "varScore",
+        "next_season_predicted": "nextSeasonPredicted",
+        "ml_score_norm": "mlScoreNorm",
+        "confidence_score": "confidenceScore",
+        "fp_gap": "fpGap",
+        "fp_ibrido": "fpIbrido",
+        "expected_value": "expectedValue",
+        "prezzo_massimo": "prezzoMassimo",
+        "hybrid_labels": "hybridLabels",
+    }
+
     def _to_camel(key: str) -> str:
+        if key in _CAMEL_OVERRIDES:
+            return _CAMEL_OVERRIDES[key]
+        # Keys already camelCase or with mixed case (FP_Corr) pass through
+        if "_" not in key:
+            return key
+        # Generic snake_case fallback
         parts = key.split("_")
         return parts[0] + "".join(p.capitalize() for p in parts[1:])
 

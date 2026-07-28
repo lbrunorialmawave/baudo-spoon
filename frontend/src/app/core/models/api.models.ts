@@ -183,25 +183,35 @@ export interface ProblemDetails {
 export interface HybridPlayerPrediction {
   playerName: string | null;
   team: string | null;
-  canonicalRole: string | null;
   ruoloPrimario: string | null;
   ruoliMantra: string[] | null;
   P1: number | null;
   P2: number | null;
   P3: number | null;
   P4: number | null;
+  CP: number | null;
+  FP: number | null;
   FP_Corr: number | null;
+  CP_Corr: number | null;
+  FP_Mantra: number | null;
   VR: number | null;
+  Prezzo_Massimo: number | null;
+  Fase7: string | null;
+  rischio: string | null;
+  hasMlData: boolean;
   predictedFantavoto: number | null;
+  predictionStd: number | null;
   expectedMinutes: number | null;
+  varScore: number | null;
+  esv: number | null;
+  nextSeasonPredicted: number | null;
+  fpIbrido: number | null;
+  mlScoreNorm: number | null;
   confidenceScore: number | null;
   mlBoost: number | null;
   fpGap: number | null;
-  fpIbrido: number | null;
   expectedValue: number | null;
-  prezzoMassimo: number | null;
   hybridLabels: string[] | null;
-  hasMlData: boolean;
 }
 
 export interface HybridPredictionsResponse {
