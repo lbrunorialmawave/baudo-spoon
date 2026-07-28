@@ -87,4 +87,29 @@ export class PredictionService {
     if (seasonStart) params = params.set('seasonStart', seasonStart);
     return this.http.get<HybridPredictionsResponse>(`${this.baseUrl}/predictions/hybrid/preview`, { params });
   }
+
+  // ── ML Pipeline runs ─────────────────────────────────
+
+  getPipelineRuns(limit?: number, offset?: number): Observable<{
+    items: Array<{
+      run_id: string;
+      model_name: string;
+      trained_at: string;
+      season_start: number;
+      git_commit: string | null;
+      status: string;
+      metrics: Array<{ metric: string; value: number; split: string }>;
+    }>;
+    offset: number;
+    limit: number;
+  }> {
+    let params = new HttpParams();
+    if (limit) params = params.set('limit', limit);
+    if (offset) params = params.set('offset', offset);
+    return this.http.get<any>(`${this.baseUrl}/model-metrics/runs`, { params });
+  }
+
+  invalidateCache(): Observable<{ detail: string }> {
+    return this.http.post<{ detail: string }>(`${this.baseUrl}/intelligence/cache/invalidate`, {});
+  }
 }
