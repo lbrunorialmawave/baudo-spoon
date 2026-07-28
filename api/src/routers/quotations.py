@@ -55,6 +55,7 @@ _VALID_MATCH_METHODS = {
     "exact_name_team_role_season",
     "exact_relaxed_role",
     "fuzzy_name",
+    "fotmob_suggest",
     "manual",
     "unmatched",
 }
@@ -323,6 +324,81 @@ async def get_id_mapping_stats(
     stats = await repo.get_id_mapping_stats(db=db)
     payload = IdMappingStatsResponse(**stats).model_dump(by_alias=True)
     return ORJSONResponse(content=payload)
+
+
+@id_mapping_router.get(
+    "/fotmob-search",
+    response_class=ORJSONResponse,
+    summary="Search players on FotMob via suggest API",
+    description=(
+        "Proxies FotMob's public ``/api/data/search/suggest`` endpoint. "
+        "Returns a list of candidate player matches with their FotMob ID, "
+        "name, and team. Use this in the ID mapping UI to find the correct "
+        "FotMob player interactively.\n\n"
+        "If exactly **one** result is returned with a high-enough score, "
+        "the frontend can auto-select it. When multiple candidates are "
+        "returned the operator picks the right one manually."
+    ),
+    responses={
+        200: {"description": "List of FotMob player suggestions"},
+        502: {"description": "FotMob suggest API unreachable"},
+    },
+)
+async def fotmob_search(
+    term: str = Query(..., min_length=1, description="Search term (player name)"),
+    hits: int = Query(10, ge=1, le=50, description="Max suggestions per category"),
+) -> ORJSONResponse:
+    import httpx
+
+    encoded_term = httpx.utils.quote(term, safe="")
+    url = (
+        f"https://www.fotmob.com/api/data/search/suggest"
+        f"?hits={hits}&lang=it%2Cen%2Cfr&term={encoded_term}"
+    )
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/125.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"FotMob suggest API unreachable: {exc}",
+        )
+
+    # Flatten the grouped response into a simple player list
+    players: list[dict] = []
+    seen_ids: set[int] = set()
+    for group in data:
+        for s in group.get("suggestions", []):
+            if s.get("type") != "player":
+                continue
+            pid = int(s["id"])
+            if pid in seen_ids:
+                continue
+            seen_ids.add(pid)
+            players.append({
+                "playerFotmobId": pid,
+                "name": s["name"],
+                "teamId": s.get("teamId"),
+                "teamName": s.get("teamName"),
+                "score": s.get("score", 0),
+            })
+
+    return ORJSONResponse(content={
+        "term": term,
+        "total": len(players),
+        "items": players,
+    })
 
 
 @id_mapping_router.get(
@@ -638,81 +714,6 @@ async def delete_manual_resolution(
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Resolution {resolution_id} not found")
     return ORJSONResponse(content={"status": "deleted", "id": resolution_id})
-
-
-@id_mapping_router.get(
-    "/fotmob-search",
-    response_class=ORJSONResponse,
-    summary="Search players on FotMob via suggest API",
-    description=(
-        "Proxies FotMob's public ``/api/data/search/suggest`` endpoint. "
-        "Returns a list of candidate player matches with their FotMob ID, "
-        "name, and team. Use this in the ID mapping UI to find the correct "
-        "FotMob player interactively.\n\n"
-        "If exactly **one** result is returned with a high-enough score, "
-        "the frontend can auto-select it. When multiple candidates are "
-        "returned the operator picks the right one manually."
-    ),
-    responses={
-        200: {"description": "List of FotMob player suggestions"},
-        502: {"description": "FotMob suggest API unreachable"},
-    },
-)
-async def fotmob_search(
-    term: str = Query(..., min_length=1, description="Search term (player name)"),
-    hits: int = Query(10, ge=1, le=50, description="Max suggestions per category"),
-) -> ORJSONResponse:
-    import httpx
-
-    encoded_term = httpx.utils.quote(term, safe="")
-    url = (
-        f"https://www.fotmob.com/api/data/search/suggest"
-        f"?hits={hits}&lang=it%2Cen%2Cfr&term={encoded_term}"
-    )
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/125.0.0.0 Safari/537.36"
-        ),
-        "Accept": "application/json",
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(url, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-    except httpx.RequestError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"FotMob suggest API unreachable: {exc}",
-        )
-
-    # Flatten the grouped response into a simple player list
-    players: list[dict] = []
-    seen_ids: set[int] = set()
-    for group in data:
-        for s in group.get("suggestions", []):
-            if s.get("type") != "player":
-                continue
-            pid = int(s["id"])
-            if pid in seen_ids:
-                continue
-            seen_ids.add(pid)
-            players.append({
-                "playerFotmobId": pid,
-                "name": s["name"],
-                "teamId": s.get("teamId"),
-                "teamName": s.get("teamName"),
-                "score": s.get("score", 0),
-            })
-
-    return ORJSONResponse(content={
-        "term": term,
-        "total": len(players),
-        "items": players,
-    })
 
 
 @id_mapping_router.get(
