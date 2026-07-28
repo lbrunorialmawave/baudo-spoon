@@ -255,7 +255,7 @@ const HYBRID_LABELS = [
             <!-- Pagination -->
             <div class="mt-3 flex items-center justify-between text-xs"
                  style="color:var(--color-text-secondary)">
-              <span>{{ totalDisplayed }} / {{ filterTotal }} players</span>
+              <span>{{ totalDisplayed() }} / {{ filterTotal() }} players</span>
               <div class="flex gap-2">
                 <button class="rounded border px-3 py-1 disabled:opacity-40"
                         [disabled]="hybridPage() <= 1"
