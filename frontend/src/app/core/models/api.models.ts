@@ -181,11 +181,11 @@ export interface ProblemDetails {
 
 // ── Hybrid MANTRA+ML Predictions ───────────────────────────
 export interface HybridPlayerPrediction {
-  playerName: string;
+  playerName: string | null;
   team: string | null;
   canonicalRole: string | null;
   ruoloPrimario: string | null;
-  ruoliMantra: string[];
+  ruoliMantra: string[] | null;
   P1: number | null;
   P2: number | null;
   P3: number | null;
@@ -200,7 +200,7 @@ export interface HybridPlayerPrediction {
   fpIbrido: number | null;
   expectedValue: number | null;
   prezzoMassimo: number | null;
-  hybridLabels: string[];
+  hybridLabels: string[] | null;
   hasMlData: boolean;
 }
 

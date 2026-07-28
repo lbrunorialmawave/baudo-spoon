@@ -205,12 +205,12 @@ const HYBRID_LABELS = [
                           style="color:var(--color-text-secondary)">{{ i + 1 }}</td>
                       <td class="px-3 py-2">
                         <p class="font-medium text-sm truncate max-w-32"
-                           style="color:var(--color-text-primary)">{{ p.playerName }}</p>
+                           style="color:var(--color-text-primary)">{{ p.playerName ?? '—' }}</p>
                       </td>
                       <td class="px-3 py-2 text-xs align-top pt-3"
-                          style="color:var(--color-text-secondary)">{{ p.team }}</td>
+                          style="color:var(--color-text-secondary)">{{ p.team ?? '—' }}</td>
                       <td class="px-3 py-2 text-xs align-top pt-3"
-                          style="color:var(--color-text-secondary)">{{ p.ruoloPrimario }}</td>
+                          style="color:var(--color-text-secondary)">{{ p.ruoloPrimario ?? '—' }}</td>
                       <td class="px-3 py-2 text-right text-xs font-mono align-top pt-3"
                           style="color:var(--color-text-secondary)">{{ (p.FP_Corr ?? '—') | number:'1.1-1' }}</td>
                       <td class="px-3 py-2 text-right text-xs font-mono align-top pt-3"
@@ -250,7 +250,7 @@ const HYBRID_LABELS = [
                       </td>
                       <td class="px-3 py-2 align-top pt-3">
                         <div class="flex flex-wrap gap-1">
-                          @for (l of p.hybridLabels; track l) {
+                          @for (l of p.hybridLabels ?? []; track l) {
                             @if (labelColor(l); as c) {
                               <span class="inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap"
                                     [style]="'background:' + c + '22;color:' + c + ';border:1px solid ' + c + '44'">
@@ -258,7 +258,7 @@ const HYBRID_LABELS = [
                               </span>
                             }
                           }
-                          @if (!p.hasMlData && p.hybridLabels.length === 0) {
+                          @if (!p.hasMlData && (p.hybridLabels ?? []).length === 0) {
                             <span class="text-[10px]" style="color:var(--color-text-secondary)">no ML</span>
                           }
                         </div>
@@ -462,14 +462,14 @@ export class PredictionsComponent {
     const ruolo = this.hybridRuolo();
     const confMin = this.hybridConfidenceMin();
     const labels = this.activeLabels();
-    if (q) items = items.filter(p => p.playerName.toLowerCase().includes(q));
+    if (q) items = items.filter(p => (p.playerName ?? '').toLowerCase().includes(q));
     if (ruolo) items = items.filter(p => p.ruoloPrimario === ruolo);
     if (confMin !== null) {
       if (confMin === -1) items = items.filter(p => (p.confidenceScore ?? 100) < 30);
       else items = items.filter(p => (p.confidenceScore ?? 0) >= confMin);
     }
     if (labels.size > 0) {
-      items = items.filter(p => p.hybridLabels.some(l => labels.has(l)));
+      items = items.filter(p => (p.hybridLabels ?? []).some(l => labels.has(l)));
     }
     return items.length;
   });
@@ -483,14 +483,14 @@ export class PredictionsComponent {
     const confMin = this.hybridConfidenceMin();
     const labels = this.activeLabels();
 
-    if (q) items = items.filter(p => p.playerName.toLowerCase().includes(q));
+    if (q) items = items.filter(p => (p.playerName ?? '').toLowerCase().includes(q));
     if (ruolo) items = items.filter(p => p.ruoloPrimario === ruolo);
     if (confMin !== null) {
       if (confMin === -1) items = items.filter(p => (p.confidenceScore ?? 100) < 30);
       else items = items.filter(p => (p.confidenceScore ?? 0) >= confMin);
     }
     if (labels.size > 0) {
-      items = items.filter(p => p.hybridLabels.some(l => labels.has(l)));
+      items = items.filter(p => (p.hybridLabels ?? []).some(l => labels.has(l)));
     }
 
     const sf = this.sortField();
@@ -517,7 +517,7 @@ export class PredictionsComponent {
   readonly filteredNext = computed(() => {
     const q = this.nextSearch().toLowerCase();
     return this.nextItems()
-      .filter(p => !q || p.playerName.toLowerCase().includes(q))
+      .filter(p => !q || (p.playerName ?? '').toLowerCase().includes(q))
       .sort((a, b) => b.predictedNextFantavoto - a.predictedNextFantavoto);
   });
 
