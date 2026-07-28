@@ -37,8 +37,8 @@ const NAV_ITEMS: readonly NavItem[] = [
   },
   {
     path: '/predictions',
-    label: 'Predictions',
-    shortLabel: 'Predict',
+    label: 'Previsioni',
+    shortLabel: 'Prev.',
     icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 17l5-5 4 4 9-10"/></svg>`,
   },
   {

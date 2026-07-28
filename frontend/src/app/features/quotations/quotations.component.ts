@@ -12,8 +12,6 @@ const ROLE_COLORS: Record<string, string> = {
   GK: '#F59E0B', DEF: '#22C55E', MID: '#3B82F6', FWD: '#EF4444',
 };
 
-const MANTRA_ROLES = ['Por', 'Dc', 'Dd', 'Ds', 'B', 'E', 'M', 'C', 'T', 'W', 'A', 'Pc'] as const;
-
 @Component({
   selector: 'app-quotations',
   standalone: true,
@@ -21,7 +19,7 @@ const MANTRA_ROLES = ['Por', 'Dc', 'Dd', 'Ds', 'B', 'E', 'M', 'C', 'T', 'W', 'A'
   template: `
     <div style="background:var(--color-bg);min-height:100%">
       <!-- Page header -->
-      <div class="flex flex-col gap-1 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-3.5"
+      <div class="flex items-center justify-between border-b px-6 py-3.5"
            style="border-color:var(--color-border)">
         <h1 class="text-base font-semibold" style="color:var(--color-text-primary)">Quotations</h1>
         @if (selectedSeason()) {
@@ -31,7 +29,7 @@ const MANTRA_ROLES = ['Por', 'Dc', 'Dd', 'Ds', 'B', 'E', 'M', 'C', 'T', 'W', 'A'
         }
       </div>
 
-      <div class="p-4 space-y-4 sm:p-6 sm:space-y-6">
+      <div class="p-6 space-y-6">
         <!-- Summary cards -->
         @if (statsLoading()) {
           <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -44,7 +42,7 @@ const MANTRA_ROLES = ['Por', 'Dc', 'Dd', 'Ds', 'B', 'E', 'M', 'C', 'T', 'W', 'A'
                 <div class="flex items-center justify-between mb-1">
                   <span class="badge text-white text-xs"
                         [style.background]="roleColor(rs.role)">{{ rs.role }}</span>
-                  <span class="text-xs" style="color:var(--color-text-secondary)" title="Media Quotazione d'Acquisto">avg qtA</span>
+                  <span class="text-xs" style="color:var(--color-text-secondary)">avg qtA</span>
                 </div>
                 <p class="text-2xl font-bold tabular-nums" [style.color]="roleColor(rs.role)">
                   {{ rs.avgQtA | number:'1.0-0' }}
@@ -69,10 +67,10 @@ const MANTRA_ROLES = ['Por', 'Dc', 'Dd', 'Ds', 'B', 'E', 'M', 'C', 'T', 'W', 'A'
 
         <!-- Filters -->
         <div class="card">
-          <div class="flex flex-col gap-3 mb-4 sm:flex-row sm:flex-wrap sm:items-center">
+          <div class="flex flex-wrap gap-3 items-center mb-4">
             <!-- Season selector -->
             @if (seasons().length) {
-              <select class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full sm:w-auto"
+              <select class="rounded-lg border px-3 py-1.5 text-sm outline-none"
                       style="background:var(--color-surface-raised);border-color:var(--color-border);
                              color:var(--color-text-primary)"
                       [ngModel]="selectedSeason()"
@@ -85,46 +83,25 @@ const MANTRA_ROLES = ['Por', 'Dc', 'Dd', 'Ds', 'B', 'E', 'M', 'C', 'T', 'W', 'A'
             }
 
             <!-- Role filter chips -->
-            <div class="flex flex-wrap gap-2" role="group">
+            <div class="flex gap-2" role="group">
               <button class="rounded-full border px-3 py-1 text-xs font-medium"
                       [style]="selectedRole() === null
-                        ? 'background:var(--color-accent);color:#fff;border-color:transparent' + (filterMode() === 'mantra' ? ';opacity:0.5' : '')
+                        ? 'background:var(--color-accent);color:#fff;border-color:transparent'
                         : 'background:var(--color-surface);color:var(--color-text-secondary);border-color:var(--color-border)'"
                       (click)="selectedRole.set(null); currentPage.set(1)">All</button>
               @for (role of ['GK','DEF','MID','FWD']; track role) {
                 <button class="rounded-full border px-3 py-1 text-xs font-medium"
                         [style]="selectedRole() === role
                           ? 'background:' + roleColor(role) + ';color:#fff;border-color:transparent'
-                          : filterMode() === 'mantra'
-                            ? 'background:var(--color-surface);color:var(--color-text-secondary);border-color:var(--color-border);opacity:0.35'
-                            : 'background:var(--color-surface);color:var(--color-text-secondary);border-color:var(--color-border)'"
-                        (click)="selectedRole.set(role); selectedRuoloPrimario.set(null); currentPage.set(1)">{{ role }}</button>
-              }
-            </div>
-
-            <!-- Mantra role filter chips -->
-            <div class="flex flex-wrap gap-2" role="group">
-              <button class="rounded-full border px-3 py-1 text-xs font-medium"
-                      [style]="selectedRuoloPrimario() === null
-                        ? 'background:var(--color-accent);color:#fff;border-color:transparent' + (filterMode() === 'classic' ? ';opacity:0.5' : '')
-                        : 'background:var(--color-surface);color:var(--color-text-secondary);border-color:var(--color-border)'"
-                      (click)="selectedRuoloPrimario.set(null); currentPage.set(1)"
-                      title="Filter by Mantra role">Mantra</button>
-              @for (role of mantraRoles; track $index) {
-                <button class="rounded-full border px-3 py-1 text-xs font-medium"
-                        [style]="selectedRuoloPrimario() === role
-                          ? 'background:var(--color-accent);color:#fff;border-color:transparent'
-                          : filterMode() === 'classic'
-                            ? 'background:var(--color-surface);color:var(--color-text-secondary);border-color:var(--color-border);opacity:0.35'
-                            : 'background:var(--color-surface);color:var(--color-text-secondary);border-color:var(--color-border)'"
-                        (click)="selectedRuoloPrimario.set(role); selectedRole.set(null); currentPage.set(1)">{{ role }}</button>
+                          : 'background:var(--color-surface);color:var(--color-text-secondary);border-color:var(--color-border)'"
+                        (click)="selectedRole.set(role); currentPage.set(1)">{{ role }}</button>
               }
             </div>
 
             <!-- Search -->
-            <input class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full sm:ml-auto sm:w-50"
+            <input class="rounded-lg border px-3 py-1.5 text-sm outline-none ml-auto"
                    style="background:var(--color-surface-raised);border-color:var(--color-border);
-                          color:var(--color-text-primary)"
+                          color:var(--color-text-primary);width:200px"
                    placeholder="Search player…"
                    [ngModel]="searchInput()"
                    (ngModelChange)="searchInput.set($event)" />
@@ -138,19 +115,19 @@ const MANTRA_ROLES = ['Por', 'Dc', 'Dd', 'Ds', 'B', 'E', 'M', 'C', 'T', 'W', 'A'
           } @else if (tableError()) {
             <app-error-boundary [message]="tableError()!" />
           } @else {
-            <div class="overflow-x-auto -mx-3 sm:-mx-4 md:mx-0">
-              <table class="w-full text-sm" style="border-collapse:collapse;min-width:520px">
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm" style="border-collapse:collapse">
                 <thead>
                   <tr class="border-b text-xs font-medium uppercase tracking-wide"
                       style="border-color:var(--color-border);color:var(--color-text-secondary)">
                     <th class="px-3 py-2 text-left">Player</th>
-                    <th class="px-3 py-2 text-left hidden sm:table-cell">Team</th>
+                    <th class="px-3 py-2 text-left">Team</th>
                     <th class="px-3 py-2 text-center">Role</th>
-                    <th class="px-3 py-2 text-center hidden md:table-cell" title="Ruolo primario Mantra">Mantra</th>
-                    <th class="px-3 py-2 text-right" title="Quotazione d'Acquisto — prezzo d'asta in crediti">qtA</th>
-                    <th class="px-3 py-2 text-right hidden sm:table-cell" title="Quotazione Iniziale — prezzo di partenza">qtI</th>
-                    <th class="px-3 py-2 text-right hidden md:table-cell" title="Fantacalcio Voto Medio — media voti del giocatore">FVM</th>
-                    <th class="px-3 py-2 text-right" title="Differenza qtA - qtI (verde = plusvalenza, rosso = minusvalenza)">Diff</th>
+                    <th class="px-3 py-2 text-center">Mapping</th>
+                    <th class="px-3 py-2 text-right">qtA</th>
+                    <th class="px-3 py-2 text-right">qtI</th>
+                    <th class="px-3 py-2 text-right">FVM</th>
+                    <th class="px-3 py-2 text-right">Diff</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -163,22 +140,42 @@ const MANTRA_ROLES = ['Por', 'Dc', 'Dd', 'Ds', 'B', 'E', 'M', 'C', 'T', 'W', 'A'
                       <td class="px-3 py-2.5 font-medium" style="color:var(--color-text-primary)">
                         {{ q.playerName }}
                       </td>
-                      <td class="px-3 py-2.5 text-xs hidden sm:table-cell" style="color:var(--color-text-secondary)">{{ q.team }}</td>
+                      <td class="px-3 py-2.5 text-xs" style="color:var(--color-text-secondary)">{{ q.team }}</td>
                       <td class="px-3 py-2.5 text-center">
                         <span class="badge text-white text-xs" [style.background]="roleColor(q.role)">
                           {{ q.role }}
                         </span>
                       </td>
-                      <td class="px-3 py-2.5 text-center text-xs hidden md:table-cell" style="color:var(--color-text-secondary)">
-                        {{ q.ruoloPrimario ?? '—' }}
+                      <td class="px-3 py-2.5 text-center">
+                        @if (!q.matchMethod || q.matchMethod === 'unmatched') {
+                          <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-white"
+                                style="background:#EF4444"
+                                title="Senza mapping FotMob — non usato dalla pipeline">
+                            ⚠ No ID
+                          </span>
+                        } @else if (q.matchMethod === 'fuzzy_name') {
+                          <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+                                style="background:#F59E0B;color:#fff"
+                                title="Mapping fuzzy con confidenza {{ q.confidence }}">
+                            ⚡ Fuzzy
+                          </span>
+                        } @else if (q.matchMethod === 'manual') {
+                          <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-white"
+                                style="background:#8B5CF6"
+                                title="Risolto manualmente">
+                            ✓ Manual
+                          </span>
+                        } @else {
+                          <span class="text-xs" style="color:var(--color-text-secondary)">✓</span>
+                        }
                       </td>
-                      <td class="px-3 py-2.5 text-right font-mono font-semibold whitespace-nowrap"
+                      <td class="px-3 py-2.5 text-right font-mono font-semibold"
                           style="color:var(--color-accent)">{{ q.qtA }}</td>
-                      <td class="px-3 py-2.5 text-right font-mono text-xs hidden sm:table-cell"
+                      <td class="px-3 py-2.5 text-right font-mono text-xs"
                           style="color:var(--color-text-secondary)">{{ q.qtI }}</td>
-                      <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell"
+                      <td class="px-3 py-2.5 text-right font-mono text-xs"
                           style="color:var(--color-text-secondary)">{{ q.fvm ?? '—' }}</td>
-                      <td class="px-3 py-2.5 text-right font-mono text-xs whitespace-nowrap"
+                      <td class="px-3 py-2.5 text-right font-mono text-xs"
                           [style.color]="q.diffVal > 0 ? '#22C55E' : q.diffVal < 0 ? '#EF4444' : 'var(--color-text-secondary)'">
                         {{ q.diffVal > 0 ? '+' : '' }}{{ q.diffVal }}
                       </td>
@@ -222,20 +219,11 @@ export class QuotationsComponent {
   readonly tableError = signal<string | null>(null);
   readonly selectedSeason = signal<number | null>(null);
   readonly selectedRole = signal<string | null>(null);
-  readonly selectedRuoloPrimario = signal<string | null>(null);
-  readonly selectedRuoloMantra = signal<string | null>(null);
   readonly searchInput = signal('');
   readonly search = signal('');
   readonly currentPage = signal(1);
 
   hoverId: number | null = null;
-  readonly mantraRoles = MANTRA_ROLES;
-
-  readonly filterMode = computed(() => {
-    if (this.selectedRole() !== null) return 'classic';
-    if (this.selectedRuoloPrimario() !== null) return 'mantra';
-    return null;
-  });
 
   readonly totalPages = computed(() => Math.ceil(this.total() / 50));
 
@@ -283,16 +271,12 @@ export class QuotationsComponent {
     effect(() => {
       const season = this.selectedSeason();
       const role = this.selectedRole();
-      const ruoloPrimario = this.selectedRuoloPrimario();
-      const ruoloMantra = this.selectedRuoloMantra();
       const page = this.currentPage();
       this.tableLoading.set(true);
       this.tableError.set(null);
       this.quotService.getQuotations({
         seasonStart: season ?? undefined,
         role: role ?? undefined,
-        ruoloPrimario: ruoloPrimario ?? undefined,
-        ruoloMantra: ruoloMantra ?? undefined,
         page,
         size: 50,
       }).subscribe({
