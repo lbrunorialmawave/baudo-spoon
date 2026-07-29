@@ -396,5 +396,17 @@ def load_raw_data(engine: sa.Engine, cfg: MLConfig) -> pd.DataFrame:
             if col not in df_player.columns:
                 df_player[col] = pd.NA
 
+    # ── Optional: MANTRA historical features (lagged) ────────────────────
+    # Strictly historical: for season N, uses only data from seasons < N.
+    try:
+        from ..preprocessing.mantra_features import attach_mantra_features
+        df_player = attach_mantra_features(df_player, engine=engine)
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "Could not attach MANTRA ML features (%s). "
+            "Apply migration 016 or ensure player_season_stats is populated.",
+            exc,
+        )
+
     log.info("Raw dataset shape: %s", df_player.shape)
     return df_player

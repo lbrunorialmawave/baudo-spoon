@@ -100,6 +100,18 @@ _ENVIRONMENTAL_STAT_COLS: list[str] = [
     "price_delta_pct",
     "qt_a_vs_role_median",
     "price_trend_2y",
+    # MANTRA historical features are contextual (cumulative career stats).
+    # Missing = no prior season data, not zero performance.
+    "mantra_vote_avg",
+    "mantra_vote_std",
+    "mantra_minutes_avg",
+    "mantra_xg_per90",
+    "mantra_xa_per90",
+    "mantra_presence_rate",
+    "mantra_seasons_it",
+    "mantra_voto_trend",
+    "mantra_consistency",
+    "mantra_expected_ratio",
 ]
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -362,6 +374,14 @@ class OpponentStrengthAdjuster(BaseEstimator, TransformerMixin):
         return out
 
 
+def add_mantra_derived(df: pd.DataFrame) -> pd.DataFrame:
+    """Add MANTRA derived features if base features are present."""
+    if "mantra_vote_avg" not in df.columns:
+        return df
+    from .mantra_features import add_mantra_derived_features
+    return add_mantra_derived_features(df)
+
+
 def add_opponent_strength_features(df: pd.DataFrame) -> pd.DataFrame:
     """Apply :class:`OpponentStrengthAdjuster` fit-transform in-place.
 
@@ -467,6 +487,7 @@ def engineer_features(
     df = add_per90_features(df)
     df = add_trend_features(df, window=trend_window)
     df = add_opponent_strength_features(df)
+    df = add_mantra_derived(df)
     df = add_season_index(df)
     df = add_role_encoding(df)
     df = impute_environmental_features(df)
@@ -543,6 +564,18 @@ NUMERIC_FEATURE_CANDIDATES: list[str] = [
     "qt_a_vs_role_median",
     # 4) Year-over-year price trend (requires prior-season quotation).
     "price_trend_2y",
+    # ── MANTRA historical features (lagged — strictly from prior seasons) ─
+    "mantra_vote_avg",
+    "mantra_vote_std",
+    "mantra_minutes_avg",
+    "mantra_xg_per90",
+    "mantra_xa_per90",
+    "mantra_presence_rate",
+    "mantra_seasons_it",
+    # ── MANTRA derived features ──────────────────────────────────────────
+    "mantra_voto_trend",
+    "mantra_consistency",
+    "mantra_expected_ratio",
 ]
 
 
