@@ -585,6 +585,7 @@ def get_var_ranking(
             "role": p.role,
             "projected_score": p.projected_score,
             "season_value": p.season_value,
+            "start_probability": p.start_probability,
         }
         for p in pool
     ]
@@ -596,6 +597,9 @@ def get_var_ranking(
         total_budget=state.config.budget_initial,
         roster_slots=dict(state.config.role_quotas),
         valuation_mode=valuation_mode,
+        num_participants=state.config.num_participants,
+        replacement_method=getattr(state.config, "replacement_method", "percentile"),
+        min_start_probability=getattr(state.config, "min_start_probability", None),
     )
     results = engine.evaluate(players_input, price_overrides=price_overrides)
 

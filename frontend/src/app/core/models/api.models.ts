@@ -124,6 +124,9 @@ export interface OptimizationRequest {
   riskAversion?: number;
   varBlend?: number;
   esvWeight?: number;
+  valuationMode?: 'PER_MATCH_RATING' | 'SEASON_VALUE';
+  minStartProbability?: number | null;
+  replacementMethod?: 'percentile' | 'roster_depth';
   strategyNames?: string[] | null;
   customStrategies?: StrategyProfile[] | null;
 }

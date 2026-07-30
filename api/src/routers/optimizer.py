@@ -35,6 +35,7 @@ from ..schemas import (
     StrategyProfileSchema,
 )
 from ml.optimizer.inflation import compute_role_percentile_map, estimate_effective_cost
+from ml.optimizer.team_strength import load_team_strength_scores
 from ml.optimizer.win_probability import WinProbabilityConfig, estimate_completion_probability
 from ml.optimizer.models import (
     Formation,
@@ -113,6 +114,7 @@ def _build_config(req: OptimizationRequest) -> OptimizationConfig:
         risk_aversion=req.risk_aversion,
         var_blend=req.var_blend,
         esv_weight=req.esv_weight,
+        valuation_mode=req.valuation_mode,
     )
 
 
@@ -351,12 +353,15 @@ async def run_multi_strategy(
     # Build an effective-cost lookup so each squad player carries its own
     # value without re-running the inflation model per request.
     percentiles = compute_role_percentile_map(pool)
+    known_teams = {p.real_team for p in pool if p.real_team}
+    ts_scores = load_team_strength_scores(known_teams=known_teams)
     effective_lookup: dict[str, float] = {
         p.player_id: estimate_effective_cost(
             player=p,
             role_percentile=percentiles[p.player_id],
             num_participants=config.num_participants,
             config=config.inflation_config,
+            team_strength_scores=ts_scores,
         )
         for p in pool
     }
@@ -438,12 +443,15 @@ async def run_single_strategy(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     percentiles = compute_role_percentile_map(pool)
+    known_teams_s = {p.real_team for p in pool if p.real_team}
+    ts_scores_s = load_team_strength_scores(known_teams=known_teams_s)
     effective_lookup: dict[str, float] = {
         p.player_id: estimate_effective_cost(
             player=p,
             role_percentile=percentiles[p.player_id],
             num_participants=config.num_participants,
             config=config.inflation_config,
+            team_strength_scores=ts_scores_s,
         )
         for p in pool
     }
@@ -452,3 +460,12 @@ async def run_single_strategy(
         result.squad, config.budget, WinProbabilityConfig(), config.inflation_config, config.num_participants,
     ) if result.squad else None
     return _serialize_result(result, effective_lookup, win_probability=wp)
+
+
+@router.get(
+    "/team-strength",
+    summary="Team strength Elo scores (normalized 0–1)",
+)
+async def get_team_strength() -> dict[str, float]:
+    """Return normalized Elo scores for all Serie A clubs."""
+    return load_team_strength_scores()

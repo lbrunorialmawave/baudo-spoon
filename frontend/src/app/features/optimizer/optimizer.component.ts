@@ -446,6 +446,31 @@ const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; examples
             </div>
           </div>
 
+          <!-- VAR/ESV ADVANCED -->
+          <div class="field-row">
+            <div class="field-group">
+              <label class="field-label" for="opt-valuationMode">Metrica di valutazione</label>
+              <select id="opt-valuationMode" class="field-input" [(ngModel)]="valuationMode">
+                <option value="PER_MATCH_RATING">Per-match rating (default)</option>
+                <option value="SEASON_VALUE">Season value (totale stagione)</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="opt-replacementMethod">Metodo replacement level</label>
+              <select id="opt-replacementMethod" class="field-input" [(ngModel)]="replacementMethod">
+                <option value="percentile">Percentile (10° pctile)</option>
+                <option value="roster_depth">Roster depth</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label" for="opt-minStartProb">Min. probabilità titolare <span class="field-hint">0–1, vuoto = nessun filtro</span></label>
+            <input id="opt-minStartProb" class="field-input" type="number" min="0" max="1" step="0.05"
+                   [ngModel]="minStartProbability()"
+                   (ngModelChange)="minStartProbability.set($event === '' ? null : +$event)" />
+          </div>
+
           <!-- FORMATIONS -->
           <p class="section-divider">Moduli tattici</p>
 
@@ -1012,6 +1037,9 @@ export class OptimizerComponent {
   readonly riskAversion = signal(0.0);
   readonly varBlend = signal(0.0);
   readonly esvWeight = signal(0.0);
+  readonly valuationMode = signal<'PER_MATCH_RATING' | 'SEASON_VALUE'>('PER_MATCH_RATING');
+  readonly minStartProbability = signal<number | null>(null);
+  readonly replacementMethod = signal<'percentile' | 'roster_depth'>('percentile');
 
   // ── Strategies ────────────────────────────────────────
   readonly selectedStrategies = signal(new Set(['BALANCED', 'SUPER_DEFENSIVE', 'SUPER_OFFENSIVE', 'MIXED']));
@@ -1123,6 +1151,9 @@ export class OptimizerComponent {
       riskAversion: this.riskAversion(),
       varBlend: this.varBlend(),
       esvWeight: this.esvWeight(),
+      valuationMode: this.valuationMode(),
+      minStartProbability: this.minStartProbability(),
+      replacementMethod: this.replacementMethod(),
       strategyNames: this.showCustomWeights() ? null : [...this.selectedStrategies()],
       customStrategies: this.showCustomWeights() ? this._buildCustomStrategies() : null,
     }).subscribe({

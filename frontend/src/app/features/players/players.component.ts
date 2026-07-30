@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { DecimalPipe } from '@angular/common';
 import { StatsService } from '../../core/services/stats.service';
 import { MantraService } from '../../core/services/mantra.service';
+import { TeamStrengthService } from '../../core/services/team-strength.service';
 import { FASE7_LABELS, MANTRA_ROLES, MantraPlayer } from '../../core/models/mantra.models';
 import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/error-boundary.component';
 import { PlayerTableComponent } from './components/player-table/player-table.component';
@@ -96,6 +97,7 @@ import { PlayerDrawerComponent } from './components/player-drawer/player-drawer.
               [pageSize]="pageSize"
               [mantraMap]="mantraMap()"
               [matchdayStatus]="matchdayStatusMap()"
+              [teamStrength]="teamStrengthScores()"
               [sortColumn]="sortColumn()"
               [sortDirection]="sortDirection()"
               (sortChanged)="onSort($any($event))"
@@ -124,6 +126,9 @@ import { PlayerDrawerComponent } from './components/player-drawer/player-drawer.
 export class PlayersComponent {
   private readonly mantraService = inject(MantraService);
   private readonly statsService = inject(StatsService);
+  private readonly teamStrengthService = inject(TeamStrengthService);
+
+  readonly teamStrengthScores = signal<Record<string, number>>({});
 
   readonly MANTRA_ROLES = MANTRA_ROLES;
   readonly FASE7_LABELS = FASE7_LABELS;
@@ -203,6 +208,7 @@ export class PlayersComponent {
     });
     this.loadStats();
     this.loadMatchdayStatus();
+    this.teamStrengthService.getScores().subscribe(s => this.teamStrengthScores.set(s));
   }
 
   private loadData(): void {

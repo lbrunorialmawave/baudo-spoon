@@ -30,6 +30,12 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
             <th class="px-3 py-2 text-right sortable hidden md:table-cell" (click)="sortChanged.emit('VR')" title="Voto Ricevuto — media dei voti in pagella (scala 0-100)">
               VR @if (sortColumn() === 'VR') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
             </th>
+            <th class="px-3 py-2 text-right sortable hidden md:table-cell" (click)="sortChanged.emit('season_value')" title="Season Value — punti fantacalcio totali attesi nella stagione">
+              SV @if (sortColumn() === 'season_value') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
+            </th>
+            <th class="px-3 py-2 text-right sortable hidden md:table-cell" (click)="sortChanged.emit('start_probability')" title="Start Probability — probabilità di essere titolare">
+              SP% @if (sortColumn() === 'start_probability') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
+            </th>
             <th class="px-3 py-2 text-left hidden md:table-cell" title="Stato per la prossima giornata (infortunato, squalificato, etc.)">Status</th>
             <th class="px-3 py-2 text-left" title="Classificazione Fase 7 del calciatore (TOP, AFFARE, CERTEZZA, SCOMMESSA, SOPRAVALUTATO, GIUSTO)">Fase 7</th>
             <th class="px-3 py-2 text-right sortable" (click)="sortChanged.emit('Prezzo_Massimo')" title="Prezzo massimo di mercato stimato in crediti">
@@ -41,7 +47,7 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
           @if (loading()) {
             @for (_ of skeletonRows; track $index) {
               <tr>
-                @for (__ of [1,2,3,4,5,6,7,8,9,10]; track $index) {
+                @for (__ of [1,2,3,4,5,6,7,8,9,10,11,12]; track $index) {
                   <td class="px-3 py-2"><app-skeleton height="20px" /></td>
                 }
               </tr>
@@ -63,6 +69,10 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                 </td>
                 <td class="px-3 py-2.5 text-xs hidden sm:table-cell" style="color:var(--color-text-secondary)">
                   {{ item.team ?? item.team_name ?? '—' }}
+                  @if (teamStrength()[item.team ?? item.team_name]; as elo) {
+                    <span class="elo-badge" [title]="'Elo: ' + (elo * 100 | number:'1.0-0') + '%'"
+                          [style.opacity]="0.4 + elo * 0.6">●</span>
+                  }
                 </td>
                 <td class="px-3 py-2.5 text-xs">
                   @if (mp?.ruolo_primario) {
@@ -81,6 +91,14 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                 <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell"
                     style="color:var(--color-text-secondary)">
                   {{ mp?.VR != null ? (mp.VR | number:'1.0-0') : '—' }}
+                </td>
+                <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell"
+                    style="color:var(--color-text-secondary)">
+                  {{ mp?.season_value != null ? (mp.season_value | number:'1.1-1') : '—' }}
+                </td>
+                <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell"
+                    style="color:var(--color-text-secondary)">
+                  {{ mp?.start_probability != null ? (mp.start_probability * 100 | number:'1.0-0') + '%' : '—' }}
                 </td>
                 <td class="px-3 py-2.5 text-xs hidden md:table-cell">
                   @let mds = matchdayStatus()[item.fantacalcio_id];
@@ -121,6 +139,7 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
     :host { display: block; }
     .sortable { cursor: pointer; user-select: none; }
     .sortable:hover { color: var(--color-accent) !important; }
+    .elo-badge { margin-left: 4px; color: var(--color-accent); font-size: 10px; }
   `],
 })
 export class PlayerTableComponent {
@@ -130,6 +149,7 @@ export class PlayerTableComponent {
   readonly pageSize = input<number>(50);
   readonly mantraMap = input<Record<number, MantraPlayer>>({});
   readonly matchdayStatus = input<Record<number, any>>({});
+  readonly teamStrength = input<Record<string, number>>({});
   readonly sortColumn = input<string>('');
   readonly sortDirection = input<'asc' | 'desc'>('asc');
   readonly sortChanged = output<string>();

@@ -125,6 +125,8 @@ class PlayerVarSchema(_CamelModel):
     player_name: Optional[str] = None
     role: str
     projected_score: float
+    season_value: float | None = None
+    start_probability: float | None = None
     replacement_level_score: float
     var_score: float
     expected_price: float
@@ -437,6 +439,12 @@ class OptimizationRequest(_CamelModel):
     risk_aversion: float = Field(default=0.0, ge=0.0)
     var_blend: float = Field(default=0.0, ge=0.0, le=1.0)
     esv_weight: float = Field(default=0.0, ge=0.0)
+    valuation_mode: str = "PER_MATCH_RATING"
+    """Objective metric: PER_MATCH_RATING (default) or SEASON_VALUE."""
+    min_start_probability: float | None = None
+    """Minimum start_probability to include in pool. None = no filtering."""
+    replacement_method: str = "percentile"
+    """How to compute replacement level: 'percentile' or 'roster_depth'."""
     strategy_names: Optional[list[str]] = None  # None ⇒ tutte e 4 di default
     custom_strategies: Optional[list["StrategyProfileSchema"]] = None  # overrides strategy_names
     pool_override: Optional[list[PlayerSchema]] = Field(default=None, max_length=500)
@@ -557,6 +565,18 @@ class AuctionConfigSchema(_CamelModel):
 
     When SEASON_VALUE, the VarEngine ranks players by season-total expected
     fanta-points (rating × predicted appearances) instead of raw per-match rating.
+    """
+
+    min_start_probability: float | None = None
+    """Minimum start_probability to include a player in the VAR ranking.
+
+    Players below this threshold are excluded from the ranked output but remain
+    in the full pool. None (default) = no filtering.
+    """
+
+    replacement_method: str = "percentile"
+    """How to compute replacement level: 'percentile' (bottom 10th pctile of pool,
+    default) or 'roster_depth' (score at num_participants × role_quota rank).
     """
 
     @field_validator("reference_budget", "budget_initial")

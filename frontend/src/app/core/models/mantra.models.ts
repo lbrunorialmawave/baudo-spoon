@@ -23,6 +23,8 @@ export interface MantraPlayer {
   Prezzo_Massimo: number;
   Fase7: string | null;
   rischio: string | null;
+  season_value?: number | null;
+  start_probability?: number | null;
 }
 
 export interface MantraPlayersResponse {

@@ -770,11 +770,15 @@ class Trainer:
             var_players: list[dict] = []
             for _, row in df_latest.iterrows():
                 raw_role = str(row[_role_col] if _role_col else "MID")
+                _sv = row.get("fantapunti_totali")
+                _sp = row.get("probabilita_titolarita")
                 var_players.append({
                     "player_id": str(row.get("player_fotmob_id", row.get("player_name", "unknown"))),
                     "player_name": str(row.get("player_name", "")),
                     "role": _fc_role_map.get(raw_role, "C"),
                     "projected_score": float(row["predicted_fantavoto"]),
+                    "season_value": float(_sv) if pd.notna(_sv) else None,
+                    "start_probability": float(_sp) if pd.notna(_sp) else None,
                 })
 
             # Group by role to compute replacement level, then produce VAR + ESV
@@ -805,6 +809,8 @@ class Trainer:
                         "player_name": p["player_name"],
                         "role": role,
                         "projected_score": round(p["projected_score"], 3),
+                        "season_value": round(p["season_value"], 3) if p.get("season_value") is not None else None,
+                        "start_probability": round(p["start_probability"], 4) if p.get("start_probability") is not None else None,
                         "replacement_level_score": round(rl.score, 3),
                         "var_score": round(v.var_score, 3),
                         "expected_price": round(demand.expected_price(v.var_score), 2),
