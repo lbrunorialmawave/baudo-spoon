@@ -169,6 +169,29 @@ const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; examples
       { label: '2+', value: 'forte peso, ricerca aggressiva di affari' },
     ],
   },
+  valuationMode: {
+    description: 'Metrica di valutazione con cui il risolutore ILP stima il "valore" di ciascun giocatore. Cambia la base usata dal modello VAR (Value Above Replacement) per ordinare i candidati in rosa.',
+    examples: [
+      { label: 'PER_MATCH_RATING', value: 'default: media di rendimento a partita (più stabile, premia i titolari)' },
+      { label: 'SEASON_VALUE',      value: 'totale di stagione proiettato (più "pessimistico" se il giocatore salta gare)' },
+    ],
+  },
+  replacementMethod: {
+    description: 'Metodo per stimare il "replacement level", ovvero il valore del giocatore medio facilmente reperibile sul mercato. È il livello di confronto usato dal modello VAR: un giocatore vale X solo se il suo contributo supera il rimpiazzo di almeno X − replacement.',
+    examples: [
+      { label: 'percentile',   value: 'default: 10° percentile della distribuzione (sostituto "ragionevolmente scarso")' },
+      { label: 'roster_depth', value: 'usa la profondità media delle rose avversarie, più reale in leghe con molte squadre' },
+    ],
+  },
+  minStartProbability: {
+    description: 'Probabilità minima (0–1) che un giocatore sia schierato titolare dal proprio club. Sotto questa soglia il giocatore viene filtrato e NON entra in rosa, perché il risolutore non può garantire rendimento su gare che non gioca. Vuoto = nessun filtro.',
+    examples: [
+      { label: 'null / vuoto', value: 'nessun filtro, include anche riserve e infortunati' },
+      { label: '0.3',          value: 'esclude solo chi è praticamente fuori rosa' },
+      { label: '0.7',          value: 'default consigliato, solo giocatori con alta titolarità' },
+      { label: '0.9',          value: 'rosa di soli "intoccabili", scelte molto ridotte' },
+    ],
+  },
   formations: {
     description: 'Moduli tattici ammessi dal regolamento della tua lega. Il risolutore ILP verificherà la fattibilità per ciascuno e ti mostrerà quali sono fattibili (✓) e quali no (✗) per la rosa risultante.',
     examples: [
@@ -450,17 +473,27 @@ const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; examples
           <div class="field-row">
             <div class="field-group">
               <label class="field-label" for="opt-valuationMode">Metrica di valutazione</label>
-              <select id="opt-valuationMode" class="field-input" [(ngModel)]="valuationMode">
+              <select id="opt-valuationMode" class="field-input" [(ngModel)]="valuationMode"
+                      [attr.aria-describedby]="'legend-valuationMode'">
                 <option value="PER_MATCH_RATING">Per-match rating (default)</option>
                 <option value="SEASON_VALUE">Season value (totale stagione)</option>
               </select>
+              <app-field-legend
+                fieldId="legend-valuationMode"
+                [description]="OPTIMIZER_LEGENDS['valuationMode'].description"
+                [examples]="OPTIMIZER_LEGENDS['valuationMode'].examples" />
             </div>
             <div class="field-group">
               <label class="field-label" for="opt-replacementMethod">Metodo replacement level</label>
-              <select id="opt-replacementMethod" class="field-input" [(ngModel)]="replacementMethod">
+              <select id="opt-replacementMethod" class="field-input" [(ngModel)]="replacementMethod"
+                      [attr.aria-describedby]="'legend-replacementMethod'">
                 <option value="percentile">Percentile (10° pctile)</option>
                 <option value="roster_depth">Roster depth</option>
               </select>
+              <app-field-legend
+                fieldId="legend-replacementMethod"
+                [description]="OPTIMIZER_LEGENDS['replacementMethod'].description"
+                [examples]="OPTIMIZER_LEGENDS['replacementMethod'].examples" />
             </div>
           </div>
 
@@ -468,7 +501,12 @@ const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; examples
             <label class="field-label" for="opt-minStartProb">Min. probabilità titolare <span class="field-hint">0–1, vuoto = nessun filtro</span></label>
             <input id="opt-minStartProb" class="field-input" type="number" min="0" max="1" step="0.05"
                    [ngModel]="minStartProbability()"
-                   (ngModelChange)="minStartProbability.set($event === '' ? null : +$event)" />
+                   (ngModelChange)="minStartProbability.set($event === '' ? null : +$event)"
+                   [attr.aria-describedby]="'legend-minStartProbability'" />
+            <app-field-legend
+              fieldId="legend-minStartProbability"
+              [description]="OPTIMIZER_LEGENDS['minStartProbability'].description"
+              [examples]="OPTIMIZER_LEGENDS['minStartProbability'].examples" />
           </div>
 
           <!-- FORMATIONS -->
