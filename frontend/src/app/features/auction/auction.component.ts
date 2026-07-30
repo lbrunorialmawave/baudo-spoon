@@ -1045,17 +1045,17 @@ export class AuctionComponent {
     return this.varSortDir() === 'asc' ? 'ascending' : 'descending';
   }
 
-  /** Confronto per la colonna di ordinamento; valori null vanno in fondo. */
+  /** Confronto per la colonna di ordinamento; valori null/undefined in fondo. */
   private compareVarRow(a: VarRankingItem, b: VarRankingItem, key: VarSortKey): number {
     const av = this.varSortValue(a, key);
     const bv = this.varSortValue(b, key);
     if (av === bv) return 0;
-    if (av === null) return 1;
-    if (bv === null) return -1;
+    if (av === null || av === undefined) return 1;
+    if (bv === null || bv === undefined) return -1;
     return av < bv ? -1 : 1;
   }
 
-  private varSortValue(item: VarRankingItem, key: VarSortKey): number | string | null {
+  private varSortValue(item: VarRankingItem, key: VarSortKey): number | string | null | undefined {
     switch (key) {
       case 'name': return item.name.toLowerCase();
       case 'role': return item.role;
