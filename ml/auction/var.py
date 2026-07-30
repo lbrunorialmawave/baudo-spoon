@@ -21,6 +21,8 @@ import math
 from collections import defaultdict
 from dataclasses import dataclass
 
+from ml.auction.models import ValuationMode
+
 log = logging.getLogger(__name__)
 
 
@@ -79,6 +81,43 @@ class ReplacementLevel:
             score=replacement_score,
             n_players_used=n,
             percentile_threshold=percentile_threshold,
+        )
+
+    @classmethod
+    def from_roster_depth(
+        cls,
+        role: str,
+        scores: list[float],
+        num_participants: int,
+        role_quota: int,
+    ) -> "ReplacementLevel":
+        """Replacement level = score at position (num_participants × role_quota) in descending sort.
+
+        This models the last player drafted at a role in a league of N teams,
+        each filling `role_quota` slots. Players below this rank are undrafted.
+
+        Args:
+            role: Role code.
+            scores: All projected scores for this role.
+            num_participants: Number of teams in the league.
+            role_quota: Number of roster slots per team for this role.
+
+        Returns:
+            ReplacementLevel with the score at the draft cutoff.
+
+        Raises:
+            ValueError: If scores is empty.
+        """
+        if not scores:
+            raise ValueError(f"Cannot compute ReplacementLevel for role '{role}': empty scores.")
+        sorted_desc = sorted(scores, reverse=True)
+        cutoff_idx = min(num_participants * role_quota, len(sorted_desc)) - 1
+        cutoff_idx = max(0, cutoff_idx)
+        return cls(
+            role=role,
+            score=sorted_desc[cutoff_idx],
+            n_players_used=cutoff_idx + 1,
+            percentile_threshold=0.0,
         )
 
 
@@ -256,12 +295,33 @@ class VarEngine:
         total_budget: int = 500,
         roster_slots: dict[str, int] | None = None,
         percentile_threshold: float = 0.10,
+        valuation_mode: ValuationMode = ValuationMode.PER_MATCH_RATING,
+        replacement_method: str = "percentile",
+        num_participants: int = 8,
+        min_start_probability: float | None = None,
     ) -> None:
         self.demand_curve = demand_curve or DemandCurve()
         self.total_budget = total_budget
         # Default Fantacalcio classico slots: P=3, D=8, C=8, A=6
         self.roster_slots = roster_slots or {"P": 3, "D": 8, "C": 8, "A": 6}
         self.percentile_threshold = percentile_threshold
+        self.valuation_mode = valuation_mode
+        self.replacement_method = replacement_method  # "percentile" | "roster_depth"
+        self.num_participants = num_participants
+        self.min_start_probability = min_start_probability
+
+    def _get_score(self, player: dict) -> float:
+        """Extract the relevant score based on valuation_mode."""
+        if self.valuation_mode == ValuationMode.SEASON_VALUE:
+            sv = player.get("season_value")
+            if isinstance(sv, (int, float)) and sv > 0:
+                return float(sv)
+            log.warning(
+                "Player %s missing season_value in SEASON_VALUE mode, "
+                "falling back to projected_score",
+                player.get("player_id"),
+            )
+        return float(player["projected_score"])
 
     def evaluate(
         self,
@@ -271,8 +331,9 @@ class VarEngine:
         """Compute VAR and ESV for all players.
 
         Args:
-            players: List of dicts with player_id, role, projected_score.
-            price_overrides: Optional map of player_id → expected_price.
+            players: List of dicts with player_id, role, projected_score
+                (and optionally season_value for SEASON_VALUE mode).
+            price_overrides: Optional map of player_id -> expected_price.
                 When provided (e.g. from EWMA price_drift in a live session),
                 bypasses DemandCurve for those players.
 
@@ -291,14 +352,20 @@ class VarEngine:
         overrides = price_overrides or {}
 
         for role, role_players in by_role.items():
-            scores = [float(p["projected_score"]) for p in role_players]
-            replacement = ReplacementLevel.from_player_pool(
-                role, scores, self.percentile_threshold
-            )
+            scores = [self._get_score(p) for p in role_players]
+            if self.replacement_method == "roster_depth":
+                role_quota = self.roster_slots.get(role, 6)
+                replacement = ReplacementLevel.from_roster_depth(
+                    role, scores, self.num_participants, role_quota
+                )
+            else:
+                replacement = ReplacementLevel.from_player_pool(
+                    role, scores, self.percentile_threshold
+                )
 
             vars_ = [
                 VAR.compute(
-                    str(p["player_id"]), role, float(p["projected_score"]), replacement
+                    str(p["player_id"]), role, self._get_score(p), replacement
                 )
                 for p in role_players
             ]
@@ -316,4 +383,17 @@ class VarEngine:
                 )
                 results.append(esv)
 
-        return sorted(results, key=lambda e: e.esv, reverse=True)
+        ranked = sorted(results, key=lambda e: e.esv, reverse=True)
+
+        if self.min_start_probability is not None:
+            sp_map = {
+                str(p["player_id"]): p.get("start_probability")
+                for role_players in by_role.values()
+                for p in role_players
+            }
+            ranked = [
+                r for r in ranked
+                if (sp_map.get(r.player_id) or 0.0) >= self.min_start_probability
+            ]
+
+        return ranked

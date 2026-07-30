@@ -27,6 +27,7 @@ def estimate_effective_cost(
     role_percentile: float,
     num_participants: int,
     config: InflationConfig,
+    team_strength_scores: dict[str, float] | None = None,
 ) -> float:
     """Restituisce il costo atteso in asta reale, >= ``player.cost``.
 
@@ -103,7 +104,14 @@ def estimate_effective_cost(
     cap = float(config.max_inflation_multiplier)
     multiplier = min(cap, max(1.0, raw))
 
-    return nominal * multiplier
+    effective = nominal * multiplier
+
+    # Team-strength adjustment: boost cost for players on strong teams.
+    if config.team_strength_multiplier > 0 and team_strength_scores:
+        normalized_elo = team_strength_scores.get(player.real_team, 0.0)
+        effective *= 1.0 + config.team_strength_multiplier * normalized_elo
+
+    return effective
 
 
 def compute_role_percentile_map(

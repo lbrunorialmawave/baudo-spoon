@@ -56,6 +56,7 @@ from ml.auction.orchestrator import (
     deserialize_state,
 )
 from ml.auction.price_drift import classify_tier, get_current_projection
+from ml.auction.models import ValuationMode
 from ml.auction.var import VarEngine
 from ml.optimizer.inflation import InflationConfig
 from ml.optimizer.models import Player
@@ -78,6 +79,8 @@ def _player_from_schema(p: AuctionPlayerSchema) -> Player:
         real_team=p.real_team,
         cost=p.cost,
         projected_score=p.projected_score,
+        season_value=p.season_value,
+        start_probability=p.start_probability,
     )
 
 
@@ -89,6 +92,8 @@ def _player_to_summary(p: Player) -> AuctionPlayerSummarySchema:
         role=p.role,
         cost=p.cost,
         projected_score=p.projected_score,
+        season_value=p.season_value,
+        start_probability=p.start_probability,
     )
 
 
@@ -130,6 +135,7 @@ def _auction_config_from_schema(
         alternatives_config=_alternatives_config_from_schema(cfg.alternatives_config),
         use_inflation_baseline=cfg.use_inflation_baseline,
         inflation_config=inflation,
+        valuation_mode=cfg.valuation_mode,
         reference_budget=cfg.reference_budget,
         budget_initial=cfg.budget_initial,
     )
@@ -256,6 +262,8 @@ async def init_auction(
                 real_team=r["real_team"],
                 cost=int(r["cost"]),
                 projected_score=float(r["projected_score"]),
+                season_value=r.get("season_value"),
+                start_probability=r.get("start_probability"),
             )
             for r in rows
         ]
@@ -572,28 +580,38 @@ def get_var_ranking(
     }
 
     players_input = [
-        {"player_id": p.player_id, "role": p.role, "projected_score": p.projected_score}
+        {
+            "player_id": p.player_id,
+            "role": p.role,
+            "projected_score": p.projected_score,
+            "season_value": p.season_value,
+        }
         for p in pool
     ]
 
+    valuation_mode = ValuationMode(
+        getattr(state.config, "valuation_mode", "PER_MATCH_RATING")
+    )
     engine = VarEngine(
         total_budget=state.config.budget_initial,
         roster_slots=dict(state.config.role_quotas),
+        valuation_mode=valuation_mode,
     )
     results = engine.evaluate(players_input, price_overrides=price_overrides)
 
+    player_map = {p.player_id: p for p in pool}
     items = [
         VarRankingItemSchema(
             player_id=r.player_id,
             role=r.role,
-            projected_score=next(
-                p.projected_score for p in pool if p.player_id == r.player_id
-            ),
+            projected_score=player_map[r.player_id].projected_score,
             var_score=r.var_score,
             expected_price=r.expected_price,
             esv=r.esv,
             calibrated=r.calibrated,
             buy_signal=r.esv > 0,
+            season_value=player_map[r.player_id].season_value,
+            start_probability=player_map[r.player_id].start_probability,
         )
         for r in results
     ]

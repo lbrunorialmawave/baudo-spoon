@@ -109,6 +109,10 @@ class Player:
     # Picco / listino_cost from pilastro4 historical auction data. When present,
     # blended with role_percentile in estimate_effective_cost as a player-specific prior.
     historical_overpay_ratio: float | None = None
+    # Season-total expected fanta-points (rating × predicted appearances).
+    season_value: float | None = None
+    # Estimated probability of starting (from expected minutes model).
+    start_probability: float | None = None
 
     def __post_init__(self) -> None:
         if not self.player_id:
@@ -186,6 +190,13 @@ class InflationConfig:
     baseline_participants: int = 8
     """Numero di partecipanti di riferimento senza inflazione."""
 
+    team_strength_multiplier: float = 0.0
+    """Weight for team-strength (Elo-like) adjustment. 0.0 = disabled.
+
+    When > 0, effective cost is boosted by (1 + weight * normalized_elo)
+    for players on strong teams, reflecting higher auction demand.
+    """
+
     def __post_init__(self) -> None:
         if not 0.0 <= self.inflation_percentile_threshold <= 1.0:
             raise ValueError(
@@ -206,6 +217,11 @@ class InflationConfig:
             raise ValueError(
                 "baseline_participants must be >= 1, got "
                 f"{self.baseline_participants}"
+            )
+        if self.team_strength_multiplier < 0:
+            raise ValueError(
+                "team_strength_multiplier must be >= 0, got "
+                f"{self.team_strength_multiplier}"
             )
 
 
@@ -306,6 +322,9 @@ class OptimizationConfig:
     # - risk_aversion * prediction_std. Default 0.0 = risk-neutral (backward compat).
     # Meaningful only when Player.prediction_std is populated by the ensemble.
     risk_aversion: float = 0.0
+    # Valuation mode: "PER_MATCH_RATING" (default) uses projected_score in the
+    # objective; "SEASON_VALUE" uses season_value (rating × predicted appearances).
+    valuation_mode: str = "PER_MATCH_RATING"
 
     def __post_init__(self) -> None:
         if self.budget <= 0:

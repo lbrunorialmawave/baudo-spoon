@@ -24,6 +24,7 @@ from ml.auction.models import (
     AlternativeSuggestion,
     AlternativesConfig,
     AuctionState,
+    ValuationMode,
 )
 from ml.auction.price_drift import project_price_for_player
 from ml.optimizer.models import Player
@@ -36,11 +37,21 @@ logger = logging.getLogger(__name__)
 __all__ = ["suggest_alternatives"]
 
 
+def _get_player_score(player: Player, valuation_mode: ValuationMode) -> float:
+    """Extract relevant score from Player based on valuation mode."""
+    if valuation_mode == ValuationMode.SEASON_VALUE:
+        sv = player.season_value
+        if isinstance(sv, (int, float)) and sv > 0:
+            return float(sv)
+    return player.projected_score
+
+
 def suggest_alternatives(
     target: Player,
     available_pool: list[Player],
     state: AuctionState,
     config: AlternativesConfig,
+    valuation_mode: ValuationMode = ValuationMode.PER_MATCH_RATING,
 ) -> AlternativeSuggestion:
     """Suggerisce due alternative nello stesso ruolo del ``target``.
 
@@ -95,11 +106,13 @@ def suggest_alternatives(
         candidates=same_role,
         expected_prices=expected_prices,
         config=config,
+        valuation_mode=valuation_mode,
     )
     closest = _select_closest(
         target=target,
         candidates=same_role,
         expected_prices=expected_prices,
+        valuation_mode=valuation_mode,
     )
 
     logger.info(
@@ -127,6 +140,7 @@ def _select_low_cost(
     candidates: list[Player],
     expected_prices: dict[str, float],
     config: AlternativesConfig,
+    valuation_mode: ValuationMode = ValuationMode.PER_MATCH_RATING,
 ) -> Player | None:
     """Seleziona l'alternativa low-cost.
 
@@ -159,13 +173,11 @@ def _select_low_cost(
     if not eligible:
         return None
 
-    # Miglior rapporto score/expected_price.  Difesa contro expected=0
-    # (impossibile in pratica, ma controlliamo per evitare ZeroDivisionError).
     def _score(p: Player) -> float:
         ep = expected_prices[p.player_id]
         if ep <= 0.0:
             return float("-inf")
-        return p.projected_score / ep
+        return _get_player_score(p, valuation_mode) / ep
 
     return max(eligible, key=_score)
 
@@ -174,18 +186,21 @@ def _select_closest(
     target: Player,
     candidates: list[Player],
     expected_prices: dict[str, float],
+    valuation_mode: ValuationMode = ValuationMode.PER_MATCH_RATING,
 ) -> Player | None:
     """Seleziona l'alternativa per affinità di rendimento.
 
-    Restituisce il candidato con ``projected_score`` più vicino al
-    target (distanza assoluta minima); a parità di distanza, sceglie il
-    costo atteso più basso come tie-break.
+    Restituisce il candidato con score più vicino al target (distanza
+    assoluta minima); a parità di distanza, sceglie il costo atteso più
+    basso come tie-break.
     """
     if not candidates:
         return None
 
+    target_score = _get_player_score(target, valuation_mode)
+
     def _sort_key(p: Player) -> tuple[float, float]:
-        dist = abs(p.projected_score - target.projected_score)
+        dist = abs(_get_player_score(p, valuation_mode) - target_score)
         ep = expected_prices[p.player_id]
         return (dist, ep)
 

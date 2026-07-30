@@ -18,6 +18,7 @@ import {
   AuctionTier,
   ProjectionResponse,
   AlternativesResponse,
+  ValuationMode,
   VarRankingItem,
 } from '../../core/models/auction.models';
 import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.component';
@@ -323,7 +324,9 @@ function makeParticipants(
                       <thead>
                         <tr>
                           <th>Player</th><th>R</th>
-                          <th class="num">ESV</th><th class="num">E.Price</th><th>Signal</th>
+                          <th class="num">ESV</th><th class="num">E.Price</th>
+                          <th class="num">SV</th><th class="num">Start%</th>
+                          <th>Signal</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -339,6 +342,8 @@ function makeParticipants(
                               {{ v.esv | number:'1.1-1' }}
                             </td>
                             <td class="num faded">{{ v.expectedPrice | number:'1.0-0' }}</td>
+                            <td class="num faded">{{ v.seasonValue != null ? (v.seasonValue | number:'1.1-1') : '—' }}</td>
+                            <td class="num faded">{{ v.startProbability != null ? (v.startProbability * 100 | number:'1.0-0') + '%' : '—' }}</td>
                             <td>
                               @if (v.buySignal) {
                                 <span class="esv-badge esv-buy">BUY</span>
@@ -435,6 +440,15 @@ function makeParticipants(
                 <input class="field-input" type="number" min="1" max="10000" step="50"
                        [(ngModel)]="budgetInitial" />
               </div>
+            </div>
+
+            <p class="section-divider">Valuation Mode</p>
+
+            <div class="field-group">
+              <select class="field-input" [(ngModel)]="valuationMode">
+                <option value="PER_MATCH_RATING">Per-Match Rating</option>
+                <option value="SEASON_VALUE">Season Value</option>
+              </select>
             </div>
 
             <!-- Advanced -->
@@ -561,6 +575,8 @@ export class AuctionComponent {
   referenceBudget = 300;
   budgetInitial = 300;
   roleQuotas: Partial<Record<AuctionRole, number>> = { P: 3, D: 8, C: 8, A: 6 };
+  valuationMode: ValuationMode = 'PER_MATCH_RATING';
+
   alpha = 0.3;
   spilloverAdj = 0.1;
   spilloverCross = 0.05;
@@ -695,6 +711,7 @@ export class AuctionComponent {
         useInflationBaseline: this.useInflationBaseline,
         referenceBudget: this.referenceBudget,
         budgetInitial: this.budgetInitial,
+        valuationMode: this.valuationMode,
       },
     }).subscribe({
       next: res => {

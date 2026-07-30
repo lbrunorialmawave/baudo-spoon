@@ -272,13 +272,21 @@ def solve_strategy(
                 )
 
     # Objective: maximise Σ role_weight * reliability * risk_adjusted_score * x_i
-    # risk_adjusted_score = projected_score - risk_aversion * prediction_std
-    # When risk_aversion=0 or prediction_std is None the term collapses to projected_score.
+    # risk_adjusted_score = base_score - risk_aversion * prediction_std
+    # base_score = season_value (when SEASON_VALUE mode and available) or projected_score.
+    # When risk_aversion=0 or prediction_std is None the term collapses to base_score.
+    _use_season = config.valuation_mode == "SEASON_VALUE"
+
+    def _base_score(p: Player) -> float:
+        if _use_season and p.season_value is not None and p.season_value > 0:
+            return p.season_value
+        return p.projected_score
+
     prob += pulp.lpSum(
         strategy.role_weight[p.role]
         * (p.reliability_weight if p.reliability_weight is not None else 1.0)
         * (
-            p.projected_score
+            _base_score(p)
             - config.risk_aversion * (p.prediction_std if p.prediction_std is not None else 0.0)
         )
         * x[p.player_id]

@@ -987,6 +987,10 @@ class DataRepository:
         * ``cost`` — current quotation (``qt_a``).
         * ``projected_score`` — ML ``predicted_fantavoto`` if available,
           otherwise ``fantavoto_medio`` (historical mean) as fallback.
+        * ``season_value`` — predicted season-total fanta-points
+          (rating × predicted appearances), or ``None`` when unavailable.
+        * ``start_probability`` — estimated probability of starting
+          (derived from expected minutes), or ``None``.
         * ``eligible_roles`` — list of MANTRA role codes (only when
           ``ruleset == "MANTRA"`` and the player has a row in
           ``player_mantra_roles``; empty list otherwise).
@@ -1062,6 +1066,7 @@ class DataRepository:
 
             # ML prediction: prefer predicted_fantavoto, fallback to mean.
             predicted_score: Optional[float] = None
+            pred: Optional[dict] = None
             if pim is not None and pim.player_fotmob_id is not None:
                 pred = predictions_by_id.get(int(pim.player_fotmob_id))
                 if pred is not None:
@@ -1090,6 +1095,28 @@ class DataRepository:
                 if isinstance(raw_std, (int, float)) and raw_std >= 0:
                     pred_std = float(raw_std)
 
+            # Season-value metrics (derived from expected_minutes).
+            season_value: Optional[float] = None
+            start_probability: Optional[float] = None
+            if pred is not None:
+                # Prefer pre-computed values from the artifact (P0-2);
+                # fall back to deriving from expected_minutes.
+                fpt = pred.get("fantapunti_totali")
+                if isinstance(fpt, (int, float)):
+                    season_value = float(fpt)
+                elif predicted_score is not None:
+                    em = pred.get("expected_minutes")
+                    if isinstance(em, (int, float)) and em > 0:
+                        season_value = predicted_score * (em / 90.0)
+
+                pt = pred.get("probabilita_titolarita")
+                if isinstance(pt, (int, float)):
+                    start_probability = float(pt)
+                else:
+                    em = pred.get("expected_minutes")
+                    if isinstance(em, (int, float)) and em >= 0:
+                        start_probability = min(em / (38.0 * 90.0), 1.0)
+
             eligible_roles: list[str] = []
             if pmr is not None and pmr.ruoli_mantra:
                 eligible_roles = list(pmr.ruoli_mantra)
@@ -1103,6 +1130,8 @@ class DataRepository:
                     "cost": cost,
                     "projected_score": predicted_score,
                     "prediction_std": pred_std,
+                    "season_value": season_value,
+                    "start_probability": start_probability,
                     "eligible_roles": eligible_roles,
                 }
             )

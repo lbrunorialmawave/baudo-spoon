@@ -118,10 +118,13 @@ _OUTFIELD_EXCLUDE_FEATURES: frozenset[str] = frozenset([
 
 def _json_safe(obj: Any) -> Any:
     """Recursively convert a value to a JSON-serialisable type."""
+    if isinstance(obj, float) and (obj != obj):  # NaN check
+        return None
     if isinstance(obj, (np.integer,)):
         return int(obj)
     if isinstance(obj, (np.floating,)):
-        return float(obj)
+        v = float(obj)
+        return None if v != v else v
     if isinstance(obj, np.ndarray):
         return obj.tolist()
     if isinstance(obj, pd.DataFrame):
@@ -886,6 +889,17 @@ class Trainer:
         except Exception as _std_exc2:
             log.warning("prediction_std (test set) failed (non-critical): %s", _std_exc2)
             predictions_df["prediction_std"] = 0.0
+
+        # Derive season-value targets from predicted rating × predicted appearances.
+        _em = predictions_df["expected_minutes"]
+        _pf = predictions_df["predicted_fantavoto"]
+        _has_minutes = _em > 0
+        predictions_df["fantapunti_totali"] = np.where(
+            _has_minutes, _pf * (_em / 90.0), np.nan
+        )
+        predictions_df["probabilita_titolarita"] = np.where(
+            _has_minutes, (_em / (38.0 * 90.0)).clip(upper=1.0), np.nan
+        )
 
         output: dict[str, Any] = {
             "run_id": self._run_id,

@@ -594,11 +594,17 @@ class AuctionSession:
                 f"target_player_id {target_player_id!r} non presente "
                 f"nel pool originale dell'asta"
             )
+        from ml.auction.models import ValuationMode
+
+        vm = ValuationMode(
+            getattr(self._state.config, "valuation_mode", "PER_MATCH_RATING")
+        )
         return suggest_alternatives(
             target=target,
             available_pool=self._state.available_pool,
             state=self._state,
             config=cfg,
+            valuation_mode=vm,
         )
 
     def serialize(self) -> dict[str, object]:

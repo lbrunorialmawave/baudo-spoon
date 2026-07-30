@@ -30,6 +30,9 @@ export interface AlternativesConfig {
   lowCostPercentile: number;
 }
 
+/** Score metric used by VarEngine and the optimizer objective. */
+export type ValuationMode = 'PER_MATCH_RATING' | 'SEASON_VALUE';
+
 /** Auction market + roster quotas. */
 export interface AuctionConfig {
   numParticipants: number;
@@ -42,6 +45,8 @@ export interface AuctionConfig {
   referenceBudget: number;
   /** Budget per team for the current auction session. */
   budgetInitial: number;
+  /** Score metric: PER_MATCH_RATING (default) or SEASON_VALUE. */
+  valuationMode?: ValuationMode;
 }
 
 // ── Setup payloads ─────────────────────────────────────────────────────────
@@ -189,6 +194,8 @@ export interface VarRankingItem {
   esv: number;
   calibrated: boolean;
   buySignal: boolean;
+  seasonValue?: number | null;
+  startProbability?: number | null;
 }
 
 export interface VarRankingResponse {

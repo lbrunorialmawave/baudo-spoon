@@ -20,15 +20,28 @@ must not be redefined here.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Final, Literal
 
 from ml.optimizer.models import Player, Role
+
+
+class ValuationMode(str, Enum):
+    """Score metric used by VarEngine and the optimizer objective.
+
+    PER_MATCH_RATING: rank by predicted per-match fantavoto (default, backward compatible).
+    SEASON_VALUE: rank by season-total expected fanta-points (rating × predicted appearances).
+    """
+
+    PER_MATCH_RATING = "PER_MATCH_RATING"
+    SEASON_VALUE = "SEASON_VALUE"
 
 __all__ = [
     "ADJACENT_TIERS",
     "ALL_TIERS",
     "Tier",
     "Role",
+    "ValuationMode",
     "MarketDriftConfig",
     "AlternativesConfig",
     "ParticipantSetup",
@@ -183,6 +196,9 @@ class AuctionConfig:
     """Configurazione opzionale dell'inflazione (se ``use_inflation_baseline``).
     Mantenuto come ``object`` per non duplicare i vincoli di
     :class:`InflationConfig`; viene validato a runtime."""
+    valuation_mode: str = "PER_MATCH_RATING"
+    """Score metric for VAR ranking: PER_MATCH_RATING or SEASON_VALUE."""
+
     reference_budget: int = 300
     """Budget per squadra su cui il listino (``player.cost``) è tarato.
 

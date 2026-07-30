@@ -550,6 +550,13 @@ class AuctionConfigSchema(_CamelModel):
     default ``300`` mantiene il comportamento storico (fattore 1.0).
     """
 
+    valuation_mode: str = "PER_MATCH_RATING"
+    """Score metric for VAR ranking: PER_MATCH_RATING (default) or SEASON_VALUE.
+
+    When SEASON_VALUE, the VarEngine ranks players by season-total expected
+    fanta-points (rating × predicted appearances) instead of raw per-match rating.
+    """
+
     @field_validator("reference_budget", "budget_initial")
     @classmethod
     def _validate_positive_budget(cls, v: int) -> int:
@@ -567,6 +574,8 @@ class AuctionPlayerSchema(_CamelModel):
     real_team: str
     cost: int
     projected_score: float
+    season_value: float | None = None
+    start_probability: float | None = None
 
 
 class InitializeAuctionRequest(_CamelModel):
@@ -644,6 +653,8 @@ class AuctionPlayerSummarySchema(_CamelModel):
     role: str
     cost: int
     projected_score: float
+    season_value: Optional[float] = None
+    start_probability: Optional[float] = None
 
 
 class AuctionParticipantStateSchema(_CamelModel):
@@ -703,6 +714,8 @@ class VarRankingItemSchema(_CamelModel):
     esv: float
     calibrated: bool
     buy_signal: bool  # esv > 0
+    season_value: Optional[float] = None
+    start_probability: Optional[float] = None
 
 
 class VarRankingResponse(_CamelModel):
