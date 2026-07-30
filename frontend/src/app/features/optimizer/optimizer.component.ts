@@ -14,6 +14,7 @@ import {
 } from '../../core/models/api.models';
 import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.component';
 import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/error-boundary.component';
+import { FieldLegendComponent, FieldLegendExample } from '../../shared/components/field-legend/field-legend.component';
 
 const STRATEGY_META: Record<string, { label: string; icon: string }> = {
   BALANCED:        { label: 'Bilanciata',      icon: '⚖️' },
@@ -38,17 +39,203 @@ const ALL_FORMATIONS: FormationConfig[] = [
   { label: '3-5-2', defenders: 3, midfielders: 5, forwards: 2 },
 ];
 
+/**
+ * Legende minuziose dei campi del configuratore dell'Optimizer.
+ * Ogni entry spiega cosa fa il campo e come viene utilizzato dal risolutore
+ * ILP, con esempi concreti d'uso per facilitare la comprensione a tutti.
+ */
+const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; examples: readonly FieldLegendExample[] }>> = {
+  seasonStart: {
+    description: 'Anno di inizio della stagione di Serie A da cui pescare le quotazioni storiche, i listini e le statistiche dei giocatori. Il risolutore ILP usa queste informazioni per proiettare i punteggi attesi di fine stagione.',
+    examples: [
+      { label: '2025', value: 'stagione corrente 2025/26 (default)' },
+      { label: '2024', value: 'stagione precedente 2024/25' },
+    ],
+  },
+  budget: {
+    description: 'Crediti totali (cr.) a disposizione per costruire l\'intera rosa. Il risolutore ILP cercherà di non superare questo budget, distribuiti tra tutti i ruoli secondo i vincoli impostati.',
+    examples: [
+      { label: '300 cr.', value: 'lega FantaSanremo classica' },
+      { label: '500 cr.', value: 'lega con top player costosi' },
+      { label: '1000 cr.', value: 'lega premium / fanta-manageriale' },
+    ],
+  },
+  numParticipants: {
+    description: 'Numero di squadre che partecipano alla lega. Influenza il modello di inflazione dei prezzi: più partecipanti significano maggiore competizione e prezzi attesi più alti.',
+    examples: [
+      { label: '4', value: 'lega piccola' },
+      { label: '8', value: 'default classico' },
+      { label: '10–12', value: 'lega grande' },
+    ],
+  },
+  minQtA: {
+    description: 'Quota minima d\'asta per ruolo (Minimum Quota per Auction): imposta un tetto minimo di crediti da spendere per ciascun ruolo, per evitare rose sbilanciate. 0 = nessun vincolo.',
+    examples: [
+      { label: '0', value: 'nessun vincolo, libera distribuzione' },
+      { label: '1', value: 'almeno 1 cr. investito per ciascun ruolo' },
+      { label: '3', value: 'vincolo più stringente, es. minimo 3 P, 3 D, ecc.' },
+    ],
+  },
+  solverTimeoutSeconds: {
+    description: 'Tempo massimo (in secondi) concesso al risolutore ILP per trovare la soluzione ottima. Allo scadere, restituirà la migliore soluzione ammissibile trovata finora (se disponibile).',
+    examples: [
+      { label: '10 s', value: 'run veloce, utile per test' },
+      { label: '30 s', value: 'default bilanciato' },
+      { label: '120 s', value: 'run approfondito per leghe complesse' },
+    ],
+  },
+  minDistinctTeams: {
+    description: 'Numero minimo di squadre di Serie A diverse da cui devono provenire i giocatori della tua rosa. Garantisce diversificazione e riduce il rischio di concentrazione su poche squadre.',
+    examples: [
+      { label: '4', value: 'minimo sindacale, pochi vincoli' },
+      { label: '12', value: 'default, ben diversificato' },
+      { label: '18', value: 'massima diversificazione' },
+    ],
+  },
+  maxPlayersPerTeam: {
+    description: 'Numero massimo di giocatori che puoi avere dalla stessa squadra di Serie A. Impedisce di costruire una rosa troppo dipendente da un singolo club.',
+    examples: [
+      { label: '2', value: 'vincolo stretto' },
+      { label: '4', value: 'default' },
+      { label: '6', value: 'consentita alta concentrazione' },
+    ],
+  },
+  bigTeamsCap: {
+    description: 'Numero massimo di giocatori acquistabili dalle "big team" (elencate sotto). Insieme al vincolo max-players-per-team, impedisce di costruire una rosa di soli top club.',
+    examples: [
+      { label: '3', value: 'default: massimo 3 giocatori dalle big team' },
+      { label: '0', value: 'nessun giocatore dalle big team (lega anti-big)' },
+      { label: '10', value: 'nessun vincolo aggiuntivo oltre max-per-team' },
+    ],
+  },
+  bigTeams: {
+    description: 'Elenco, separato da virgole, delle squadre di Serie A considerate "big" ai fini del vincolo `bigTeamsCap`. I nomi devono corrispondere esattamente a quelli usati dalle statistiche (es. "Inter", "Milan", "Juventus", "Napoli", "Roma", "Lazio", "Atalanta").',
+    examples: [
+      { label: 'Inter, Milan, Juventus, Napoli', value: 'default: top 4 tradizionali' },
+      { label: 'Inter, Milan, Juve, Napoli, Roma, Lazio, Atalanta', value: 'top 7 allargato' },
+      { label: '(vuoto)', value: 'nessuna big team, solo max-per-team' },
+    ],
+  },
+  maxSinglePlayerBudgetShare: {
+    description: 'Frazione massima del budget totale (0–1) che può essere spesa per un singolo giocatore. Evita che un top player "mangi" troppo budget e renda impossibile completare la rosa.',
+    examples: [
+      { label: '0.15', value: '15% del budget (es. 45 cr. su 300), rosa molto equa' },
+      { label: '0.30', value: 'default, equilibrio fra top player e rosa' },
+      { label: '0.50', value: 'ammessi top player da 150 cr. su 300' },
+    ],
+  },
+  mustInclude: {
+    description: 'Elenco di ID giocatore (formato `fm-XXXXX`, separati da virgola) che DEVONO essere nella rosa. Vincolo hard: il risolutore fallirà se non riesce a includerli.',
+    examples: [
+      { label: 'fm-12345', value: 'forza inclusione di un giocatore specifico' },
+      { label: '(vuoto)', value: 'nessun vincolo' },
+    ],
+  },
+  exclude: {
+    description: 'Elenco di ID giocatore (formato `fm-XXXXX`, separati da virgola) che NON devono essere nella rosa. Utile per escludere infortunati, squalificati o giocatori che non vuoi.',
+    examples: [
+      { label: 'fm-67890', value: 'escludi un singolo giocatore' },
+      { label: 'fm-1, fm-2, fm-3', value: 'escludi più giocatori' },
+    ],
+  },
+  ruleset: {
+    description: 'Regolamento della lega. "Classic" usa le regole tradizionali del Fantacalcio (3 P, 8 D, 8 C, 6 A); "Mantra" supporta ruoli aggiuntivi (Trequartista, Mediano, ecc.) e conversioni ruolo.',
+    examples: [
+      { label: 'CLASSIC', value: 'regolamento tradizionale italiano' },
+      { label: 'MANTRA', value: 'regolamento Mantra con ruoli modulari' },
+    ],
+  },
+  riskAversion: {
+    description: 'Coefficiente (0–5) di avversione al rischio. 0 = neutrale (massimizza solo lo score atteso). Valori alti penalizzano soluzioni con score molto variabile, a favore di rose più "sicure" e costanti.',
+    examples: [
+      { label: '0.0', value: 'neutrale, solo performance attesa' },
+      { label: '1.0', value: 'lieve penalizzazione per la varianza' },
+      { label: '3.0+', value: 'forte avversione, rose conservative' },
+    ],
+  },
+  varBlend: {
+    description: 'Peso (0–1) del modello VAR (Value Above Replacement) nella funzione obiettivo. Un valore più alto spinge il risolutore a preferire giocatori il cui contributo è superiore a quello di un sostituto medio.',
+    examples: [
+      { label: '0.0', value: 'VAR non usato' },
+      { label: '0.5', value: 'mix 50% score, 50% VAR' },
+      { label: '1.0', value: 'ottimizzazione puramente VAR' },
+    ],
+  },
+  esvWeight: {
+    description: 'Peso (0–5) dell\'ESV (Expected Season Value) nella funzione obiettivo. Più alto = il risolutore premia giocatori con alto valore di stagione atteso rispetto al prezzo di acquisto.',
+    examples: [
+      { label: '0', value: 'ESV non considerato' },
+      { label: '1', value: 'peso moderato, focus sui "best value"' },
+      { label: '2+', value: 'forte peso, ricerca aggressiva di affari' },
+    ],
+  },
+  formations: {
+    description: 'Moduli tattici ammessi dal regolamento della tua lega. Il risolutore ILP verificherà la fattibilità per ciascuno e ti mostrerà quali sono fattibili (✓) e quali no (✗) per la rosa risultante.',
+    examples: [
+      { label: '3-4-3', value: 'molto offensivo, 3 attaccanti titolari' },
+      { label: '4-4-2', value: 'classico italiano, equilibrato' },
+      { label: '3-5-2', value: 'centrocampo folto, fase difensiva forte' },
+    ],
+  },
+  preferredFormation: {
+    description: 'Modulo tattico preferito come VINCOLO HARD. Se impostato (diverso da "Nessuna"), il risolutore restituirà solo soluzioni giocabili in questo modulo. Se nessuna soluzione è compatibile, la run fallirà.',
+    examples: [
+      { label: '3-5-2', value: 'forza il modulo a 3-5-2' },
+      { label: 'Nessuna', value: 'nessun vincolo, sceglie tra tutte le formazioni selezionate sopra' },
+    ],
+  },
+  inflationPercentileThreshold: {
+    description: 'Soglia (0–1) di percentile usata dal modello di inflazione. I giocatori con quotazione sopra questo percentile sono considerati "rari" e subiscono un moltiplicatore maggiore.',
+    examples: [
+      { label: '0.5', value: 'default, top 50% subisce inflazione' },
+      { label: '0.8', value: 'solo top 20% subisce inflazione forte' },
+    ],
+  },
+  maxInflationMultiplier: {
+    description: 'Moltiplicatore massimo (1–5) che il modello di inflazione può applicare al listino base. Un valore di 2.0 significa che un top player può costare fino al doppio del listino.',
+    examples: [
+      { label: '1.0', value: 'nessuna inflazione, prezzi = listino' },
+      { label: '1.6', value: 'default moderato' },
+      { label: '3.0', value: 'lega molto calda, top player esplosivi' },
+    ],
+  },
+  baseInflationRate: {
+    description: 'Tasso base di inflazione (0–1) applicato a tutti i prezzi anche al di sotto della soglia di percentile. Compensa l\'effetto generale di "rialzo" del mercato.',
+    examples: [
+      { label: '0.00', value: 'nessun rialzo base' },
+      { label: '0.05', value: 'default, +5% su tutti i listini' },
+      { label: '0.15', value: 'mercato molto rialzista' },
+    ],
+  },
+  baselineParticipants: {
+    description: 'Numero di partecipanti "baseline" usato dal modello di inflazione per calcolare la pressione di mercato. Tipicamente pari al valore del campo Partecipanti; modifica solo se vuoi simulare una lega di dimensione diversa.',
+    examples: [
+      { label: '4', value: 'simula mercato di lega piccola' },
+      { label: '8', value: 'default, mercato standard' },
+      { label: '12', value: 'simula mercato affollato' },
+    ],
+  },
+  customWeights: {
+    description: 'Pesi per ruolo (P/D/C/A) usati SOLO quando è selezionata una singola strategia e si sceglie di personalizzarla. Un peso più alto spinge il risolutore a investire di più in quel ruolo rispetto al bilanciamento standard.',
+    examples: [
+      { label: 'P=1 D=1 C=1 A=1', value: 'bilanciamento neutro (default)' },
+      { label: 'P=0.5 D=2.5 C=1 A=1', value: 'focus difensori, rosa a basso rischio' },
+      { label: 'P=1 D=1 C=1 A=2.5', value: 'top player offensivi' },
+    ],
+  },
+};
+
 @Component({
   selector: 'app-optimizer',
   standalone: true,
-  imports: [FormsModule, DecimalPipe, PercentPipe, SkeletonComponent, ErrorBoundaryComponent],
+  imports: [FormsModule, DecimalPipe, PercentPipe, SkeletonComponent, ErrorBoundaryComponent, FieldLegendComponent],
   template: `
     <div class="optimizer-page">
 
       <header class="page-header">
         <div>
-          <h1 class="page-title">Squad Optimizer</h1>
-          <p class="page-subtitle">ILP-based Fantacalcio squad builder · 4 strategies</p>
+          <h1 class="page-title">Ottimizzatore Rosa</h1>
+          <p class="page-subtitle">Costruzione automatica della rosa tramite risolutore ILP · 4 strategie disponibili</p>
         </div>
       </header>
 
@@ -58,131 +245,211 @@ const ALL_FORMATIONS: FormationConfig[] = [
         <aside class="config-panel card">
 
           <!-- BASIC -->
-          <p class="section-divider">Basic</p>
+          <p class="section-divider">Impostazioni di base</p>
 
           <div class="field-group">
-            <label class="field-label">Season</label>
-            <select class="field-input" [(ngModel)]="seasonStart">
+            <label class="field-label" for="opt-seasonStart">Stagione di riferimento (Serie A)</label>
+            <select id="opt-seasonStart" class="field-input" [(ngModel)]="seasonStart"
+                    [attr.aria-describedby]="'legend-seasonStart'">
               @for (s of seasons(); track s) {
                 <option [value]="s">{{ s }}/{{ s + 1 }}</option>
               }
             </select>
+            <app-field-legend
+              fieldId="legend-seasonStart"
+              [description]="OPTIMIZER_LEGENDS['seasonStart'].description"
+              [examples]="OPTIMIZER_LEGENDS['seasonStart'].examples" />
           </div>
 
           <div class="field-row">
             <div class="field-group">
-              <label class="field-label">Budget <span class="field-hint">cr.</span></label>
-              <input class="field-input" type="number" min="200" max="1000" step="25"
-                     [(ngModel)]="budget" />
+              <label class="field-label" for="opt-budget">Budget totale disponibile <span class="field-hint">cr.</span></label>
+              <input id="opt-budget" class="field-input" type="number" min="200" max="1000" step="25"
+                     [(ngModel)]="budget"
+                     [attr.aria-describedby]="'legend-budget'" />
+              <app-field-legend
+                fieldId="legend-budget"
+                [description]="OPTIMIZER_LEGENDS['budget'].description"
+                [examples]="OPTIMIZER_LEGENDS['budget'].examples" />
             </div>
             <div class="field-group">
-              <label class="field-label">Participants</label>
-              <input class="field-input" type="number" min="4" max="16" step="1"
-                     [(ngModel)]="numParticipants" />
+              <label class="field-label" for="opt-numParticipants">Numero di partecipanti alla lega</label>
+              <input id="opt-numParticipants" class="field-input" type="number" min="4" max="16" step="1"
+                     [(ngModel)]="numParticipants"
+                     [attr.aria-describedby]="'legend-numParticipants'" />
+              <app-field-legend
+                fieldId="legend-numParticipants"
+                [description]="OPTIMIZER_LEGENDS['numParticipants'].description"
+                [examples]="OPTIMIZER_LEGENDS['numParticipants'].examples" />
             </div>
           </div>
 
           <div class="field-row">
             <div class="field-group">
-              <label class="field-label">Min auction quota</label>
-              <input class="field-input" type="number" min="0" max="10" step="1"
-                     [(ngModel)]="minQtA" />
+              <label class="field-label" for="opt-minQtA">Quota minima d'asta per ciascun ruolo</label>
+              <input id="opt-minQtA" class="field-input" type="number" min="0" max="10" step="1"
+                     [(ngModel)]="minQtA"
+                     [attr.aria-describedby]="'legend-minQtA'" />
+              <app-field-legend
+                fieldId="legend-minQtA"
+                [description]="OPTIMIZER_LEGENDS['minQtA'].description"
+                [examples]="OPTIMIZER_LEGENDS['minQtA'].examples" />
             </div>
             <div class="field-group">
-              <label class="field-label">Solver timeout <span class="field-hint">s</span></label>
-              <input class="field-input" type="number" min="5" max="300" step="5"
-                     [(ngModel)]="solverTimeoutSeconds" />
+              <label class="field-label" for="opt-solverTimeout">Timeout risolutore ILP <span class="field-hint">secondi</span></label>
+              <input id="opt-solverTimeout" class="field-input" type="number" min="5" max="300" step="5"
+                     [(ngModel)]="solverTimeoutSeconds"
+                     [attr.aria-describedby]="'legend-solverTimeoutSeconds'" />
+              <app-field-legend
+                fieldId="legend-solverTimeoutSeconds"
+                [description]="OPTIMIZER_LEGENDS['solverTimeoutSeconds'].description"
+                [examples]="OPTIMIZER_LEGENDS['solverTimeoutSeconds'].examples" />
             </div>
           </div>
 
           <!-- SQUAD CONSTRAINTS -->
-          <p class="section-divider">Squad Constraints</p>
+          <p class="section-divider">Vincoli sulla rosa</p>
 
           <div class="field-row">
             <div class="field-group">
-              <label class="field-label">Min distinct teams</label>
-              <input class="field-input" type="number" min="1" max="25" step="1"
-                     [(ngModel)]="minDistinctTeams" />
+              <label class="field-label" for="opt-minDistinctTeams">Numero minimo di squadre di Serie A distinte in rosa</label>
+              <input id="opt-minDistinctTeams" class="field-input" type="number" min="1" max="25" step="1"
+                     [(ngModel)]="minDistinctTeams"
+                     [attr.aria-describedby]="'legend-minDistinctTeams'" />
+              <app-field-legend
+                fieldId="legend-minDistinctTeams"
+                [description]="OPTIMIZER_LEGENDS['minDistinctTeams'].description"
+                [examples]="OPTIMIZER_LEGENDS['minDistinctTeams'].examples" />
             </div>
             <div class="field-group">
-              <label class="field-label">Max per team</label>
-              <input class="field-input" type="number" min="1" max="10" step="1"
-                     [(ngModel)]="maxPlayersPerTeam" />
+              <label class="field-label" for="opt-maxPlayersPerTeam">Numero massimo di giocatori per singola squadra</label>
+              <input id="opt-maxPlayersPerTeam" class="field-input" type="number" min="1" max="10" step="1"
+                     [(ngModel)]="maxPlayersPerTeam"
+                     [attr.aria-describedby]="'legend-maxPlayersPerTeam'" />
+              <app-field-legend
+                fieldId="legend-maxPlayersPerTeam"
+                [description]="OPTIMIZER_LEGENDS['maxPlayersPerTeam'].description"
+                [examples]="OPTIMIZER_LEGENDS['maxPlayersPerTeam'].examples" />
             </div>
           </div>
 
           <div class="field-row">
             <div class="field-group">
-              <label class="field-label">Big-teams cap</label>
-              <input class="field-input" type="number" min="0" max="25" step="1"
-                     [(ngModel)]="bigTeamsCap" />
+              <label class="field-label" for="opt-bigTeamsCap">Limite totale di giocatori dalle "big team"</label>
+              <input id="opt-bigTeamsCap" class="field-input" type="number" min="0" max="25" step="1"
+                     [(ngModel)]="bigTeamsCap"
+                     [attr.aria-describedby]="'legend-bigTeamsCap'" />
+              <app-field-legend
+                fieldId="legend-bigTeamsCap"
+                [description]="OPTIMIZER_LEGENDS['bigTeamsCap'].description"
+                [examples]="OPTIMIZER_LEGENDS['bigTeamsCap'].examples" />
             </div>
             <div class="field-group">
-              <label class="field-label">Max budget share <span class="field-hint">0–1</span></label>
-              <input class="field-input" type="number" min="0.05" max="1" step="0.05"
-                     [(ngModel)]="maxSinglePlayerBudgetShare" />
+              <label class="field-label" for="opt-maxShare">Quota massima di budget per singolo giocatore <span class="field-hint">0–1</span></label>
+              <input id="opt-maxShare" class="field-input" type="number" min="0.05" max="1" step="0.05"
+                     [(ngModel)]="maxSinglePlayerBudgetShare"
+                     [attr.aria-describedby]="'legend-maxSinglePlayerBudgetShare'" />
+              <app-field-legend
+                fieldId="legend-maxSinglePlayerBudgetShare"
+                [description]="OPTIMIZER_LEGENDS['maxSinglePlayerBudgetShare'].description"
+                [examples]="OPTIMIZER_LEGENDS['maxSinglePlayerBudgetShare'].examples" />
             </div>
           </div>
 
           <div class="field-group">
-            <label class="field-label">Big teams <span class="field-hint">comma-separated</span></label>
-            <textarea class="field-input field-textarea" rows="2"
+            <label class="field-label" for="opt-bigTeamsRaw">Elenco delle "big team" <span class="field-hint">separate da virgola</span></label>
+            <textarea id="opt-bigTeamsRaw" class="field-input field-textarea" rows="2"
                       [(ngModel)]="bigTeamsRaw"
-                      placeholder="Inter, Milan, Juventus, Napoli"></textarea>
+                      placeholder="Inter, Milan, Juventus, Napoli"
+                      [attr.aria-describedby]="'legend-bigTeams'"></textarea>
+            <app-field-legend
+              fieldId="legend-bigTeams"
+              [description]="OPTIMIZER_LEGENDS['bigTeams'].description"
+              [examples]="OPTIMIZER_LEGENDS['bigTeams'].examples" />
           </div>
 
           <!-- PLAYER FILTERS -->
-          <p class="section-divider">Player Filters</p>
+          <p class="section-divider">Filtri sui giocatori</p>
 
           <div class="field-group">
-            <label class="field-label">Must include <span class="field-hint">player IDs, comma-separated</span></label>
-            <textarea class="field-input field-textarea" rows="2"
+            <label class="field-label" for="opt-mustInclude">Giocatori da includere obbligatoriamente <span class="field-hint">ID separati da virgola</span></label>
+            <textarea id="opt-mustInclude" class="field-input field-textarea" rows="2"
                       [(ngModel)]="mustIncludeRaw"
-                      placeholder="fm-12345, fm-67890"></textarea>
+                      placeholder="fm-12345, fm-67890"
+                      [attr.aria-describedby]="'legend-mustInclude'"></textarea>
+            <app-field-legend
+              fieldId="legend-mustInclude"
+              [description]="OPTIMIZER_LEGENDS['mustInclude'].description"
+              [examples]="OPTIMIZER_LEGENDS['mustInclude'].examples" />
           </div>
 
           <div class="field-group">
-            <label class="field-label">Exclude <span class="field-hint">player IDs, comma-separated</span></label>
-            <textarea class="field-input field-textarea" rows="2"
+            <label class="field-label" for="opt-exclude">Giocatori da escludere <span class="field-hint">ID separati da virgola</span></label>
+            <textarea id="opt-exclude" class="field-input field-textarea" rows="2"
                       [(ngModel)]="excludeRaw"
-                      placeholder="fm-12345, fm-67890"></textarea>
+                      placeholder="fm-12345, fm-67890"
+                      [attr.aria-describedby]="'legend-exclude'"></textarea>
+            <app-field-legend
+              fieldId="legend-exclude"
+              [description]="OPTIMIZER_LEGENDS['exclude'].description"
+              [examples]="OPTIMIZER_LEGENDS['exclude'].examples" />
           </div>
 
           <!-- RULESET & RISK -->
-          <p class="section-divider">Ruleset & Risk</p>
+          <p class="section-divider">Regolamento e gestione del rischio</p>
 
           <div class="field-row">
             <div class="field-group">
-              <label class="field-label">Ruleset</label>
-              <select class="field-input" [(ngModel)]="ruleset">
-                <option value="CLASSIC">Classic</option>
-                <option value="MANTRA">Mantra</option>
+              <label class="field-label" for="opt-ruleset">Regolamento della lega</label>
+              <select id="opt-ruleset" class="field-input" [(ngModel)]="ruleset"
+                      [attr.aria-describedby]="'legend-ruleset'">
+                <option value="CLASSIC">Classic (Fantacalcio tradizionale)</option>
+                <option value="MANTRA">Mantra (ruoli modulari e conversioni)</option>
               </select>
+              <app-field-legend
+                fieldId="legend-ruleset"
+                [description]="OPTIMIZER_LEGENDS['ruleset'].description"
+                [examples]="OPTIMIZER_LEGENDS['ruleset'].examples" />
             </div>
             <div class="field-group">
-              <label class="field-label">Risk aversion <span class="field-hint">0 = neutral</span></label>
-              <input class="field-input" type="number" min="0" max="5" step="0.1"
-                     [(ngModel)]="riskAversion" />
+              <label class="field-label" for="opt-riskAversion">Avversione al rischio <span class="field-hint">0 = neutrale</span></label>
+              <input id="opt-riskAversion" class="field-input" type="number" min="0" max="5" step="0.1"
+                     [(ngModel)]="riskAversion"
+                     [attr.aria-describedby]="'legend-riskAversion'" />
+              <app-field-legend
+                fieldId="legend-riskAversion"
+                [description]="OPTIMIZER_LEGENDS['riskAversion'].description"
+                [examples]="OPTIMIZER_LEGENDS['riskAversion'].examples" />
             </div>
           </div>
 
           <div class="field-row">
             <div class="field-group">
-              <label class="field-label">VAR blend <span class="field-hint">0–1</span></label>
-              <input class="field-input" type="number" min="0" max="1" step="0.1"
-                     [(ngModel)]="varBlend" />
+              <label class="field-label" for="opt-varBlend">Peso del modello VAR (Value Above Replacement) <span class="field-hint">0–1</span></label>
+              <input id="opt-varBlend" class="field-input" type="number" min="0" max="1" step="0.1"
+                     [(ngModel)]="varBlend"
+                     [attr.aria-describedby]="'legend-varBlend'" />
+              <app-field-legend
+                fieldId="legend-varBlend"
+                [description]="OPTIMIZER_LEGENDS['varBlend'].description"
+                [examples]="OPTIMIZER_LEGENDS['varBlend'].examples" />
             </div>
             <div class="field-group">
-              <label class="field-label">ESV weight <span class="field-hint">0 = off</span></label>
-              <input class="field-input" type="number" min="0" max="5" step="0.1"
-                     [(ngModel)]="esvWeight" />
+              <label class="field-label" for="opt-esvWeight">Peso dell'ESV (Expected Season Value) <span class="field-hint">0 = disattivato</span></label>
+              <input id="opt-esvWeight" class="field-input" type="number" min="0" max="5" step="0.1"
+                     [(ngModel)]="esvWeight"
+                     [attr.aria-describedby]="'legend-esvWeight'" />
+              <app-field-legend
+                fieldId="legend-esvWeight"
+                [description]="OPTIMIZER_LEGENDS['esvWeight'].description"
+                [examples]="OPTIMIZER_LEGENDS['esvWeight'].examples" />
             </div>
           </div>
 
           <!-- FORMATIONS -->
-          <p class="section-divider">Formations</p>
+          <p class="section-divider">Moduli tattici</p>
 
-          <div class="check-grid">
+          <div class="check-grid" role="group" aria-label="Moduli tattici ammessi">
             @for (f of allFormations; track f.label) {
               <label class="check-chip" [class.active]="selectedFormations().has(f.label)">
                 <input type="checkbox" [checked]="selectedFormations().has(f.label)"
@@ -191,50 +458,79 @@ const ALL_FORMATIONS: FormationConfig[] = [
               </label>
             }
           </div>
+          <app-field-legend
+            fieldId="legend-formations"
+            [description]="OPTIMIZER_LEGENDS['formations'].description"
+            [examples]="OPTIMIZER_LEGENDS['formations'].examples" />
 
           <div class="field-group">
-            <label class="field-label">Preferred formation <span class="field-hint">hard constraint</span></label>
-            <select class="field-input" [(ngModel)]="preferredFormationLabel">
-              <option value="">None</option>
+            <label class="field-label" for="opt-preferredFormation">Formazione preferita <span class="field-hint">vincolo hard</span></label>
+            <select id="opt-preferredFormation" class="field-input" [(ngModel)]="preferredFormationLabel"
+                    [attr.aria-describedby]="'legend-preferredFormation'">
+              <option value="">Nessuna (nessun vincolo)</option>
               @for (f of allFormations; track f.label) {
                 <option [value]="f.label">{{ f.label }}</option>
               }
             </select>
+            <app-field-legend
+              fieldId="legend-preferredFormation"
+              [description]="OPTIMIZER_LEGENDS['preferredFormation'].description"
+              [examples]="OPTIMIZER_LEGENDS['preferredFormation'].examples" />
           </div>
 
           <!-- INFLATION MODEL -->
-          <p class="section-divider">Inflation Model</p>
+          <p class="section-divider">Modello di inflazione dei prezzi</p>
 
           <div class="field-row">
             <div class="field-group">
-              <label class="field-label">Percentile threshold</label>
-              <input class="field-input" type="number" min="0" max="1" step="0.05"
-                     [(ngModel)]="inflationPercentileThreshold" />
+              <label class="field-label" for="opt-inflationPercentile">Soglia percentile di inflazione</label>
+              <input id="opt-inflationPercentile" class="field-input" type="number" min="0" max="1" step="0.05"
+                     [(ngModel)]="inflationPercentileThreshold"
+                     [attr.aria-describedby]="'legend-inflationPercentileThreshold'" />
+              <app-field-legend
+                fieldId="legend-inflationPercentileThreshold"
+                [description]="OPTIMIZER_LEGENDS['inflationPercentileThreshold'].description"
+                [examples]="OPTIMIZER_LEGENDS['inflationPercentileThreshold'].examples" />
             </div>
             <div class="field-group">
-              <label class="field-label">Max multiplier</label>
-              <input class="field-input" type="number" min="1" max="5" step="0.1"
-                     [(ngModel)]="maxInflationMultiplier" />
+              <label class="field-label" for="opt-maxInflation">Moltiplicatore massimo di inflazione</label>
+              <input id="opt-maxInflation" class="field-input" type="number" min="1" max="5" step="0.1"
+                     [(ngModel)]="maxInflationMultiplier"
+                     [attr.aria-describedby]="'legend-maxInflationMultiplier'" />
+              <app-field-legend
+                fieldId="legend-maxInflationMultiplier"
+                [description]="OPTIMIZER_LEGENDS['maxInflationMultiplier'].description"
+                [examples]="OPTIMIZER_LEGENDS['maxInflationMultiplier'].examples" />
             </div>
           </div>
 
           <div class="field-row">
             <div class="field-group">
-              <label class="field-label">Base rate</label>
-              <input class="field-input" type="number" min="0" max="1" step="0.01"
-                     [(ngModel)]="baseInflationRate" />
+              <label class="field-label" for="opt-baseRate">Tasso base di inflazione</label>
+              <input id="opt-baseRate" class="field-input" type="number" min="0" max="1" step="0.01"
+                     [(ngModel)]="baseInflationRate"
+                     [attr.aria-describedby]="'legend-baseInflationRate'" />
+              <app-field-legend
+                fieldId="legend-baseInflationRate"
+                [description]="OPTIMIZER_LEGENDS['baseInflationRate'].description"
+                [examples]="OPTIMIZER_LEGENDS['baseInflationRate'].examples" />
             </div>
             <div class="field-group">
-              <label class="field-label">Baseline participants</label>
-              <input class="field-input" type="number" min="2" max="20" step="1"
-                     [(ngModel)]="baselineParticipants" />
+              <label class="field-label" for="opt-baselinePart">Partecipanti baseline per il modello</label>
+              <input id="opt-baselinePart" class="field-input" type="number" min="2" max="20" step="1"
+                     [(ngModel)]="baselineParticipants"
+                     [attr.aria-describedby]="'legend-baselineParticipants'" />
+              <app-field-legend
+                fieldId="legend-baselineParticipants"
+                [description]="OPTIMIZER_LEGENDS['baselineParticipants'].description"
+                [examples]="OPTIMIZER_LEGENDS['baselineParticipants'].examples" />
             </div>
           </div>
 
           <!-- STRATEGIES -->
-          <p class="section-divider">Strategies</p>
+          <p class="section-divider">Strategie di ottimizzazione</p>
 
-          <div class="check-col">
+          <div class="check-col" role="group" aria-label="Strategie da eseguire">
             @for (s of availableStrategies(); track s) {
               <label class="strategy-check" [class.active]="selectedStrategies().has(s)">
                 <input type="checkbox" [checked]="selectedStrategies().has(s)"
@@ -248,19 +544,24 @@ const ALL_FORMATIONS: FormationConfig[] = [
           @if (singleStrategySelected()) {
             <button class="advanced-toggle" style="margin-top:4px"
                     (click)="showCustomWeights.set(!showCustomWeights())">
-              Personalizza pesi {{ showCustomWeights() ? '▲' : '▼' }}
+              Personalizza pesi per ruolo {{ showCustomWeights() ? '▲' : '▼' }}
             </button>
             @if (showCustomWeights()) {
+              <app-field-legend
+                fieldId="legend-customWeights"
+                [description]="OPTIMIZER_LEGENDS['customWeights'].description"
+                [examples]="OPTIMIZER_LEGENDS['customWeights'].examples" />
               <div class="custom-weights-panel">
                 @for (role of ['P','D','C','A']; track role) {
                   <div class="field-group">
                     <label class="field-label" style="display:flex;justify-content:space-between">
-                      <span>{{ role }}</span>
+                      <span>Peso ruolo {{ roleLabel(role) }} ({{ role }})</span>
                       <span class="field-hint">{{ customWeights()[role] | number:'1.2-2' }}</span>
                     </label>
                     <input type="range" min="0.1" max="3" step="0.05"
                            [ngModel]="customWeights()[role]"
-                           (ngModelChange)="setCustomWeight(role, $event)" />
+                           (ngModelChange)="setCustomWeight(role, $event)"
+                           [attr.aria-label]="'Peso per il ruolo ' + roleLabel(role)" />
                   </div>
                 }
               </div>
@@ -269,14 +570,14 @@ const ALL_FORMATIONS: FormationConfig[] = [
 
           <button class="run-btn" (click)="run()" [disabled]="running() || !canRun()">
             @if (running()) {
-              <span class="spinner"></span> Running…
+              <span class="spinner"></span> Ottimizzazione in corso…
             } @else {
-              Run Optimizer
+              Esegui ottimizzatore
             }
           </button>
 
           @if (error()) {
-            <app-error-boundary title="Optimizer Error" [message]="error()!" />
+            <app-error-boundary title="Errore ottimizzatore" [message]="error()!" />
           }
         </aside>
 
@@ -294,19 +595,21 @@ const ALL_FORMATIONS: FormationConfig[] = [
             } @else {
               <div class="results-placeholder">
                 <div class="placeholder-icon">🏗️</div>
-                <p class="placeholder-text">Configure and run the optimizer to see squad recommendations</p>
+                <p class="placeholder-text">Configura i parametri e avvia l'ottimizzatore per vedere la rosa consigliata</p>
               </div>
             }
           } @else {
-            <div class="strategy-tabs">
+            <div class="strategy-tabs" role="tablist" aria-label="Risultati per strategia">
               @for (name of resultKeys(); track name) {
                 <button class="strategy-tab"
                         [class.active]="activeStrategy() === name"
-                        (click)="activeStrategy.set(name)">
+                        (click)="activeStrategy.set(name)"
+                        [attr.role]="'tab'"
+                        [attr.aria-selected]="activeStrategy() === name">
                   <span>{{ meta(name).icon }}</span>
                   <span>{{ meta(name).label }}</span>
                   @if (resultFor(name); as r) {
-                    <span class="tab-score">{{ r.totalProjectedScore | number:'1.1-1' }}</span>
+                    <span class="tab-score" title="Punteggio proiettato totale della rosa">Score {{ r.totalProjectedScore | number:'1.1-1' }}</span>
                   }
                 </button>
               }
@@ -315,32 +618,32 @@ const ALL_FORMATIONS: FormationConfig[] = [
             @if (activeResult(); as r) {
               <div class="summary-row">
                 <div class="stat-card">
-                  <p class="stat-label">Projected Score</p>
+                  <p class="stat-label">Punteggio proiettato totale</p>
                   <p class="stat-value">{{ r.totalProjectedScore | number:'1.2-2' }}</p>
                 </div>
                 <div class="stat-card">
-                  <p class="stat-label">Nominal Cost</p>
+                  <p class="stat-label">Costo nominale (somma listini)</p>
                   <p class="stat-value">{{ r.totalNominalCost }}</p>
                 </div>
                 <div class="stat-card">
-                  <p class="stat-label">Eff. Cost</p>
+                  <p class="stat-label">Costo effettivo (post-inflazione)</p>
                   <p class="stat-value">{{ r.totalEffectiveCost | number:'1.1-1' }}</p>
                 </div>
                 <div class="stat-card">
-                  <p class="stat-label">Residual</p>
+                  <p class="stat-label">Residuo di budget</p>
                   <p class="stat-value">{{ r.budgetResidual | number:'1.0-0' }}</p>
                 </div>
                 <div class="stat-card">
-                  <p class="stat-label">Teams</p>
+                  <p class="stat-label">Squadre di Serie A in rosa</p>
                   <p class="stat-value">{{ r.distinctTeamsCount }}</p>
                 </div>
                 <div class="stat-card">
-                  <p class="stat-label">Status</p>
-                  <p class="stat-value" [class.text-green]="r.status === 'Optimal'">{{ r.status }}</p>
+                  <p class="stat-label">Stato del risolutore</p>
+                  <p class="stat-value" [class.text-green]="r.status === 'Optimal'">{{ r.status === 'Optimal' ? 'Ottimale' : r.status }}</p>
                 </div>
                 @if (r.winProbability != null) {
-                  <div class="stat-card" title="Simulazione Monte Carlo — stima parametrica">
-                    <p class="stat-label">Budget OK est.</p>
+                  <div class="stat-card" title="Stima Monte Carlo: probabilità che la rosa rimanga entro il budget dopo l'asta">
+                    <p class="stat-label">Probabilità successo budget</p>
                     <p class="stat-value" [class.text-green]="r.winProbability >= 0.7"
                        [style.color]="r.winProbability < 0.4 ? '#EF4444' : r.winProbability < 0.7 ? '#F59E0B' : ''">
                       {{ r.winProbability | percent:'1.0-0' }}
@@ -350,10 +653,11 @@ const ALL_FORMATIONS: FormationConfig[] = [
               </div>
 
               <div class="formation-row">
-                <p class="section-label">Formations</p>
+                <p class="section-label">Fattibilità moduli tattici</p>
                 <div class="formation-chips">
                   @for (entry of formationEntries(r); track entry[0]) {
-                    <span class="formation-chip" [class.ok]="entry[1]">
+                    <span class="formation-chip" [class.ok]="entry[1]"
+                          [title]="(entry[1] ? 'Modulo giocabile' : 'Modulo NON giocabile con questa rosa')">
                       {{ entry[0] }} {{ entry[1] ? '✓' : '✗' }}
                     </span>
                   }
@@ -362,7 +666,8 @@ const ALL_FORMATIONS: FormationConfig[] = [
 
               <div class="role-breakdown">
                 @for (role of ['P','D','C','A']; track role) {
-                  <div class="role-strip" [style.border-color]="roleColor(role)">
+                  <div class="role-strip" [style.border-color]="roleColor(role)"
+                       [title]="'Numero di giocatori nel ruolo ' + roleLabel(role)">
                     <span class="role-label" [style.color]="roleColor(role)">{{ roleLabel(role) }}</span>
                     <span class="role-count">{{ r.roleBreakdown[role] || 0 }}</span>
                   </div>
@@ -373,8 +678,12 @@ const ALL_FORMATIONS: FormationConfig[] = [
                 <table class="squad-table">
                   <thead>
                     <tr>
-                      <th>Role</th><th>Name</th><th class="hide-sm">Team</th>
-                      <th class="num">Cost</th><th class="num hide-sm">Eff.</th><th class="num">Score</th>
+                      <th>Ruolo</th>
+                      <th>Giocatore</th>
+                      <th class="hide-sm">Squadra</th>
+                      <th class="num">Costo</th>
+                      <th class="num hide-sm">Eff.</th>
+                      <th class="num">Score</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -388,9 +697,9 @@ const ALL_FORMATIONS: FormationConfig[] = [
                         </td>
                         <td class="player-name">{{ p.name }}</td>
                         <td class="team-name hide-sm">{{ p.realTeam }}</td>
-                        <td class="num">{{ p.cost }}</td>
-                        <td class="num faded hide-sm">{{ p.effectiveCost | number:'1.1-1' }}</td>
-                        <td class="num accent">{{ p.projectedScore | number:'1.2-2' }}</td>
+                        <td class="num" title="Costo nominale (listino base)">{{ p.cost }}</td>
+                        <td class="num faded hide-sm" title="Costo effettivo post-inflazione">{{ p.effectiveCost | number:'1.1-1' }}</td>
+                        <td class="num accent" title="Punteggio proiettato per il giocatore">{{ p.projectedScore | number:'1.2-2' }}</td>
                       </tr>
                     }
                   </tbody>
@@ -661,6 +970,8 @@ export class OptimizerComponent {
   private readonly quotationService = inject(QuotationService);
 
   readonly allFormations = ALL_FORMATIONS;
+  /** Legende dei campi del configuratore, esposte al template. */
+  protected readonly OPTIMIZER_LEGENDS = OPTIMIZER_LEGENDS;
 
   // Strategies loaded from API; fallback to known names if unavailable
   readonly availableStrategies = signal<string[]>(['BALANCED', 'SUPER_DEFENSIVE', 'SUPER_OFFENSIVE', 'MIXED']);

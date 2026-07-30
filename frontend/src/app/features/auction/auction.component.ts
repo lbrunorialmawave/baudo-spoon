@@ -23,6 +23,7 @@ import {
 } from '../../core/models/auction.models';
 import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.component';
 import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/error-boundary.component';
+import { FieldLegendComponent, FieldLegendExample } from '../../shared/components/field-legend/field-legend.component';
 
 const ROLE_COLOR: Record<string, string> = {
   P: 'var(--color-role-gk)',
@@ -35,6 +36,177 @@ const TIER_COLOR: Record<AuctionTier, string> = {
   LOW: 'var(--color-text-secondary)',
   MID: 'var(--color-accent)',
   TOP: '#F59E0B',
+};
+
+/**
+ * Mappa delle legende visualizzate sotto ogni campo del pannello di
+ * configurazione e della vista live. Ogni entry contiene una descrizione
+ * estesa del significato e dell'uso del campo, più una lista di esempi
+ * concreti per facilitare la comprensione a tutti gli utenti.
+ *
+ * Le chiavi corrispondono al `fieldId` utilizzato per `aria-describedby`
+ * (es. `'legend-seasonStart'` → chiave `'seasonStart'`).
+ */
+const SETUP_LEGENDS: Readonly<Record<string, { description: string; examples: readonly FieldLegendExample[] }>> = {
+  seasonStart: {
+    description: 'Anno di inizio della stagione di Serie A da usare come riferimento per le quotazioni storiche, le statistiche per-match e i listini impiegati dal risolutore. Determina anche la finestra temporale delle partite considerate per il calcolo dei tier.',
+    examples: [
+      { label: '2025', value: 'stagione 2025/26 (default più recente)' },
+      { label: '2024', value: 'stagione 2024/25 (storica)' },
+      { label: '2023', value: 'stagione 2023/24 (analisi trend)' },
+    ],
+  },
+  numParticipants: {
+    description: 'Numero di squadre che partecipano all\'asta, cioè il numero di giocatori-manager che si contenderanno i calciatori. Influisce sul budget totale in gioco e sulla pressione dei prezzi: più partecipanti significano maggiore competizione.',
+    examples: [
+      { label: '4', value: 'lega piccola tra amici' },
+      { label: '8', value: 'lega standard (default consigliato)' },
+      { label: '10–12', value: 'lega grande, alta competizione' },
+    ],
+  },
+  defaultBudget: {
+    description: 'Crediti iniziali (Fantamiliardi, abbreviato "cr.") assegnati a ogni partecipante per costruire la rosa. Se modifichi questo valore, viene applicato a tutti i partecipanti già presenti in lista tramite il pulsante "Applica a tutti".',
+    examples: [
+      { label: '300 cr.', value: 'lega piccola' },
+      { label: '500 cr.', value: 'default classico' },
+      { label: '1000 cr.', value: 'lega premium con top player costosi' },
+    ],
+  },
+  roleQuotas: {
+    description: 'Numero massimo di giocatori per ruolo che ogni squadra può avere in rosa (Portieri, Difensori, Centrocampisti, Attaccanti). Le quote devono essere coerenti con il regolamento della lega.',
+    examples: [
+      { label: 'P=3 D=8 C=8 A=6', value: 'rosa 25, modulo 3-5-2 con slot panchina' },
+      { label: 'P=3 D=8 C=8 A=6', value: 'default Mantra-style con 3 cambi ruolo' },
+    ],
+  },
+  useInflationBaseline: {
+    description: 'Se attivo, il sistema applica un modello di inflazione che stima quanto i prezzi saliranno rispetto al listino base, basandosi sul numero di partecipanti. Disattivalo solo se vuoi prezzi "piatti" senza rialzo previsto.',
+    examples: [
+      { label: 'ON', value: 'prezzi EWMA gonfiati dalla competizione' },
+      { label: 'OFF', value: 'prezzi allineati al listino base' },
+    ],
+  },
+  referenceBudget: {
+    description: 'Budget di riferimento (in crediti) usato dal modello di inflazione come "lega neutra" per calibrare i moltiplicatori. Tipicamente 300 cr. per leghe standard; alzalo se la tua lega usa budget più alti.',
+    examples: [
+      { label: '300 cr.', value: 'riferimento per leghe 300 cr.' },
+      { label: '500 cr.', value: 'riferimento per leghe 500 cr.' },
+    ],
+  },
+  budgetInitial: {
+    description: 'Budget di partenza effettivo di questa sessione d\'asta, in crediti. Impostalo sul valore reale della tua lega: è il numero che il tracker userà per calcolare il residuo di ogni partecipante.',
+    examples: [
+      { label: '300 cr.', value: 'lega classica FantaSanremo/Mantra' },
+      { label: '500 cr.', value: 'lega premium' },
+    ],
+  },
+  valuationMode: {
+    description: 'Modalità con cui viene calcolato il valore atteso di un giocatore durante l\'asta. "Per-Match Rating" usa la media voto ponderata per partita; "Season Value" usa una stima complessiva di fine stagione più adatta a leghe con premi stagionali.',
+    examples: [
+      { label: 'PER_MATCH_RATING', value: 'lega settimanale, focus sul rendimento singolo' },
+      { label: 'SEASON_VALUE', value: 'lega con bonus stagionali' },
+    ],
+  },
+  alpha: {
+    description: 'Fattore di smoothing dell\'indice EWMA (Exponentially Weighted Moving Average). Determina quanto peso ha l\'ultima osservazione rispetto alla storia passata: valori alti reagiscono velocemente ai rialzi, valori bassi smussano il mercato.',
+    examples: [
+      { label: '0.1', value: 'molto stabile, ideale per leghe tranquille' },
+      { label: '0.3', value: 'default bilanciato' },
+      { label: '0.6', value: 'reattivo, adatto ad aste molto inflazionate' },
+    ],
+  },
+  spilloverAdj: {
+    description: 'Coefficiente (0–1) di "spillover" che trasferisce parte della pressione di prezzo dallo stesso ruolo al tier adiacente (es. MID → LOW o MID → TOP). 0 = nessuno spillover; 0.1 = leggera propagazione; 0.3 = forte.',
+    examples: [
+      { label: '0.05', value: 'spillover leggero (default)' },
+      { label: '0.20', value: 'spillover marcato, mercato liquido' },
+    ],
+  },
+  spilloverCross: {
+    description: 'Coefficiente (0–1) di spillover cross-ruolo: quanto un rialzo su un ruolo (es. Attaccanti) si propaga a un altro ruolo (es. Centrocampisti). Utile in leghe con regole di conversione ruolo.',
+    examples: [
+      { label: '0.0', value: 'nessuna propagazione cross-ruolo' },
+      { label: '0.05', value: 'default leggera' },
+      { label: '0.15', value: 'propagazione forte' },
+    ],
+  },
+  lowCostPercentile: {
+    description: 'Percentile (0–1) sotto il quale un giocatore è considerato "low cost" dal sistema di suggerimento alternative. Influenza la proposta "Low Cost" mostrata nel lookup.',
+    examples: [
+      { label: '0.2', value: 'solo i giocatori più economici (top 20%)' },
+      { label: '0.3', value: 'default' },
+      { label: '0.5', value: 'fascia media-bassa' },
+    ],
+  },
+  minIndex: {
+    description: 'Valore minimo consentito per l\'indice di prezzo EWMA dopo l\'applicazione del modello di inflazione. Impedisce che i prezzi crollino a zero in leghe con poca domanda.',
+    examples: [
+      { label: '0.5', value: 'default, previene crolli sotto listino' },
+      { label: '0.8', value: 'floor più alto, mercato rialzistico' },
+    ],
+  },
+  maxIndex: {
+    description: 'Valore massimo consentito per l\'indice di prezzo EWMA. Impedisce runaway inflation in leghe molto competitive, fissando un tetto oltre il quale il prezzo non può salire.',
+    examples: [
+      { label: '2.0', value: 'default (×2 rispetto al listino)' },
+      { label: '3.0', value: 'lega molto calda, top player esplosivi' },
+    ],
+  },
+  tierLow: {
+    description: 'Soglia (0–1) sotto la quale un giocatore è classificato tier LOW. È una soglia relativa: il sistema normalizza gli indici EWMA del ruolo in [0,1] e poi confronta con questo valore.',
+    examples: [
+      { label: '0.3', value: 'default, 30% dei giocatori nel tier basso' },
+      { label: '0.5', value: 'più giocatori finisco nel tier basso' },
+    ],
+  },
+  tierTop: {
+    description: 'Soglia (0–1) sopra la quale un giocatore è classificato tier TOP. Insieme a `tierLow` definisce la fascia centrale (tier MID).',
+    examples: [
+      { label: '0.7', value: 'default, 30% top del ruolo' },
+      { label: '0.85', value: 'top ristretto ai migliori assoluti' },
+    ],
+  },
+};
+
+const LIVE_LEGENDS: Readonly<Record<string, { description: string; examples: readonly FieldLegendExample[] }>> = {
+  lookupQuery: {
+    description: 'Casella di ricerca libera sulla pool di giocatori disponibili per l\'asta. La ricerca è debouncata di 300 ms e mostra un dropdown con i risultati migliori (per nome, squadra e ruolo).',
+    examples: [
+      { label: '"Lautaro"', value: 'autocomplete su cognome / parte del nome' },
+      { label: '"Inter A"', value: 'filtra per team + ruolo' },
+      { label: 'Esc', value: 'chiude il dropdown' },
+      { label: 'Invio', value: 'esegue il lookup del giocatore attualmente nel campo' },
+    ],
+  },
+  recordPlayer: {
+    description: 'Giocatore attualmente selezionato per la registrazione dell\'assegnazione. Viene pre-compilato automaticamente scegliendo un risultato dal Lookup, ma può essere sovrascritto manualmente incollando un ID.',
+    examples: [
+      { label: 'selezione', value: 'scegli dal Lookup →' },
+      { label: 'ID manuale', value: 'incolla un fm-XXXX se conosci l\'identificativo FotMob' },
+    ],
+  },
+  recordWinner: {
+    description: 'Squadra partecipante che si aggiudica il giocatore in questo turno d\'asta. La lista deriva dai partecipanti configurati nella sessione; l\'opzione vuota disabilita il pulsante Registra.',
+    examples: [
+      { label: 'Team 1', value: 'aggiudicatario turno corrente' },
+      { label: '— select —', value: 'nessuna selezione (pulsante Registra disabilitato)' },
+    ],
+  },
+  recordPrice: {
+    description: 'Prezzo finale di aggiudicazione, in crediti (cr.). Deve essere un intero ≥ 1. Verrà scalato dal budget residuo del vincitore e alimenterà l\'indice EWMA per quel ruolo/tier.',
+    examples: [
+      { label: '1', value: 'prezzo minimo, svincolo low-cost' },
+      { label: '30–50', value: 'tier MID tipico' },
+      { label: '100+', value: 'tier TOP, top player' },
+    ],
+  },
+  varRanking: {
+    description: 'Tabella "Migliori affari": classifica dei giocatori con ESV (Expected Season Value) positivo, ordinata per rendimento atteso rispetto al prezzo EWMA. La colonna "Segnale" indica se il sistema consiglia l\'acquisto (COMPRA) o lo sconsiglia (DA EVITARE).',
+    examples: [
+      { label: 'ESV > 0 + COMPRA', value: 'affare: valore atteso superiore al prezzo' },
+      { label: 'ESV ≤ 0 + DA EVITARE', value: 'surriscaldato, prezzo troppo alto rispetto al rendimento previsto' },
+    ],
+  },
 };
 
 function makeParticipants(
@@ -50,7 +222,7 @@ function makeParticipants(
 @Component({
   selector: 'app-auction',
   standalone: true,
-  imports: [FormsModule, DecimalPipe, SkeletonComponent, ErrorBoundaryComponent],
+  imports: [FormsModule, DecimalPipe, SkeletonComponent, ErrorBoundaryComponent, FieldLegendComponent],
   template: `
     @if (sessionId()) {
 
@@ -59,20 +231,20 @@ function makeParticipants(
 
         <header class="page-header">
           <div>
-            <h1 class="page-title">Auction Tracker</h1>
+            <h1 class="page-title">Tracker Asta</h1>
             <p class="page-subtitle">
-              Session: <code class="session-id">{{ sessionId()!.slice(0, 12) }}…</code>
+              Sessione attiva: <code class="session-id">{{ sessionId()!.slice(0, 12) }}…</code>
             </p>
           </div>
           <div class="header-actions">
-            <button class="secondary-btn" (click)="saveToFile()">Save Session</button>
-            <button class="danger-btn" (click)="endSession()">End Session</button>
+            <button class="secondary-btn" (click)="saveToFile()" title="Esporta l'intera sessione (assegnazioni, budget, indici EWMA) in un file JSON che potrai ricaricare in seguito.">Salva sessione</button>
+            <button class="danger-btn" (click)="endSession()" title="Termina e cancella definitivamente la sessione dal backend. Operazione irreversibile.">Termina sessione</button>
           </div>
         </header>
 
         <!-- Price index strip -->
         @if (summary(); as s) {
-          <div class="price-strip">
+          <div class="price-strip" title="Indice di prezzo EWMA corrente per ogni combinazione ruolo × tier. Più alto = più caro del listino base.">
             @for (role of allRoles; track role) {
               <div class="price-role-group">
                 <span class="price-role-label" [style.color]="roleColor(role)">{{ role }}</span>
@@ -93,7 +265,7 @@ function makeParticipants(
 
           <!-- ── Left: Participants ──────────────────────── -->
           <aside class="participants-panel">
-            <p class="panel-heading">Standings</p>
+            <p class="panel-heading">Classifica e budget residuo</p>
 
             @if (summaryLoading() && !summary()) {
               @for (_ of [1,2,3,4,5,6,7,8]; track $index) {
@@ -126,7 +298,7 @@ function makeParticipants(
                       }
                     }
                     @if (p.squad.length === 0) {
-                      <span class="empty-squad">—</span>
+                      <span class="empty-squad" title="Nessun giocatore ancora acquistato">—</span>
                     }
                   </div>
                 </div>
@@ -141,19 +313,24 @@ function makeParticipants(
 
               <!-- Lookup card -->
               <div class="card">
-                <p class="card-section-label">Player Lookup</p>
+                <p class="card-section-label">Ricerca giocatore (Lookup)</p>
                 <div class="pool-autocomplete">
                   <div class="lookup-row">
-                    <input class="field-input" placeholder="Cerca giocatore…"
+                    <input id="lookupQuery" class="field-input" placeholder="Cerca giocatore per nome, squadra o ruolo…"
                            [ngModel]="lookupQuery"
                            (ngModelChange)="lookupQuery = $event; onPoolQueryChange($event)"
                            (keydown.escape)="poolOpen.set(false)"
                            (keydown.enter)="lookupPlayer()"
+                           [attr.aria-describedby]="'legend-lookupQuery'"
                            autocomplete="off" />
                     @if (lookupLoading()) {
-                      <span class="spinner-sm" style="flex-shrink:0;color:var(--color-accent)"></span>
+                      <span class="spinner-sm" style="flex-shrink:0;color:var(--color-accent)" aria-label="Caricamento suggerimenti"></span>
                     }
                   </div>
+                  <app-field-legend
+                    fieldId="legend-lookupQuery"
+                    [description]="LIVE_LEGENDS['lookupQuery'].description"
+                    [examples]="LIVE_LEGENDS['lookupQuery'].examples" />
                   @if (poolOpen() && poolSuggestions().length) {
                     <ul class="pool-dropdown" role="listbox">
                       @for (p of poolSuggestions(); track p.playerId) {
@@ -164,7 +341,7 @@ function makeParticipants(
                             <span class="role-badge"
                                   [style.color]="roleColor(p.role)"
                                   [style.border-color]="roleColor(p.role)">{{ p.role }}</span>
-                            {{ p.realTeam }} · {{ p.cost }} cr.
+                            {{ p.realTeam }} · quotazione {{ p.cost }} cr.
                           </span>
                         </li>
                       }
@@ -173,12 +350,12 @@ function makeParticipants(
                 </div>
 
                 @if (lookupError()) {
-                  <p class="inline-error">{{ lookupError() }}</p>
+                  <p class="inline-error" role="alert">{{ lookupError() }}</p>
                 }
 
                 @if (projection(); as proj) {
-                  <div class="projection-row">
-                    <span class="proj-label">Expected price</span>
+                  <div class="projection-row" title="Prezzo atteso EWMA per il giocatore: è la stima di quanto dovrebbe essere aggiudicato in questo momento dell'asta.">
+                    <span class="proj-label">Prezzo atteso</span>
                     <span class="proj-price">{{ proj.expectedPrice | number:'1.0-0' }} cr.</span>
                     <span class="tier-badge" [style.color]="tierColor(proj.tier)"
                           [style.border-color]="tierColor(proj.tier)">{{ proj.tier }}</span>
@@ -189,14 +366,14 @@ function makeParticipants(
                   <div class="alternatives-grid">
                     @if (alt.lowCostAlternative; as lc) {
                       <div class="alt-card">
-                        <p class="alt-label">Low Cost</p>
+                        <p class="alt-label">Alternativa economica</p>
                         <p class="alt-name">{{ lc.name }}</p>
                         <p class="alt-meta">{{ lc.realTeam }} · {{ lc.role }} · {{ lc.cost }} cr.</p>
                       </div>
                     }
                     @if (alt.closestAlternative; as cl) {
                       <div class="alt-card">
-                        <p class="alt-label">Closest</p>
+                        <p class="alt-label">Alternativa più simile</p>
                         <p class="alt-name">{{ cl.name }}</p>
                         <p class="alt-meta">{{ cl.realTeam }} · {{ cl.role }} · {{ cl.cost }} cr.</p>
                       </div>
@@ -210,34 +387,50 @@ function makeParticipants(
 
               <!-- Record card -->
               <div class="card">
-                <p class="card-section-label">Record Assignment</p>
+                <p class="card-section-label">Registra assegnazione di turno</p>
 
                 <div class="field-group">
-                  <label class="field-label">Giocatore</label>
-                  <input class="field-input" [ngModel]="recordPlayerName || recordPlayerId"
+                  <label class="field-label" for="recordPlayer">Giocatore</label>
+                  <input id="recordPlayer" class="field-input" [ngModel]="recordPlayerName || recordPlayerId"
                          readonly placeholder="seleziona dal Lookup →"
-                         [style.color]="recordPlayerId ? 'var(--color-text-primary)' : 'var(--color-text-secondary)'" />
+                         [style.color]="recordPlayerId ? 'var(--color-text-primary)' : 'var(--color-text-secondary)'"
+                         [attr.aria-describedby]="'legend-recordPlayer'" />
+                  <app-field-legend
+                    fieldId="legend-recordPlayer"
+                    [description]="LIVE_LEGENDS['recordPlayer'].description"
+                    [examples]="LIVE_LEGENDS['recordPlayer'].examples" />
                 </div>
 
                 <div class="field-group">
-                  <label class="field-label">Winner</label>
-                  <select class="field-input" [(ngModel)]="recordWinnerId">
-                    <option value="">— select —</option>
+                  <label class="field-label" for="recordWinner">Squadra vincitrice (aggiudicatario)</label>
+                  <select id="recordWinner" class="field-input" [(ngModel)]="recordWinnerId"
+                          [attr.aria-describedby]="'legend-recordWinner'">
+                    <option value="">— seleziona —</option>
                     @if (summary(); as s) {
                       @for (p of s.participants; track p.participantId) {
                         <option [value]="p.participantId">{{ p.displayName }}</option>
                       }
                     }
                   </select>
+                  <app-field-legend
+                    fieldId="legend-recordWinner"
+                    [description]="LIVE_LEGENDS['recordWinner'].description"
+                    [examples]="LIVE_LEGENDS['recordWinner'].examples" />
                 </div>
 
                 <div class="field-group">
-                  <label class="field-label">Final Price <span class="field-hint">cr.</span></label>
-                  <input class="field-input" type="number" min="1" [(ngModel)]="recordPrice" />
+                  <label class="field-label" for="recordPrice">Prezzo finale di aggiudicazione <span class="field-hint">cr.</span></label>
+                  <input id="recordPrice" class="field-input" type="number" min="1"
+                         [(ngModel)]="recordPrice"
+                         [attr.aria-describedby]="'legend-recordPrice'" />
+                  <app-field-legend
+                    fieldId="legend-recordPrice"
+                    [description]="LIVE_LEGENDS['recordPrice'].description"
+                    [examples]="LIVE_LEGENDS['recordPrice'].examples" />
                 </div>
 
                 @if (recordError()) {
-                  <div class="inline-rejection">
+                  <div class="inline-rejection" role="alert">
                     @if (recordRejectionCode()) {
                       <code class="rejection-code">{{ recordRejectionCode() }}</code>
                     }
@@ -248,15 +441,17 @@ function makeParticipants(
                 <div class="record-actions">
                   <button class="run-btn"
                           (click)="submitRecord()"
-                          [disabled]="recordLoading() || !recordPlayerId || !recordWinnerId || recordPrice < 1">
+                          [disabled]="recordLoading() || !recordPlayerId || !recordWinnerId || recordPrice < 1"
+                          title="Conferma l'assegnazione: scalo il prezzo dal budget del vincitore, aggiorno l'indice EWMA del ruolo/tier e aggiungo l'operazione allo storico.">
                     @if (recordLoading()) {
-                      <span class="spinner"></span> Recording…
+                      <span class="spinner"></span> Registrazione…
                     } @else {
-                      Record
+                      Registra assegnazione
                     }
                   </button>
-                  <button class="secondary-btn" (click)="undoLast()" [disabled]="undoLoading()">
-                    @if (undoLoading()) { <span class="spinner-sm"></span> } @else { Undo }
+                  <button class="secondary-btn" (click)="undoLast()" [disabled]="undoLoading()"
+                          title="Annulla l'ultima assegnazione registrata: ripristina il budget del vincitore e ripristina l'indice EWMA al valore precedente.">
+                    @if (undoLoading()) { <span class="spinner-sm"></span> } @else { Annulla ultima }
                   </button>
                 </div>
               </div>
@@ -266,14 +461,18 @@ function makeParticipants(
             <!-- Assignment history -->
             @if (reversedAssignments().length) {
               <div class="card history-card">
-                <p class="card-section-label">History ({{ reversedAssignments().length }})</p>
+                <p class="card-section-label">Storico assegnazioni ({{ reversedAssignments().length }})</p>
                 <div class="history-table-wrap">
                   <table class="squad-table">
                     <thead>
                       <tr>
-                        <th>#</th><th>Player</th><th>Winner</th>
-                        <th>R</th><th class="num">Price</th>
-                        <th>Tier</th><th class="num">Δ Index</th>
+                        <th title="Numero progressivo dell'asta nella sessione">#</th>
+                        <th>Giocatore</th>
+                        <th>Aggiudicatario</th>
+                        <th title="Ruolo del giocatore (P/D/C/A)">Ruolo</th>
+                        <th class="num" title="Prezzo finale di aggiudicazione in crediti">Prezzo</th>
+                        <th title="Tier di quotazione al momento dell'asta">Tier</th>
+                        <th class="num" title="Variazione dell'indice EWMA del ruolo/tier dopo l'assegnazione">Δ Indice</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -307,7 +506,7 @@ function makeParticipants(
               </div>
             } @else if (summary()) {
               <div class="card empty-history">
-                <p>No assignments yet. Look up a player, then record their sale.</p>
+                <p>Nessuna assegnazione registrata. Cerca un giocatore nel Lookup, poi registra la sua vendita.</p>
               </div>
             }
 
@@ -315,19 +514,23 @@ function makeParticipants(
             @if (varRanking().length || varLoading()) {
               <div class="card">
                 <p class="card-section-label">
-                  Migliori affari
+                  Migliori affari disponibili (ESV vs prezzo EWMA)
                   @if (varLoading()) { <span class="spinner-sm" style="margin-left:6px"></span> }
                 </p>
+                <app-field-legend
+                  fieldId="legend-varRanking"
+                  [description]="LIVE_LEGENDS['varRanking'].description"
+                  [examples]="LIVE_LEGENDS['varRanking'].examples" />
                 @if (varRanking().length) {
                   <div class="history-table-wrap">
                     <table class="squad-table">
                       <thead>
                         <tr>
-                          <th>Giocatore</th><th>R</th>
-                          <th class="num" title="Valore Atteso di Stagione (Expected Season Value)">ESV</th>
-                          <th class="num" title="Prezzo atteso EWMA">Prezzo atteso</th>
-                          <th class="num" title="Valore di Stagione">Val. stagione</th>
-                          <th class="num" title="Probabilità di essere titolare">% Titolarità</th>
+                          <th>Giocatore</th><th title="Ruolo del giocatore">Ruolo</th>
+                          <th class="num" title="Expected Season Value: differenza tra valore di stagione previsto e prezzo di acquisto EWMA. ESV > 0 = affare">ESV</th>
+                          <th class="num" title="Prezzo atteso EWMA corrente per questo giocatore">Prezzo atteso</th>
+                          <th class="num" title="Valore di stagione previsto, basato su statistiche storiche">Val. stagione</th>
+                          <th class="num" title="Probabilità stimata che il giocatore sia titolare nella sua squadra">% Titolarità</th>
                           <th>Segnale</th>
                         </tr>
                       </thead>
@@ -350,7 +553,7 @@ function makeParticipants(
                               @if (v.buySignal) {
                                 <span class="esv-badge esv-buy" title="Affare: ESV positivo">COMPRA</span>
                               } @else {
-                                <span class="esv-badge esv-hold" title="EVITARE">DA EVITARE</span>
+                                <span class="esv-badge esv-hold" title="EVITARE: ESV negativo o nullo">DA EVITARE</span>
                               }
                             </td>
                           </tr>
@@ -373,8 +576,8 @@ function makeParticipants(
 
         <header class="page-header">
           <div>
-            <h1 class="page-title">Auction Tracker</h1>
-            <p class="page-subtitle">ILP-based market drift · EWMA price index</p>
+            <h1 class="page-title">Tracker Asta</h1>
+            <p class="page-subtitle">Indice di mercato EWMA con modello di inflazione basato sul numero di partecipanti</p>
           </div>
         </header>
 
@@ -383,146 +586,230 @@ function makeParticipants(
           <!-- Config panel -->
           <aside class="config-panel card">
 
-            <p class="section-divider">Session</p>
+            <p class="section-divider">Sessione</p>
 
             <div class="field-group">
-              <label class="field-label">Season</label>
-              <select class="field-input" [(ngModel)]="seasonStart">
+              <label class="field-label" for="seasonStart">Stagione di riferimento (Serie A)</label>
+              <select id="seasonStart" class="field-input" [(ngModel)]="seasonStart"
+                      [attr.aria-describedby]="'legend-seasonStart'">
                 @for (s of seasons(); track s) {
                   <option [value]="s">{{ s }}/{{ s + 1 }}</option>
                 }
               </select>
+              <app-field-legend
+                fieldId="legend-seasonStart"
+                [description]="SETUP_LEGENDS['seasonStart'].description"
+                [examples]="SETUP_LEGENDS['seasonStart'].examples" />
             </div>
 
-            <p class="section-divider">Participants</p>
+            <p class="section-divider">Partecipanti</p>
 
             <div class="field-row">
               <div class="field-group">
-                <label class="field-label">Count</label>
-                <input class="field-input" type="number" min="2" max="20"
+                <label class="field-label" for="numParticipants">Numero di squadre partecipanti</label>
+                <input id="numParticipants" class="field-input" type="number" min="2" max="20"
                        [(ngModel)]="numParticipants"
-                       (change)="resizeParticipants()" />
+                       (change)="resizeParticipants()"
+                       [attr.aria-describedby]="'legend-numParticipants'" />
+                <app-field-legend
+                  fieldId="legend-numParticipants"
+                  [description]="SETUP_LEGENDS['numParticipants'].description"
+                  [examples]="SETUP_LEGENDS['numParticipants'].examples" />
               </div>
               <div class="field-group">
-                <label class="field-label">Budget each</label>
-                <input class="field-input" type="number" min="100" max="2000" step="25"
+                <label class="field-label" for="defaultBudget">Budget iniziale per squadra <span class="field-hint">cr.</span></label>
+                <input id="defaultBudget" class="field-input" type="number" min="100" max="2000" step="25"
                        [ngModel]="defaultBudget"
-                       (ngModelChange)="defaultBudget = +$event; applyDefaultBudget()" />
+                       (ngModelChange)="defaultBudget = +$event; applyDefaultBudget()"
+                       [attr.aria-describedby]="'legend-defaultBudget'" />
+                <app-field-legend
+                  fieldId="legend-defaultBudget"
+                  [description]="SETUP_LEGENDS['defaultBudget'].description"
+                  [examples]="SETUP_LEGENDS['defaultBudget'].examples" />
               </div>
             </div>
 
-            <p class="section-divider">Role Quotas</p>
+            <p class="section-divider">Quote rosa per ruolo</p>
 
             <div class="quota-grid">
               @for (role of allRoles; track role) {
                 <div class="field-group">
-                  <label class="field-label" [style.color]="roleColor(role)">{{ role }}</label>
-                  <input class="field-input" type="number" min="1" max="20"
+                  <label class="field-label" [style.color]="roleColor(role)" [attr.for]="'role-' + role">
+                    @switch (role) {
+                      @case ('P') { Portieri (P) — n° slot in rosa }
+                      @case ('D') { Difensori (D) — n° slot in rosa }
+                      @case ('C') { Centrocampisti (C) — n° slot in rosa }
+                      @case ('A') { Attaccanti (A) — n° slot in rosa }
+                    }
+                  </label>
+                  <input [id]="'role-' + role" class="field-input" type="number" min="1" max="20"
                          [ngModel]="roleQuotas[role] ?? 0"
-                         (ngModelChange)="roleQuotas[role] = +$event" />
+                         (ngModelChange)="roleQuotas[role] = +$event"
+                         [attr.aria-describedby]="'legend-roleQuotas'" />
                 </div>
               }
             </div>
+            <app-field-legend
+              fieldId="legend-roleQuotas"
+              [description]="SETUP_LEGENDS['roleQuotas'].description"
+              [examples]="SETUP_LEGENDS['roleQuotas'].examples" />
 
-            <p class="section-divider">Inflation</p>
+            <p class="section-divider">Modello di inflazione di mercato</p>
 
             <label class="strategy-check" [class.active]="useInflationBaseline">
               <input type="checkbox" [(ngModel)]="useInflationBaseline" />
-              <span>Use inflation baseline</span>
+              <span>Applica baseline di inflazione basata sul numero di partecipanti</span>
             </label>
 
             <div class="field-row">
               <div class="field-group">
-                <label class="field-label">Reference budget <span class="field-hint">cr.</span></label>
-                <input class="field-input" type="number" min="1" max="10000" step="50"
-                       [(ngModel)]="referenceBudget" />
+                <label class="field-label" for="referenceBudget">Budget di riferimento per il modello <span class="field-hint">cr.</span></label>
+                <input id="referenceBudget" class="field-input" type="number" min="1" max="10000" step="50"
+                       [(ngModel)]="referenceBudget"
+                       [attr.aria-describedby]="'legend-referenceBudget'" />
+                <app-field-legend
+                  fieldId="legend-referenceBudget"
+                  [description]="SETUP_LEGENDS['referenceBudget'].description"
+                  [examples]="SETUP_LEGENDS['referenceBudget'].examples" />
               </div>
               <div class="field-group">
-                <label class="field-label">Session budget <span class="field-hint">cr.</span></label>
-                <input class="field-input" type="number" min="1" max="10000" step="50"
-                       [(ngModel)]="budgetInitial" />
+                <label class="field-label" for="budgetInitial">Budget effettivo di questa sessione <span class="field-hint">cr.</span></label>
+                <input id="budgetInitial" class="field-input" type="number" min="1" max="10000" step="50"
+                       [(ngModel)]="budgetInitial"
+                       [attr.aria-describedby]="'legend-budgetInitial'" />
+                <app-field-legend
+                  fieldId="legend-budgetInitial"
+                  [description]="SETUP_LEGENDS['budgetInitial'].description"
+                  [examples]="SETUP_LEGENDS['budgetInitial'].examples" />
               </div>
             </div>
 
-            <p class="section-divider">Valuation Mode</p>
+            <p class="section-divider">Modalità di valutazione del giocatore</p>
 
             <div class="field-group">
-              <select class="field-input" [(ngModel)]="valuationMode">
-                <option value="PER_MATCH_RATING">Per-Match Rating</option>
-                <option value="SEASON_VALUE">Season Value</option>
+              <label class="field-label" for="valuationMode">Algoritmo usato per stimare il valore del giocatore</label>
+              <select id="valuationMode" class="field-input" [(ngModel)]="valuationMode"
+                      [attr.aria-describedby]="'legend-valuationMode'">
+                <option value="PER_MATCH_RATING">Per-Match Rating (media voto ponderata)</option>
+                <option value="SEASON_VALUE">Season Value (valore complessivo di stagione)</option>
               </select>
+              <app-field-legend
+                fieldId="legend-valuationMode"
+                [description]="SETUP_LEGENDS['valuationMode'].description"
+                [examples]="SETUP_LEGENDS['valuationMode'].examples" />
             </div>
 
             <!-- Advanced -->
             <button class="advanced-toggle" (click)="showAdvanced = !showAdvanced">
-              Advanced {{ showAdvanced ? '▲' : '▼' }}
+              Impostazioni avanzate EWMA e spillover {{ showAdvanced ? '▲' : '▼' }}
             </button>
 
             @if (showAdvanced) {
               <div class="field-row">
                 <div class="field-group">
-                  <label class="field-label">EWMA alpha</label>
-                  <input class="field-input" type="number" min="0" max="1" step="0.05"
-                         [(ngModel)]="alpha" />
+                  <label class="field-label" for="alpha">Fattore EWMA (alpha) <span class="field-hint">0–1</span></label>
+                  <input id="alpha" class="field-input" type="number" min="0" max="1" step="0.05"
+                         [(ngModel)]="alpha"
+                         [attr.aria-describedby]="'legend-alpha'" />
+                  <app-field-legend
+                    fieldId="legend-alpha"
+                    [description]="SETUP_LEGENDS['alpha'].description"
+                    [examples]="SETUP_LEGENDS['alpha'].examples" />
                 </div>
                 <div class="field-group">
-                  <label class="field-label">Spillover adj.</label>
-                  <input class="field-input" type="number" min="0" max="1" step="0.01"
-                         [(ngModel)]="spilloverAdj" />
-                </div>
-              </div>
-              <div class="field-row">
-                <div class="field-group">
-                  <label class="field-label">Spillover cross</label>
-                  <input class="field-input" type="number" min="0" max="1" step="0.01"
-                         [(ngModel)]="spilloverCross" />
-                </div>
-                <div class="field-group">
-                  <label class="field-label">Low-cost pct.</label>
-                  <input class="field-input" type="number" min="0" max="1" step="0.05"
-                         [(ngModel)]="lowCostPercentile" />
+                  <label class="field-label" for="spilloverAdj">Spillover stesso ruolo, tier adiacente <span class="field-hint">0–1</span></label>
+                  <input id="spilloverAdj" class="field-input" type="number" min="0" max="1" step="0.01"
+                         [(ngModel)]="spilloverAdj"
+                         [attr.aria-describedby]="'legend-spilloverAdj'" />
+                  <app-field-legend
+                    fieldId="legend-spilloverAdj"
+                    [description]="SETUP_LEGENDS['spilloverAdj'].description"
+                    [examples]="SETUP_LEGENDS['spilloverAdj'].examples" />
                 </div>
               </div>
               <div class="field-row">
                 <div class="field-group">
-                  <label class="field-label">Min index</label>
-                  <input class="field-input" type="number" min="0" max="1" step="0.1"
-                         [(ngModel)]="minIndex" />
+                  <label class="field-label" for="spilloverCross">Spillover cross-ruolo <span class="field-hint">0–1</span></label>
+                  <input id="spilloverCross" class="field-input" type="number" min="0" max="1" step="0.01"
+                         [(ngModel)]="spilloverCross"
+                         [attr.aria-describedby]="'legend-spilloverCross'" />
+                  <app-field-legend
+                    fieldId="legend-spilloverCross"
+                    [description]="SETUP_LEGENDS['spilloverCross'].description"
+                    [examples]="SETUP_LEGENDS['spilloverCross'].examples" />
                 </div>
                 <div class="field-group">
-                  <label class="field-label">Max index</label>
-                  <input class="field-input" type="number" min="1" max="5" step="0.1"
-                         [(ngModel)]="maxIndex" />
+                  <label class="field-label" for="lowCostPercentile">Percentile soglia "low-cost" <span class="field-hint">0–1</span></label>
+                  <input id="lowCostPercentile" class="field-input" type="number" min="0" max="1" step="0.05"
+                         [(ngModel)]="lowCostPercentile"
+                         [attr.aria-describedby]="'legend-lowCostPercentile'" />
+                  <app-field-legend
+                    fieldId="legend-lowCostPercentile"
+                    [description]="SETUP_LEGENDS['lowCostPercentile'].description"
+                    [examples]="SETUP_LEGENDS['lowCostPercentile'].examples" />
                 </div>
               </div>
               <div class="field-row">
                 <div class="field-group">
-                  <label class="field-label">Tier low</label>
-                  <input class="field-input" type="number" min="0" max="1" step="0.05"
-                         [(ngModel)]="tierLow" />
+                  <label class="field-label" for="minIndex">Indice EWMA minimo <span class="field-hint">0–1</span></label>
+                  <input id="minIndex" class="field-input" type="number" min="0" max="1" step="0.1"
+                         [(ngModel)]="minIndex"
+                         [attr.aria-describedby]="'legend-minIndex'" />
+                  <app-field-legend
+                    fieldId="legend-minIndex"
+                    [description]="SETUP_LEGENDS['minIndex'].description"
+                    [examples]="SETUP_LEGENDS['minIndex'].examples" />
                 </div>
                 <div class="field-group">
-                  <label class="field-label">Tier top</label>
-                  <input class="field-input" type="number" min="0" max="1" step="0.05"
-                         [(ngModel)]="tierTop" />
+                  <label class="field-label" for="maxIndex">Indice EWMA massimo <span class="field-hint">1–5</span></label>
+                  <input id="maxIndex" class="field-input" type="number" min="1" max="5" step="0.1"
+                         [(ngModel)]="maxIndex"
+                         [attr.aria-describedby]="'legend-maxIndex'" />
+                  <app-field-legend
+                    fieldId="legend-maxIndex"
+                    [description]="SETUP_LEGENDS['maxIndex'].description"
+                    [examples]="SETUP_LEGENDS['maxIndex'].examples" />
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field-group">
+                  <label class="field-label" for="tierLow">Soglia tier basso (LOW) <span class="field-hint">0–1</span></label>
+                  <input id="tierLow" class="field-input" type="number" min="0" max="1" step="0.05"
+                         [(ngModel)]="tierLow"
+                         [attr.aria-describedby]="'legend-tierLow'" />
+                  <app-field-legend
+                    fieldId="legend-tierLow"
+                    [description]="SETUP_LEGENDS['tierLow'].description"
+                    [examples]="SETUP_LEGENDS['tierLow'].examples" />
+                </div>
+                <div class="field-group">
+                  <label class="field-label" for="tierTop">Soglia tier alto (TOP) <span class="field-hint">0–1</span></label>
+                  <input id="tierTop" class="field-input" type="number" min="0" max="1" step="0.05"
+                         [(ngModel)]="tierTop"
+                         [attr.aria-describedby]="'legend-tierTop'" />
+                  <app-field-legend
+                    fieldId="legend-tierTop"
+                    [description]="SETUP_LEGENDS['tierTop'].description"
+                    [examples]="SETUP_LEGENDS['tierTop'].examples" />
                 </div>
               </div>
             }
 
             @if (initError()) {
-              <app-error-boundary title="Session Error" [message]="initError()!" />
+              <app-error-boundary title="Errore di inizializzazione sessione" [message]="initError()!" />
             }
 
             <button class="run-btn" (click)="startAuction()" [disabled]="starting() || !seasons().length">
               @if (starting()) {
-                <span class="spinner"></span> Starting…
+                <span class="spinner"></span> Avvio in corso…
               } @else {
-                Start Auction
+                Avvia asta
               }
             </button>
 
-            <button class="secondary-btn full-w" (click)="fileInput.click()" [disabled]="starting()">
-              Resume from Save
+            <button class="secondary-btn full-w" (click)="fileInput.click()" [disabled]="starting()"
+                    title="Carica un file JSON precedentemente esportato con 'Salva sessione' per riprendere un'asta interrotta.">
+              Riprendi da file di salvataggio (.json)
             </button>
             <input #fileInput type="file" accept=".json" style="display:none"
                    (change)="onResumeFile($event)" />
@@ -533,22 +820,24 @@ function makeParticipants(
           <section class="setup-right">
             <div class="card">
               <p class="card-section-label" style="margin-bottom:12px">
-                Participants ({{ participants().length }})
+                Elenco partecipanti ({{ participants().length }}) — modifica nome e budget individuale
               </p>
               <div class="participants-list">
                 <div class="participants-list-header">
-                  <span>Name</span><span>Budget</span>
+                  <span>Nome visualizzato</span><span>Budget iniziale (cr.)</span>
                 </div>
                 @for (p of participants(); track p.participantId; let i = $index) {
                   <div class="participant-edit-row">
                     <input class="field-input"
                            [ngModel]="p.displayName"
                            (ngModelChange)="updateName(i, $event)"
-                           [placeholder]="'Team ' + (i + 1)" />
+                           [placeholder]="'Squadra ' + (i + 1)"
+                           [attr.aria-label]="'Nome partecipante ' + (i + 1)" />
                     <input class="field-input budget-input" type="number"
                            [ngModel]="p.budgetInitial"
                            (ngModelChange)="updateBudget(i, +$event)"
-                           min="100" max="2000" step="25" />
+                           min="100" max="2000" step="25"
+                           [attr.aria-label]="'Budget iniziale partecipante ' + (i + 1)" />
                   </div>
                 }
               </div>
@@ -567,6 +856,11 @@ export class AuctionComponent {
 
   readonly allRoles: readonly AuctionRole[] = AUCTION_ROLES;
   readonly allTiers: readonly AuctionTier[] = ['LOW', 'MID', 'TOP'];
+
+  /** Legende dei campi del pannello di setup (configurazione iniziale). */
+  protected readonly SETUP_LEGENDS = SETUP_LEGENDS;
+  /** Legende dei campi della vista live (lookup + registrazione). */
+  protected readonly LIVE_LEGENDS = LIVE_LEGENDS;
 
   // ── Setup form state (plain properties — bound via (change) events) ──
   seasonStart = 2024;
