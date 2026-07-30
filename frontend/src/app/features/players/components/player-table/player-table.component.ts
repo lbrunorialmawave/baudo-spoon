@@ -98,7 +98,8 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                 </td>
                 <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell"
                     style="color:var(--color-text-secondary)">
-                  {{ mp?.start_probability != null ? (mp.start_probability * 100 | number:'1.0-0') + '%' : '—' }}
+                  @let sp = mp?.start_probability;
+                  {{ sp != null ? (sp * 100 | number:'1.0-0') + '%' : '—' }}
                 </td>
                 <td class="px-3 py-2.5 text-xs hidden md:table-cell">
                   @let mds = matchdayStatus()[item.fantacalcio_id];

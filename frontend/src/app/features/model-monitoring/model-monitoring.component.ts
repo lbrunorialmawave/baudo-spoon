@@ -14,7 +14,7 @@ import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/e
 @Component({
   selector: 'app-model-monitoring',
   standalone: true,
-  imports: [SkeletonComponent, ErrorBoundaryComponent, DatePipe, DecimalPipe, FormsModule],
+  imports: [SkeletonComponent, ErrorBoundaryComponent, DatePipe, DecimalPipe, UpperCasePipe, FormsModule],
   template: `
     <div class="page-container">
       <header class="page-header">
