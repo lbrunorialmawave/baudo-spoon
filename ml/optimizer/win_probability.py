@@ -16,6 +16,7 @@ from dataclasses import dataclass
 
 from ml.optimizer.inflation import InflationConfig, compute_role_percentile_map, estimate_effective_cost
 from ml.optimizer.models import Player
+from ml.optimizer.team_strength import load_team_strength_scores
 
 __all__ = ["WinProbabilityConfig", "estimate_completion_probability"]
 
@@ -32,6 +33,7 @@ def estimate_completion_probability(
     config: WinProbabilityConfig,
     inflation_config: InflationConfig,
     num_participants: int,
+    team_strength_scores: dict[str, float] | None = None,
 ) -> float:
     """Return P(total auction cost <= budget) via Monte Carlo sampling.
 
@@ -41,9 +43,17 @@ def estimate_completion_probability(
     if not squad:
         return 1.0
 
+    # Load team-strength scores if multiplier is active and none provided.
+    if team_strength_scores is None and inflation_config.team_strength_multiplier > 0:
+        known_teams = {p.real_team for p in squad if p.real_team}
+        team_strength_scores = load_team_strength_scores(known_teams=known_teams)
+
     percentiles = compute_role_percentile_map(squad)
     means: list[float] = [
-        estimate_effective_cost(p, percentiles[p.player_id], num_participants, inflation_config)
+        estimate_effective_cost(
+            p, percentiles[p.player_id], num_participants, inflation_config,
+            team_strength_scores=team_strength_scores,
+        )
         for p in squad
     ]
     stds: list[float] = [max(0.5, m * config.overpay_std_ratio) for m in means]

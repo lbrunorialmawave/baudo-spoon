@@ -15,6 +15,7 @@ from collections import defaultdict
 import pulp
 
 from ml.optimizer.inflation import compute_role_percentile_map, estimate_effective_cost
+from ml.optimizer.team_strength import load_team_strength_scores
 from ml.optimizer.models import (
     MANTRA_DEFAULT_QUOTAS,
     OptimizationConfig,
@@ -235,6 +236,12 @@ def solve_strategy(
     if precomputed_percentiles is None:
         precomputed_percentiles = compute_role_percentile_map(pool)
 
+    # Load team-strength scores once for the entire solve call.
+    ts_scores: dict[str, float] | None = None
+    if config.inflation_config.team_strength_multiplier > 0:
+        known_teams = {p.real_team for p in pool if p.real_team}
+        ts_scores = load_team_strength_scores(known_teams=known_teams)
+
     try:
         effective_cost: dict[str, float] = {
             p.player_id: estimate_effective_cost(
@@ -242,6 +249,7 @@ def solve_strategy(
                 role_percentile=precomputed_percentiles[p.player_id],
                 num_participants=config.num_participants,
                 config=config.inflation_config,
+                team_strength_scores=ts_scores,
             )
             for p in pool
         }

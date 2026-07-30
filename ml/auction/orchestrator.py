@@ -47,6 +47,7 @@ from ml.auction.price_drift import (
 )
 from ml.optimizer.inflation import InflationConfig, compute_role_percentile_map
 from ml.optimizer.models import Player
+from ml.optimizer.team_strength import load_team_strength_scores
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +167,17 @@ def initialize_auction(
         for p in participants
     }
 
+    # Load team-strength Elo scores once per session for inflation adjustment.
+    ts_scores: dict[str, float] = {}
+    inflation_cfg = config.inflation_config
+    if (
+        config.use_inflation_baseline
+        and inflation_cfg is not None
+        and getattr(inflation_cfg, "team_strength_multiplier", 0.0) > 0
+    ):
+        known_teams = {p.real_team for p in player_pool if p.real_team}
+        ts_scores = load_team_strength_scores(known_teams=known_teams)
+
     state = AuctionState(
         config=config,
         participants=participants_state,
@@ -173,6 +185,7 @@ def initialize_auction(
         price_index=build_initial_price_index(config),
         available_pool=list(player_pool),
         role_percentile_map=percentile_map,
+        team_strength_scores=ts_scores,
     )
 
     logger.info(
@@ -275,6 +288,7 @@ def record_assignment(
         tier=tier,
         price_index=state.price_index,
         config=state.config,
+        team_strength_scores=state.team_strength_scores or None,
     )
 
     index_before, index_after, snapshot_before = update_price_index(

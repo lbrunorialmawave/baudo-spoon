@@ -308,6 +308,7 @@ class AuctionState:
     price_index: dict[Role, dict[Tier, float]]
     available_pool: list[Player]
     role_percentile_map: dict[str, float] = field(default_factory=dict)
+    team_strength_scores: dict[str, float] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------

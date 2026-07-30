@@ -31,6 +31,7 @@ from ml.auction.models import (
 )
 from ml.optimizer.inflation import estimate_effective_cost
 from ml.optimizer.models import Player
+from ml.optimizer.team_strength import load_team_strength_scores
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,7 @@ def compute_baseline_cost(
     player: Player,
     role_percentile: float,
     config: AuctionConfig,
+    team_strength_scores: dict[str, float] | None = None,
 ) -> float:
     """Restituisce il ``baseline_cost`` di un giocatore per il price drift.
 
@@ -120,13 +122,13 @@ def compute_baseline_cost(
             "AuctionConfig.inflation_config must be set when "
             "use_inflation_baseline=True"
         )
-    # L'oggetto è validato a runtime dall'orchestratore; il cast è sicuro.
     scaled_player = replace(player, cost=int(round(scaled_cost)))
     return estimate_effective_cost(
         player=scaled_player,
         role_percentile=role_percentile,
         num_participants=config.num_participants,
         config=inflation_cfg,  # type: ignore[arg-type]
+        team_strength_scores=team_strength_scores,
     )
 
 
@@ -137,9 +139,10 @@ def compute_expected_price(
     tier: Tier,
     price_index: dict[Role, dict[Tier, float]],
     config: AuctionConfig,
+    team_strength_scores: dict[str, float] | None = None,
 ) -> float:
     """Prezzo atteso corrente = ``baseline_cost * price_index[role][tier]``."""
-    baseline = compute_baseline_cost(player, role_percentile, config)
+    baseline = compute_baseline_cost(player, role_percentile, config, team_strength_scores)
     idx = price_index[role][tier]
     return baseline * idx
 
@@ -302,6 +305,7 @@ def project_price_for_player(
         tier=tier,
         price_index=state.price_index,
         config=state.config,
+        team_strength_scores=state.team_strength_scores or None,
     )
 
 
