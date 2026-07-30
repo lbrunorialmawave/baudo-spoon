@@ -248,6 +248,12 @@ def _parse_args() -> argparse.Namespace:
         dest="json_logs",
         help="Emit logs as JSON objects (one per line) for ELK/Splunk integration.",
     )
+    parser.add_argument(
+        "--evaluate-mantra",
+        action="store_true",
+        dest="evaluate_mantra",
+        help="Run MANTRA 4-pillar evaluation against actuals after training.",
+    )
     return parser.parse_args()
 
 
@@ -301,6 +307,38 @@ def main() -> int:
     except Exception:
         log.exception("Pipeline failed with an unhandled exception.")
         return 1
+
+    # ── Evaluate MANTRA (optional) ──────────────────────────────────────────
+    if args.evaluate_mantra:
+        try:
+            from ml.mantra.runner import run_mantra
+            from ml.mantra.evaluate import evaluate_mantra_vs_actuals
+
+            season_start = results.get("metadata", {}).get("config", {}).get("season_start")
+            if season_start is None:
+                latest = results.get("config", {}).get("test_seasons", 1)
+                # Infer from predictions
+                preds = results.get("predictions", [])
+                if preds:
+                    season_start = max(p.get("season_start", 0) for p in preds)
+
+            if season_start:
+                log.info("Running MANTRA evaluation for season_start=%d", season_start)
+                mantra_result = run_mantra(engine, season_start)
+                mantra_metrics = evaluate_mantra_vs_actuals(mantra_result, engine, season_start)
+                if mantra_metrics:
+                    log.info(
+                        "MANTRA 4-pillar: RMSE=%.4f MAE=%.4f R²=%.4f",
+                        mantra_metrics["rmse"],
+                        mantra_metrics["mae"],
+                        mantra_metrics["r2"],
+                    )
+                else:
+                    log.warning("MANTRA evaluation returned no metrics (insufficient data)")
+            else:
+                log.warning("Cannot determine season_start for MANTRA evaluation")
+        except Exception:
+            log.exception("MANTRA evaluation failed (non-fatal)")
 
     # ── Print summary to stdout ───────────────────────────────────────────────
     summary = {
