@@ -441,10 +441,6 @@ class OptimizationRequest(_CamelModel):
     esv_weight: float = Field(default=0.0, ge=0.0)
     valuation_mode: str = "PER_MATCH_RATING"
     """Objective metric: PER_MATCH_RATING (default) or SEASON_VALUE."""
-    min_start_probability: float | None = None
-    """Minimum start_probability to include in pool. None = no filtering."""
-    replacement_method: str = "percentile"
-    """How to compute replacement level: 'percentile' or 'roster_depth'."""
     strategy_names: Optional[list[str]] = None  # None ⇒ tutte e 4 di default
     custom_strategies: Optional[list["StrategyProfileSchema"]] = None  # overrides strategy_names
     pool_override: Optional[list[PlayerSchema]] = Field(default=None, max_length=500)
@@ -539,6 +535,9 @@ class AuctionConfigSchema(_CamelModel):
     market_drift_config: MarketDriftConfigSchema = MarketDriftConfigSchema()
     alternatives_config: AlternativesConfigSchema = AlternativesConfigSchema()
     use_inflation_baseline: bool = False
+    inflation_config: Optional[InflationConfigSchema] = None
+    """Custom inflation parameters. When None and use_inflation_baseline=True,
+    server-side defaults are used."""
     reference_budget: int = 300
     """Budget per squadra su cui il listino è tarato (default: 300 cr).
 
