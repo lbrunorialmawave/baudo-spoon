@@ -38,6 +38,18 @@ const TIER_COLOR: Record<AuctionTier, string> = {
   TOP: '#F59E0B',
 };
 
+/** Colonne ordinabili della tabella "Migliori affari". */
+type VarSortKey =
+  | 'name'
+  | 'role'
+  | 'esv'
+  | 'expectedPrice'
+  | 'seasonValue'
+  | 'startProbability'
+  | 'buySignal';
+/** Direzione di ordinamento: `null` = ordine naturale (non ordinato). */
+type SortDir = 'asc' | 'desc' | null;
+
 /**
  * Mappa delle legende visualizzate sotto ogni campo del pannello di
  * configurazione e della vista live. Ogni entry contiene una descrizione
@@ -201,10 +213,10 @@ const LIVE_LEGENDS: Readonly<Record<string, { description: string; examples: rea
     ],
   },
   varRanking: {
-    description: 'Tabella "Migliori affari": classifica dei giocatori con ESV (Expected Season Value) positivo, ordinata per rendimento atteso rispetto al prezzo EWMA. La colonna "Segnale" indica se il sistema consiglia l\'acquisto (COMPRA) o lo sconsiglia (DA EVITARE).',
+    description: 'Tabella "Migliori affari": classifica dei giocatori con ESV (Expected Season Value) positivo, ordinata per rendimento atteso rispetto al prezzo EWMA. La colonna "Segnale" indica se il sistema consiglia l\'acquisto (COMPRA) come affare.',
     examples: [
       { label: 'ESV > 0 + COMPRA', value: 'affare: valore atteso superiore al prezzo' },
-      { label: 'ESV ≤ 0 + DA EVITARE', value: 'surriscaldato, prezzo troppo alto rispetto al rendimento previsto' },
+      { label: 'ESV ≤ 0 + -', value: 'surriscaldato, prezzo troppo alto rispetto al rendimento previsto' },
     ],
   },
 };
@@ -526,16 +538,73 @@ function makeParticipants(
                     <table class="squad-table">
                       <thead>
                         <tr>
-                          <th>Giocatore</th><th title="Ruolo del giocatore">Ruolo</th>
-                          <th class="num" title="Expected Season Value: differenza tra valore di stagione previsto e prezzo di acquisto EWMA. ESV > 0 = affare">ESV</th>
-                          <th class="num" title="Prezzo atteso EWMA corrente per questo giocatore">Prezzo atteso</th>
-                          <th class="num" title="Valore di stagione previsto, basato su statistiche storiche">Val. stagione</th>
-                          <th class="num" title="Probabilità stimata che il giocatore sia titolare nella sua squadra">% Titolarità</th>
-                          <th>Segnale</th>
+                          <th class="sortable" tabindex="0" role="columnheader"
+                              [attr.aria-sort]="varAriaSort('name')"
+                              (click)="cycleVarSort('name')"
+                              (keydown.enter)="cycleVarSort('name')"
+                              (keydown.space)="$event.preventDefault(); cycleVarSort('name')"
+                              title="Ordina per nome del giocatore">
+                            <span>Giocatore</span>
+                            <span class="sort-indicator" aria-hidden="true">{{ varSortIndicator('name') }}</span>
+                          </th>
+                          <th class="sortable" tabindex="0" role="columnheader"
+                              [attr.aria-sort]="varAriaSort('role')"
+                              (click)="cycleVarSort('role')"
+                              (keydown.enter)="cycleVarSort('role')"
+                              (keydown.space)="$event.preventDefault(); cycleVarSort('role')"
+                              title="Ordina per ruolo (P/D/C/A)">
+                            <span>Ruolo</span>
+                            <span class="sort-indicator" aria-hidden="true">{{ varSortIndicator('role') }}</span>
+                          </th>
+                          <th class="num sortable" tabindex="0" role="columnheader"
+                              [attr.aria-sort]="varAriaSort('esv')"
+                              (click)="cycleVarSort('esv')"
+                              (keydown.enter)="cycleVarSort('esv')"
+                              (keydown.space)="$event.preventDefault(); cycleVarSort('esv')"
+                              title="Ordina per Expected Season Value">
+                            <span>ESV</span>
+                            <span class="sort-indicator" aria-hidden="true">{{ varSortIndicator('esv') }}</span>
+                          </th>
+                          <th class="num sortable" tabindex="0" role="columnheader"
+                              [attr.aria-sort]="varAriaSort('expectedPrice')"
+                              (click)="cycleVarSort('expectedPrice')"
+                              (keydown.enter)="cycleVarSort('expectedPrice')"
+                              (keydown.space)="$event.preventDefault(); cycleVarSort('expectedPrice')"
+                              title="Ordina per prezzo atteso EWMA">
+                            <span>Prezzo atteso</span>
+                            <span class="sort-indicator" aria-hidden="true">{{ varSortIndicator('expectedPrice') }}</span>
+                          </th>
+                          <th class="num sortable" tabindex="0" role="columnheader"
+                              [attr.aria-sort]="varAriaSort('seasonValue')"
+                              (click)="cycleVarSort('seasonValue')"
+                              (keydown.enter)="cycleVarSort('seasonValue')"
+                              (keydown.space)="$event.preventDefault(); cycleVarSort('seasonValue')"
+                              title="Ordina per valore di stagione">
+                            <span>Val. stagione</span>
+                            <span class="sort-indicator" aria-hidden="true">{{ varSortIndicator('seasonValue') }}</span>
+                          </th>
+                          <th class="num sortable" tabindex="0" role="columnheader"
+                              [attr.aria-sort]="varAriaSort('startProbability')"
+                              (click)="cycleVarSort('startProbability')"
+                              (keydown.enter)="cycleVarSort('startProbability')"
+                              (keydown.space)="$event.preventDefault(); cycleVarSort('startProbability')"
+                              title="Ordina per probabilità di titolarità">
+                            <span>% Titolarità</span>
+                            <span class="sort-indicator" aria-hidden="true">{{ varSortIndicator('startProbability') }}</span>
+                          </th>
+                          <th class="sortable" tabindex="0" role="columnheader"
+                              [attr.aria-sort]="varAriaSort('buySignal')"
+                              (click)="cycleVarSort('buySignal')"
+                              (keydown.enter)="cycleVarSort('buySignal')"
+                              (keydown.space)="$event.preventDefault(); cycleVarSort('buySignal')"
+                              title="Ordina per segnale di acquisto (COMPRA prima)">
+                            <span>Segnale</span>
+                            <span class="sort-indicator" aria-hidden="true">{{ varSortIndicator('buySignal') }}</span>
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
-                        @for (v of varRanking(); track v.playerId) {
+                        @for (v of sortedVarRanking(); track v.playerId) {
                           <tr>
                             <td>{{ v.name }}</td>
                             <td>
@@ -553,7 +622,7 @@ function makeParticipants(
                               @if (v.buySignal) {
                                 <span class="esv-badge esv-buy" title="Affare: ESV positivo">COMPRA</span>
                               } @else {
-                                <span class="esv-badge esv-hold" title="EVITARE: ESV negativo o nullo">DA EVITARE</span>
+                                <span class="esv-badge esv-hold" title="EVITARE: ESV negativo o nullo">-</span>
                               }
                             </td>
                           </tr>
@@ -907,6 +976,22 @@ export class AuctionComponent {
   readonly varRanking = signal<VarRankingItem[]>([]);
   readonly varLoading = signal(false);
 
+  /**
+   * Ordinamento della tabella "Migliori affari".
+   * Stato: `varSortKey=null` e `varSortDir=null` ⇒ ordine naturale del backend.
+   * `cycleVarSort(key)` fa: null → asc → desc → null.
+   */
+  readonly varSortKey = signal<VarSortKey | null>(null);
+  readonly varSortDir = signal<SortDir>(null);
+  readonly sortedVarRanking = computed<VarRankingItem[]>(() => {
+    const key = this.varSortKey();
+    const dir = this.varSortDir();
+    const rows = this.varRanking();
+    if (!key || !dir) return rows;
+    const factor = dir === 'asc' ? 1 : -1;
+    return [...rows].sort((a, b) => this.compareVarRow(a, b, key) * factor);
+  });
+
   // ── Pool autocomplete ─────────────────────────────────────────────────
   readonly poolSuggestions = signal<AuctionPlayerSummary[]>([]);
   readonly poolOpen = signal(false);
@@ -926,6 +1011,61 @@ export class AuctionComponent {
   readonly reversedAssignments = computed(() =>
     [...(this.summary()?.assignments ?? [])].reverse(),
   );
+
+  /**
+   * Cicla lo stato di ordinamento sulla colonna indicata.
+   * Sequenza: nessun sort → ascendente → discendente → nessun sort.
+   */
+  public cycleVarSort(key: VarSortKey): void {
+    if (this.varSortKey() !== key) {
+      this.varSortKey.set(key);
+      this.varSortDir.set('asc');
+      return;
+    }
+    const cur = this.varSortDir();
+    if (cur === 'asc') {
+      this.varSortDir.set('desc');
+    } else if (cur === 'desc') {
+      this.varSortDir.set(null);
+      this.varSortKey.set(null);
+    } else {
+      this.varSortDir.set('asc');
+    }
+  }
+
+  /** Indicatore visuale dell'ordinamento corrente sulla colonna. */
+  public varSortIndicator(key: VarSortKey): string {
+    if (this.varSortKey() !== key || this.varSortDir() === null) return '↕';
+    return this.varSortDir() === 'asc' ? '▲' : '▼';
+  }
+
+  /** Valore `aria-sort` per la colonna, conforme ARIA 1.2. */
+  public varAriaSort(key: VarSortKey): 'ascending' | 'descending' | 'none' {
+    if (this.varSortKey() !== key || this.varSortDir() === null) return 'none';
+    return this.varSortDir() === 'asc' ? 'ascending' : 'descending';
+  }
+
+  /** Confronto per la colonna di ordinamento; valori null vanno in fondo. */
+  private compareVarRow(a: VarRankingItem, b: VarRankingItem, key: VarSortKey): number {
+    const av = this.varSortValue(a, key);
+    const bv = this.varSortValue(b, key);
+    if (av === bv) return 0;
+    if (av === null) return 1;
+    if (bv === null) return -1;
+    return av < bv ? -1 : 1;
+  }
+
+  private varSortValue(item: VarRankingItem, key: VarSortKey): number | string | null {
+    switch (key) {
+      case 'name': return item.name.toLowerCase();
+      case 'role': return item.role;
+      case 'esv': return item.esv;
+      case 'expectedPrice': return item.expectedPrice;
+      case 'seasonValue': return item.seasonValue;
+      case 'startProbability': return item.startProbability;
+      case 'buySignal': return item.buySignal ? 1 : 0;
+    }
+  }
 
   constructor() {
     this.quotationService.getSeasons().subscribe({

@@ -348,6 +348,44 @@
   .squad-table thead th { padding:8px 12px; }
 }
 .squad-table thead th.num { text-align:right; }
+
+/* ── Sortable column headers (tabella "Migliori affari") ─────────── */
+.squad-table thead th.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+.squad-table thead th.sortable:hover {
+  color: var(--color-text-primary);
+  background: var(--color-surface-raised);
+}
+.squad-table thead th.sortable:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+  border-radius: 2px;
+}
+.squad-table thead th.sortable[aria-sort="ascending"],
+.squad-table thead th.sortable[aria-sort="descending"] {
+  color: var(--color-accent);
+}
+.squad-table thead th .sort-indicator {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 9px;
+  opacity: 0.5;
+  vertical-align: middle;
+}
+.squad-table thead th.sortable[aria-sort="ascending"] .sort-indicator,
+.squad-table thead th.sortable[aria-sort="descending"] .sort-indicator {
+  opacity: 1;
+}
+.squad-table thead th.num.sortable {
+  /* Allinea l'header numerico a destra ma mantiene label + indicatore sulla stessa riga */
+  text-align: right;
+}
+.squad-table thead th.num.sortable > span:first-child {
+  margin-right: 2px;
+}
 .squad-table tbody tr {
   border-bottom:1px solid var(--color-border); transition:background 100ms;
 }
