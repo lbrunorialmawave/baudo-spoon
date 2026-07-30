@@ -231,10 +231,16 @@ async def init_auction(
     """
     inflation: InflationConfig | None = None
     if payload.config.use_inflation_baseline:
-        # Il client non può passare un InflationConfig custom: l'inflazione
-        # è deterministica lato server tramite default.  Se in futuro serve
-        # esporla, si aggiunge uno schema dedicato.
-        inflation = InflationConfig()
+        if payload.config.inflation_config is not None:
+            ic = payload.config.inflation_config
+            inflation = InflationConfig(
+                inflation_percentile_threshold=ic.inflation_percentile_threshold,
+                max_inflation_multiplier=ic.max_inflation_multiplier,
+                base_inflation_rate=ic.base_inflation_rate,
+                baseline_participants=ic.baseline_participants,
+            )
+        else:
+            inflation = InflationConfig()
 
     auction_cfg = _auction_config_from_schema(payload.config, inflation)
     participants = [_participant_from_schema(p) for p in payload.participants]
