@@ -4,7 +4,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { isPlatformBrowser, DatePipe, DecimalPipe, UpperCasePipe } from '@angular/common';
+import { isPlatformBrowser, DatePipe, UpperCasePipe, SlicePipe } from '@angular/common';
 import * as d3 from 'd3';
 import { ModelMetricsService } from '../../core/services/model-metrics.service';
 import { MetricPoint, ModelRun, CompareResponse } from '../../core/models/model-metrics.models';
@@ -14,7 +14,7 @@ import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/e
 @Component({
   selector: 'app-model-monitoring',
   standalone: true,
-  imports: [SkeletonComponent, ErrorBoundaryComponent, DatePipe, DecimalPipe, UpperCasePipe, FormsModule],
+  imports: [SkeletonComponent, ErrorBoundaryComponent, DatePipe, UpperCasePipe, FormsModule, SlicePipe],
   template: `
     <div class="page-container">
       <header class="page-header">
