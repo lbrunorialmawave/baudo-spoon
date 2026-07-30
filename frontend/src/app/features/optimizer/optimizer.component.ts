@@ -166,6 +166,19 @@ const ALL_FORMATIONS: FormationConfig[] = [
             </div>
           </div>
 
+          <div class="field-row">
+            <div class="field-group">
+              <label class="field-label">VAR blend <span class="field-hint">0–1</span></label>
+              <input class="field-input" type="number" min="0" max="1" step="0.1"
+                     [(ngModel)]="varBlend" />
+            </div>
+            <div class="field-group">
+              <label class="field-label">ESV weight <span class="field-hint">0 = off</span></label>
+              <input class="field-input" type="number" min="0" max="5" step="0.1"
+                     [(ngModel)]="esvWeight" />
+            </div>
+          </div>
+
           <!-- FORMATIONS -->
           <p class="section-divider">Formations</p>
 
@@ -684,8 +697,10 @@ export class OptimizerComponent {
   readonly baseInflationRate = signal(0.05);
   readonly baselineParticipants = signal(8);
 
-  // ── Risk ──────────────────────────────────────────────
+  // ── Risk & VAR ────────────────────────────────────────
   readonly riskAversion = signal(0.0);
+  readonly varBlend = signal(0.0);
+  readonly esvWeight = signal(0.0);
 
   // ── Strategies ────────────────────────────────────────
   readonly selectedStrategies = signal(new Set(['BALANCED', 'SUPER_DEFENSIVE', 'SUPER_OFFENSIVE', 'MIXED']));
@@ -795,6 +810,8 @@ export class OptimizerComponent {
       ruleset: this.ruleset(),
       preferredFormation,
       riskAversion: this.riskAversion(),
+      varBlend: this.varBlend(),
+      esvWeight: this.esvWeight(),
       strategyNames: this.showCustomWeights() ? null : [...this.selectedStrategies()],
       customStrategies: this.showCustomWeights() ? this._buildCustomStrategies() : null,
     }).subscribe({

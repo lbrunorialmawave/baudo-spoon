@@ -53,6 +53,7 @@ from ml.optimizer.optimizer import (
 )
 from ml.optimizer.solver import PreFlightError
 from ml.optimizer.strategies import default_strategies
+from ml.auction.var import VarEngine
 
 log = logging.getLogger(__name__)
 
@@ -110,6 +111,8 @@ def _build_config(req: OptimizationRequest) -> OptimizationConfig:
         mantra_role_quotas=req.mantra_role_quotas,
         preferred_formation=preferred_formation,
         risk_aversion=req.risk_aversion,
+        var_blend=req.var_blend,
+        esv_weight=req.esv_weight,
     )
 
 
@@ -307,6 +310,29 @@ async def run_multi_strategy(
                 f"predictions are available."
             ),
         )
+
+    # Enrich pool with VAR/ESV when the config asks for it.
+    if config.var_blend > 0 or config.esv_weight > 0:
+        engine = VarEngine(
+            total_budget=config.budget,
+            num_participants=config.num_participants,
+        )
+        players_input = [
+            {"player_id": p.player_id, "role": p.role,
+             "projected_score": p.projected_score, "cost": p.cost,
+             "season_value": p.season_value, "start_probability": p.start_probability}
+            for p in pool
+        ]
+        esv_results = engine.evaluate(players_input)
+        var_map: dict[str, tuple[float, float]] = {
+            e.player_id: (e.var_score, e.esv) for e in esv_results
+        }
+        from dataclasses import replace
+        pool = [
+            replace(p, var_score=var_map[p.player_id][0], esv=var_map[p.player_id][1])
+            if p.player_id in var_map else p
+            for p in pool
+        ]
 
     strategies = (
         _custom_strategies(req.custom_strategies)

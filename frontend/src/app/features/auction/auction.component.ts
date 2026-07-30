@@ -323,16 +323,18 @@ function makeParticipants(
                     <table class="squad-table">
                       <thead>
                         <tr>
-                          <th>Player</th><th>R</th>
-                          <th class="num">ESV</th><th class="num">E.Price</th>
-                          <th class="num">SV</th><th class="num">Start%</th>
-                          <th>Signal</th>
+                          <th>Giocatore</th><th>R</th>
+                          <th class="num" title="Valore Atteso di Stagione (Expected Season Value)">ESV</th>
+                          <th class="num" title="Prezzo atteso EWMA">Prezzo atteso</th>
+                          <th class="num" title="Valore di Stagione">Val. stagione</th>
+                          <th class="num" title="Probabilità di essere titolare">% Titolarità</th>
+                          <th>Segnale</th>
                         </tr>
                       </thead>
                       <tbody>
                         @for (v of varRanking(); track v.playerId) {
                           <tr>
-                            <td>{{ v.playerId }}</td>
+                            <td>{{ v.name }}</td>
                             <td>
                               <span class="role-badge"
                                     [style.color]="roleColor(v.role)"
@@ -346,9 +348,9 @@ function makeParticipants(
                             <td class="num faded">{{ v.startProbability != null ? (v.startProbability * 100 | number:'1.0-0') + '%' : '—' }}</td>
                             <td>
                               @if (v.buySignal) {
-                                <span class="esv-badge esv-buy">BUY</span>
+                                <span class="esv-badge esv-buy" title="Affare: ESV positivo">COMPRA</span>
                               } @else {
-                                <span class="esv-badge esv-hold">—</span>
+                                <span class="esv-badge esv-hold" title="EVITARE">DA EVITARE</span>
                               }
                             </td>
                           </tr>

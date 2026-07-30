@@ -113,6 +113,10 @@ class Player:
     season_value: float | None = None
     # Estimated probability of starting (from expected minutes model).
     start_probability: float | None = None
+    # Value Above Replacement (from VAR engine). Negative = below replacement.
+    var_score: float | None = None
+    # Expected Surplus Value (bargain signal). Negative = overpriced.
+    esv: float | None = None
 
     def __post_init__(self) -> None:
         if not self.player_id:
@@ -325,6 +329,10 @@ class OptimizationConfig:
     # Valuation mode: "PER_MATCH_RATING" (default) uses projected_score in the
     # objective; "SEASON_VALUE" uses season_value (rating × predicted appearances).
     valuation_mode: str = "PER_MATCH_RATING"
+    # Blend factor: 0.0 = pure projected_score, 1.0 = pure var_score in objective.
+    var_blend: float = 0.0
+    # Additive ESV weight in objective. 0.0 = disabled (backward compat).
+    esv_weight: float = 0.0
 
     def __post_init__(self) -> None:
         if self.budget <= 0:
@@ -371,6 +379,14 @@ class OptimizationConfig:
         if self.risk_aversion < 0:
             raise ValueError(
                 f"risk_aversion must be >= 0, got {self.risk_aversion}"
+            )
+        if not (0.0 <= self.var_blend <= 1.0):
+            raise ValueError(
+                f"var_blend must be in [0, 1], got {self.var_blend}"
+            )
+        if self.esv_weight < 0:
+            raise ValueError(
+                f"esv_weight must be >= 0, got {self.esv_weight}"
             )
         # Default strategies are injected lazily to avoid circular import
         # between strategies.py and this module.

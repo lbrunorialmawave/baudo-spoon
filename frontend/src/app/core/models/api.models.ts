@@ -122,6 +122,8 @@ export interface OptimizationRequest {
   mantraRoleQuotas?: Record<string, number> | null;
   preferredFormation?: FormationConfig | null;
   riskAversion?: number;
+  varBlend?: number;
+  esvWeight?: number;
   strategyNames?: string[] | null;
   customStrategies?: StrategyProfile[] | null;
 }

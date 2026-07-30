@@ -603,6 +603,7 @@ def get_var_ranking(
     items = [
         VarRankingItemSchema(
             player_id=r.player_id,
+            name=player_map[r.player_id].name,
             role=r.role,
             projected_score=player_map[r.player_id].projected_score,
             var_score=r.var_score,

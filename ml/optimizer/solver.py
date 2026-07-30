@@ -279,8 +279,12 @@ def solve_strategy(
 
     def _base_score(p: Player) -> float:
         if _use_season and p.season_value is not None and p.season_value > 0:
-            return p.season_value
-        return p.projected_score
+            raw = p.season_value
+        else:
+            raw = p.projected_score
+        if config.var_blend > 0 and p.var_score is not None:
+            raw = (1.0 - config.var_blend) * raw + config.var_blend * p.var_score
+        return raw
 
     prob += pulp.lpSum(
         strategy.role_weight[p.role]
@@ -288,6 +292,7 @@ def solve_strategy(
         * (
             _base_score(p)
             - config.risk_aversion * (p.prediction_std if p.prediction_std is not None else 0.0)
+            + (config.esv_weight * p.esv if config.esv_weight > 0 and p.esv is not None else 0.0)
         )
         * x[p.player_id]
         for p in pool

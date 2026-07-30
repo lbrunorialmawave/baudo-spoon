@@ -435,6 +435,8 @@ class OptimizationRequest(_CamelModel):
     # in formation_feasibility, but only this one is a hard solver constraint.
     preferred_formation: Optional[FormationSchema] = None
     risk_aversion: float = Field(default=0.0, ge=0.0)
+    var_blend: float = Field(default=0.0, ge=0.0, le=1.0)
+    esv_weight: float = Field(default=0.0, ge=0.0)
     strategy_names: Optional[list[str]] = None  # None ⇒ tutte e 4 di default
     custom_strategies: Optional[list["StrategyProfileSchema"]] = None  # overrides strategy_names
     pool_override: Optional[list[PlayerSchema]] = Field(default=None, max_length=500)
@@ -707,6 +709,7 @@ class VarRankingItemSchema(_CamelModel):
     """Single player entry in the VAR/ESV ranking."""
 
     player_id: str
+    name: str
     role: str
     projected_score: float
     var_score: float

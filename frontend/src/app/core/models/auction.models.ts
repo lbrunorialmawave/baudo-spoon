@@ -187,6 +187,7 @@ export interface DeserializeAuctionRequest {
 
 export interface VarRankingItem {
   playerId: string;
+  name: string;
   role: AuctionRole;
   projectedScore: number;
   varScore: number;
