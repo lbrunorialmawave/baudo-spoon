@@ -8,6 +8,7 @@ pydantic-settings>=2.3
 pulp>=3.0
 numpy>=1.26
 pandas>=2.1
+polars>=0.20
 scipy>=1.11
 scikit-learn>=1.4
 psycopg2-binary>=2.9

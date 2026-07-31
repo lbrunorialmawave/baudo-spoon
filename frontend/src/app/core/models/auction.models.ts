@@ -1,5 +1,7 @@
 // ── Domain primitives ───────────────────────────────────────────────────────
 
+import { InflationConfig } from "./api.models";
+
 /** Fantacalcio role code. */
 export type AuctionRole = 'P' | 'D' | 'C' | 'A';
 
