@@ -92,7 +92,11 @@ async def list_mantra_players(
     team: Optional[str] = Query(None, description="Filter by team name"),
     search: Optional[str] = Query(None, description="Search by player name"),
     min_fp: Optional[float] = Query(None, ge=0, le=100, description="Minimum FP_Mantra"),
+    min_price: Optional[float] = Query(None, ge=0, description="Minimum Prezzo_Massimo"),
     max_price: Optional[float] = Query(None, ge=0, description="Maximum Prezzo_Massimo"),
+    fantacalcio_ids: Optional[str] = Query(
+        None, description="Comma-separated list of fantacalcio_id to include (applied before pagination)"
+    ),
     sort_by: Optional[str] = Query(None, description="Sort column (player_name, team, FP_Mantra, VR, Prezzo_Massimo, ruolo_primario)"),
     sort_dir: Optional[str] = Query("asc", description="Sort direction: asc or desc"),
     page: int = Query(1, ge=1),
@@ -116,8 +120,13 @@ async def list_mantra_players(
         players = [p for p in players if search.lower() in p.get("player_name", "").lower()]
     if min_fp is not None:
         players = [p for p in players if (p.get("FP_Mantra") or 0) >= min_fp]
+    if min_price is not None:
+        players = [p for p in players if (p.get("Prezzo_Massimo") or 0) >= min_price]
     if max_price is not None:
         players = [p for p in players if (p.get("Prezzo_Massimo") or 999) <= max_price]
+    if fantacalcio_ids is not None:
+        ids = {int(x) for x in fantacalcio_ids.split(",") if x.strip().isdigit()}
+        players = [p for p in players if p.get("fantacalcio_id") in ids]
 
     # Sorting
     if sort_by:

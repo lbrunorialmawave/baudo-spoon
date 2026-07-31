@@ -22,6 +22,8 @@ export interface MantraPlayer {
   VR: number;
   Prezzo_Massimo: number;
   Fase7: string | null;
+  /** Only populated when Fase7 is null — explains why no rule matched. */
+  Fase7_Motivo?: string | null;
   rischio: string | null;
   season_value?: number | null;
   start_probability?: number | null;
@@ -89,6 +91,17 @@ export const FASE7_LABELS: Record<string, { label: string; color: string; icon: 
   CERTEZZA:       { label: 'CERTEZZA',       color: '#06B6D4', icon: '✅' },
   SOPRAVALUTATO:  { label: 'SOPRAVALUTATO',  color: '#EF4444', icon: '⚠️' },
   GIUSTO:         { label: 'GIUSTO',         color: '#6B7280', icon: '⚖️' },
+};
+
+/** Single source of truth for the 6 "Profilo" (Fase 7) category explanations —
+ *  used by the legend, the quick-filter buttons, and the row badges. */
+export const FASE7_TOOLTIPS: Record<string, string> = {
+  TOP:            '🏆 TOP — Giocatore d\'élite: FP alto e VR bilanciato. Investimento sicuro.',
+  AFFARE:         '💎 AFFARE — Sottovalutato dal mercato: FP alto, prezzo basso. Ottimo rapporto Q/P.',
+  SCOMMESSA:      '🔄 SCOMMESSA — Potenziale inespresso: FP basso ma VR alto. Può esplodere.',
+  CERTEZZA:       '✅ CERTEZZA — Rendimento stabile e affidabile. Poche sorprese.',
+  SOPRAVALUTATO:  '⚠️ SOPRAVALUTATO — Prezzo gonfiato: VR basso rispetto al FP. Rischi.',
+  GIUSTO:         '⚖️ GIUSTO — Nella media: FP e VR allineati al prezzo di mercato.',
 };
 
 export const MANTRA_ROLES = [

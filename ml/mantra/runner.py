@@ -272,7 +272,7 @@ def run_mantra(
 
     # 4. Fase 7
     log.info("Classifying Fase 7 …")
-    fase7_label = classify_fase7(df, fp, scores["fp_mantra"], scores["vr"], p1, cfg)
+    fase7_label, fase7_motivo = classify_fase7(df, fp, scores["fp_mantra"], scores["vr"], p1, cfg)
 
     # 5. Fase 8
     log.info("Classifying Fase 8 …")
@@ -348,6 +348,7 @@ def run_mantra(
             "VR": round(float(scores["vr"].iloc[idx]), 2),
             "Prezzo_Massimo": round(float(scores["prezzo_massimo"].iloc[idx]), 2),
             "Fase7": str(fase7_label.iloc[idx]) if pd.notna(fase7_label.iloc[idx]) else None,
+            "Fase7_Motivo": str(fase7_motivo.iloc[idx]) if pd.notna(fase7_motivo.iloc[idx]) else None,
             "rischio": str(classification_8g.iloc[idx]) if pd.notna(classification_8g.iloc[idx]) else None,
             # ML predictions — informational only, not blended with the
             # 4-pillar system. See P1-4 for the still-open reconciliation.

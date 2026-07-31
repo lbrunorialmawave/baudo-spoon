@@ -71,8 +71,10 @@ _FALLBACK_STATS_SQL = sa.text("""
         AVG(CASE WHEN pss.stat_category = 'mins_played' THEN pss.value END) AS minutes_avg,
         AVG(CASE WHEN pss.stat_category = 'expected_goals_per_90' THEN pss.value END) AS xg_per90,
         AVG(CASE WHEN pss.stat_category = 'expected_assists_per_90' THEN pss.value END) AS xa_per90,
-        COUNT(CASE WHEN pss.stat_category = 'mins_played' AND pss.value > 0 THEN 1 END)::float
-            / NULLIF(COUNT(DISTINCT pss.stat_category), 0) AS presence_rate
+        LEAST(
+            AVG(CASE WHEN pss.stat_category = 'mins_played' THEN pss.value END) / 3420.0,
+            1.0
+        ) AS presence_rate
     FROM player_season_stats pss
     JOIN seasons s ON s.id = pss.season_id
     GROUP BY pss.player_fotmob_id, s.season_start

@@ -1,6 +1,6 @@
 import { Component, input, output } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
-import { MantraPlayer, FASE7_LABELS, MATCHDAY_STATUS_CONFIG } from '../../../../core/models/mantra.models';
+import { MantraPlayer, FASE7_LABELS, FASE7_TOOLTIPS, MATCHDAY_STATUS_CONFIG } from '../../../../core/models/mantra.models';
 import { SkeletonComponent } from '../../../../shared/components/skeleton/skeleton.component';
 
 @Component({
@@ -27,17 +27,16 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
             <th class="px-3 py-2 text-right sortable" (click)="sortChanged.emit('FP_Mantra')" title="Fantacalcio Punti — punteggio complessivo calcolato su voti, bonus/malus e ruolo Mantra">
               FP @if (sortColumn() === 'FP_Mantra') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
             </th>
-            <th class="px-3 py-2 text-right sortable hidden md:table-cell" (click)="sortChanged.emit('VR')" title="Voto Ricevuto — media dei voti in pagella (scala 0-100)">
+            <th class="px-3 py-2 text-right sortable hidden md:table-cell" (click)="sortChanged.emit('VR')" title="Valore Reale — indice di convenienza prezzo/valore (0-300, ~100 = valore equo, oltre 130 = sottovalutato dal mercato)">
               VR @if (sortColumn() === 'VR') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
-            </th>
-            <th class="px-3 py-2 text-right sortable hidden md:table-cell" (click)="sortChanged.emit('season_value')" title="Season Value — punti fantacalcio totali attesi nella stagione">
-              SV @if (sortColumn() === 'season_value') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
             </th>
             <th class="px-3 py-2 text-right sortable hidden md:table-cell" (click)="sortChanged.emit('start_probability')" title="Start Probability — probabilità di essere titolare">
               SP% @if (sortColumn() === 'start_probability') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
             </th>
             <th class="px-3 py-2 text-left hidden md:table-cell" title="Stato per la prossima giornata (infortunato, squalificato, etc.)">Status</th>
-            <th class="px-3 py-2 text-left" title="Classificazione Fase 7 del calciatore (TOP, AFFARE, CERTEZZA, SCOMMESSA, SOPRAVALUTATO, GIUSTO)">Fase 7</th>
+            <th class="px-3 py-2 text-left">
+              Profilo <span class="opacity-60 cursor-help" [title]="PROFILO_LEGEND">ⓘ</span>
+            </th>
             <th class="px-3 py-2 text-right sortable" (click)="sortChanged.emit('Prezzo_Massimo')" title="Prezzo massimo di mercato stimato in crediti">
               Prezzo @if (sortColumn() === 'Prezzo_Massimo') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
             </th>
@@ -47,7 +46,7 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
           @if (loading()) {
             @for (_ of skeletonRows; track $index) {
               <tr>
-                @for (__ of [1,2,3,4,5,6,7,8,9,10,11,12]; track $index) {
+                @for (__ of [1,2,3,4,5,6,7,8,9,10,11]; track $index) {
                   <td class="px-3 py-2"><app-skeleton height="20px" /></td>
                 }
               </tr>
@@ -94,10 +93,6 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                 </td>
                 <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell"
                     style="color:var(--color-text-secondary)">
-                  {{ mp?.season_value != null ? (mp.season_value | number:'1.1-1') : '—' }}
-                </td>
-                <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell"
-                    style="color:var(--color-text-secondary)">
                   @let sp = mp?.start_probability;
                   {{ sp != null ? (sp * 100 | number:'1.0-0') + '%' : '—' }}
                 </td>
@@ -122,7 +117,7 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                       <span class="hidden sm:inline">{{ f7?.icon ?? '' }} {{ f7?.label ?? mp.Fase7 }}</span>
                     </span>
                   } @else {
-                    <span class="text-xs opacity-30" title="Nessuna classificazione Fase 7 — il giocatore non rientra in nessuna categoria (dati insufficienti o profilo nella media non classificabile)">—</span>
+                    <span class="text-xs opacity-30" [title]="mp?.Fase7_Motivo ?? 'Nessuna categoria: il giocatore non rientra in nessuno dei 6 profili'">—</span>
                   }
                 </td>
                 <td class="px-3 py-2.5 text-right font-mono text-xs whitespace-nowrap"
@@ -162,12 +157,7 @@ export class PlayerTableComponent {
   // Expose constants for template
   readonly FASE7_LABELS = FASE7_LABELS;
   readonly MATCHDAY_STATUS_CONFIG = MATCHDAY_STATUS_CONFIG;
-  readonly FASE7_TOOLTIPS: Record<string, string> = {
-    TOP: '🏆 TOP — Giocatore d\'élite: FP alto e VR bilanciato. Investimento sicuro.',
-    AFFARE: '💎 AFFARE — Sottovalutato dal mercato: FP alto, prezzo basso. Ottimo rapporto Q/P.',
-    SCOMMESSA: '🔄 SCOMMESSA — Potenziale inespresso: FP basso ma VR alto. Può esplodere.',
-    CERTEZZA: '✅ CERTEZZA — Rendimento stabile e affidabile. Poche sorprese.',
-    SOPRAVALUTATO: '⚠️ SOPRAVALUTATO — Prezzo gonfiato: VR basso rispetto al FP. Rischi.',
-    GIUSTO: '⚖️ GIUSTO — Nella media: FP e VR allineati al prezzo di mercato.',
-  };
+  readonly FASE7_TOOLTIPS = FASE7_TOOLTIPS;
+  /** Full legend of the 6 "Profilo" categories, shown on the column header's (i) icon. */
+  readonly PROFILO_LEGEND = Object.values(FASE7_TOOLTIPS).join('\n');
 }

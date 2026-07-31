@@ -161,7 +161,13 @@ def _patch_heavy_compute():
         patch("ml.mantra.runner.compute_cp", return_value=_stub_pillar_series(6.0)),
         patch("ml.mantra.runner.compute_fp", return_value=_stub_pillar_series(7.0)),
         patch("ml.mantra.runner.compute_fp_corr", return_value=_stub_scores(_stub_df())),
-        patch("ml.mantra.runner.classify_fase7", return_value=pd.Series(["starter", "bench"])),
+        patch(
+            "ml.mantra.runner.classify_fase7",
+            return_value=(
+                pd.Series(["starter", "bench"]),
+                pd.Series([None, None]),
+            ),
+        ),
         patch("ml.mantra.runner.top_per_ruolo", return_value={}),
         patch("ml.mantra.runner.multi_eleggibilita", return_value={}),
         patch(

@@ -25,7 +25,9 @@ export class MantraService {
     team?: string;
     search?: string;
     minFp?: number;
+    minPrice?: number;
     maxPrice?: number;
+    fantacalcioIds?: number[];
     sortBy?: string;
     sortDir?: string;
     page?: number;
@@ -39,7 +41,9 @@ export class MantraService {
     if (opts.team)      params = params.set('team', opts.team);
     if (opts.search)    params = params.set('search', opts.search);
     if (opts.minFp != null)     params = params.set('min_fp', opts.minFp);
+    if (opts.minPrice != null)  params = params.set('min_price', opts.minPrice);
     if (opts.maxPrice != null)  params = params.set('max_price', opts.maxPrice);
+    if (opts.fantacalcioIds)    params = params.set('fantacalcio_ids', opts.fantacalcioIds.join(','));
     if (opts.sortBy)            params = params.set('sort_by', opts.sortBy);
     if (opts.sortDir)           params = params.set('sort_dir', opts.sortDir);
     return this.http.get<MantraPlayersResponse>(

@@ -13,6 +13,7 @@ the MANTRA v3.1 specification with the modifications agreed in the plan:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,8 @@ class MantraConfig:
     # ── Classification thresholds ────────────────────────────────────────────
     LOW_COST_SOGLIA: float = 15.0          # Prezzo_Massimo under this = low cost
     GIOVANE_ETA_MAX: int = 23              # age <= this = young
+    # Fixed thresholds — used as-is in FASE7_THRESHOLD_MODE="absolute", and as
+    # the small-pool fallback in "percentile" mode (pools under SOGLIA_POOL).
     TOP_FP_SOGLIA: float = 80.0
     AFFARE_FP_SOGLIA: float = 60.0
     AFFARE_VR_SOGLIA: float = 140.0
@@ -66,6 +69,23 @@ class MantraConfig:
     SOPRAVALUTATO_VR: float = 80.0
     GIUSTO_VR_MIN: float = 90.0
     GIUSTO_VR_MAX: float = 110.0
+
+    # ── Fase 7 threshold mode ─────────────────────────────────────────────────
+    # "percentile": TOP/AFFARE/SCOMMESSA/SOPRAVALUTATO/GIUSTO thresholds are
+    #   computed per role-pool (see ml/mantra/fase7.py) so e.g. TOP means "top
+    #   15% of FP_Mantra within your role", not one global number that may
+    #   favor/disadvantage specific roles. "absolute": always use the fixed
+    #   thresholds above (pre-percentile behavior, useful as a rollback knob).
+    FASE7_THRESHOLD_MODE: Literal["percentile", "absolute"] = "percentile"
+    TOP_FP_PERCENTILE: float = 0.85
+    AFFARE_FP_PERCENTILE: float = 0.65
+    AFFARE_VR_PERCENTILE: float = 0.85
+    SCOMMESSA_FP_PERCENTILE: float = 0.35
+    SCOMMESSA_VR_PERCENTILE: float = 0.80
+    SOPRAVALUTATO_VR_PERCENTILE: float = 0.35
+    GIUSTO_VR_PERCENTILE_MIN: float = 0.42
+    GIUSTO_VR_PERCENTILE_MAX: float = 0.58
+    CERTEZZA_DV_PERCENTILE: float = 0.50   # 0.50 = median (unchanged historical behavior)
 
     # ── Budget ───────────────────────────────────────────────────────────────
     BUDGET_TOTALE: int = 500
