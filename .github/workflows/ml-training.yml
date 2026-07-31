@@ -8,46 +8,66 @@ on:
         description: "Lega da filtrare (vuoto = tutte)"
         required: false
         default: ""
+
       tune:
         description: "Esegui RandomizedSearchCV (più lento, più preciso)"
         type: boolean
         default: false
+
       tune_iter:
         description: "Numero di combinazioni RandomizedSearchCV"
         required: false
         default: "30"
+
       clusters:
-        description: "Numero di cluster K-Means (-1 = auto via silhouette)"
+        description: "Numero di cluster K-Medoids (-1 = auto via silhouette)"
         required: false
         default: "6"
+
       predict_next:
         description: "Ri-fit su tutti i dati e predici prossima stagione"
         type: boolean
         default: false
+
+      evaluate_mantra:
+        description: "Esegui valutazione MANTRA dopo il training"
+        type: boolean
+        default: false
+
       test_seasons:
         description: "Stagioni di test (hold-out più recenti)"
         required: false
         default: "1"
+
       min_minutes:
         description: "Minuti minimi per includere un giocatore"
         required: false
         default: "800"
+
       seed:
         description: "Random seed per riproducibilità"
         required: false
         default: "42"
+
+      log_level:
+        description: "Livello di logging"
+        required: false
+        default: "INFO"
+
+      output_dir:
+        description: "Directory artefatti (vuoto = default ml/artifacts)"
+        required: false
+        default: ""
+
       fantavoto_csv:
         description: "Path al CSV fantavoto nel container (es. /app/artifacts/fantavoto.csv)"
         required: false
         default: ""
 
-  # Schedulazione: ogni lunedì alle 06:00 UTC (~08:00 CEST), il giorno dopo
-  # il turno infrasettimanale/domenicale. Il cron di GitHub Actions è
-  # sempre in UTC — aggiusta l'ora se cambia il fuso del campionato.
+  # Schedulazione: ogni lunedì alle 06:00 UTC (~08:00 CEST)
   # schedule:
   #   - cron: "0 6 * * 1"
 
-# Evita run sovrapposte se ne parte una manuale mentre gira quella schedulata.
 concurrency:
   group: ml-training
   cancel-in-progress: false
@@ -61,9 +81,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Build dal Dockerfile esistente: garantisce le stesse dipendenze/versioni
-      # usate in locale (docker compose --profile ml) e su Render Cron Job.
-      # Contesto = root del repo perché ml/Dockerfile fa `COPY ml/requirements.txt .`
+      # Build dell'immagine Docker con le stesse dipendenze usate
+      # in locale e su Render.
       - name: Build ML image
         run: docker build -f ml/Dockerfile -t ml-runner:latest .
 
@@ -88,14 +107,15 @@ jobs:
             --test-seasons "${{ github.event.inputs.test_seasons || '1' }}" \
             --min-minutes "${{ github.event.inputs.min_minutes || '800' }}" \
             --seed "${{ github.event.inputs.seed || '42' }}" \
+            --log-level "${{ github.event.inputs.log_level || 'INFO' }}" \
             ${{ github.event.inputs.tune == 'true' && '--tune' || '' }} \
             ${{ github.event.inputs.predict_next == 'true' && '--predict-next' || '' }} \
+            ${{ github.event.inputs.evaluate_mantra == 'true' && '--evaluate-mantra' || '' }} \
             ${{ github.event.inputs.fantavoto_csv != '' && format('--fantavoto-csv "{0}"', github.event.inputs.fantavoto_csv) || '' }} \
+            ${{ github.event.inputs.output_dir != '' && format('--output-dir "{0}"', github.event.inputs.output_dir) || '' }} \
             --json-logs
 
-      # Fallisce esplicitamente il job (oltre al normale exit code non-zero
-      # di run_pipeline.py) così il tab Actions e le notifiche email di
-      # GitHub sui watcher del repo segnalano il training fallito.
       - name: Notify on failure
         if: failure()
-        run: echo "::error::Training ML fallito — controlla i log sopra. Nessun nuovo run_id è stato promosso."
+        run: |
+          echo "::error::Training ML fallito — controlla i log sopra. Nessun nuovo run_id è stato promosso."
