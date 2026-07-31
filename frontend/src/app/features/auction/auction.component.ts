@@ -47,7 +47,7 @@ const TIER_COLOR: Record<AuctionTier, string> = {
   TOP: '#F59E0B',
 };
 
-/** Colonne ordinabili della tabella "Migliori affari". */
+/** Colonne ordinabili della tabella "Ranking VAR/ESV (surplus vs expected_price)". */
 type VarSortKey =
   | 'name'
   | 'role'
@@ -73,136 +73,148 @@ const SETUP_LEGENDS: Readonly<
 > = {
   seasonStart: {
     description:
-      'Anno di inizio della stagione di Serie A da usare come riferimento per le quotazioni storiche, le statistiche per-match e i listini impiegati dal risolutore. Determina anche la finestra temporale delle partite considerate per il calcolo dei tier.',
+      'Chiave di lookup DB: carica listini (qt_a), id-map e predizioni ML per costruire il player pool della sessione. Non è un parametro dell\'EWMA; senza stagione corretta il pool è vuoto o obsoleto.',
     examples: [
-      { label: '2025', value: 'stagione 2025/26 (default più recente)' },
-      { label: '2024', value: 'stagione 2024/25 (storica)' },
-      { label: '2023', value: 'stagione 2023/24 (analisi trend)' },
+      { label: '2025', value: 'stagione 2025/26' },
+      { label: '2024', value: 'stagione 2024/25' },
     ],
   },
   numParticipants: {
     description:
-      "Numero di squadre che partecipano all'asta, cioè il numero di giocatori-manager che si contenderanno i calciatori. Influisce sul budget totale in gioco e sulla pressione dei prezzi: più partecipanti significano maggiore competizione.",
+      'Numero di squadre in asta. Deve coincidere con len(participants) all\'init. Entra in AuctionConfig e, se useInflationBaseline è attivo, alimenta la curva di inflazione del baseline_cost (partecipanti oltre baselineParticipants).',
     examples: [
-      { label: '4', value: 'lega piccola tra amici' },
-      { label: '8', value: 'lega standard (default consigliato)' },
-      { label: '10–12', value: 'lega grande, alta competizione' },
+      { label: '8', value: 'default tipico' },
+      { label: '10–12', value: 'più competizione → baseline_cost più alti se inflazione ON' },
     ],
   },
   defaultBudget: {
     description:
-      'Crediti iniziali (Fantamiliardi, abbreviato "cr.") assegnati a ogni partecipante per costruire la rosa. Se modifichi questo valore, viene applicato a tutti i partecipanti già presenti in lista tramite il pulsante "Applica a tutti".',
+      'Scorciatoia UI: propaga questo valore a participants[].budgetInitial (crediti residui iniziali di ogni manager). Non è referenceBudget né il fattore di scala del listino.',
     examples: [
-      { label: '300 cr.', value: 'lega piccola' },
-      { label: '500 cr.', value: 'default classico' },
-      { label: '1000 cr.', value: 'lega premium con top player costosi' },
+      { label: '300 cr.', value: 'lega listino ufficiale' },
+      { label: '500 cr.', value: 'lega moderna tipica' },
     ],
   },
   roleQuotas: {
     description:
-      'Numero massimo di giocatori per ruolo che ogni squadra può avere in rosa (Portieri, Difensori, Centrocampisti, Attaccanti). Le quote devono essere coerenti con il regolamento della lega.',
+      'Quote hard di rosa CLASSIC per partecipante: quanti P/D/C/A può avere al massimo. Usate dal record assignment (rifiuta se il ruolo è pieno) e dal ranking VAR in modalità roster_depth. Totale tipico 3+8+8+6 = 25.',
     examples: [
-      { label: 'P=3 D=8 C=8 A=6', value: 'rosa 25, modulo 3-5-2 con slot panchina' },
-      { label: 'P=3 D=8 C=8 A=6', value: 'default Mantra-style con 3 cambi ruolo' },
+      { label: 'P3 D8 C8 A6', value: 'default Fantacalcio classico (25 slot)' },
     ],
   },
   useInflationBaseline: {
     description:
-      'Se attivo, il sistema applica un modello di inflazione che stima quanto i prezzi saliranno rispetto al listino base, basandosi sul numero di partecipanti. Disattivalo solo se vuoi prezzi "piatti" senza rialzo previsto.',
+      'Se ON, il baseline_cost usato dall\'EWMA (prezzo atteso pre-assegnazione) incorpora estimate_effective_cost (inflazione statica da percentile ruolo + partecipanti + eventuale Elo). Se OFF, il baseline resta ancorato al listino scalato, senza quella curva.',
     examples: [
-      { label: 'ON', value: 'prezzi EWMA gonfiati dalla competizione' },
-      { label: 'OFF', value: 'prezzi allineati al listino base' },
+      { label: 'ON', value: 'expected_price riflette competizione e rarità' },
+      { label: 'OFF', value: 'expected_price più vicino al listino scalato' },
     ],
   },
   referenceBudget: {
     description:
-      'Budget di riferimento (in crediti) usato dal modello di inflazione come "lega neutra" per calibrare i moltiplicatori. Tipicamente 300 cr. per leghe standard; alzalo se la tua lega usa budget più alti.',
+      'Budget su cui è tarato il file quotazioni (storicamente 300). Il listino viene riproporzionato con il fattore budgetInitial / referenceBudget prima del drift. Esempio: listino 20 con ref=300 e budget=500 → baseline di partenza 20 × 500/300.',
     examples: [
-      { label: '300 cr.', value: 'riferimento per leghe 300 cr.' },
-      { label: '500 cr.', value: 'riferimento per leghe 500 cr.' },
+      { label: '300', value: 'default listino ufficiale' },
+      { label: '500', value: 'solo se il listino è già calibrato a 500' },
     ],
   },
   budgetInitial: {
     description:
-      "Budget di partenza effettivo di questa sessione d'asta, in crediti. Impostalo sul valore reale della tua lega: è il numero che il tracker userà per calcolare il residuo di ogni partecipante.",
+      'Budget per squadra della sessione (config.budgetInitial): scala il listino insieme a referenceBudget e allinea le aspettative di prezzo al potere d\'acquisto reale. I crediti residui per manager restano in participants[].budgetInitial (spesso uguale).',
     examples: [
-      { label: '300 cr.', value: 'lega classica FantaSanremo/Mantra' },
-      { label: '500 cr.', value: 'lega premium' },
+      { label: '500', value: 'lega a 500 cr.' },
+      { label: '300', value: 'lega a listino ufficiale' },
     ],
   },
   valuationMode: {
     description:
-      'Modalità con cui viene calcolato il valore atteso di un giocatore durante l\'asta. "Per-Match Rating" usa la media voto ponderata per partita; "Season Value" usa una stima complessiva di fine stagione più adatta a leghe con premi stagionali.',
+      'Metrica usata dal ranking VAR/ESV in sessione. PER_MATCH_RATING ordina su projected_score (fantavoto/partita). SEASON_VALUE ordina su season_value (rating × presenze attese). Non cambia la formula EWMA del prezzo.',
     examples: [
-      { label: 'PER_MATCH_RATING', value: 'lega settimanale, focus sul rendimento singolo' },
-      { label: 'SEASON_VALUE', value: 'lega con bonus stagionali' },
+      { label: 'PER_MATCH_RATING', value: 'default: rendimento a partita' },
+      { label: 'SEASON_VALUE', value: 'valore totale di stagione proiettato' },
+    ],
+  },
+  replacementMethod: {
+    description:
+      'Come si calcola il replacement level nel ranking VAR/ESV. "percentile" = basso percentile per ruolo nel pool; "roster_depth" = soglia legata a numParticipants × roleQuotas.',
+    examples: [
+      { label: 'percentile', value: 'default' },
+      { label: 'roster_depth', value: 'legato alle quote di rosa di lega' },
+    ],
+  },
+  minStartProbability: {
+    description:
+      'Filtro sul ranking VAR: i giocatori con start_probability sotto soglia restano nel pool d\'asta ma non compaiono nella classifica VAR/ESV. null = nessun filtro. Non blocca l\'assegnazione manuale.',
+    examples: [
+      { label: 'vuoto', value: 'nessun filtro (default)' },
+      { label: '0.65', value: 'nasconde riserve chiare dal ranking affari' },
     ],
   },
   alpha: {
     description:
-      "Fattore di smoothing dell'indice EWMA (Exponentially Weighted Moving Average). Determina quanto peso ha l'ultima osservazione rispetto alla storia passata: valori alti reagiscono velocemente ai rialzi, valori bassi smussano il mercato.",
+      'Peso EWMA sull\'ultimo ratio prezzo_pagato / expected_price: index ← (1−α)·index + α·ratio. α alto → l\'indice di ruolo×tier reagisce forte a ogni assegnazione; α basso → mercato più "lento". Bound: (0, 1]. Default codice 0.3.',
     examples: [
-      { label: '0.1', value: 'molto stabile, ideale per leghe tranquille' },
-      { label: '0.3', value: 'default bilanciato' },
-      { label: '0.6', value: 'reattivo, adatto ad aste molto inflazionate' },
+      { label: '0.20', value: 'mercato stabile / late sniper' },
+      { label: '0.30', value: 'default engine' },
+      { label: '0.50', value: 'reattivo / asta calda' },
     ],
   },
   spilloverAdj: {
     description:
-      'Coefficiente (0–1) di "spillover" che trasferisce parte della pressione di prezzo dallo stesso ruolo al tier adiacente (es. MID → LOW o MID → TOP). 0 = nessuno spillover; 0.1 = leggera propagazione; 0.3 = forte.',
+      'Frazione dello shock di prezzo propagata ai tier adiacenti dello stesso ruolo (LOW↔MID↔TOP) dopo un update EWMA. 0 = isolato per tier. Default codice 0.25.',
     examples: [
-      { label: '0.05', value: 'spillover leggero (default)' },
-      { label: '0.20', value: 'spillover marcato, mercato liquido' },
+      { label: '0.15', value: 'spillover contenuto' },
+      { label: '0.25', value: 'default engine' },
+      { label: '0.35', value: 'mercato molto liquido tra tier' },
     ],
   },
   spilloverCross: {
     description:
-      'Coefficiente (0–1) di spillover cross-ruolo: quanto un rialzo su un ruolo (es. Attaccanti) si propaga a un altro ruolo (es. Centrocampisti). Utile in leghe con regole di conversione ruolo.',
+      'Hook di spillover verso altri ruoli dopo un update. Default codice 0 (disattivato): lascialo a 0 salvo leghe con contagio inter-ruolo esplicito. Non è legato alle conversioni MANTRA.',
     examples: [
-      { label: '0.0', value: 'nessuna propagazione cross-ruolo' },
-      { label: '0.05', value: 'default leggera' },
-      { label: '0.15', value: 'propagazione forte' },
+      { label: '0.0', value: 'default: nessun contagio cross-ruolo' },
+      { label: '0.05–0.10', value: 'contagio leggero (avanzato)' },
     ],
   },
   lowCostPercentile: {
     description:
-      'Percentile (0–1) sotto il quale un giocatore è considerato "low cost" dal sistema di suggerimento alternative. Influenza la proposta "Low Cost" mostrata nel lookup.',
+      'Soglia sul expected_price (percentile nel ruolo) per il suggerimento low-cost in /alternatives. Sotto soglia un giocatore è candidato "economico" rispetto al target. Default codice 0.4.',
     examples: [
-      { label: '0.2', value: 'solo i giocatori più economici (top 20%)' },
-      { label: '0.3', value: 'default' },
-      { label: '0.5', value: 'fascia media-bassa' },
+      { label: '0.30', value: 'alternative più aggressive sul prezzo' },
+      { label: '0.40', value: 'default engine' },
+      { label: '0.50', value: 'fascia media-bassa più ampia' },
     ],
   },
   minIndex: {
     description:
-      "Valore minimo consentito per l'indice di prezzo EWMA dopo l'applicazione del modello di inflazione. Impedisce che i prezzi crollino a zero in leghe con poca domanda.",
+      'Floor dell\'indice EWMA per ogni cella ruolo×tier dopo clamp. Impedisce che index scenda sotto questo valore quando si pagano prezzi bassi rispetto all\'expected. Default codice 0.5.',
     examples: [
-      { label: '0.5', value: 'default, previene crolli sotto listino' },
-      { label: '0.8', value: 'floor più alto, mercato rialzistico' },
+      { label: '0.50', value: 'default engine' },
+      { label: '0.60', value: 'floor più alto (meno deflazione)' },
     ],
   },
   maxIndex: {
     description:
-      "Valore massimo consentito per l'indice di prezzo EWMA. Impedisce runaway inflation in leghe molto competitive, fissando un tetto oltre il quale il prezzo non può salire.",
+      'Cap dell\'indice EWMA per ruolo×tier. Blocca runaway quando si pagano multipli alti dell\'expected_price. expected_price ≈ baseline_cost × index. Default codice 1.8.',
     examples: [
-      { label: '2.0', value: 'default (×2 rispetto al listino)' },
-      { label: '3.0', value: 'lega molto calda, top player esplosivi' },
+      { label: '1.8', value: 'default engine' },
+      { label: '2.0–2.2', value: 'asta molto calda' },
     ],
   },
   tierLow: {
     description:
-      'Soglia (0–1) sotto la quale un giocatore è classificato tier LOW. È una soglia relativa: il sistema normalizza gli indici EWMA del ruolo in [0,1] e poi confronta con questo valore.',
+      'Soglia bassa sui percentile di ruolo del giocatore (non sull\'indice EWMA): percentile < tierLow → tier LOW. Insieme a tierTop definisce MID. Classificazione usata per scegliere quale cella index[role][tier] aggiornare. Default codice 0.4.',
     examples: [
-      { label: '0.3', value: 'default, 30% dei giocatori nel tier basso' },
-      { label: '0.5', value: 'più giocatori finisco nel tier basso' },
+      { label: '0.40', value: 'default engine' },
+      { label: '0.30', value: 'più giocatori finiscono in MID/TOP' },
     ],
   },
   tierTop: {
     description:
-      'Soglia (0–1) sopra la quale un giocatore è classificato tier TOP. Insieme a `tierLow` definisce la fascia centrale (tier MID).',
+      'Soglia alta sul percentile di ruolo: percentile ≥ tierTop → tier TOP; tra tierLow e tierTop → MID. Deve essere > tierLow. Default codice 0.8.',
     examples: [
-      { label: '0.7', value: 'default, 30% top del ruolo' },
-      { label: '0.85', value: 'top ristretto ai migliori assoluti' },
+      { label: '0.80', value: 'default engine' },
+      { label: '0.70', value: 'TOP più ampio' },
     ],
   },
 };
@@ -212,48 +224,42 @@ const LIVE_LEGENDS: Readonly<
 > = {
   lookupQuery: {
     description:
-      "Casella di ricerca libera sulla pool di giocatori disponibili per l'asta. La ricerca è debouncata di 300 ms e mostra un dropdown con i risultati migliori (per nome, squadra e ruolo).",
+      'Ricerca substring sul pool ancora disponibile (GET /pool?q=…). Debounce 300 ms. Serve a risolvere nome → playerId per projection e alternatives, non modifica indici o budget.',
     examples: [
-      { label: '"Lautaro"', value: 'autocomplete su cognome / parte del nome' },
-      { label: '"Inter A"', value: 'filtra per team + ruolo' },
-      { label: 'Esc', value: 'chiude il dropdown' },
-      { label: 'Invio', value: 'esegue il lookup del giocatore attualmente nel campo' },
+      { label: 'Lautaro', value: 'match sul nome' },
+      { label: 'Invio', value: 'lookup su projection + alternatives' },
     ],
   },
   recordPlayer: {
     description:
-      "Giocatore attualmente selezionato per la registrazione dell'assegnazione. Viene pre-compilato automaticamente scegliendo un risultato dal Lookup, ma può essere sovrascritto manualmente incollando un ID.",
+      'playerId dell\'assegnazione da registrare (POST /record). Di solito precompilato dal lookup; deve essere un giocatore ancora nel pool.',
     examples: [
-      { label: 'selezione', value: 'scegli dal Lookup →' },
-      { label: 'ID manuale', value: "incolla un fm-XXXX se conosci l'identificativo FotMob" },
+      { label: 'da Lookup', value: 'selezione dal dropdown' },
+      { label: 'fm-…', value: 'ID manuale se noto' },
     ],
   },
   recordWinner: {
     description:
-      "Squadra partecipante che si aggiudica il giocatore in questo turno d'asta. La lista deriva dai partecipanti configurati nella sessione; l'opzione vuota disabilita il pulsante Registra.",
+      'participantId del manager che si aggiudica il giocatore. Il backend verifica budget residuo, quote ruolo e disponibilità slot prima di accettare.',
     examples: [
-      { label: 'Team 1', value: 'aggiudicatario turno corrente' },
-      { label: '— select —', value: 'nessuna selezione (pulsante Registra disabilitato)' },
+      { label: 'Team N', value: 'vincitore del turno' },
     ],
   },
   recordPrice: {
     description:
-      "Prezzo finale di aggiudicazione, in crediti (cr.). Deve essere un intero ≥ 1. Verrà scalato dal budget residuo del vincitore e alimenterà l'indice EWMA per quel ruolo/tier.",
+      'Prezzo finale pagato (cr., intero ≥ 1). Scala il budget residuo del vincitore e aggiorna l\'EWMA: ratio = finalPrice / expectedPrice → index[role][tier] con α e spillover. È l\'unico input che muove gli indici di mercato.',
     examples: [
-      { label: '1', value: 'prezzo minimo, svincolo low-cost' },
-      { label: '30–50', value: 'tier MID tipico' },
-      { label: '100+', value: 'tier TOP, top player' },
+      { label: '1', value: 'minimo / svincolo' },
+      { label: '≈ expected', value: 'indice resta stabile' },
+      { label: '>> expected', value: 'indice sale (mercato caldo su quel tier)' },
     ],
   },
   varRanking: {
     description:
-      'Tabella "Migliori affari": classifica dei giocatori con ESV (Expected Season Value) positivo, ordinata per rendimento atteso rispetto al prezzo EWMA. La colonna "Segnale" indica se il sistema consiglia l\'acquisto (COMPRA) come affare.',
+      'GET /var-ranking: classifica i disponibili per ESV (Expected Surplus Value = affare vs prezzo atteso), non "Expected Season Value". Colonne tipiche: var_score, expected_price, esv, buySignal. minStartProbability filtra solo questa vista, non il pool assegnabile.',
     examples: [
-      { label: 'ESV > 0 + COMPRA', value: 'affare: valore atteso superiore al prezzo' },
-      {
-        label: 'ESV ≤ 0 + -',
-        value: 'surriscaldato, prezzo troppo alto rispetto al rendimento previsto',
-      },
+      { label: 'ESV > 0 + COMPRA', value: 'prezzo atteso basso vs contributo' },
+      { label: 'ESV ≤ 0', value: 'caro rispetto al ranking corrente' },
     ],
   },
 };
@@ -391,7 +397,7 @@ function makeParticipants(
             <div class="action-row">
               <!-- Lookup card -->
               <div class="card">
-                <p class="card-section-label">Ricerca giocatore (Lookup)</p>
+                <p class="card-section-label">Lookup pool (nome → playerId, projection, alternatives)</p>
                 <div class="pool-autocomplete">
                   <div class="lookup-row">
                     <input
@@ -490,7 +496,8 @@ function makeParticipants(
                 <p class="card-section-label">Registra assegnazione di turno</p>
 
                 <div class="field-group">
-                  <label class="field-label" for="recordPlayer">Giocatore</label>
+                  <label class="field-label" for="recordPlayer">
+                  >Giocatore da assegnare <span class="field-hint">playerId</span></label>
                   <input
                     id="recordPlayer"
                     class="field-input"
@@ -511,7 +518,8 @@ function makeParticipants(
 
                 <div class="field-group">
                   <label class="field-label" for="recordWinner"
-                    >Squadra vincitrice (aggiudicatario)</label
+                    >
+                  >Vincitore turno <span class="field-hint">participantId</span></label
                   >
                   <select
                     id="recordWinner"
@@ -535,7 +543,8 @@ function makeParticipants(
 
                 <div class="field-group">
                   <label class="field-label" for="recordPrice"
-                    >Prezzo finale di aggiudicazione <span class="field-hint">cr.</span></label
+                    >
+                  >Prezzo pagato <span class="field-hint">aggiorna EWMA e budget</span></label
                   >
                   <input
                     id="recordPrice"
@@ -666,7 +675,7 @@ function makeParticipants(
             @if (varRanking().length || varLoading()) {
               <div class="card">
                 <p class="card-section-label">
-                  Migliori affari disponibili (ESV vs prezzo EWMA)
+                  Ranking VAR/ESV (surplus vs expected_price) disponibili (ESV vs prezzo EWMA)
                   @if (varLoading()) {
                     <span class="spinner-sm" style="margin-left:6px"></span>
                   }
@@ -854,7 +863,7 @@ function makeParticipants(
           <div>
             <h1 class="page-title">Tracker Asta</h1>
             <p class="page-subtitle">
-              Indice di mercato EWMA con modello di inflazione basato sul numero di partecipanti
+              Sessione d'asta live: EWMA ruolo×tier, baseline listino (opz. inflazione) e ranking VAR/ESV
             </p>
           </div>
         </header>
@@ -865,7 +874,7 @@ function makeParticipants(
             <p class="section-divider">Profilo strategico</p>
 
             <div class="field-group">
-              <label class="field-label" for="auction-preset">Preset d'asta</label>
+              <label class="field-label" for="auction-preset">Preset d'asta (precompila EWMA, inflazione, alternative)</label>
               <select
                 id="auction-preset"
                 class="field-input"
@@ -888,10 +897,10 @@ function makeParticipants(
               }
             </div>
 
-            <p class="section-divider">Sessione</p>
+            <p class="section-divider">Pool e sessione</p>
 
             <div class="field-group">
-              <label class="field-label" for="seasonStart">Stagione di riferimento (Serie A)</label>
+              <label class="field-label" for="seasonStart">Stagione del pool (listini + predizioni ML)</label>
               <select
                 id="seasonStart"
                 class="field-input"
@@ -909,12 +918,12 @@ function makeParticipants(
               />
             </div>
 
-            <p class="section-divider">Partecipanti</p>
+            <p class="section-divider">Partecipanti e crediti</p>
 
             <div class="field-row">
               <div class="field-group">
                 <label class="field-label" for="numParticipants"
-                  >Numero di squadre partecipanti</label
+                  >Partecipanti asta <span class="field-hint">= len(participants) all'init</span></label
                 >
                 <input
                   id="numParticipants"
@@ -934,7 +943,7 @@ function makeParticipants(
               </div>
               <div class="field-group">
                 <label class="field-label" for="defaultBudget"
-                  >Budget iniziale per squadra <span class="field-hint">cr.</span></label
+                  >Budget crediti per manager <span class="field-hint">propaga a participants[]</span></label
                 >
                 <input
                   id="defaultBudget"
@@ -955,7 +964,7 @@ function makeParticipants(
               </div>
             </div>
 
-            <p class="section-divider">Quote rosa per ruolo</p>
+            <p class="section-divider">Quote rosa (vincolo hard per manager)</p>
 
             <div class="quota-grid">
               @for (role of allRoles; track role) {
@@ -967,16 +976,16 @@ function makeParticipants(
                   >
                     @switch (role) {
                       @case ('P') {
-                        Portieri (P) — n° slot in rosa
+                        Portieri (P) — max slot per manager
                       }
                       @case ('D') {
-                        Difensori (D) — n° slot in rosa
+                        Difensori (D) — max slot per manager
                       }
                       @case ('C') {
-                        Centrocampisti (C) — n° slot in rosa
+                        Centrocampisti (C) — max slot per manager
                       }
                       @case ('A') {
-                        Attaccanti (A) — n° slot in rosa
+                        Attaccanti (A) — max slot per manager
                       }
                     }
                   </label>
@@ -999,18 +1008,19 @@ function makeParticipants(
               [examples]="SETUP_LEGENDS['roleQuotas'].examples"
             />
 
-            <p class="section-divider">Modello di inflazione di mercato</p>
+            <p class="section-divider">Baseline cost (inflazione statica sul listino)</p>
 
             <label class="strategy-check" [class.active]="useInflationBaseline">
               <input type="checkbox" [(ngModel)]="useInflationBaseline" />
-              <span>Applica baseline di inflazione basata sul numero di partecipanti</span>
+              <span>Usa estimate_effective_cost come baseline EWMA (inflazione listino)</span>
             </label>
 
             @if (useInflationBaseline) {
               <div class="field-row">
                 <div class="field-group">
                   <label class="field-label" for="inflationPct"
-                    >Soglia percentile inflazione <span class="field-hint">0–1</span></label
+                    >
+                    >Soglia percentile: sotto = baseline = listino scalato <span class="field-hint">0–1</span></label
                   >
                   <input
                     id="inflationPct"
@@ -1031,7 +1041,8 @@ function makeParticipants(
                 </div>
                 <div class="field-group">
                   <label class="field-label" for="maxInflation"
-                    >Moltiplicatore massimo inflazione <span class="field-hint">≥1</span></label
+                    >
+                    >Cap costo effettivo / listino <span class="field-hint">≥ 1.0</span></label
                   >
                   <input
                     id="maxInflation"
@@ -1054,7 +1065,8 @@ function makeParticipants(
               <div class="field-row">
                 <div class="field-group">
                   <label class="field-label" for="baseInflationRate"
-                    >Tasso di inflazione di base <span class="field-hint">0–1</span></label
+                    >
+                    >Tasso base inflazione <span class="field-hint">partecipanti extra</span></label
                   >
                   <input
                     id="baseInflationRate"
@@ -1075,7 +1087,8 @@ function makeParticipants(
                 </div>
                 <div class="field-group">
                   <label class="field-label" for="baselineParticipants"
-                    >Partecipanti baseline del modello</label
+                    >
+                    >Baseline partecipanti <span class="field-hint">oltre → extra inflazione</span></label
                   >
                   <input
                     id="baselineParticipants"
@@ -1098,7 +1111,8 @@ function makeParticipants(
               <div class="field-row">
                 <div class="field-group">
                   <label class="field-label" for="teamStrengthMul"
-                    >Moltiplicatore Elo di Club <span class="field-hint">0–2</span></label
+                    >
+                    >Peso Elo club sul baseline_cost <span class="field-hint">0 = off</span></label
                   >
                   <input
                     id="teamStrengthMul"
@@ -1123,7 +1137,8 @@ function makeParticipants(
             <div class="field-row">
               <div class="field-group">
                 <label class="field-label" for="referenceBudget"
-                  >Budget di riferimento per il modello <span class="field-hint">cr.</span></label
+                  >
+                  >Reference budget listino <span class="field-hint">scala qt_a</span></label
                 >
                 <input
                   id="referenceBudget"
@@ -1143,7 +1158,8 @@ function makeParticipants(
               </div>
               <div class="field-group">
                 <label class="field-label" for="budgetInitial"
-                  >Budget effettivo di questa sessione <span class="field-hint">cr.</span></label
+                  >
+                  >Budget sessione (scala listino) <span class="field-hint">cr.</span></label
                 >
                 <input
                   id="budgetInitial"
@@ -1163,11 +1179,12 @@ function makeParticipants(
               </div>
             </div>
 
-            <p class="section-divider">Modalità di valutazione del giocatore</p>
+            <p class="section-divider">Metrica ranking VAR/ESV</p>
 
             <div class="field-group">
               <label class="field-label" for="valuationMode"
-                >Algoritmo usato per stimare il valore del giocatore</label
+                >
+                >Metrica del ranking VAR/ESV</label
               >
               <select
                 id="valuationMode"
@@ -1185,12 +1202,13 @@ function makeParticipants(
               />
             </div>
 
-            <p class="section-divider">Filtro sui giocatori e replacement level</p>
+            <p class="section-divider">Filtro ranking VAR e replacement level</p>
 
             <div class="field-row">
               <div class="field-group">
                 <label class="field-label" for="replacementMethod"
-                  >Replacement level per VAR/ESV</label
+                  >
+                  >Metodo replacement level <span class="field-hint">solo VAR/ESV</span></label
                 >
                 <select
                   id="replacementMethod"
@@ -1209,8 +1227,8 @@ function makeParticipants(
               </div>
               <div class="field-group">
                 <label class="field-label" for="minStartProb"
-                  >Soglia minima di titolarità
-                  <span class="field-hint">0–1 (vuoto = nessun filtro)</span></label
+                  >
+                  >Filtro start_probability sul ranking VAR <span class="field-hint">non sul pool</span></label
                 >
                 <input
                   id="minStartProb"
@@ -1235,14 +1253,15 @@ function makeParticipants(
 
             <!-- Advanced -->
             <button class="advanced-toggle" (click)="showAdvanced = !showAdvanced">
-              Impostazioni avanzate EWMA e spillover {{ showAdvanced ? '▲' : '▼' }}
+              Avanzate: EWMA alpha, spillover, alternative, clamp indici, tier {{ showAdvanced ? '▲' : '▼' }}
             </button>
 
             @if (showAdvanced) {
               <div class="field-row">
                 <div class="field-group">
                   <label class="field-label" for="alpha"
-                    >Fattore EWMA (alpha) <span class="field-hint">0–1</span></label
+                    >
+                    >EWMA alpha <span class="field-hint">index ← (1−α)·index + α·ratio</span></label
                   >
                   <input
                     id="alpha"
@@ -1262,8 +1281,8 @@ function makeParticipants(
                 </div>
                 <div class="field-group">
                   <label class="field-label" for="spilloverAdj"
-                    >Spillover stesso ruolo, tier adiacente
-                    <span class="field-hint">0–1</span></label
+                    >
+                    >Spillover tier adiacenti <span class="field-hint">stesso ruolo</span></label
                   >
                   <input
                     id="spilloverAdj"
@@ -1285,7 +1304,8 @@ function makeParticipants(
               <div class="field-row">
                 <div class="field-group">
                   <label class="field-label" for="spilloverCross"
-                    >Spillover cross-ruolo <span class="field-hint">0–1</span></label
+                    >
+                    >Spillover cross-ruolo <span class="field-hint">default 0 = off</span></label
                   >
                   <input
                     id="spilloverCross"
@@ -1305,7 +1325,8 @@ function makeParticipants(
                 </div>
                 <div class="field-group">
                   <label class="field-label" for="lowCostPercentile"
-                    >Percentile soglia "low-cost" <span class="field-hint">0–1</span></label
+                    >
+                    >Soglia alternative low-cost <span class="field-hint">percentile expected_price</span></label
                   >
                   <input
                     id="lowCostPercentile"
@@ -1327,7 +1348,8 @@ function makeParticipants(
               <div class="field-row">
                 <div class="field-group">
                   <label class="field-label" for="minIndex"
-                    >Indice EWMA minimo <span class="field-hint">0–1</span></label
+                    >
+                    >Floor indice EWMA <span class="field-hint">clamp minimo</span></label
                   >
                   <input
                     id="minIndex"
@@ -1347,7 +1369,8 @@ function makeParticipants(
                 </div>
                 <div class="field-group">
                   <label class="field-label" for="maxIndex"
-                    >Indice EWMA massimo <span class="field-hint">1–5</span></label
+                    >
+                    >Cap indice EWMA <span class="field-hint">clamp massimo</span></label
                   >
                   <input
                     id="maxIndex"
@@ -1369,7 +1392,8 @@ function makeParticipants(
               <div class="field-row">
                 <div class="field-group">
                   <label class="field-label" for="tierLow"
-                    >Soglia tier basso (LOW) <span class="field-hint">0–1</span></label
+                    >
+                    >Soglia percentile → tier LOW <span class="field-hint">pct &lt; low</span></label
                   >
                   <input
                     id="tierLow"
@@ -1389,7 +1413,8 @@ function makeParticipants(
                 </div>
                 <div class="field-group">
                   <label class="field-label" for="tierTop"
-                    >Soglia tier alto (TOP) <span class="field-hint">0–1</span></label
+                    >
+                    >Soglia percentile → tier TOP <span class="field-hint">pct ≥ top</span></label
                   >
                   <input
                     id="tierTop"
@@ -1582,7 +1607,7 @@ export class AuctionComponent {
   readonly varLoading = signal(false);
 
   /**
-   * Ordinamento della tabella "Migliori affari".
+   * Ordinamento della tabella "Ranking VAR/ESV (surplus vs expected_price)".
    * Stato: `varSortKey=null` e `varSortDir=null` ⇒ ordine naturale del backend.
    * `cycleVarSort(key)` fa: null → asc → desc → null.
    */

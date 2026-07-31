@@ -5,11 +5,35 @@
  * the setup form fields. Operator-owned fields (seasonStart, participants)
  * are intentionally left untouched.
  *
+ * Refactor notes:
+ * - `roleQuotas` (3P/8D/8C/6A) was repeated verbatim in all 15 presets;
+ *   it now comes from `preset-shared.constants.ts`.
+ * - Every `config` object used to be built as a plain object literal
+ *   suffixed with `as AuctionConfig`. A blind `as` cast does NOT type-check
+ *   the literal against the target type — it silently *widens* whatever
+ *   shape you wrote to `AuctionConfig`, so a typo'd field name or a
+ *   `tierThresholds: [0.4, 0.8, 0.9]` (3 elements instead of the required
+ *   tuple of 2) would compile without complaint and only blow up at
+ *   runtime inside `MarketDriftConfig.__post_init__` on the backend.
+ *   `defineAuctionConfig` below is the identity function typed as
+ *   `(config: AuctionConfig) => AuctionConfig`; passing an object literal
+ *   as its argument gives real contextual type-checking (excess-property
+ *   checks included) with zero runtime cost.
+ *
  * @see AuctionConfig / InitializeAuctionRequest in core/models/auction.models.ts
  * @see artifacts/profiles/auction_profiles.json
  */
 
 import { AuctionConfig } from '../models/auction.models';
+import { DEFAULT_CLASSIC_ROLE_QUOTAS } from './shared-presets';
+
+/**
+ * Identity function used purely for contextual type-checking (see refactor
+ * note above). Prefer this over `obj as AuctionConfig` in every new preset.
+ */
+function defineAuctionConfig(config: AuctionConfig): AuctionConfig {
+  return config;
+}
 
 /** Semantic UI / auto-bidder hints — never sent as-is to POST /auction/init. */
 export interface AuctionPresetPolicy {
@@ -59,14 +83,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     name: "Conservative",
     labelIt: "Conservativo",
     description: "Evita overpay, protegge il residuo, predilige alternative low-cost e inflazione bassa. Ideale se sei ultimo di budget o temi di restare scoperto a fine asta.",
-    config: {
+    config: defineAuctionConfig({
       numParticipants: 8,
-      roleQuotas: {
-        P: 3,
-        D: 8,
-        C: 8,
-        A: 6,
-      },
+      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.2,
         spilloverAdjacentTier: 0.15,
@@ -91,7 +110,7 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       valuationMode: "PER_MATCH_RATING",
       minStartProbability: null,
       replacementMethod: "percentile",
-    } as AuctionConfig,
+    }),
     policy: {
       aggressiveness: 0.25,
       inflationTolerance: 0.3,
@@ -116,14 +135,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     name: "Balanced",
     labelIt: "Bilanciato",
     description: "Profilo neutro: EWMA standard, inflazione moderata, alternative standard. Punto di partenza consigliato per la maggior parte delle leghe.",
-    config: {
+    config: defineAuctionConfig({
       numParticipants: 8,
-      roleQuotas: {
-        P: 3,
-        D: 8,
-        C: 8,
-        A: 6,
-      },
+      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.3,
         spilloverAdjacentTier: 0.25,
@@ -148,7 +162,7 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       valuationMode: "PER_MATCH_RATING",
       minStartProbability: null,
       replacementMethod: "percentile",
-    } as AuctionConfig,
+    }),
     policy: {
       aggressiveness: 0.5,
       inflationTolerance: 0.5,
@@ -173,14 +187,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     name: "Aggressive",
     labelIt: "Aggressivo",
     description: "Insegue i top, tollera overpay e inflazione alta, spillover più reattivo. Rischia residuo basso ma punta a massimizzare il ceiling della rosa.",
-    config: {
+    config: defineAuctionConfig({
       numParticipants: 8,
-      roleQuotas: {
-        P: 3,
-        D: 8,
-        C: 8,
-        A: 6,
-      },
+      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.45,
         spilloverAdjacentTier: 0.35,
@@ -205,7 +214,7 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       valuationMode: "SEASON_VALUE",
       minStartProbability: null,
       replacementMethod: "percentile",
-    } as AuctionConfig,
+    }),
     policy: {
       aggressiveness: 0.85,
       inflationTolerance: 0.8,
@@ -230,14 +239,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     name: "Top Player Hunter",
     labelIt: "Cacciatore di top",
     description: "Concentra budget sui TOP tier; spillover alto sui top, all-in più probabile sui percentile alti. Accetta buchi di rosa per assicurarsi 2-3 nomi chiave.",
-    config: {
+    config: defineAuctionConfig({
       numParticipants: 8,
-      roleQuotas: {
-        P: 3,
-        D: 8,
-        C: 8,
-        A: 6,
-      },
+      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.4,
         spilloverAdjacentTier: 0.4,
@@ -262,7 +266,7 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       valuationMode: "SEASON_VALUE",
       minStartProbability: null,
       replacementMethod: "percentile",
-    } as AuctionConfig,
+    }),
     policy: {
       aggressiveness: 0.9,
       inflationTolerance: 0.85,
@@ -288,14 +292,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     name: "Value Hunter",
     labelIt: "Cacciatore di valore",
     description: "Massimizza ESV/VR: predilige low-cost con alto projected_score/expected_price. Overpay quasi nullo; VAR e alternative low-cost pesano molto.",
-    config: {
+    config: defineAuctionConfig({
       numParticipants: 8,
-      roleQuotas: {
-        P: 3,
-        D: 8,
-        C: 8,
-        A: 6,
-      },
+      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.25,
         spilloverAdjacentTier: 0.2,
@@ -320,7 +319,7 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       valuationMode: "PER_MATCH_RATING",
       minStartProbability: null,
       replacementMethod: "percentile",
-    } as AuctionConfig,
+    }),
     policy: {
       aggressiveness: 0.35,
       inflationTolerance: 0.25,
@@ -346,14 +345,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     name: "Inflation Fighter",
     labelIt: "Anti-inflazione",
     description: "Assume mercato caldo: inflazione alta nel baseline, EWMA reattivo, non insegue i picchi TOP. Preferisce MID con solidità e alternative.",
-    config: {
+    config: defineAuctionConfig({
       numParticipants: 8,
-      roleQuotas: {
-        P: 3,
-        D: 8,
-        C: 8,
-        A: 6,
-      },
+      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.5,
         spilloverAdjacentTier: 0.3,
@@ -378,7 +372,7 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       valuationMode: "PER_MATCH_RATING",
       minStartProbability: null,
       replacementMethod: "percentile",
-    } as AuctionConfig,
+    }),
     policy: {
       aggressiveness: 0.4,
       inflationTolerance: 0.2,
@@ -404,14 +398,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     name: "Early Stars",
     labelIt: "Stelle all'inizio",
     description: "Spende forte nella prima fase d'asta sui nomi chiave, poi si adatta. Alpha alto all'inizio concettuale; overpay consentito solo sui TOP.",
-    config: {
+    config: defineAuctionConfig({
       numParticipants: 8,
-      roleQuotas: {
-        P: 3,
-        D: 8,
-        C: 8,
-        A: 6,
-      },
+      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.35,
         spilloverAdjacentTier: 0.3,
@@ -436,7 +425,7 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       valuationMode: "SEASON_VALUE",
       minStartProbability: null,
       replacementMethod: "percentile",
-    } as AuctionConfig,
+    }),
     policy: {
       aggressiveness: 0.75,
       inflationTolerance: 0.65,
@@ -462,14 +451,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     name: "Late Sniper",
     labelIt: "Cecchino di fine asta",
     description: "Conserva budget e agisce a fine asta su residual value. Alpha moderato, overpay basso, alternative low-cost prioritizzate, all-in raro.",
-    config: {
+    config: defineAuctionConfig({
       numParticipants: 8,
-      roleQuotas: {
-        P: 3,
-        D: 8,
-        C: 8,
-        A: 6,
-      },
+      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.28,
         spilloverAdjacentTier: 0.22,
@@ -494,7 +478,7 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       valuationMode: "PER_MATCH_RATING",
       minStartProbability: null,
       replacementMethod: "percentile",
-    } as AuctionConfig,
+    }),
     policy: {
       aggressiveness: 0.3,
       inflationTolerance: 0.35,
@@ -520,14 +504,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     name: "Youth First",
     labelIt: "Giovani first",
     description: "Privilegia season_value e potenziale (giovani in rampa). Drift moderato; team strength meno rilevante; tollera minutaggio incerto se ESV alto.",
-    config: {
+    config: defineAuctionConfig({
       numParticipants: 8,
-      roleQuotas: {
-        P: 3,
-        D: 8,
-        C: 8,
-        A: 6,
-      },
+      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.3,
         spilloverAdjacentTier: 0.2,
@@ -552,7 +531,7 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       valuationMode: "SEASON_VALUE",
       minStartProbability: null,
       replacementMethod: "percentile",
-    } as AuctionConfig,
+    }),
     policy: {
       aggressiveness: 0.45,
       inflationTolerance: 0.4,
@@ -579,14 +558,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     name: "Safe Picks",
     labelIt: "Scelte sicure",
     description: "Titolari consolidati, bassa varianza, overpay minimo. Idealmente abbinato a giocatori con Pr alta e DV bassa (certezze di Fase 8).",
-    config: {
+    config: defineAuctionConfig({
       numParticipants: 8,
-      roleQuotas: {
-        P: 3,
-        D: 8,
-        C: 8,
-        A: 6,
-      },
+      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.22,
         spilloverAdjacentTier: 0.15,
@@ -611,7 +585,7 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       valuationMode: "PER_MATCH_RATING",
       minStartProbability: 0.65,
       replacementMethod: "percentile",
-    } as AuctionConfig,
+    }),
     policy: {
       aggressiveness: 0.28,
       inflationTolerance: 0.3,
@@ -638,14 +612,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     name: "Risk Lover",
     labelIt: "Amante del rischio",
     description: "Scommesse, svincolati, high ceiling. Season value, spillover cross-role, all-in frequente su outlier VAR.",
-    config: {
+    config: defineAuctionConfig({
       numParticipants: 8,
-      roleQuotas: {
-        P: 3,
-        D: 8,
-        C: 8,
-        A: 6,
-      },
+      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.48,
         spilloverAdjacentTier: 0.35,
@@ -670,7 +639,7 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       valuationMode: "SEASON_VALUE",
       minStartProbability: null,
       replacementMethod: "percentile",
-    } as AuctionConfig,
+    }),
     policy: {
       aggressiveness: 0.92,
       inflationTolerance: 0.75,
@@ -696,14 +665,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     name: "Mantra Optimized",
     labelIt: "Ottimizzato Mantra",
     description: "Pensato per leghe MANTRA: valorizza polivalenza (Num_Ruoli), flessibilità di modulo, alternative multi-ruolo. Budget share allineato ai 6 blocchi algoritmo v3.1.",
-    config: {
+    config: defineAuctionConfig({
       numParticipants: 8,
-      roleQuotas: {
-        P: 3,
-        D: 8,
-        C: 8,
-        A: 6,
-      },
+      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.3,
         spilloverAdjacentTier: 0.25,
@@ -728,7 +692,7 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       valuationMode: "SEASON_VALUE",
       minStartProbability: null,
       replacementMethod: "percentile",
-    } as AuctionConfig,
+    }),
     policy: {
       aggressiveness: 0.55,
       inflationTolerance: 0.5,
@@ -763,14 +727,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     name: "Depth Builder",
     labelIt: "Costruttore di profondit\u00e0",
     description: "Priorità a copertura ruoli e panchina utile piuttosto che a un singolo superstar. Budget più uniforme, residuale alto, alternative sempre considerate.",
-    config: {
+    config: defineAuctionConfig({
       numParticipants: 8,
-      roleQuotas: {
-        P: 3,
-        D: 8,
-        C: 8,
-        A: 6,
-      },
+      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.25,
         spilloverAdjacentTier: 0.2,
@@ -795,7 +754,7 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       valuationMode: "PER_MATCH_RATING",
       minStartProbability: null,
       replacementMethod: "percentile",
-    } as AuctionConfig,
+    }),
     policy: {
       aggressiveness: 0.35,
       inflationTolerance: 0.35,
@@ -821,14 +780,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     name: "Budget Saver",
     labelIt: "Risparmiatore",
     description: "Massimizza residuo e flessibilità di fine asta. Quasi zero overpay; credit reserve più stretta del minimo legale.",
-    config: {
+    config: defineAuctionConfig({
       numParticipants: 8,
-      roleQuotas: {
-        P: 3,
-        D: 8,
-        C: 8,
-        A: 6,
-      },
+      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.18,
         spilloverAdjacentTier: 0.12,
@@ -853,7 +807,7 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       valuationMode: "PER_MATCH_RATING",
       minStartProbability: null,
       replacementMethod: "percentile",
-    } as AuctionConfig,
+    }),
     policy: {
       aggressiveness: 0.15,
       inflationTolerance: 0.15,
@@ -879,14 +833,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     name: "Adaptive AI",
     labelIt: "AI adattiva",
     description: "Profilo meta: EWMA reattivo, VAR e team strength bilanciati, valuation season, inflazione attiva. Pensato per essere aggiornato dinamicamente in base a price_index e residuo.",
-    config: {
+    config: defineAuctionConfig({
       numParticipants: 8,
-      roleQuotas: {
-        P: 3,
-        D: 8,
-        C: 8,
-        A: 6,
-      },
+      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.38,
         spilloverAdjacentTier: 0.28,
@@ -911,7 +860,7 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       valuationMode: "SEASON_VALUE",
       minStartProbability: null,
       replacementMethod: "percentile",
-    } as AuctionConfig,
+    }),
     policy: {
       aggressiveness: 0.6,
       inflationTolerance: 0.55,
@@ -945,4 +894,3 @@ export const AUCTION_PRESETS_BY_ID: ReadonlyMap<string, AuctionPreset> =
 export function findAuctionPreset(id: string): AuctionPreset | undefined {
   return AUCTION_PRESETS_BY_ID.get(id);
 }
-

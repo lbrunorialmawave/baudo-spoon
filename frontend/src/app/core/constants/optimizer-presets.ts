@@ -5,11 +5,16 @@
  * onto the component form signals. Runtime-only fields (seasonStart,
  * mustInclude, exclude) are intentionally left to the operator.
  *
+ *
  * @see OptimizationRequest in core/models/api.models.ts
  * @see artifacts/profiles/optimizer_profiles.json
  */
 
 import { FormationConfig, OptimizationRequest, StrategyProfile } from '../models/api.models';
+import {
+  DEFAULT_BIG_TEAMS,
+  DEFAULT_FORMATIONS,
+} from './shared-presets';
 
 /** Semantic UI hints — never sent to the solver. */
 export interface OptimizerPresetPolicy {
@@ -64,51 +69,9 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
       minQtA: 0,
       minDistinctTeams: 10,
       maxPlayersPerTeam: 4,
-      bigTeams: [
-        "Inter",
-        "Milan",
-        "Juventus",
-        "Napoli",
-      ],
+      bigTeams: DEFAULT_BIG_TEAMS,
       bigTeamsCap: 12,
-      formations: [
-        {
-          label: "3-4-3",
-          defenders: 3,
-          midfielders: 4,
-          forwards: 3,
-        },
-        {
-          label: "3-5-2",
-          defenders: 3,
-          midfielders: 5,
-          forwards: 2,
-        },
-        {
-          label: "4-3-3",
-          defenders: 4,
-          midfielders: 3,
-          forwards: 3,
-        },
-        {
-          label: "4-4-2",
-          defenders: 4,
-          midfielders: 4,
-          forwards: 2,
-        },
-        {
-          label: "4-5-1",
-          defenders: 4,
-          midfielders: 5,
-          forwards: 1,
-        },
-        {
-          label: "5-3-2",
-          defenders: 5,
-          midfielders: 3,
-          forwards: 2,
-        }
-      ],
+      formations: DEFAULT_FORMATIONS,
       inflationConfig: {
         inflationPercentileThreshold: 0.7,
         maxInflationMultiplier: 1.6,
@@ -157,51 +120,9 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
       minQtA: 0,
       minDistinctTeams: 12,
       maxPlayersPerTeam: 3,
-      bigTeams: [
-        "Inter",
-        "Milan",
-        "Juventus",
-        "Napoli",
-      ],
+      bigTeams: DEFAULT_BIG_TEAMS,
       bigTeamsCap: 10,
-      formations: [
-        {
-          label: "3-4-3",
-          defenders: 3,
-          midfielders: 4,
-          forwards: 3,
-        },
-        {
-          label: "3-5-2",
-          defenders: 3,
-          midfielders: 5,
-          forwards: 2,
-        },
-        {
-          label: "4-3-3",
-          defenders: 4,
-          midfielders: 3,
-          forwards: 3,
-        },
-        {
-          label: "4-4-2",
-          defenders: 4,
-          midfielders: 4,
-          forwards: 2,
-        },
-        {
-          label: "4-5-1",
-          defenders: 4,
-          midfielders: 5,
-          forwards: 1,
-        },
-        {
-          label: "5-3-2",
-          defenders: 5,
-          midfielders: 3,
-          forwards: 2,
-        }
-      ],
+      formations: DEFAULT_FORMATIONS,
       inflationConfig: {
         inflationPercentileThreshold: 0.75,
         maxInflationMultiplier: 1.45,
@@ -273,51 +194,9 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
       minQtA: 0,
       minDistinctTeams: 8,
       maxPlayersPerTeam: 5,
-      bigTeams: [
-        "Inter",
-        "Milan",
-        "Juventus",
-        "Napoli",
-      ],
+      bigTeams: DEFAULT_BIG_TEAMS,
       bigTeamsCap: 14,
-      formations: [
-        {
-          label: "3-4-3",
-          defenders: 3,
-          midfielders: 4,
-          forwards: 3,
-        },
-        {
-          label: "3-5-2",
-          defenders: 3,
-          midfielders: 5,
-          forwards: 2,
-        },
-        {
-          label: "4-3-3",
-          defenders: 4,
-          midfielders: 3,
-          forwards: 3,
-        },
-        {
-          label: "4-4-2",
-          defenders: 4,
-          midfielders: 4,
-          forwards: 2,
-        },
-        {
-          label: "4-5-1",
-          defenders: 4,
-          midfielders: 5,
-          forwards: 1,
-        },
-        {
-          label: "5-3-2",
-          defenders: 5,
-          midfielders: 3,
-          forwards: 2,
-        }
-      ],
+      formations: DEFAULT_FORMATIONS,
       inflationConfig: {
         inflationPercentileThreshold: 0.6,
         maxInflationMultiplier: 1.9,
@@ -388,51 +267,9 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
       minQtA: 0,
       minDistinctTeams: 14,
       maxPlayersPerTeam: 3,
-      bigTeams: [
-        "Inter",
-        "Milan",
-        "Juventus",
-        "Napoli",
-      ],
+      bigTeams: DEFAULT_BIG_TEAMS,
       bigTeamsCap: 8,
-      formations: [
-        {
-          label: "3-4-3",
-          defenders: 3,
-          midfielders: 4,
-          forwards: 3,
-        },
-        {
-          label: "3-5-2",
-          defenders: 3,
-          midfielders: 5,
-          forwards: 2,
-        },
-        {
-          label: "4-3-3",
-          defenders: 4,
-          midfielders: 3,
-          forwards: 3,
-        },
-        {
-          label: "4-4-2",
-          defenders: 4,
-          midfielders: 4,
-          forwards: 2,
-        },
-        {
-          label: "4-5-1",
-          defenders: 4,
-          midfielders: 5,
-          forwards: 1,
-        },
-        {
-          label: "5-3-2",
-          defenders: 5,
-          midfielders: 3,
-          forwards: 2,
-        }
-      ],
+      formations: DEFAULT_FORMATIONS,
       inflationConfig: {
         inflationPercentileThreshold: 0.75,
         maxInflationMultiplier: 1.4,
@@ -493,51 +330,9 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
       minQtA: 0,
       minDistinctTeams: 11,
       maxPlayersPerTeam: 4,
-      bigTeams: [
-        "Inter",
-        "Milan",
-        "Juventus",
-        "Napoli",
-      ],
+      bigTeams: DEFAULT_BIG_TEAMS,
       bigTeamsCap: 11,
-      formations: [
-        {
-          label: "3-4-3",
-          defenders: 3,
-          midfielders: 4,
-          forwards: 3,
-        },
-        {
-          label: "3-5-2",
-          defenders: 3,
-          midfielders: 5,
-          forwards: 2,
-        },
-        {
-          label: "4-3-3",
-          defenders: 4,
-          midfielders: 3,
-          forwards: 3,
-        },
-        {
-          label: "4-4-2",
-          defenders: 4,
-          midfielders: 4,
-          forwards: 2,
-        },
-        {
-          label: "4-5-1",
-          defenders: 4,
-          midfielders: 5,
-          forwards: 1,
-        },
-        {
-          label: "5-3-2",
-          defenders: 5,
-          midfielders: 3,
-          forwards: 2,
-        }
-      ],
+      formations: DEFAULT_FORMATIONS,
       inflationConfig: {
         inflationPercentileThreshold: 0.68,
         maxInflationMultiplier: 1.65,
@@ -608,51 +403,9 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
       minQtA: 0,
       minDistinctTeams: 13,
       maxPlayersPerTeam: 3,
-      bigTeams: [
-        "Inter",
-        "Milan",
-        "Juventus",
-        "Napoli",
-      ],
+      bigTeams: DEFAULT_BIG_TEAMS,
       bigTeamsCap: 9,
-      formations: [
-        {
-          label: "3-4-3",
-          defenders: 3,
-          midfielders: 4,
-          forwards: 3,
-        },
-        {
-          label: "3-5-2",
-          defenders: 3,
-          midfielders: 5,
-          forwards: 2,
-        },
-        {
-          label: "4-3-3",
-          defenders: 4,
-          midfielders: 3,
-          forwards: 3,
-        },
-        {
-          label: "4-4-2",
-          defenders: 4,
-          midfielders: 4,
-          forwards: 2,
-        },
-        {
-          label: "4-5-1",
-          defenders: 4,
-          midfielders: 5,
-          forwards: 1,
-        },
-        {
-          label: "5-3-2",
-          defenders: 5,
-          midfielders: 3,
-          forwards: 2,
-        }
-      ],
+      formations: DEFAULT_FORMATIONS,
       inflationConfig: {
         inflationPercentileThreshold: 0.72,
         maxInflationMultiplier: 1.5,
@@ -723,51 +476,9 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
       minQtA: 0,
       minDistinctTeams: 12,
       maxPlayersPerTeam: 4,
-      bigTeams: [
-        "Inter",
-        "Milan",
-        "Juventus",
-        "Napoli",
-      ],
+      bigTeams: DEFAULT_BIG_TEAMS,
       bigTeamsCap: 10,
-      formations: [
-        {
-          label: "3-4-3",
-          defenders: 3,
-          midfielders: 4,
-          forwards: 3,
-        },
-        {
-          label: "3-5-2",
-          defenders: 3,
-          midfielders: 5,
-          forwards: 2,
-        },
-        {
-          label: "4-3-3",
-          defenders: 4,
-          midfielders: 3,
-          forwards: 3,
-        },
-        {
-          label: "4-4-2",
-          defenders: 4,
-          midfielders: 4,
-          forwards: 2,
-        },
-        {
-          label: "4-5-1",
-          defenders: 4,
-          midfielders: 5,
-          forwards: 1,
-        },
-        {
-          label: "5-3-2",
-          defenders: 5,
-          midfielders: 3,
-          forwards: 2,
-        }
-      ],
+      formations: DEFAULT_FORMATIONS,
       inflationConfig: {
         inflationPercentileThreshold: 0.7,
         maxInflationMultiplier: 1.6,
@@ -821,51 +532,9 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
       minQtA: 0,
       minDistinctTeams: 14,
       maxPlayersPerTeam: 3,
-      bigTeams: [
-        "Inter",
-        "Milan",
-        "Juventus",
-        "Napoli",
-      ],
+      bigTeams: DEFAULT_BIG_TEAMS,
       bigTeamsCap: 9,
-      formations: [
-        {
-          label: "3-4-3",
-          defenders: 3,
-          midfielders: 4,
-          forwards: 3,
-        },
-        {
-          label: "3-5-2",
-          defenders: 3,
-          midfielders: 5,
-          forwards: 2,
-        },
-        {
-          label: "4-3-3",
-          defenders: 4,
-          midfielders: 3,
-          forwards: 3,
-        },
-        {
-          label: "4-4-2",
-          defenders: 4,
-          midfielders: 4,
-          forwards: 2,
-        },
-        {
-          label: "4-5-1",
-          defenders: 4,
-          midfielders: 5,
-          forwards: 1,
-        },
-        {
-          label: "5-3-2",
-          defenders: 5,
-          midfielders: 3,
-          forwards: 2,
-        }
-      ],
+      formations: DEFAULT_FORMATIONS,
       inflationConfig: {
         inflationPercentileThreshold: 0.72,
         maxInflationMultiplier: 1.5,
@@ -925,51 +594,9 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
       minQtA: 0,
       minDistinctTeams: 8,
       maxPlayersPerTeam: 5,
-      bigTeams: [
-        "Inter",
-        "Milan",
-        "Juventus",
-        "Napoli",
-      ],
+      bigTeams: DEFAULT_BIG_TEAMS,
       bigTeamsCap: 15,
-      formations: [
-        {
-          label: "3-4-3",
-          defenders: 3,
-          midfielders: 4,
-          forwards: 3,
-        },
-        {
-          label: "3-5-2",
-          defenders: 3,
-          midfielders: 5,
-          forwards: 2,
-        },
-        {
-          label: "4-3-3",
-          defenders: 4,
-          midfielders: 3,
-          forwards: 3,
-        },
-        {
-          label: "4-4-2",
-          defenders: 4,
-          midfielders: 4,
-          forwards: 2,
-        },
-        {
-          label: "4-5-1",
-          defenders: 4,
-          midfielders: 5,
-          forwards: 1,
-        },
-        {
-          label: "5-3-2",
-          defenders: 5,
-          midfielders: 3,
-          forwards: 2,
-        }
-      ],
+      formations: DEFAULT_FORMATIONS,
       inflationConfig: {
         inflationPercentileThreshold: 0.55,
         maxInflationMultiplier: 1.95,
@@ -1041,57 +668,9 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
       minQtA: 0,
       minDistinctTeams: 13,
       maxPlayersPerTeam: 4,
-      bigTeams: [
-        "Inter",
-        "Milan",
-        "Juventus",
-        "Napoli",
-      ],
+      bigTeams: DEFAULT_BIG_TEAMS,
       bigTeamsCap: 6,
-      formations: [
-        {
-          label: "3-4-3",
-          defenders: 3,
-          midfielders: 4,
-          forwards: 3,
-        },
-        {
-          label: "3-5-2",
-          defenders: 3,
-          midfielders: 5,
-          forwards: 2,
-        },
-        {
-          label: "4-3-3",
-          defenders: 4,
-          midfielders: 3,
-          forwards: 3,
-        },
-        {
-          label: "4-4-2",
-          defenders: 4,
-          midfielders: 4,
-          forwards: 2,
-        },
-        {
-          label: "4-5-1",
-          defenders: 4,
-          midfielders: 5,
-          forwards: 1,
-        },
-        {
-          label: "5-3-2",
-          defenders: 5,
-          midfielders: 3,
-          forwards: 2,
-        },
-    {
-          label: "5-4-1",
-          defenders: 5,
-          midfielders: 4,
-          forwards: 1,
-        },
-      ],
+      formations: DEFAULT_FORMATIONS, 
       inflationConfig: {
         inflationPercentileThreshold: 0.8,
         maxInflationMultiplier: 1.35,
@@ -1152,51 +731,9 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
       minQtA: 0,
       minDistinctTeams: 12,
       maxPlayersPerTeam: 4,
-      bigTeams: [
-        "Inter",
-        "Milan",
-        "Juventus",
-        "Napoli",
-      ],
+      bigTeams: DEFAULT_BIG_TEAMS,
       bigTeamsCap: 10,
-      formations: [
-        {
-          label: "3-4-3",
-          defenders: 3,
-          midfielders: 4,
-          forwards: 3,
-        },
-        {
-          label: "3-5-2",
-          defenders: 3,
-          midfielders: 5,
-          forwards: 2,
-        },
-        {
-          label: "4-3-3",
-          defenders: 4,
-          midfielders: 3,
-          forwards: 3,
-        },
-        {
-          label: "4-4-2",
-          defenders: 4,
-          midfielders: 4,
-          forwards: 2,
-        },
-        {
-          label: "4-5-1",
-          defenders: 4,
-          midfielders: 5,
-          forwards: 1,
-        },
-        {
-          label: "5-3-2",
-          defenders: 5,
-          midfielders: 3,
-          forwards: 2,
-        }
-      ],
+      formations: DEFAULT_FORMATIONS,
       inflationConfig: {
         inflationPercentileThreshold: 0.7,
         maxInflationMultiplier: 1.6,
@@ -1245,51 +782,9 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
       minQtA: 0,
       minDistinctTeams: 11,
       maxPlayersPerTeam: 4,
-      bigTeams: [
-        "Inter",
-        "Milan",
-        "Juventus",
-        "Napoli",
-      ],
+      bigTeams: DEFAULT_BIG_TEAMS,
       bigTeamsCap: 11,
-      formations: [
-        {
-          label: "3-4-3",
-          defenders: 3,
-          midfielders: 4,
-          forwards: 3,
-        },
-        {
-          label: "3-5-2",
-          defenders: 3,
-          midfielders: 5,
-          forwards: 2,
-        },
-        {
-          label: "4-3-3",
-          defenders: 4,
-          midfielders: 3,
-          forwards: 3,
-        },
-        {
-          label: "4-4-2",
-          defenders: 4,
-          midfielders: 4,
-          forwards: 2,
-        },
-        {
-          label: "4-5-1",
-          defenders: 4,
-          midfielders: 5,
-          forwards: 1,
-        },
-        {
-          label: "5-3-2",
-          defenders: 5,
-          midfielders: 3,
-          forwards: 2,
-        }
-      ],
+      formations: DEFAULT_FORMATIONS,
       inflationConfig: {
         inflationPercentileThreshold: 0.68,
         maxInflationMultiplier: 1.55,
@@ -1360,51 +855,9 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
       minQtA: 0,
       minDistinctTeams: 14,
       maxPlayersPerTeam: 3,
-      bigTeams: [
-        "Inter",
-        "Milan",
-        "Juventus",
-        "Napoli",
-      ],
+      bigTeams: DEFAULT_BIG_TEAMS,
       bigTeamsCap: 9,
-      formations: [
-        {
-          label: "3-4-3",
-          defenders: 3,
-          midfielders: 4,
-          forwards: 3,
-        },
-        {
-          label: "3-5-2",
-          defenders: 3,
-          midfielders: 5,
-          forwards: 2,
-        },
-        {
-          label: "4-3-3",
-          defenders: 4,
-          midfielders: 3,
-          forwards: 3,
-        },
-        {
-          label: "4-4-2",
-          defenders: 4,
-          midfielders: 4,
-          forwards: 2,
-        },
-        {
-          label: "4-5-1",
-          defenders: 4,
-          midfielders: 5,
-          forwards: 1,
-        },
-        {
-          label: "5-3-2",
-          defenders: 5,
-          midfielders: 3,
-          forwards: 2,
-        }
-      ],
+      formations: DEFAULT_FORMATIONS,
       inflationConfig: {
         inflationPercentileThreshold: 0.75,
         maxInflationMultiplier: 1.45,
@@ -1464,51 +917,9 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
       minQtA: 0,
       minDistinctTeams: 12,
       maxPlayersPerTeam: 4,
-      bigTeams: [
-        "Inter",
-        "Milan",
-        "Juventus",
-        "Napoli",
-      ],
+      bigTeams: DEFAULT_BIG_TEAMS,
       bigTeamsCap: 11,
-      formations: [
-        {
-          label: "3-4-3",
-          defenders: 3,
-          midfielders: 4,
-          forwards: 3,
-        },
-        {
-          label: "3-5-2",
-          defenders: 3,
-          midfielders: 5,
-          forwards: 2,
-        },
-        {
-          label: "4-3-3",
-          defenders: 4,
-          midfielders: 3,
-          forwards: 3,
-        },
-        {
-          label: "4-4-2",
-          defenders: 4,
-          midfielders: 4,
-          forwards: 2,
-        },
-        {
-          label: "4-5-1",
-          defenders: 4,
-          midfielders: 5,
-          forwards: 1,
-        },
-        {
-          label: "5-3-2",
-          defenders: 5,
-          midfielders: 3,
-          forwards: 2,
-        }
-      ],
+      formations: DEFAULT_FORMATIONS,
       inflationConfig: {
         inflationPercentileThreshold: 0.65,
         maxInflationMultiplier: 1.75,
@@ -1574,51 +985,9 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
       minQtA: 0,
       minDistinctTeams: 11,
       maxPlayersPerTeam: 4,
-      bigTeams: [
-        "Inter",
-        "Milan",
-        "Juventus",
-        "Napoli",
-      ],
+      bigTeams: DEFAULT_BIG_TEAMS,
       bigTeamsCap: 12,
-      formations: [
-        {
-          label: "3-4-3",
-          defenders: 3,
-          midfielders: 4,
-          forwards: 3,
-        },
-        {
-          label: "3-5-2",
-          defenders: 3,
-          midfielders: 5,
-          forwards: 2,
-        },
-        {
-          label: "4-3-3",
-          defenders: 4,
-          midfielders: 3,
-          forwards: 3,
-        },
-        {
-          label: "4-4-2",
-          defenders: 4,
-          midfielders: 4,
-          forwards: 2,
-        },
-        {
-          label: "4-5-1",
-          defenders: 4,
-          midfielders: 5,
-          forwards: 1,
-        },
-        {
-          label: "5-3-2",
-          defenders: 5,
-          midfielders: 3,
-          forwards: 2,
-        }
-      ],
+      formations: DEFAULT_FORMATIONS,
       inflationConfig: {
         inflationPercentileThreshold: 0.68,
         maxInflationMultiplier: 1.7,
@@ -1689,51 +1058,9 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
       minQtA: 0,
       minDistinctTeams: 12,
       maxPlayersPerTeam: 4,
-      bigTeams: [
-        "Inter",
-        "Milan",
-        "Juventus",
-        "Napoli",
-      ],
+      bigTeams: DEFAULT_BIG_TEAMS,
       bigTeamsCap: 10,
-      formations: [
-        {
-          label: "3-4-3",
-          defenders: 3,
-          midfielders: 4,
-          forwards: 3,
-        },
-        {
-          label: "3-5-2",
-          defenders: 3,
-          midfielders: 5,
-          forwards: 2,
-        },
-        {
-          label: "4-3-3",
-          defenders: 4,
-          midfielders: 3,
-          forwards: 3,
-        },
-        {
-          label: "4-4-2",
-          defenders: 4,
-          midfielders: 4,
-          forwards: 2,
-        },
-        {
-          label: "4-5-1",
-          defenders: 4,
-          midfielders: 5,
-          forwards: 1,
-        },
-        {
-          label: "5-3-2",
-          defenders: 5,
-          midfielders: 3,
-          forwards: 2,
-        }
-      ],
+      formations: DEFAULT_FORMATIONS,
       inflationConfig: {
         inflationPercentileThreshold: 0.7,
         maxInflationMultiplier: 1.6,
@@ -1794,4 +1121,3 @@ export const OPTIMIZER_PRESETS_BY_ID: ReadonlyMap<string, OptimizerPreset> =
 export function findOptimizerPreset(id: string): OptimizerPreset | undefined {
   return OPTIMIZER_PRESETS_BY_ID.get(id);
 }
-

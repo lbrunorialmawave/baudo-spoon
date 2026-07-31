@@ -60,212 +60,211 @@ const ALL_FORMATIONS: FormationConfig[] = [
  */
 export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; examples: readonly FieldLegendExample[] }>> = {
   seasonStart: {
-    description: 'Anno di inizio della stagione di Serie A da cui pescare le quotazioni storiche, i listini e le statistiche dei giocatori. Il risolutore ILP usa queste informazioni per proiettare i punteggi attesi di fine stagione.',
+    description: 'Chiave di lookup sul database: seleziona la stagione da cui caricare listini (qt_a), id-map e predizioni ML. Non entra nella funzione obiettivo; determina solo quale pool di giocatori viene costruito.',
     examples: [
-      { label: '2025', value: 'stagione corrente 2025/26 (default)' },
-      { label: '2024', value: 'stagione precedente 2024/25' },
+      { label: '2025', value: 'stagione 2025/26 (corrente)' },
+      { label: '2024', value: 'stagione 2024/25 (storica)' },
     ],
   },
   budget: {
-    description: 'Crediti totali (cr.) a disposizione per costruire l\'intera rosa. Il risolutore ILP cercherà di non superare questo budget, distribuiti tra tutti i ruoli secondo i vincoli impostati.',
+    description: 'Vincolo hard del solver: la somma dei costi effettivi dei 25 giocatori scelti non può superare questo valore in crediti. È il budget totale della rosa, non il budget per ruolo.',
     examples: [
-      { label: '300 cr.', value: 'lega FantaSanremo classica' },
-      { label: '500 cr.', value: 'lega con top player costosi' },
-      { label: '1000 cr.', value: 'lega premium / fanta-manageriale' },
+      { label: '300 cr.', value: 'listino ufficiale storico' },
+      { label: '500 cr.', value: 'lega moderna tipica' },
+      { label: '1000 cr.', value: 'lega ad alto potere d\'acquisto' },
     ],
   },
   numParticipants: {
-    description: 'Numero di squadre che partecipano alla lega. Influenza il modello di inflazione dei prezzi: più partecipanti significano maggiore competizione e prezzi attesi più alti.',
+    description: 'Numero di squadre in lega. Entra nel modello di inflazione del costo effettivo: per ogni partecipante oltre baselineParticipants cresce il moltiplicatore sui giocatori sopra la soglia di percentile. Non cambia le quote di rosa.',
     examples: [
-      { label: '4', value: 'lega piccola' },
+      { label: '4', value: 'poca competizione → inflazione bassa' },
       { label: '8', value: 'default classico' },
-      { label: '10–12', value: 'lega grande' },
+      { label: '10–12', value: 'alta competizione → costi effettivi più alti' },
     ],
   },
   minQtA: {
-    description: 'Quota minima d\'asta per ruolo (Minimum Quota per Auction): imposta un tetto minimo di crediti da spendere per ciascun ruolo, per evitare rose sbilanciate. 0 = nessun vincolo.',
+    description: 'Filtro pre-solver sul pool: restano solo i giocatori con listino (qt_a) ≥ questa soglia. Non è un minimo di spesa per ruolo né una quota di rosa. Default 1 = esclude listino 0 / non quotati.',
     examples: [
-      { label: '0', value: 'nessun vincolo, libera distribuzione' },
-      { label: '1', value: 'almeno 1 cr. investito per ciascun ruolo' },
-      { label: '3', value: 'vincolo più stringente, es. minimo 3 P, 3 D, ecc.' },
+      { label: '0', value: 'include anche listino 0' },
+      { label: '1', value: 'default: solo giocatori quotati (≥ 1 cr.)' },
+      { label: '5', value: 'pool ristretto ai listini ≥ 5 cr.' },
     ],
   },
   solverTimeoutSeconds: {
-    description: 'Tempo massimo (in secondi) concesso al risolutore ILP per trovare la soluzione ottima. Allo scadere, restituirà la migliore soluzione ammissibile trovata finora (se disponibile).',
+    description: 'Limite di tempo del solver ILP (PuLP/CBC). Allo scadere restituisce la migliore soluzione ammissibile trovata, o TIMEOUT se non ne ha ancora una. Non altera la funzione obiettivo né i vincoli.',
     examples: [
-      { label: '10 s', value: 'run veloce, utile per test' },
+      { label: '15 s', value: 'UI reattiva, pool semplice' },
       { label: '30 s', value: 'default bilanciato' },
-      { label: '120 s', value: 'run approfondito per leghe complesse' },
+      { label: '60 s', value: 'pool grande / MANTRA / molti vincoli' },
     ],
   },
   minDistinctTeams: {
-    description: 'Numero minimo di squadre di Serie A diverse da cui devono provenire i giocatori della tua rosa. Garantisce diversificazione e riduce il rischio di concentrazione su poche squadre.',
+    description: 'Vincolo hard: nella rosa devono comparire almeno N club di Serie A distinti (campo real_team). Riduce la concentrazione su pochi club; se troppo alto rispetto al pool può rendere il problema infeasible.',
     examples: [
-      { label: '4', value: 'minimo sindacale, pochi vincoli' },
-      { label: '12', value: 'default, ben diversificato' },
-      { label: '18', value: 'massima diversificazione' },
+      { label: '8', value: 'diversificazione leggera' },
+      { label: '12', value: 'default' },
+      { label: '16', value: 'molto restrittivo' },
     ],
   },
   maxPlayersPerTeam: {
-    description: 'Numero massimo di giocatori che puoi avere dalla stessa squadra di Serie A. Impedisce di costruire una rosa troppo dipendente da un singolo club.',
+    description: 'Vincolo hard: al massimo K giocatori con lo stesso real_team. Impedisce di costruire la rosa intorno a un solo club.',
     examples: [
-      { label: '2', value: 'vincolo stretto' },
+      { label: '2', value: 'molto stretto' },
       { label: '4', value: 'default' },
-      { label: '6', value: 'consentita alta concentrazione' },
+      { label: '6', value: 'concentrazione alta consentita' },
     ],
   },
   bigTeamsCap: {
-    description: 'Numero massimo di giocatori acquistabili dalle "big team" (elencate sotto). Insieme al vincolo max-players-per-team, impedisce di costruire una rosa di soli top club.',
+    description: 'Vincolo hard sul conteggio totale di giocatori il cui real_team è in bigTeams. È un tetto aggregato (non per singola big); si somma al maxPlayersPerTeam.',
     examples: [
-      { label: '3', value: 'default: massimo 3 giocatori dalle big team' },
-      { label: '0', value: 'nessun giocatore dalle big team (lega anti-big)' },
-      { label: '10', value: 'nessun vincolo aggiuntivo oltre max-per-team' },
+      { label: '6', value: 'rosa poco dipendente dalle big' },
+      { label: '10', value: 'default API' },
+      { label: '15', value: 'tetto largo' },
     ],
   },
   bigTeams: {
-    description: 'Elenco, separato da virgole, delle squadre di Serie A considerate "big" ai fini del vincolo `bigTeamsCap`. I nomi devono corrispondere esattamente a quelli usati dalle statistiche (es. "Inter", "Milan", "Juventus", "Napoli", "Roma", "Lazio", "Atalanta").',
+    description: 'Insieme di nomi club usati dal vincolo bigTeamsCap. I nomi devono coincidere esattamente con real_team nel database (es. "Inter", non "FC Internazionale").',
     examples: [
-      { label: 'Inter, Milan, Juventus, Napoli', value: 'default: top 4 tradizionali' },
-      { label: 'Inter, Milan, Juve, Napoli, Roma, Lazio, Atalanta', value: 'top 7 allargato' },
-      { label: '(vuoto)', value: 'nessuna big team, solo max-per-team' },
+      { label: 'Inter, Milan, Juventus, Napoli', value: 'default top 4' },
+      { label: '+ Roma, Lazio, Atalanta', value: 'top 7 allargato' },
     ],
   },
   maxSinglePlayerBudgetShare: {
-    description: 'Frazione massima del budget totale (0–1) che può essere spesa per un singolo giocatore. Evita che un top player "mangi" troppo budget e renda impossibile completare la rosa.',
+    description: 'Vincolo hard sul costo effettivo: nessun giocatore può costare più di share × budget (es. 0.30 × 500 = 150 cr.). Evita che il solver concentri troppo budget su un solo nominativo.',
     examples: [
-      { label: '0.15', value: '15% del budget (es. 45 cr. su 300), rosa molto equa' },
-      { label: '0.30', value: 'default, equilibrio fra top player e rosa' },
-      { label: '0.50', value: 'ammessi top player da 150 cr. su 300' },
+      { label: '0.22', value: 'max ~110 cr. su 500' },
+      { label: '0.30', value: 'default: max 30% del budget' },
+      { label: '0.40', value: 'ammessi top molto costosi' },
     ],
   },
   mustInclude: {
-    description: 'Elenco di ID giocatore (formato `fm-XXXXX`, separati da virgola) che DEVONO essere nella rosa. Vincolo hard: il risolutore fallirà se non riesce a includerli.',
+    description: 'Vincolo hard: questi player_id devono comparire nella soluzione. Se incompatibili con budget/quote il solver fallisce (INFEASIBLE).',
     examples: [
-      { label: 'fm-12345', value: 'forza inclusione di un giocatore specifico' },
+      { label: 'fm-12345', value: 'forza un giocatore' },
       { label: '(vuoto)', value: 'nessun vincolo' },
     ],
   },
   exclude: {
-    description: 'Elenco di ID giocatore (formato `fm-XXXXX`, separati da virgola) che NON devono essere nella rosa. Utile per escludere infortunati, squalificati o giocatori che non vuoi.',
+    description: 'Vincolo hard: questi player_id sono rimossi dal pool decisionale prima/durante l\'ILP. Utile per infortuni, squalifiche o preferenze personali.',
     examples: [
-      { label: 'fm-67890', value: 'escludi un singolo giocatore' },
-      { label: 'fm-1, fm-2, fm-3', value: 'escludi più giocatori' },
+      { label: 'fm-67890', value: 'escludi uno' },
+      { label: 'fm-1, fm-2', value: 'escludi più ID' },
     ],
   },
   ruleset: {
-    description: 'Regolamento della lega. "Classic" usa le regole tradizionali del Fantacalcio (3 P, 8 D, 8 C, 6 A); "Mantra" supporta ruoli aggiuntivi (Trequartista, Mediano, ecc.) e conversioni ruolo.',
+    description: 'Cambia il modello di assegnazione ruoli. CLASSIC: 4 ruoli (P/D/C/A) con quote 3/8/8/6. MANTRA: 12 ruoli multi-slot (eligible_roles) e quote Por/Dc/B/… che devono sommare a 25.',
     examples: [
-      { label: 'CLASSIC', value: 'regolamento tradizionale italiano' },
-      { label: 'MANTRA', value: 'regolamento Mantra con ruoli modulari' },
+      { label: 'CLASSIC', value: 'Fantacalcio tradizionale' },
+      { label: 'MANTRA', value: 'ruoli modulari e multi-ruolo' },
     ],
   },
   riskAversion: {
-    description: 'Coefficiente (0–5) di avversione al rischio. 0 = neutrale (massimizza solo lo score atteso). Valori alti penalizzano soluzioni con score molto variabile, a favore di rose più "sicure" e costanti.',
+    description: 'Coefficiente nella funzione obiettivo: effective_score = … − riskAversion × prediction_std. A 0 il solver è risk-neutral. Valori > 0 penalizzano giocatori con alta volatilità dell\'ensemble. Se prediction_std manca, la leva non ha effetto.',
     examples: [
-      { label: '0.0', value: 'neutrale, solo performance attesa' },
-      { label: '1.0', value: 'lieve penalizzazione per la varianza' },
-      { label: '3.0+', value: 'forte avversione, rose conservative' },
+      { label: '0.0', value: 'neutrale (default): max score atteso' },
+      { label: '0.5–1.0', value: 'penalità moderata alla varianza' },
+      { label: '1.2–1.5', value: 'floor alto, preferisce titolari stabili' },
     ],
   },
   varBlend: {
-    description: 'Peso (0–1) del modello VAR (Value Above Replacement) nella funzione obiettivo. Un valore più alto spinge il risolutore a preferire giocatori il cui contributo è superiore a quello di un sostituto medio.',
+    description: 'Peso in [0,1] del VAR nella funzione obiettivo: (1−varBlend)×base_metric + varBlend×var_score. 0 = solo projected_score/season_value; 1 = puro Value Above Replacement.',
     examples: [
-      { label: '0.0', value: 'VAR non usato' },
-      { label: '0.5', value: 'mix 50% score, 50% VAR' },
-      { label: '1.0', value: 'ottimizzazione puramente VAR' },
+      { label: '0.0', value: 'VAR disattivato (default)' },
+      { label: '0.25–0.35', value: 'blend moderato' },
+      { label: '1.0', value: 'obiettivo interamente VAR' },
     ],
   },
   esvWeight: {
-    description: 'Peso (0–5) dell\'ESV (Expected Season Value) nella funzione obiettivo. Più alto = il risolutore premia giocatori con alto valore di stagione atteso rispetto al prezzo di acquisto.',
+    description: 'Peso additivo dell\'ESV (Expected Surplus Value, segnale "affare") nella funzione obiettivo: … + esvWeight × esv. 0 = disattivato. Premia giocatori sotto-prezzati rispetto al contributo atteso; non è il season_value grezzo.',
     examples: [
-      { label: '0', value: 'ESV non considerato' },
-      { label: '1', value: 'peso moderato, focus sui "best value"' },
-      { label: '2+', value: 'forte peso, ricerca aggressiva di affari' },
+      { label: '0', value: 'ESV off (default)' },
+      { label: '0.15–0.25', value: 'bias value moderato' },
+      { label: '0.40–0.50', value: 'caccia aggressiva ai bargain' },
     ],
   },
   valuationMode: {
-    description: 'Metrica di valutazione con cui il risolutore ILP stima il "valore" di ciascun giocatore. Cambia la base usata dal modello VAR (Value Above Replacement) per ordinare i candidati in rosa.',
+    description: 'Sceglie la metrica base (base_metric) nella funzione obiettivo. PER_MATCH_RATING usa projected_score (fantavoto/partita). SEASON_VALUE usa season_value (rating × presenze attese). Non cambia i vincoli di rosa.',
     examples: [
-      { label: 'PER_MATCH_RATING', value: 'default: media di rendimento a partita (più stabile, premia i titolari)' },
-      { label: 'SEASON_VALUE',      value: 'totale di stagione proiettato (più "pessimistico" se il giocatore salta gare)' },
+      { label: 'PER_MATCH_RATING', value: 'default: rendimento a partita' },
+      { label: 'SEASON_VALUE', value: 'valore totale di stagione proiettato' },
     ],
   },
   replacementMethod: {
-    description: 'Metodo per stimare il "replacement level", ovvero il valore del giocatore medio facilmente reperibile sul mercato. È il livello di confronto usato dal modello VAR: un giocatore vale X solo se il suo contributo supera il rimpiazzo di almeno X − replacement.',
+    description: 'Come si calcola il replacement level usato da VAR/ESV quando varBlend o esvWeight > 0. "percentile" = basso percentile per ruolo nel pool; "roster_depth" = soglia legata a numParticipants × quota ruolo.',
     examples: [
-      { label: 'percentile',   value: 'default: 10° percentile della distribuzione (sostituto "ragionevolmente scarso")' },
-      { label: 'roster_depth', value: 'usa la profondità media delle rose avversarie, più reale in leghe con molte squadre' },
+      { label: 'percentile', value: 'default: bottom percentile per ruolo' },
+      { label: 'roster_depth', value: 'profondità rosa di lega' },
     ],
   },
   minStartProbability: {
-    description: 'Probabilità minima (0–1) che un giocatore sia schierato titolare dal proprio club. Sotto questa soglia il giocatore viene filtrato e NON entra in rosa, perché il risolutore non può garantire rendimento su gare che non gioca. Vuoto = nessun filtro.',
+    description: 'Filtro pre-ILP: i giocatori con start_probability < soglia sono esclusi dal pool passato al solver. null/vuoto = nessun filtro. Quando varBlend/esvWeight > 0 la stessa soglia è allineata al motore VAR.',
     examples: [
-      { label: 'null / vuoto', value: 'nessun filtro, include anche riserve e infortunati' },
-      { label: '0.3',          value: 'esclude solo chi è praticamente fuori rosa' },
-      { label: '0.7',          value: 'default consigliato, solo giocatori con alta titolarità' },
-      { label: '0.9',          value: 'rosa di soli "intoccabili", scelte molto ridotte' },
+      { label: 'vuoto', value: 'nessun filtro (default)' },
+      { label: '0.60', value: 'taglia riserve chiare' },
+      { label: '0.75', value: 'solo alta titolarità' },
     ],
   },
   formations: {
-    description: 'Moduli tattici ammessi dal regolamento della tua lega. Il risolutore ILP verificherà la fattibilità per ciascuno e ti mostrerà quali sono fattibili (✓) e quali no (✗) per la rosa risultante.',
+    description: 'Moduli valutati post-soluzione in formation_feasibility (✓/✗). Non sono tutti vincoli hard: solo preferredFormation, se impostata, è un vincolo del solver. Max 6 moduli lato API.',
     examples: [
-      { label: '3-4-3', value: 'molto offensivo, 3 attaccanti titolari' },
-      { label: '4-4-2', value: 'classico italiano, equilibrato' },
-      { label: '3-5-2', value: 'centrocampo folto, fase difensiva forte' },
+      { label: '4-3-3', value: 'classico offensivo' },
+      { label: '4-4-2', value: 'equilibrato' },
+      { label: '3-5-2', value: 'centrocampo largo' },
     ],
   },
   preferredFormation: {
-    description: 'Modulo tattico preferito come VINCOLO HARD. Se impostato (diverso da "Nessuna"), il risolutore restituirà solo soluzioni giocabili in questo modulo. Se nessuna soluzione è compatibile, la run fallirà.',
+    description: 'Unico modulo imposto come vincolo hard all\'ILP (la rosa deve poter schierare difensori/centrocampisti/attaccanti di quel modulo). Le altre formations restano solo check informativi. Vuoto = nessun vincolo di modulo.',
     examples: [
-      { label: '3-5-2', value: 'forza il modulo a 3-5-2' },
-      { label: 'Nessuna', value: 'nessun vincolo, sceglie tra tutte le formazioni selezionate sopra' },
+      { label: 'Nessuna', value: 'nessun vincolo hard di modulo' },
+      { label: '4-3-3', value: 'forza schierabilità 4-3-3' },
     ],
   },
   inflationPercentileThreshold: {
-    description: 'Soglia (0–1) di percentile usata dal modello di inflazione. I giocatori con quotazione sopra questo percentile sono considerati "rari" e subiscono un moltiplicatore maggiore.',
+    description: 'Soglia di percentile di ruolo sotto la quale il costo effettivo resta uguale al listino. Sopra soglia parte l\'inflazione (cresce con distanza dalla soglia e con i partecipanti extra rispetto a baselineParticipants). Default codice 0.7.',
     examples: [
-      { label: '0.5', value: 'default, top 50% subisce inflazione' },
-      { label: '0.8', value: 'solo top 20% subisce inflazione forte' },
+      { label: '0.70', value: 'default: top ~30% del ruolo si gonfiano' },
+      { label: '0.85', value: 'inflazione solo sui rarissimi' },
+      { label: '0.55', value: 'inflazione più ampia sul listino' },
     ],
   },
   maxInflationMultiplier: {
-    description: 'Moltiplicatore massimo (1–5) che il modello di inflazione può applicare al listino base. Un valore di 2.0 significa che un top player può costare fino al doppio del listino.',
+    description: 'Cap del moltiplicatore costo_effettivo / listino (deve essere ≥ 1.0). Limita quanto può gonfiarsi un top rispetto al qt_a. Il solver usa i costi effettivi nel vincolo di budget.',
     examples: [
-      { label: '1.0', value: 'nessuna inflazione, prezzi = listino' },
+      { label: '1.0', value: 'nessuna inflazione (moltiplicatore piatto)' },
       { label: '1.6', value: 'default moderato' },
-      { label: '3.0', value: 'lega molto calda, top player esplosivi' },
+      { label: '1.9', value: 'mercato caldo' },
     ],
   },
   baseInflationRate: {
-    description: 'Tasso base di inflazione (0–1) applicato a tutti i prezzi anche al di sotto della soglia di percentile. Compensa l\'effetto generale di "rialzo" del mercato.',
+    description: 'Tasso base usato dalla curva di inflazione per i partecipanti oltre baselineParticipants (insieme al percentile sopra soglia). Non è un +X% piatto su tutto il listino sotto soglia: sotto threshold il costo resta nominale.',
     examples: [
-      { label: '0.00', value: 'nessun rialzo base' },
-      { label: '0.05', value: 'default, +5% su tutti i listini' },
-      { label: '0.15', value: 'mercato molto rialzista' },
+      { label: '0.03', value: 'mercato freddo' },
+      { label: '0.05', value: 'default' },
+      { label: '0.08', value: 'alta pressione d\'asta' },
     ],
   },
   baselineParticipants: {
-    description: 'Numero di partecipanti "baseline" usato dal modello di inflazione per calcolare la pressione di mercato. Tipicamente pari al valore del campo Partecipanti; modifica solo se vuoi simulare una lega di dimensione diversa.',
+    description: 'Soglia di partecipanti "senza extra-inflazione". Solo i partecipanti oltre questo numero alimentano la parte di curva legata a baseInflationRate. Di solito allineato a numParticipants della lega reale.',
     examples: [
-      { label: '4', value: 'simula mercato di lega piccola' },
-      { label: '8', value: 'default, mercato standard' },
-      { label: '12', value: 'simula mercato affollato' },
+      { label: '8', value: 'default' },
+      { label: '6', value: 'simula lega più piccola come baseline' },
+      { label: '10', value: 'baseline più alta → meno extra-inflazione a parità di numParticipants' },
     ],
   },
   teamStrengthMultiplier: {
-    description: 'Peso dell\'aggiustamento Elo di Club sulla stima del costo dei giocatori. 0 = disattivato (default backend), valori più alti premiano i giocatori di squadre con Elo alto nel prezzo stimato (più costosi per le big, meno costosi per le piccole). Il moltiplicatore agisce solo sull\'effective cost usato dal risolutore, non sul listino secco.',
+    description: 'Peso ≥ 0 sull\'aggiustamento Elo di club: effective_cost × (1 + weight × elo_normalizzato). 0 = disattivato. Aumenta il costo effettivo dei giocatori di squadre forti (più contendibili in asta), non modifica lo score obiettivo.',
     examples: [
-      { label: '0.0', value: 'disattivato, Elo ignorato' },
-      { label: '0.5', value: 'aggiustamento moderato, leggero premio alle big' },
-      { label: '1.0', value: 'aggiustamento pieno, differenza di costo tra big e piccole marcata' },
+      { label: '0.0', value: 'off (default)' },
+      { label: '0.10–0.20', value: 'premio moderato alle big' },
+      { label: '0.35–0.40', value: 'forte bias di costo sulle big' },
     ],
   },
   customWeights: {
-    description: 'Pesi per ruolo (P/D/C/A) usati SOLO quando è selezionata una singola strategia e si sceglie di personalizzarla. Un peso più alto spinge il risolutore a investire di più in quel ruolo rispetto al bilanciamento standard.',
+    description: 'roleWeight della StrategyProfile: moltiplicano il contributo del giocatore in obiettivo per ruolo (P/D/C/A). Usati solo con una strategia selezionata in modalità custom. Non sono quote di rosa né minimi di spesa.',
     examples: [
-      { label: 'P=1 D=1 C=1 A=1', value: 'bilanciamento neutro (default)' },
-      { label: 'P=0.5 D=2.5 C=1 A=1', value: 'focus difensori, rosa a basso rischio' },
-      { label: 'P=1 D=1 C=1 A=2.5', value: 'top player offensivi' },
+      { label: '1 / 1 / 1 / 1', value: 'neutro (BALANCED)' },
+      { label: '1.2 / 1.3 / 1 / 0.8', value: 'bias difensivo' },
+      { label: '0.8 / 0.9 / 1.15 / 1.3', value: 'bias offensivo' },
     ],
   },
 };
@@ -280,7 +279,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
       <header class="page-header">
         <div>
           <h1 class="page-title">Ottimizzatore Rosa</h1>
-          <p class="page-subtitle">Costruzione automatica della rosa tramite risolutore ILP · 4 strategie disponibili</p>
+          <p class="page-subtitle">Rosa ottima via ILP: massimizza lo score (metric + VAR/ESV − rischio) sotto budget e vincoli</p>
         </div>
       </header>
 
@@ -293,7 +292,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
           <p class="section-divider">Profilo strategico</p>
 
           <div class="field-group">
-            <label class="field-label" for="opt-preset">Preset di ottimizzazione</label>
+            <label class="field-label" for="opt-preset">Preset strategia (precompila leve obiettivo e vincoli)</label>
             <select
               id="opt-preset"
               class="field-input"
@@ -317,10 +316,10 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
           </div>
 
           <!-- BASIC -->
-          <p class="section-divider">Impostazioni di base</p>
+          <p class="section-divider">Pool e budget</p>
 
           <div class="field-group">
-            <label class="field-label" for="opt-seasonStart">Stagione di riferimento (Serie A)</label>
+            <label class="field-label" for="opt-seasonStart">Stagione del pool (listini + predizioni ML)</label>
             <select id="opt-seasonStart" class="field-input" [(ngModel)]="seasonStart"
                     [attr.aria-describedby]="'legend-seasonStart'">
               @for (s of seasons(); track s) {
@@ -335,7 +334,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
 
           <div class="field-row">
             <div class="field-group">
-              <label class="field-label" for="opt-budget">Budget totale disponibile <span class="field-hint">cr.</span></label>
+              <label class="field-label" for="opt-budget">Budget rosa (tetto costi effettivi) <span class="field-hint">cr.</span></label>
               <input id="opt-budget" class="field-input" type="number" min="200" max="1000" step="25"
                      [(ngModel)]="budget"
                      [attr.aria-describedby]="'legend-budget'" />
@@ -345,7 +344,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                 [examples]="OPTIMIZER_LEGENDS['budget'].examples" />
             </div>
             <div class="field-group">
-              <label class="field-label" for="opt-numParticipants">Numero di partecipanti alla lega</label>
+              <label class="field-label" for="opt-numParticipants">Partecipanti lega (spinge l'inflazione dei costi)</label>
               <input id="opt-numParticipants" class="field-input" type="number" min="4" max="16" step="1"
                      [(ngModel)]="numParticipants"
                      [attr.aria-describedby]="'legend-numParticipants'" />
@@ -358,7 +357,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
 
           <div class="field-row">
             <div class="field-group">
-              <label class="field-label" for="opt-minQtA">Quota minima d'asta per ciascun ruolo</label>
+              <label class="field-label" for="opt-minQtA">Listino minimo per entrare nel pool <span class="field-hint">qt_a ≥</span></label>
               <input id="opt-minQtA" class="field-input" type="number" min="0" max="10" step="1"
                      [(ngModel)]="minQtA"
                      [attr.aria-describedby]="'legend-minQtA'" />
@@ -368,7 +367,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                 [examples]="OPTIMIZER_LEGENDS['minQtA'].examples" />
             </div>
             <div class="field-group">
-              <label class="field-label" for="opt-solverTimeout">Timeout risolutore ILP <span class="field-hint">secondi</span></label>
+              <label class="field-label" for="opt-solverTimeout">Timeout solver ILP <span class="field-hint">secondi, non cambia l'obiettivo</span></label>
               <input id="opt-solverTimeout" class="field-input" type="number" min="5" max="300" step="5"
                      [(ngModel)]="solverTimeoutSeconds"
                      [attr.aria-describedby]="'legend-solverTimeoutSeconds'" />
@@ -380,11 +379,11 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
           </div>
 
           <!-- SQUAD CONSTRAINTS -->
-          <p class="section-divider">Vincoli sulla rosa</p>
+          <p class="section-divider">Vincoli hard sulla rosa</p>
 
           <div class="field-row">
             <div class="field-group">
-              <label class="field-label" for="opt-minDistinctTeams">Numero minimo di squadre di Serie A distinte in rosa</label>
+              <label class="field-label" for="opt-minDistinctTeams">Min. club distinti in rosa <span class="field-hint">vincolo hard</span></label>
               <input id="opt-minDistinctTeams" class="field-input" type="number" min="1" max="25" step="1"
                      [(ngModel)]="minDistinctTeams"
                      [attr.aria-describedby]="'legend-minDistinctTeams'" />
@@ -394,7 +393,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                 [examples]="OPTIMIZER_LEGENDS['minDistinctTeams'].examples" />
             </div>
             <div class="field-group">
-              <label class="field-label" for="opt-maxPlayersPerTeam">Numero massimo di giocatori per singola squadra</label>
+              <label class="field-label" for="opt-maxPlayersPerTeam">Max giocatori dallo stesso club <span class="field-hint">vincolo hard</span></label>
               <input id="opt-maxPlayersPerTeam" class="field-input" type="number" min="1" max="10" step="1"
                      [(ngModel)]="maxPlayersPerTeam"
                      [attr.aria-describedby]="'legend-maxPlayersPerTeam'" />
@@ -407,7 +406,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
 
           <div class="field-row">
             <div class="field-group">
-              <label class="field-label" for="opt-bigTeamsCap">Limite totale di giocatori dalle "big team"</label>
+              <label class="field-label" for="opt-bigTeamsCap">Tetto giocatori dalle big team <span class="field-hint">vincolo hard aggregato</span></label>
               <input id="opt-bigTeamsCap" class="field-input" type="number" min="0" max="25" step="1"
                      [(ngModel)]="bigTeamsCap"
                      [attr.aria-describedby]="'legend-bigTeamsCap'" />
@@ -417,7 +416,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                 [examples]="OPTIMIZER_LEGENDS['bigTeamsCap'].examples" />
             </div>
             <div class="field-group">
-              <label class="field-label" for="opt-maxShare">Quota massima di budget per singolo giocatore <span class="field-hint">0–1</span></label>
+              <label class="field-label" for="opt-maxShare">Max costo effettivo su un giocatore <span class="field-hint">frazione del budget</span></label>
               <input id="opt-maxShare" class="field-input" type="number" min="0.05" max="1" step="0.05"
                      [(ngModel)]="maxSinglePlayerBudgetShare"
                      [attr.aria-describedby]="'legend-maxSinglePlayerBudgetShare'" />
@@ -429,7 +428,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
           </div>
 
           <div class="field-group">
-            <label class="field-label" for="opt-bigTeamsRaw">Elenco delle "big team" <span class="field-hint">separate da virgola</span></label>
+            <label class="field-label" for="opt-bigTeamsRaw">Club conteggiati come big team <span class="field-hint">nomi real_team, separati da virgola</span></label>
             <textarea id="opt-bigTeamsRaw" class="field-input field-textarea" rows="2"
                       [(ngModel)]="bigTeamsRaw"
                       placeholder="Inter, Milan, Juventus, Napoli"
@@ -441,10 +440,10 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
           </div>
 
           <!-- PLAYER FILTERS -->
-          <p class="section-divider">Filtri sui giocatori</p>
+          <p class="section-divider">Include / exclude (vincoli hard)</p>
 
           <div class="field-group">
-            <label class="field-label" for="opt-mustInclude">Giocatori da includere obbligatoriamente <span class="field-hint">ID separati da virgola</span></label>
+            <label class="field-label" for="opt-mustInclude">Must-include <span class="field-hint">player_id obbligatori, vincolo hard</span></label>
             <textarea id="opt-mustInclude" class="field-input field-textarea" rows="2"
                       [(ngModel)]="mustIncludeRaw"
                       placeholder="fm-12345, fm-67890"
@@ -456,7 +455,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
           </div>
 
           <div class="field-group">
-            <label class="field-label" for="opt-exclude">Giocatori da escludere <span class="field-hint">ID separati da virgola</span></label>
+            <label class="field-label" for="opt-exclude">Exclude <span class="field-hint">player_id fuori dal pool</span></label>
             <textarea id="opt-exclude" class="field-input field-textarea" rows="2"
                       [(ngModel)]="excludeRaw"
                       placeholder="fm-12345, fm-67890"
@@ -468,15 +467,15 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
           </div>
 
           <!-- RULESET & RISK -->
-          <p class="section-divider">Regolamento e gestione del rischio</p>
+          <p class="section-divider">Ruleset e funzione obiettivo</p>
 
           <div class="field-row">
             <div class="field-group">
-              <label class="field-label" for="opt-ruleset">Regolamento della lega</label>
+              <label class="field-label" for="opt-ruleset">Ruleset quote/ruoli <span class="field-hint">CLASSIC 4 ruoli · MANTRA 12</span></label>
               <select id="opt-ruleset" class="field-input" [(ngModel)]="ruleset"
                       [attr.aria-describedby]="'legend-ruleset'">
-                <option value="CLASSIC">Classic (Fantacalcio tradizionale)</option>
-                <option value="MANTRA">Mantra (ruoli modulari e conversioni)</option>
+                <option value="CLASSIC">CLASSIC — quote P3/D8/C8/A6</option>
+                <option value="MANTRA">MANTRA — 12 ruoli multi-slot</option>
               </select>
               <app-field-legend
                 fieldId="legend-ruleset"
@@ -484,7 +483,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                 [examples]="OPTIMIZER_LEGENDS['ruleset'].examples" />
             </div>
             <div class="field-group">
-              <label class="field-label" for="opt-riskAversion">Avversione al rischio <span class="field-hint">0 = neutrale</span></label>
+              <label class="field-label" for="opt-riskAversion">Risk aversion <span class="field-hint">penalità × prediction_std in obiettivo</span></label>
               <input id="opt-riskAversion" class="field-input" type="number" min="0" max="5" step="0.1"
                      [(ngModel)]="riskAversion"
                      [attr.aria-describedby]="'legend-riskAversion'" />
@@ -497,7 +496,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
 
           <div class="field-row">
             <div class="field-group">
-              <label class="field-label" for="opt-varBlend">Peso del modello VAR (Value Above Replacement) <span class="field-hint">0–1</span></label>
+              <label class="field-label" for="opt-varBlend">VAR blend <span class="field-hint">(1−w)×metric + w×var_score</span></label>
               <input id="opt-varBlend" class="field-input" type="number" min="0" max="1" step="0.1"
                      [(ngModel)]="varBlend"
                      [attr.aria-describedby]="'legend-varBlend'" />
@@ -507,7 +506,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                 [examples]="OPTIMIZER_LEGENDS['varBlend'].examples" />
             </div>
             <div class="field-group">
-              <label class="field-label" for="opt-esvWeight">Peso dell'ESV (Expected Season Value) <span class="field-hint">0 = disattivato</span></label>
+              <label class="field-label" for="opt-esvWeight">ESV weight <span class="field-hint">+ w×surplus value (affare)</span></label>
               <input id="opt-esvWeight" class="field-input" type="number" min="0" max="5" step="0.1"
                      [(ngModel)]="esvWeight"
                      [attr.aria-describedby]="'legend-esvWeight'" />
@@ -521,11 +520,11 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
           <!-- VAR/ESV ADVANCED -->
           <div class="field-row">
             <div class="field-group">
-              <label class="field-label" for="opt-valuationMode">Metrica di valutazione</label>
+              <label class="field-label" for="opt-valuationMode">Metrica base in obiettivo</label>
               <select id="opt-valuationMode" class="field-input" [(ngModel)]="valuationMode"
                       [attr.aria-describedby]="'legend-valuationMode'">
-                <option value="PER_MATCH_RATING">Per-match rating (default)</option>
-                <option value="SEASON_VALUE">Season value (totale stagione)</option>
+                <option value="PER_MATCH_RATING">projected_score / partita (default)</option>
+                <option value="SEASON_VALUE">season_value (rating × presenze)</option>
               </select>
               <app-field-legend
                 fieldId="legend-valuationMode"
@@ -533,11 +532,11 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                 [examples]="OPTIMIZER_LEGENDS['valuationMode'].examples" />
             </div>
             <div class="field-group">
-              <label class="field-label" for="opt-replacementMethod">Metodo replacement level</label>
+              <label class="field-label" for="opt-replacementMethod">Replacement level (per VAR/ESV)</label>
               <select id="opt-replacementMethod" class="field-input" [(ngModel)]="replacementMethod"
                       [attr.aria-describedby]="'legend-replacementMethod'">
-                <option value="percentile">Percentile (10° pctile)</option>
-                <option value="roster_depth">Roster depth</option>
+                <option value="percentile">Percentile basso per ruolo (default)</option>
+                <option value="roster_depth">Roster depth (quota × partecipanti)</option>
               </select>
               <app-field-legend
                 fieldId="legend-replacementMethod"
@@ -547,7 +546,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
           </div>
 
           <div class="field-group">
-            <label class="field-label" for="opt-minStartProb">Min. probabilità titolare <span class="field-hint">0–1, vuoto = nessun filtro</span></label>
+            <label class="field-label" for="opt-minStartProb">Filtro start_probability minima <span class="field-hint">pre-ILP, vuoto = off</span></label>
             <input id="opt-minStartProb" class="field-input" type="number" min="0" max="1" step="0.05"
                    [ngModel]="minStartProbability()"
                    (ngModelChange)="minStartProbability.set($event === '' ? null : +$event)"
@@ -559,7 +558,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
           </div>
 
           <!-- FORMATIONS -->
-          <p class="section-divider">Moduli tattici</p>
+          <p class="section-divider">Moduli (check post-hoc e vincolo hard)</p>
 
           <div class="check-grid" role="group" aria-label="Moduli tattici ammessi">
             @for (f of allFormations; track f.label) {
@@ -576,7 +575,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
             [examples]="OPTIMIZER_LEGENDS['formations'].examples" />
 
           <div class="field-group">
-            <label class="field-label" for="opt-preferredFormation">Formazione preferita <span class="field-hint">vincolo hard</span></label>
+            <label class="field-label" for="opt-preferredFormation">Modulo imposto al solver <span class="field-hint">vincolo hard; le altre solo check</span></label>
             <select id="opt-preferredFormation" class="field-input" [(ngModel)]="preferredFormationLabel"
                     [attr.aria-describedby]="'legend-preferredFormation'">
               <option value="">Nessuna (nessun vincolo)</option>
@@ -591,11 +590,11 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
           </div>
 
           <!-- INFLATION MODEL -->
-          <p class="section-divider">Modello di inflazione dei prezzi</p>
+          <p class="section-divider">Costo effettivo (inflazione listino)</p>
 
           <div class="field-row">
             <div class="field-group">
-              <label class="field-label" for="opt-inflationPercentile">Soglia percentile di inflazione</label>
+              <label class="field-label" for="opt-inflationPercentile">Soglia percentile: sotto = costo = listino</label>
               <input id="opt-inflationPercentile" class="field-input" type="number" min="0" max="1" step="0.05"
                      [(ngModel)]="inflationPercentileThreshold"
                      [attr.aria-describedby]="'legend-inflationPercentileThreshold'" />
@@ -605,7 +604,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                 [examples]="OPTIMIZER_LEGENDS['inflationPercentileThreshold'].examples" />
             </div>
             <div class="field-group">
-              <label class="field-label" for="opt-maxInflation">Moltiplicatore massimo di inflazione</label>
+              <label class="field-label" for="opt-maxInflation">Cap moltiplicatore costo effettivo / listino</label>
               <input id="opt-maxInflation" class="field-input" type="number" min="1" max="5" step="0.1"
                      [(ngModel)]="maxInflationMultiplier"
                      [attr.aria-describedby]="'legend-maxInflationMultiplier'" />
@@ -618,7 +617,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
 
           <div class="field-row">
             <div class="field-group">
-              <label class="field-label" for="opt-baseRate">Tasso base di inflazione</label>
+              <label class="field-label" for="opt-baseRate">Tasso base inflazione (partecipanti extra)</label>
               <input id="opt-baseRate" class="field-input" type="number" min="0" max="1" step="0.01"
                      [(ngModel)]="baseInflationRate"
                      [attr.aria-describedby]="'legend-baseInflationRate'" />
@@ -628,7 +627,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                 [examples]="OPTIMIZER_LEGENDS['baseInflationRate'].examples" />
             </div>
             <div class="field-group">
-              <label class="field-label" for="opt-baselinePart">Partecipanti baseline per il modello</label>
+              <label class="field-label" for="opt-baselinePart">Baseline partecipanti (oltre → extra inflazione)</label>
               <input id="opt-baselinePart" class="field-input" type="number" min="2" max="20" step="1"
                      [(ngModel)]="baselineParticipants"
                      [attr.aria-describedby]="'legend-baselineParticipants'" />
@@ -638,7 +637,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                 [examples]="OPTIMIZER_LEGENDS['baselineParticipants'].examples" />
             </div>
             <div class="field-group">
-              <label class="field-label" for="opt-teamStrengthMul">Moltiplicatore Elo di Club (peso sulla stima del costo)</label>
+              <label class="field-label" for="opt-teamStrengthMul">Peso Elo club sul costo effettivo <span class="field-hint">0 = off</span></label>
               <input id="opt-teamStrengthMul" class="field-input" type="number" min="0" max="2" step="0.05"
                      [(ngModel)]="teamStrengthMultiplier"
                      [attr.aria-describedby]="'legend-teamStrengthMultiplier'" />
@@ -650,7 +649,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
           </div>
 
           <!-- STRATEGIES -->
-          <p class="section-divider">Strategie di ottimizzazione</p>
+          <p class="section-divider">StrategyProfile (pesi ruolo e vincoli soft)</p>
 
           <div class="check-col" role="group" aria-label="Strategie da eseguire">
             @for (s of availableStrategies(); track s) {
