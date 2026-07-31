@@ -426,3 +426,15 @@
   min-width:0;
 }
 @media (min-width: 640px) { .card { padding:16px; } }
+
+
+/* ── Auction strategy presets ─────────────────────────────────────────── */
+.preset-description {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+}
+.preset-description.muted {
+  opacity: 0.85;
+}

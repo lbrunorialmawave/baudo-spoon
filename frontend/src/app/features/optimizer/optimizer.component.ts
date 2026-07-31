@@ -40,9 +40,12 @@ const ROLE_LABELS: Record<string, string> = { P: 'GK', D: 'DEF', C: 'MID', A: 'F
 
 const ALL_FORMATIONS: FormationConfig[] = [
   { label: '3-4-3', defenders: 3, midfielders: 4, forwards: 3 },
+  { label: '3-5-2', defenders: 3, midfielders: 5, forwards: 2 },
   { label: '4-3-3', defenders: 4, midfielders: 3, forwards: 3 },
   { label: '4-4-2', defenders: 4, midfielders: 4, forwards: 2 },
-  { label: '3-5-2', defenders: 3, midfielders: 5, forwards: 2 },
+  { label: '4-5-1', defenders: 4, midfielders: 5, forwards: 1 },
+  { label: '5-3-2', defenders: 5, midfielders: 3, forwards: 2 },
+  { label: '5-4-1', defenders: 5, midfielders: 4, forwards: 1 },
 ];
 
 /**

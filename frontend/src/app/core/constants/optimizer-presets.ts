@@ -61,7 +61,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
     request: {
       budget: 500,
       numParticipants: 8,
-      minQtA: 1,
+      minQtA: 0,
       minDistinctTeams: 10,
       maxPlayersPerTeam: 4,
       bigTeams: [
@@ -108,6 +108,12 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           midfielders: 3,
           forwards: 2,
         },
+        {
+          label: "5-4-1",
+          defenders: 5,
+          midfielders: 4,
+          forwards: 1,
+        },
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.7,
@@ -116,7 +122,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.1,
       },
-      solverTimeoutSeconds: 30,
+      solverTimeoutSeconds: 60,
       maxSinglePlayerBudgetShare: 0.35,
       ruleset: "CLASSIC",
       mantraRoleQuotas: null,
@@ -154,7 +160,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
     request: {
       budget: 500,
       numParticipants: 8,
-      minQtA: 1,
+      minQtA: 0,
       minDistinctTeams: 12,
       maxPlayersPerTeam: 3,
       bigTeams: [
@@ -201,6 +207,12 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           midfielders: 3,
           forwards: 2,
         },
+        {
+          label: "5-4-1",
+          defenders: 5,
+          midfielders: 4,
+          forwards: 1,
+        },
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.75,
@@ -209,7 +221,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.08,
       },
-      solverTimeoutSeconds: 30,
+      solverTimeoutSeconds: 60,
       maxSinglePlayerBudgetShare: 0.25,
       ruleset: "CLASSIC",
       mantraRoleQuotas: null,
@@ -270,7 +282,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
     request: {
       budget: 500,
       numParticipants: 8,
-      minQtA: 1,
+      minQtA: 0,
       minDistinctTeams: 8,
       maxPlayersPerTeam: 5,
       bigTeams: [
@@ -317,6 +329,12 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           midfielders: 3,
           forwards: 2,
         },
+        {
+          label: "5-4-1",
+          defenders: 5,
+          midfielders: 4,
+          forwards: 1,
+        },
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.6,
@@ -325,7 +343,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.25,
       },
-      solverTimeoutSeconds: 30,
+      solverTimeoutSeconds: 60,
       maxSinglePlayerBudgetShare: 0.4,
       ruleset: "CLASSIC",
       mantraRoleQuotas: null,
@@ -385,7 +403,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
     request: {
       budget: 500,
       numParticipants: 8,
-      minQtA: 1,
+      minQtA: 0,
       minDistinctTeams: 14,
       maxPlayersPerTeam: 3,
       bigTeams: [
@@ -432,6 +450,12 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           midfielders: 3,
           forwards: 2,
         },
+        {
+          label: "5-4-1",
+          defenders: 5,
+          midfielders: 4,
+          forwards: 1,
+        },
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.75,
@@ -440,7 +464,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.05,
       },
-      solverTimeoutSeconds: 30,
+      solverTimeoutSeconds: 60,
       maxSinglePlayerBudgetShare: 0.22,
       ruleset: "CLASSIC",
       mantraRoleQuotas: null,
@@ -490,7 +514,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
     request: {
       budget: 500,
       numParticipants: 8,
-      minQtA: 1,
+      minQtA: 0,
       minDistinctTeams: 11,
       maxPlayersPerTeam: 4,
       bigTeams: [
@@ -537,6 +561,12 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           midfielders: 3,
           forwards: 2,
         },
+        {
+          label: "5-4-1",
+          defenders: 5,
+          midfielders: 4,
+          forwards: 1,
+        },
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.68,
@@ -545,7 +575,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.15,
       },
-      solverTimeoutSeconds: 30,
+      solverTimeoutSeconds: 60,
       maxSinglePlayerBudgetShare: 0.3,
       ruleset: "CLASSIC",
       mantraRoleQuotas: null,
@@ -605,7 +635,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
     request: {
       budget: 500,
       numParticipants: 8,
-      minQtA: 1,
+      minQtA: 0,
       minDistinctTeams: 13,
       maxPlayersPerTeam: 3,
       bigTeams: [
@@ -652,6 +682,12 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           midfielders: 3,
           forwards: 2,
         },
+        {
+          label: "5-4-1",
+          defenders: 5,
+          midfielders: 4,
+          forwards: 1,
+        },
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.72,
@@ -660,7 +696,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.1,
       },
-      solverTimeoutSeconds: 30,
+      solverTimeoutSeconds: 60,
       maxSinglePlayerBudgetShare: 0.28,
       ruleset: "CLASSIC",
       mantraRoleQuotas: null,
@@ -720,7 +756,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
     request: {
       budget: 500,
       numParticipants: 8,
-      minQtA: 1,
+      minQtA: 0,
       minDistinctTeams: 12,
       maxPlayersPerTeam: 4,
       bigTeams: [
@@ -767,6 +803,12 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           midfielders: 3,
           forwards: 2,
         },
+        {
+          label: "5-4-1",
+          defenders: 5,
+          midfielders: 4,
+          forwards: 1,
+        },
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.7,
@@ -775,7 +817,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.1,
       },
-      solverTimeoutSeconds: 30,
+      solverTimeoutSeconds: 60,
       maxSinglePlayerBudgetShare: 0.3,
       ruleset: "CLASSIC",
       mantraRoleQuotas: null,
@@ -818,7 +860,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
     request: {
       budget: 500,
       numParticipants: 8,
-      minQtA: 1,
+      minQtA: 0,
       minDistinctTeams: 14,
       maxPlayersPerTeam: 3,
       bigTeams: [
@@ -865,6 +907,12 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           midfielders: 3,
           forwards: 2,
         },
+        {
+          label: "5-4-1",
+          defenders: 5,
+          midfielders: 4,
+          forwards: 1,
+        },
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.72,
@@ -873,7 +921,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.08,
       },
-      solverTimeoutSeconds: 30,
+      solverTimeoutSeconds: 60,
       maxSinglePlayerBudgetShare: 0.24,
       ruleset: "CLASSIC",
       mantraRoleQuotas: null,
@@ -922,7 +970,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
     request: {
       budget: 500,
       numParticipants: 8,
-      minQtA: 1,
+      minQtA: 0,
       minDistinctTeams: 8,
       maxPlayersPerTeam: 5,
       bigTeams: [
@@ -969,6 +1017,12 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           midfielders: 3,
           forwards: 2,
         },
+        {
+          label: "5-4-1",
+          defenders: 5,
+          midfielders: 4,
+          forwards: 1,
+        },
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.55,
@@ -977,7 +1031,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.4,
       },
-      solverTimeoutSeconds: 30,
+      solverTimeoutSeconds: 60,
       maxSinglePlayerBudgetShare: 0.38,
       ruleset: "CLASSIC",
       mantraRoleQuotas: null,
@@ -1038,7 +1092,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
     request: {
       budget: 500,
       numParticipants: 8,
-      minQtA: 1,
+      minQtA: 0,
       minDistinctTeams: 13,
       maxPlayersPerTeam: 4,
       bigTeams: [
@@ -1085,6 +1139,12 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           midfielders: 3,
           forwards: 2,
         },
+    {
+          label: "5-4-1",
+          defenders: 5,
+          midfielders: 4,
+          forwards: 1,
+        },
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.8,
@@ -1093,7 +1153,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.0,
       },
-      solverTimeoutSeconds: 30,
+      solverTimeoutSeconds: 60,
       maxSinglePlayerBudgetShare: 0.22,
       ruleset: "CLASSIC",
       mantraRoleQuotas: null,
@@ -1143,7 +1203,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
     request: {
       budget: 500,
       numParticipants: 8,
-      minQtA: 1,
+      minQtA: 0,
       minDistinctTeams: 12,
       maxPlayersPerTeam: 4,
       bigTeams: [
@@ -1190,6 +1250,12 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           midfielders: 3,
           forwards: 2,
         },
+        {
+          label: "5-4-1",
+          defenders: 5,
+          midfielders: 4,
+          forwards: 1,
+        },
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.7,
@@ -1198,7 +1264,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.0,
       },
-      solverTimeoutSeconds: 30,
+      solverTimeoutSeconds: 60,
       maxSinglePlayerBudgetShare: 0.3,
       ruleset: "CLASSIC",
       mantraRoleQuotas: null,
@@ -1236,7 +1302,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
     request: {
       budget: 500,
       numParticipants: 8,
-      minQtA: 1,
+      minQtA: 0,
       minDistinctTeams: 11,
       maxPlayersPerTeam: 4,
       bigTeams: [
@@ -1283,6 +1349,12 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           midfielders: 3,
           forwards: 2,
         },
+        {
+          label: "5-4-1",
+          defenders: 5,
+          midfielders: 4,
+          forwards: 1,
+        },
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.68,
@@ -1291,7 +1363,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.18,
       },
-      solverTimeoutSeconds: 30,
+      solverTimeoutSeconds: 60,
       maxSinglePlayerBudgetShare: 0.32,
       ruleset: "CLASSIC",
       mantraRoleQuotas: null,
@@ -1351,7 +1423,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
     request: {
       budget: 500,
       numParticipants: 8,
-      minQtA: 1,
+      minQtA: 0,
       minDistinctTeams: 14,
       maxPlayersPerTeam: 3,
       bigTeams: [
@@ -1398,6 +1470,12 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           midfielders: 3,
           forwards: 2,
         },
+        {
+          label: "5-4-1",
+          defenders: 5,
+          midfielders: 4,
+          forwards: 1,
+        },
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.75,
@@ -1406,7 +1484,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.05,
       },
-      solverTimeoutSeconds: 30,
+      solverTimeoutSeconds: 60,
       maxSinglePlayerBudgetShare: 0.26,
       ruleset: "CLASSIC",
       mantraRoleQuotas: null,
@@ -1455,7 +1533,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
     request: {
       budget: 500,
       numParticipants: 8,
-      minQtA: 1,
+      minQtA: 0,
       minDistinctTeams: 12,
       maxPlayersPerTeam: 4,
       bigTeams: [
@@ -1502,6 +1580,12 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           midfielders: 3,
           forwards: 2,
         },
+        {
+          label: "5-4-1",
+          defenders: 5,
+          midfielders: 4,
+          forwards: 1,
+        },
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.65,
@@ -1510,7 +1594,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.22,
       },
-      solverTimeoutSeconds: 30,
+      solverTimeoutSeconds: 60,
       maxSinglePlayerBudgetShare: 0.3,
       ruleset: "CLASSIC",
       mantraRoleQuotas: null,
@@ -1565,7 +1649,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
     request: {
       budget: 500,
       numParticipants: 8,
-      minQtA: 1,
+      minQtA: 0,
       minDistinctTeams: 11,
       maxPlayersPerTeam: 4,
       bigTeams: [
@@ -1612,6 +1696,12 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           midfielders: 3,
           forwards: 2,
         },
+        {
+          label: "5-4-1",
+          defenders: 5,
+          midfielders: 4,
+          forwards: 1,
+        },
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.68,
@@ -1620,7 +1710,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.2,
       },
-      solverTimeoutSeconds: 30,
+      solverTimeoutSeconds: 60,
       maxSinglePlayerBudgetShare: 0.3,
       ruleset: "CLASSIC",
       mantraRoleQuotas: null,
@@ -1680,7 +1770,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
     request: {
       budget: 500,
       numParticipants: 8,
-      minQtA: 1,
+      minQtA: 0,
       minDistinctTeams: 12,
       maxPlayersPerTeam: 4,
       bigTeams: [
@@ -1727,6 +1817,12 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           midfielders: 3,
           forwards: 2,
         },
+        {
+          label: "5-4-1",
+          defenders: 5,
+          midfielders: 4,
+          forwards: 1,
+        },
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.7,
@@ -1735,7 +1831,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.12,
       },
-      solverTimeoutSeconds: 30,
+      solverTimeoutSeconds: 60,
       maxSinglePlayerBudgetShare: 0.28,
       ruleset: "MANTRA",
       mantraRoleQuotas: {

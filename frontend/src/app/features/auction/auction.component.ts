@@ -26,6 +26,13 @@ import {
   FieldLegendExample,
 } from '../../shared/components/field-legend/field-legend.component';
 import { OPTIMIZER_LEGENDS } from '../optimizer/optimizer.component';
+import {
+  AUCTION_PRESET_NONE,
+  AUCTION_PRESETS,
+  AuctionPreset,
+  findAuctionPreset,
+} from '../../core/constants/auction-presets';
+
 
 const ROLE_COLOR: Record<string, string> = {
   P: 'var(--color-role-gk)',
@@ -1665,6 +1672,95 @@ export class AuctionComponent {
   }
 
   // ── Setup helpers ─────────────────────────────────────────────────────
+
+  /**
+   * Handles preset select changes. Applying a preset never clears
+   * operator-owned inputs (seasonStart, participants list).
+   */
+  onPresetChange(presetId: string): void {
+    const preset = findAuctionPreset(presetId);
+    if (preset) {
+      this.applyPreset(preset);
+    }
+  }
+
+  /**
+   * Patches setup form fields from a preset AuctionConfig.
+   * Does not start the session and does not mutate participants identities.
+   */
+  applyPreset(preset: AuctionPreset): void {
+    const cfg = preset.config;
+
+    if (cfg.numParticipants != null && cfg.numParticipants >= 2) {
+      this.numParticipants = cfg.numParticipants;
+      // Resize roster rows to match config, preserving names where possible.
+      this.resizeParticipants();
+    }
+
+    if (cfg.budgetInitial != null) {
+      this.budgetInitial = cfg.budgetInitial;
+      this.defaultBudget = cfg.budgetInitial;
+      this.applyDefaultBudget();
+    }
+    if (cfg.referenceBudget != null) {
+      this.referenceBudget = cfg.referenceBudget;
+    }
+    if (cfg.roleQuotas) {
+      this.roleQuotas = { ...this.roleQuotas, ...cfg.roleQuotas };
+    }
+    if (cfg.valuationMode === 'PER_MATCH_RATING' || cfg.valuationMode === 'SEASON_VALUE') {
+      this.valuationMode = cfg.valuationMode;
+    }
+    if (cfg.replacementMethod === 'percentile' || cfg.replacementMethod === 'roster_depth') {
+      this.replacementMethod = cfg.replacementMethod;
+    }
+    if (cfg.minStartProbability === null) {
+      this.minStartProbability = null;
+    } else if (typeof cfg.minStartProbability === 'number') {
+      this.minStartProbability = cfg.minStartProbability;
+    }
+
+    this.useInflationBaseline = !!cfg.useInflationBaseline;
+    const infl = cfg.inflationConfig;
+    if (infl) {
+      if (infl.inflationPercentileThreshold != null) {
+        this.inflationPercentileThreshold = infl.inflationPercentileThreshold;
+      }
+      if (infl.maxInflationMultiplier != null) {
+        this.maxInflationMultiplier = infl.maxInflationMultiplier;
+      }
+      if (infl.baseInflationRate != null) {
+        this.baseInflationRate = infl.baseInflationRate;
+      }
+      if (infl.baselineParticipants != null) {
+        this.baselineParticipants = infl.baselineParticipants;
+      }
+      if (infl.teamStrengthMultiplier != null) {
+        this.teamStrengthMultiplier = infl.teamStrengthMultiplier;
+      }
+    }
+
+    const md = cfg.marketDriftConfig;
+    if (md) {
+      if (md.alpha != null) this.alpha = md.alpha;
+      if (md.spilloverAdjacentTier != null) this.spilloverAdj = md.spilloverAdjacentTier;
+      if (md.spilloverCrossRole != null) this.spilloverCross = md.spilloverCrossRole;
+      if (md.minIndex != null) this.minIndex = md.minIndex;
+      if (md.maxIndex != null) this.maxIndex = md.maxIndex;
+      if (md.tierThresholds?.length === 2) {
+        this.tierLow = md.tierThresholds[0];
+        this.tierTop = md.tierThresholds[1];
+      }
+    }
+
+    const alt = cfg.alternativesConfig;
+    if (alt?.lowCostPercentile != null) {
+      this.lowCostPercentile = alt.lowCostPercentile;
+    }
+
+    // Advanced panel is useful when a non-default preset is applied.
+    this.showAdvanced = true;
+  }
 
   resizeParticipants(): void {
     this.participants.set(
