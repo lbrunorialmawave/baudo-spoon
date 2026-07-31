@@ -897,15 +897,10 @@ class Trainer:
             predictions_df["prediction_std"] = 0.0
 
         # Derive season-value targets from predicted rating × predicted appearances.
-        _em = predictions_df["expected_minutes"]
-        _pf = predictions_df["predicted_fantavoto"]
-        _has_minutes = _em > 0
-        predictions_df["fantapunti_totali"] = np.where(
-            _has_minutes, _pf * (_em / 90.0), np.nan
-        )
-        predictions_df["probabilita_titolarita"] = np.where(
-            _has_minutes, (_em / (38.0 * 90.0)).clip(upper=1.0), np.nan
-        )
+        # The derivation lives in ``ml.domain.predictions`` so the MANTRA runner
+        # and the optimizer pool read the same numbers from the same source.
+        from ml.domain.predictions import derive_season_value_columns
+        derive_season_value_columns(predictions_df)
 
         output: dict[str, Any] = {
             "run_id": self._run_id,

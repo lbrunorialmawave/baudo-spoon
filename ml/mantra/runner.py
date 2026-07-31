@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import sqlalchemy as sa
 
+from ml.domain.predictions import resolve_season_value_fields
 from ml.mantra.config import MantraConfig
 from ml.mantra.pilastro1 import compute_p1
 from ml.mantra.pilastro2 import compute_p2
@@ -94,6 +95,57 @@ _PLAYER_DATA_SQL = sa.text("""
     WHERE pq.season_start = :season_start
     ORDER BY pq.player_name
 """)
+
+
+# ── Predictions artefact plumbing (season_value / start_probability) ───────
+
+# Convention: the ML trainer writes its latest run to
+# ``<artifacts_dir>/results_latest.json`` (the same convention used by
+# ``DataRepository._load_predictions`` in the API layer). The mantra
+# runner reads the same file, keyed by ``player_fotmob_id``.
+_PREDICTIONS_FILENAME: str = "results_latest.json"
+
+
+def _load_predictions_by_id(
+    artifacts_dir: Optional[Path],
+) -> dict[int, dict[str, Any]]:
+    """Return a ``player_fotmob_id → prediction_record`` lookup.
+
+    The predictions artefact is written by ``ml.pipeline.trainer`` and
+    is purely informational from the MANTRA side: the two fields we
+    pull from it (``fantapunti_totali`` / ``probabilita_titolarita``)
+    sit alongside ``FP_Mantra`` / ``VR`` in the output without
+    blending, reconciling, or overriding them — see the P1-4 ADR.
+
+    Missing artefacts, missing ``player_fotmob_id`` keys, and NaN ids
+    are silently treated as "no prediction" — the caller can then
+    default the two extra fields to ``None`` without special casing.
+    """
+    if artifacts_dir is None:
+        return {}
+    path = Path(artifacts_dir) / _PREDICTIONS_FILENAME
+    if not path.is_file():
+        log.debug("Predictions artefact not found at %s; season_value will be None.", path)
+        return {}
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        # Informational plumbing only — never block the MANTRA pipeline
+        # because a missing/old artefact is the common case (e.g. a
+        # fresh season where the trainer has not been run yet).
+        log.warning("Could not read predictions artefact at %s: %s", path, exc)
+        return {}
+
+    lookup: dict[int, dict[str, Any]] = {}
+    for record in payload.get("predictions", []) or []:
+        raw_id = record.get("player_fotmob_id")
+        if not isinstance(raw_id, (int, float)):
+            continue
+        if isinstance(raw_id, float) and raw_id != raw_id:  # NaN
+            continue
+        lookup[int(raw_id)] = record
+    return lookup
 
 
 def load_data(
@@ -244,6 +296,12 @@ def run_mantra(
     classification_8g = rischio_contestuale(df_all)
 
     # 6. Build output
+    # Load the ML predictions artefact (if present) so the two
+    # informational fields ``season_value`` / ``start_probability`` can
+    # be projected onto each player record. The lookup is keyed by
+    # ``player_fotmob_id`` (matching the convention used by
+    # ``DataRepository.get_player_pool`` and the trainer).
+    predictions_by_id = _load_predictions_by_id(output_dir)
     players_out: list[dict] = []
     for idx in df.index:
         # player_fotmob_id may be NaN when the LEFT JOIN on player_id_map
@@ -252,6 +310,15 @@ def run_mantra(
         player_fotmob_id: int | None = (
             int(raw_fotmob) if pd.notna(raw_fotmob) else None
         )
+        # Look up the prediction (if any) and project the two informational
+        # fields. ``resolve_season_value_fields`` is the same helper the
+        # API/optimizer pool uses, so the three surfaces stay in lock-step.
+        pred_record = (
+            predictions_by_id.get(player_fotmob_id)
+            if player_fotmob_id is not None
+            else None
+        )
+        season_value, start_probability = resolve_season_value_fields(pred_record)
         players_out.append({
             "fantacalcio_id": int(df.at[idx, "fantacalcio_id"]),
             "player_fotmob_id": player_fotmob_id,
@@ -282,6 +349,10 @@ def run_mantra(
             "Prezzo_Massimo": round(float(scores["prezzo_massimo"].iloc[idx]), 2),
             "Fase7": str(fase7_label.iloc[idx]) if pd.notna(fase7_label.iloc[idx]) else None,
             "rischio": str(classification_8g.iloc[idx]) if pd.notna(classification_8g.iloc[idx]) else None,
+            # ML predictions — informational only, not blended with the
+            # 4-pillar system. See P1-4 for the still-open reconciliation.
+            "season_value": season_value,
+            "start_probability": start_probability,
         })
 
     result: dict[str, Any] = {

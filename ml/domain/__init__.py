@@ -4,7 +4,12 @@ Public re-exports for convenience.
 """
 
 from ml.domain.features import Feature, MissingDataPolicy
-from ml.domain.predictions import PredictionExplanation, SHAP_TOLERANCE
+from ml.domain.predictions import (
+    PredictionExplanation,
+    SHAP_TOLERANCE,
+    derive_season_value_columns,
+    resolve_season_value_fields,
+)
 from ml.domain.player_versions import PlayerV1, PlayerV2, to_player_v1
 from ml.domain.targets import (
     TargetSpec,
@@ -21,6 +26,8 @@ __all__ = [
     "MissingDataPolicy",
     "PredictionExplanation",
     "SHAP_TOLERANCE",
+    "derive_season_value_columns",
+    "resolve_season_value_fields",
     "PlayerV1",
     "PlayerV2",
     "to_player_v1",

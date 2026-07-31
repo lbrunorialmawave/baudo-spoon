@@ -17,6 +17,7 @@ from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import MatchMethodEnum, PlayerIdMap, PlayerMantraRole, PlayerQuotation
+from ml.domain.predictions import resolve_season_value_fields
 
 log = logging.getLogger(__name__)
 
@@ -1095,27 +1096,14 @@ class DataRepository:
                 if isinstance(raw_std, (int, float)) and raw_std >= 0:
                     pred_std = float(raw_std)
 
-            # Season-value metrics (derived from expected_minutes).
-            season_value: Optional[float] = None
-            start_probability: Optional[float] = None
-            if pred is not None:
-                # Prefer pre-computed values from the artifact (P0-2);
-                # fall back to deriving from expected_minutes.
-                fpt = pred.get("fantapunti_totali")
-                if isinstance(fpt, (int, float)):
-                    season_value = float(fpt)
-                elif predicted_score is not None:
-                    em = pred.get("expected_minutes")
-                    if isinstance(em, (int, float)) and em > 0:
-                        season_value = predicted_score * (em / 90.0)
-
-                pt = pred.get("probabilita_titolarita")
-                if isinstance(pt, (int, float)):
-                    start_probability = float(pt)
-                else:
-                    em = pred.get("expected_minutes")
-                    if isinstance(em, (int, float)) and em >= 0:
-                        start_probability = min(em / (38.0 * 90.0), 1.0)
+            # Season-value metrics — prefer pre-computed values from the artifact
+            # (P0-2); fall back to deriving from expected_minutes. The same
+            # helper is reused by the MANTRA runner so the two surfaces stay
+            # in lock-step.
+            season_value, start_probability = resolve_season_value_fields(
+                pred,
+                fallback_predicted_score=predicted_score,
+            )
 
             eligible_roles: list[str] = []
             if pmr is not None and pmr.ruoli_mantra:
