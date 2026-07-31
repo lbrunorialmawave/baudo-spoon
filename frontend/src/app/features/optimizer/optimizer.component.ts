@@ -15,6 +15,12 @@ import {
 import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.component';
 import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/error-boundary.component';
 import { FieldLegendComponent, FieldLegendExample } from '../../shared/components/field-legend/field-legend.component';
+import {
+  findOptimizerPreset,
+  OPTIMIZER_PRESET_NONE,
+  OPTIMIZER_PRESETS,
+  OptimizerPreset,
+} from '../../core/constants/optimizer-presets';
 
 const STRATEGY_META: Record<string, { label: string; icon: string }> = {
   BALANCED:        { label: 'Bilanciata',      icon: '⚖️' },
@@ -280,6 +286,33 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
 
         <!-- ── Config panel ──────────────────────────────── -->
         <aside class="config-panel card">
+
+          <!-- PRESETS -->
+          <p class="section-divider">Profilo strategico</p>
+
+          <div class="field-group">
+            <label class="field-label" for="opt-preset">Preset di ottimizzazione</label>
+            <select
+              id="opt-preset"
+              class="field-input"
+              [ngModel]="selectedPresetId()"
+              (ngModelChange)="onPresetChange($event)"
+              [attr.aria-describedby]="'legend-preset'"
+            >
+              <option [ngValue]="OPTIMIZER_PRESET_NONE">Personalizzato (nessun preset)</option>
+              @for (p of presets; track p.id) {
+                <option [ngValue]="p.id">{{ p.labelIt }} — {{ p.name }}</option>
+              }
+            </select>
+            @if (activePreset(); as preset) {
+              <p class="preset-description" id="legend-preset">{{ preset.description }}</p>
+            } @else {
+              <p class="preset-description muted" id="legend-preset">
+                Scegli un profilo per precompilare vincoli, rischio, inflazione e strategie.
+                Stagione, include/exclude restano sotto il tuo controllo.
+              </p>
+            }
+          </div>
 
           <!-- BASIC -->
           <p class="section-divider">Impostazioni di base</p>
@@ -840,6 +873,14 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
     .field-group { display:flex; flex-direction:column; gap:4px; min-width:0; }
     .field-row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
     .field-label { font-size:11px; font-weight:500; color:var(--color-text-secondary); }
+    .preset-description {
+      margin: 6px 0 0;
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--color-text-secondary);
+    }
+    .preset-description.muted { opacity: 0.85; }
+
     .field-hint { font-size:10px; opacity:0.6; }
     .field-input {
       background:var(--color-bg); border:1px solid var(--color-border);
@@ -1060,6 +1101,17 @@ export class OptimizerComponent {
   /** Legende dei campi del configuratore, esposte al template. */
   protected readonly OPTIMIZER_LEGENDS = OPTIMIZER_LEGENDS;
 
+  /** Preset catalog (immutable). Exposed for the template select. */
+  readonly presets: readonly OptimizerPreset[] = OPTIMIZER_PRESETS;
+  protected readonly OPTIMIZER_PRESET_NONE = OPTIMIZER_PRESET_NONE;
+
+  /**
+   * Currently selected preset id. Empty string = operator-driven custom config.
+   * Applying a preset patches form signals; it does not auto-run the solver.
+   */
+  readonly selectedPresetId = signal<string>(OPTIMIZER_PRESET_NONE);
+  readonly activePreset = computed(() => findOptimizerPreset(this.selectedPresetId()));
+
   // Strategies loaded from API; fallback to known names if unavailable
   readonly availableStrategies = signal<string[]>(['BALANCED', 'SUPER_DEFENSIVE', 'SUPER_OFFENSIVE', 'MIXED']);
 
@@ -1153,7 +1205,111 @@ export class OptimizerComponent {
     });
   }
 
+  /**
+   * Handles preset select changes. Applying a preset never clears
+   * operator-owned inputs (season, mustInclude, exclude).
+   */
+  onPresetChange(presetId: string): void {
+    this.selectedPresetId.set(presetId ?? OPTIMIZER_PRESET_NONE);
+    const preset = findOptimizerPreset(presetId);
+    if (preset) {
+      this.applyPreset(preset);
+    }
+  }
+
+  /**
+   * Patches form signals from a preset request payload.
+   * Intentionally pure w.r.t. results / running state.
+   */
+  applyPreset(preset: OptimizerPreset): void {
+    const req = preset.request;
+
+    if (req.budget != null) this.budget.set(req.budget);
+    if (req.numParticipants != null) this.numParticipants.set(req.numParticipants);
+    if (req.minQtA != null) this.minQtA.set(req.minQtA);
+    if (req.solverTimeoutSeconds != null) this.solverTimeoutSeconds.set(req.solverTimeoutSeconds);
+    if (req.minDistinctTeams != null) this.minDistinctTeams.set(req.minDistinctTeams);
+    if (req.maxPlayersPerTeam != null) this.maxPlayersPerTeam.set(req.maxPlayersPerTeam);
+    if (req.bigTeamsCap != null) this.bigTeamsCap.set(req.bigTeamsCap);
+    if (req.maxSinglePlayerBudgetShare != null) {
+      this.maxSinglePlayerBudgetShare.set(req.maxSinglePlayerBudgetShare);
+    }
+    if (req.bigTeams?.length) {
+      this.bigTeamsRaw.set(req.bigTeams.join(', '));
+    }
+    if (req.ruleset === 'CLASSIC' || req.ruleset === 'MANTRA') {
+      this.ruleset.set(req.ruleset);
+    }
+    if (req.riskAversion != null) this.riskAversion.set(req.riskAversion);
+    if (req.varBlend != null) this.varBlend.set(req.varBlend);
+    if (req.esvWeight != null) this.esvWeight.set(req.esvWeight);
+    if (req.valuationMode === 'PER_MATCH_RATING' || req.valuationMode === 'SEASON_VALUE') {
+      this.valuationMode.set(req.valuationMode);
+    }
+    if (req.replacementMethod === 'percentile' || req.replacementMethod === 'roster_depth') {
+      this.replacementMethod.set(req.replacementMethod);
+    }
+    // null = clear filter; number = set threshold
+    if (req.minStartProbability === null) {
+      this.minStartProbability.set(null);
+    } else if (typeof req.minStartProbability === 'number') {
+      this.minStartProbability.set(req.minStartProbability);
+    }
+
+    const infl = req.inflationConfig;
+    if (infl) {
+      if (infl.inflationPercentileThreshold != null) {
+        this.inflationPercentileThreshold.set(infl.inflationPercentileThreshold);
+      }
+      if (infl.maxInflationMultiplier != null) {
+        this.maxInflationMultiplier.set(infl.maxInflationMultiplier);
+      }
+      if (infl.baseInflationRate != null) {
+        this.baseInflationRate.set(infl.baseInflationRate);
+      }
+      if (infl.baselineParticipants != null) {
+        this.baselineParticipants.set(infl.baselineParticipants);
+      }
+      if (infl.teamStrengthMultiplier != null) {
+        this.teamStrengthMultiplier.set(infl.teamStrengthMultiplier);
+      }
+    }
+
+    if (req.formations?.length) {
+      this.selectedFormations.set(new Set(req.formations.map(f => f.label)));
+    }
+
+    if (req.preferredFormation?.label) {
+      this.preferredFormationLabel.set(req.preferredFormation.label);
+    } else if (req.preferredFormation === null) {
+      this.preferredFormationLabel.set('');
+    }
+
+    // Strategies: customStrategies takes precedence over strategyNames (API contract).
+    if (req.customStrategies?.length) {
+      const names = req.customStrategies.map(s => s.name);
+      this.selectedStrategies.set(new Set(names));
+      const primary = req.customStrategies[0];
+      this.customWeights.set({ P: 1, D: 1, C: 1, A: 1, ...primary.roleWeight });
+      this.showCustomWeights.set(true);
+      // Merge into local profile map so subsequent custom edits keep constraints.
+      this.strategyProfilesMap.update(map => {
+        const next = { ...map };
+        for (const s of req.customStrategies!) {
+          next[s.name] = s;
+        }
+        return next;
+      });
+    } else if (req.strategyNames?.length) {
+      this.selectedStrategies.set(new Set(req.strategyNames));
+      this.showCustomWeights.set(false);
+    }
+  }
+
   toggleStrategy(name: string): void {
+    // Manual strategy edits leave the preset in "custom" mode so the select
+    // reflects that the form no longer matches a canned profile.
+    this.selectedPresetId.set(OPTIMIZER_PRESET_NONE);
     this.selectedStrategies.update(s => {
       const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n;
     });
