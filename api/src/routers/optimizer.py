@@ -140,6 +140,37 @@ def _pool_from_override(req: OptimizationRequest) -> list[Player]:
     ]
 
 
+def _apply_min_start_probability(
+    pool: list[Player],
+    threshold: Optional[float],
+) -> list[Player]:
+    """Filter the player pool by ``start_probability >= threshold``.
+
+    Mirrors the contract documented on ``OptimizationRequest.min_start_probability``
+    and on ``AuctionConfigSchema.min_start_probability``: players whose
+    ``start_probability`` is strictly below the threshold are removed
+    BEFORE the ILP solver runs. Players with ``start_probability`` of
+    ``None`` (e.g. supplied via ``pool_override`` which does not carry
+    the field, or with a DB row missing the value) are kept untouched —
+    a missing value is treated as "unknown", not as "low".
+
+    Args:
+        pool: Players to filter (not mutated).
+        threshold: ``None`` ⇒ no-op (default behavior). Otherwise any
+            value in ``[0.0, 1.0]`` is honoured; values outside the range
+            are guarded by the Pydantic schema.
+
+    Returns:
+        A new list of players; the input is left untouched.
+    """
+    if threshold is None:
+        return pool
+    return [
+        p for p in pool
+        if p.start_probability is None or p.start_probability >= threshold
+    ]
+
+
 def _strategy_by_name(name: str) -> StrategyProfile:
     """Look up a default strategy by name; raise 404 on unknown names."""
     for s in default_strategies():
@@ -299,18 +330,25 @@ async def run_multi_strategy(
                 projected_score=float(r["projected_score"]),
                 prediction_std=r.get("prediction_std"),
                 eligible_roles=frozenset(r.get("eligible_roles") or []),
+                start_probability=r.get("start_probability"),
             )
             for r in rows
         ]
 
     pool = deduplicate_players(pool)
+    # Apply client-supplied start_probability pre-filter (mirrors
+    # AuctionConfigSchema.min_start_probability semantics). When the
+    # threshold is ``None`` (default) this is a no-op.
+    pool = _apply_min_start_probability(pool, req.min_start_probability)
     if not pool:
         raise HTTPException(
             status_code=400,
             detail=(
                 f"Empty player pool for season_start={req.season_start} "
-                f"(min_qt_a={req.min_qt_a}). Check that quotations and ML "
-                f"predictions are available."
+                f"(min_qt_a={req.min_qt_a}, "
+                f"min_start_probability={req.min_start_probability}). "
+                "Check that quotations and ML predictions are available, "
+                "or lower the threshold."
             ),
         )
 
@@ -319,6 +357,8 @@ async def run_multi_strategy(
         engine = VarEngine(
             total_budget=config.budget,
             num_participants=config.num_participants,
+            min_start_probability=req.min_start_probability,
+            replacement_method=req.replacement_method,
         )
         players_input = [
             {"player_id": p.player_id, "role": p.role,
@@ -424,17 +464,23 @@ async def run_single_strategy(
                 projected_score=float(r["projected_score"]),
                 prediction_std=r.get("prediction_std"),
                 eligible_roles=frozenset(r.get("eligible_roles") or []),
+                start_probability=r.get("start_probability"),
             )
             for r in rows
         ]
 
     pool = deduplicate_players(pool)
+    # Apply client-supplied start_probability pre-filter (mirrors
+    # AuctionConfigSchema.min_start_probability semantics). When the
+    # threshold is ``None`` (default) this is a no-op.
+    pool = _apply_min_start_probability(pool, req.min_start_probability)
     if not pool:
         raise HTTPException(
             status_code=400,
             detail=(
                 f"Empty player pool for season_start={req.season_start} "
-                f"(min_qt_a={req.min_qt_a})."
+                f"(min_qt_a={req.min_qt_a}, "
+                f"min_start_probability={req.min_start_probability})."
             ),
         )
 

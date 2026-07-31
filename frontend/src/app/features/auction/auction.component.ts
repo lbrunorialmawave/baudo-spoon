@@ -24,6 +24,7 @@ import {
 import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.component';
 import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/error-boundary.component';
 import { FieldLegendComponent, FieldLegendExample } from '../../shared/components/field-legend/field-legend.component';
+import { OPTIMIZER_LEGENDS } from '../optimizer/optimizer.component';
 
 const ROLE_COLOR: Record<string, string> = {
   P: 'var(--color-role-gk)',
@@ -730,6 +731,70 @@ function makeParticipants(
               <span>Applica baseline di inflazione basata sul numero di partecipanti</span>
             </label>
 
+            @if (useInflationBaseline) {
+              <div class="field-row">
+                <div class="field-group">
+                  <label class="field-label" for="inflationPct">Soglia percentile inflazione <span class="field-hint">0–1</span></label>
+                  <input id="inflationPct" class="field-input" type="number" min="0" max="1" step="0.05"
+                         [ngModel]="inflationPercentileThreshold"
+                         (ngModelChange)="inflationPercentileThreshold = +$event"
+                         [attr.aria-describedby]="'legend-inflationPercentileThreshold'" />
+                  <app-field-legend
+                    fieldId="legend-inflationPercentileThreshold"
+                    [description]="OPTIMIZER_LEGENDS['inflationPercentileThreshold'].description"
+                    [examples]="OPTIMIZER_LEGENDS['inflationPercentileThreshold'].examples" />
+                </div>
+                <div class="field-group">
+                  <label class="field-label" for="maxInflation">Moltiplicatore massimo inflazione <span class="field-hint">≥1</span></label>
+                  <input id="maxInflation" class="field-input" type="number" min="1" max="5" step="0.05"
+                         [ngModel]="maxInflationMultiplier"
+                         (ngModelChange)="maxInflationMultiplier = +$event"
+                         [attr.aria-describedby]="'legend-maxInflationMultiplier'" />
+                  <app-field-legend
+                    fieldId="legend-maxInflationMultiplier"
+                    [description]="OPTIMIZER_LEGENDS['maxInflationMultiplier'].description"
+                    [examples]="OPTIMIZER_LEGENDS['maxInflationMultiplier'].examples" />
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field-group">
+                  <label class="field-label" for="baseInflationRate">Tasso di inflazione di base <span class="field-hint">0–1</span></label>
+                  <input id="baseInflationRate" class="field-input" type="number" min="0" max="1" step="0.01"
+                         [ngModel]="baseInflationRate"
+                         (ngModelChange)="baseInflationRate = +$event"
+                         [attr.aria-describedby]="'legend-baseInflationRate'" />
+                  <app-field-legend
+                    fieldId="legend-baseInflationRate"
+                    [description]="OPTIMIZER_LEGENDS['baseInflationRate'].description"
+                    [examples]="OPTIMIZER_LEGENDS['baseInflationRate'].examples" />
+                </div>
+                <div class="field-group">
+                  <label class="field-label" for="baselineParticipants">Partecipanti baseline del modello</label>
+                  <input id="baselineParticipants" class="field-input" type="number" min="2" max="20" step="1"
+                         [ngModel]="baselineParticipants"
+                         (ngModelChange)="baselineParticipants = +$event"
+                         [attr.aria-describedby]="'legend-baselineParticipants'" />
+                  <app-field-legend
+                    fieldId="legend-baselineParticipants"
+                    [description]="OPTIMIZER_LEGENDS['baselineParticipants'].description"
+                    [examples]="OPTIMIZER_LEGENDS['baselineParticipants'].examples" />
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field-group">
+                  <label class="field-label" for="teamStrengthMul">Moltiplicatore Elo di Club <span class="field-hint">0–2</span></label>
+                  <input id="teamStrengthMul" class="field-input" type="number" min="0" max="2" step="0.05"
+                         [ngModel]="teamStrengthMultiplier"
+                         (ngModelChange)="teamStrengthMultiplier = +$event"
+                         [attr.aria-describedby]="'legend-teamStrengthMultiplier'" />
+                  <app-field-legend
+                    fieldId="legend-teamStrengthMultiplier"
+                    [description]="OPTIMIZER_LEGENDS['teamStrengthMultiplier'].description"
+                    [examples]="OPTIMIZER_LEGENDS['teamStrengthMultiplier'].examples" />
+                </div>
+              </div>
+            }
+
             <div class="field-row">
               <div class="field-group">
                 <label class="field-label" for="referenceBudget">Budget di riferimento per il modello <span class="field-hint">cr.</span></label>
@@ -766,6 +831,34 @@ function makeParticipants(
                 fieldId="legend-valuationMode"
                 [description]="SETUP_LEGENDS['valuationMode'].description"
                 [examples]="SETUP_LEGENDS['valuationMode'].examples" />
+            </div>
+
+            <p class="section-divider">Filtro sui giocatori e replacement level</p>
+
+            <div class="field-row">
+              <div class="field-group">
+                <label class="field-label" for="replacementMethod">Replacement level per VAR/ESV</label>
+                <select id="replacementMethod" class="field-input" [(ngModel)]="replacementMethod"
+                        [attr.aria-describedby]="'legend-replacementMethod'">
+                  <option value="percentile">Percentile (bottom-N% per ruolo)</option>
+                  <option value="roster_depth">Roster depth (quota rosa per ruolo)</option>
+                </select>
+                <app-field-legend
+                  fieldId="legend-replacementMethod"
+                  [description]="OPTIMIZER_LEGENDS['replacementMethod'].description"
+                  [examples]="OPTIMIZER_LEGENDS['replacementMethod'].examples" />
+              </div>
+              <div class="field-group">
+                <label class="field-label" for="minStartProb">Soglia minima di titolarità <span class="field-hint">0–1 (vuoto = nessun filtro)</span></label>
+                <input id="minStartProb" class="field-input" type="number" min="0" max="1" step="0.05"
+                       [ngModel]="minStartProbability"
+                       (ngModelChange)="minStartProbability = $event === null || $event === '' ? null : +$event"
+                       [attr.aria-describedby]="'legend-minStartProbability'" />
+                <app-field-legend
+                  fieldId="legend-minStartProbability"
+                  [description]="OPTIMIZER_LEGENDS['minStartProbability'].description"
+                  [examples]="OPTIMIZER_LEGENDS['minStartProbability'].examples" />
+              </div>
             </div>
 
             <!-- Advanced -->
@@ -941,6 +1034,27 @@ export class AuctionComponent {
   budgetInitial = 300;
   roleQuotas: Partial<Record<AuctionRole, number>> = { P: 3, D: 8, C: 8, A: 6 };
   valuationMode: ValuationMode = 'PER_MATCH_RATING';
+
+  // ── Inflation config (only sent when useInflationBaseline = true) ──
+  // Defaults mirror the backend Pydantic InflationConfigSchema defaults
+  // so the auction screen stays behaviorally equivalent to the optimizer
+  // when the user enables the toggle without touching any slider.
+  /** Soglia (0–1) di percentile per attivare la moltiplicazione. Default 0.7. */
+  inflationPercentileThreshold = 0.7;
+  /** Moltiplicatore massimo applicato al listino base. Default 1.6. */
+  maxInflationMultiplier = 1.6;
+  /** Tasso di inflazione di base applicato a tutti i prezzi. Default 0.05 (5%). */
+  baseInflationRate = 0.05;
+  /** Numero di partecipanti "baseline" del modello. Default 8. */
+  baselineParticipants = 8;
+  /** Peso aggiustamento Elo di Club sul costo. 0 = disattivato (default backend). */
+  teamStrengthMultiplier = 0.0;
+
+  // ── Replacement level & start-probability pre-filter ──
+  /** Replacement level: percentile (default) o roster_depth. */
+  replacementMethod: 'percentile' | 'roster_depth' = 'percentile';
+  /** Soglia minima di start_probability; null = nessun filtro (default). */
+  minStartProbability: number | null = null;
 
   alpha = 0.3;
   spilloverAdj = 0.1;
@@ -1145,6 +1259,23 @@ export class AuctionComponent {
         },
         alternativesConfig: { lowCostPercentile: this.lowCostPercentile },
         useInflationBaseline: this.useInflationBaseline,
+        // Only attach the inflationConfig object when the baseline is enabled
+        // and the user hasn't reset the values. Mirrors the backend's
+        // Optional[InflationConfigSchema] contract: omitted ⇒ server defaults.
+        ...(this.useInflationBaseline ? {
+          inflationConfig: {
+            inflationPercentileThreshold: this.inflationPercentileThreshold,
+            maxInflationMultiplier: this.maxInflationMultiplier,
+            baseInflationRate: this.baseInflationRate,
+            baselineParticipants: this.baselineParticipants,
+            teamStrengthMultiplier: this.teamStrengthMultiplier,
+          },
+        } : {}),
+        // Pool pre-filter and replacement level are always sent so the
+        // server-side VarEngine applies them regardless of the inflation
+        // toggle (they affect the ranking, not the price model).
+        minStartProbability: this.minStartProbability,
+        replacementMethod: this.replacementMethod,
         referenceBudget: this.referenceBudget,
         budgetInitial: this.budgetInitial,
         valuationMode: this.valuationMode,

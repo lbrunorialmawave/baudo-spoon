@@ -44,7 +44,13 @@ const ALL_FORMATIONS: FormationConfig[] = [
  * Ogni entry spiega cosa fa il campo e come viene utilizzato dal risolutore
  * ILP, con esempi concreti d'uso per facilitare la comprensione a tutti.
  */
-const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; examples: readonly FieldLegendExample[] }>> = {
+/**
+ * Map of field legends used across the optimizer and the auction screens.
+ * Exported so the auction screen can reuse identical copy for the shared
+ * fields (inflation tuning, replacement level, start-probability pre-filter,
+ * Club Elo team-strength multiplier) without duplicating text.
+ */
+export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; examples: readonly FieldLegendExample[] }>> = {
   seasonStart: {
     description: 'Anno di inizio della stagione di Serie A da cui pescare le quotazioni storiche, i listini e le statistiche dei giocatori. Il risolutore ILP usa queste informazioni per proiettare i punteggi attesi di fine stagione.',
     examples: [
@@ -236,6 +242,14 @@ const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; examples
       { label: '4', value: 'simula mercato di lega piccola' },
       { label: '8', value: 'default, mercato standard' },
       { label: '12', value: 'simula mercato affollato' },
+    ],
+  },
+  teamStrengthMultiplier: {
+    description: 'Peso dell\'aggiustamento Elo di Club sulla stima del costo dei giocatori. 0 = disattivato (default backend), valori più alti premiano i giocatori di squadre con Elo alto nel prezzo stimato (più costosi per le big, meno costosi per le piccole). Il moltiplicatore agisce solo sull\'effective cost usato dal risolutore, non sul listino secco.',
+    examples: [
+      { label: '0.0', value: 'disattivato, Elo ignorato' },
+      { label: '0.5', value: 'aggiustamento moderato, leggero premio alle big' },
+      { label: '1.0', value: 'aggiustamento pieno, differenza di costo tra big e piccole marcata' },
     ],
   },
   customWeights: {
@@ -587,6 +601,16 @@ const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; examples
                 fieldId="legend-baselineParticipants"
                 [description]="OPTIMIZER_LEGENDS['baselineParticipants'].description"
                 [examples]="OPTIMIZER_LEGENDS['baselineParticipants'].examples" />
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="opt-teamStrengthMul">Moltiplicatore Elo di Club (peso sulla stima del costo)</label>
+              <input id="opt-teamStrengthMul" class="field-input" type="number" min="0" max="2" step="0.05"
+                     [(ngModel)]="teamStrengthMultiplier"
+                     [attr.aria-describedby]="'legend-teamStrengthMultiplier'" />
+              <app-field-legend
+                fieldId="legend-teamStrengthMultiplier"
+                [description]="OPTIMIZER_LEGENDS['teamStrengthMultiplier'].description"
+                [examples]="OPTIMIZER_LEGENDS['teamStrengthMultiplier'].examples" />
             </div>
           </div>
 
@@ -1070,6 +1094,9 @@ export class OptimizerComponent {
   readonly maxInflationMultiplier = signal(1.6);
   readonly baseInflationRate = signal(0.05);
   readonly baselineParticipants = signal(8);
+  /** Club Elo team-strength adjustment on the effective cost. 0 = disabled
+   *  (matches the backend Pydantic default; see `InflationConfigSchema.team_strength_multiplier`). */
+  readonly teamStrengthMultiplier = signal(0.0);
 
   // ── Risk & VAR ────────────────────────────────────────
   readonly riskAversion = signal(0.0);
@@ -1180,6 +1207,7 @@ export class OptimizerComponent {
         maxInflationMultiplier: this.maxInflationMultiplier(),
         baseInflationRate: this.baseInflationRate(),
         baselineParticipants: this.baselineParticipants(),
+        teamStrengthMultiplier: this.teamStrengthMultiplier(),
       },
       maxSinglePlayerBudgetShare: this.maxSinglePlayerBudgetShare(),
       mustInclude: mustInclude.length ? mustInclude : undefined,

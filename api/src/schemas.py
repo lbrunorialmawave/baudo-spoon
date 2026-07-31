@@ -448,6 +448,37 @@ class OptimizationRequest(_CamelModel):
     risk_aversion: float = Field(default=0.0, ge=0.0)
     var_blend: float = Field(default=0.0, ge=0.0, le=1.0)
     esv_weight: float = Field(default=0.0, ge=0.0)
+    # Pool pre-filter: esclude i giocatori con start_probability inferiore
+    # alla soglia PRIMA della costruzione della pool passata al solver ILP.
+    # `None` (default) ⇒ nessun filtro (compatibilità con richieste legacy).
+    # Quando `var_blend > 0` oppure `esv_weight > 0`, lo stesso valore viene
+    # propagato al VarEngine per garantire coerenza tra ranking VAR e pool.
+    min_start_probability: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Soglia minima di probabilità di titolarità (0..1) per "
+            "includere un giocatore nella pool del solver. I giocatori "
+            "con start_probability < soglia vengono filtrati PRIMA "
+            "dell'ILP, analogamente a quanto fa AuctionConfigSchema. "
+            "`None` = nessun filtro (default)."
+        ),
+    )
+    # Replacement level per il calcolo VAR/ESV quando il blend è attivo
+    # (`var_blend > 0` oppure `esv_weight > 0`). Valori ammessi:
+    # "percentile" (default, bottom-N% per ruolo) oppure
+    # "roster_depth" (quota di rosa per ruolo). Allineato al campo
+    # omonimo di AuctionConfigSchema.
+    replacement_method: str = Field(
+        default="percentile",
+        description=(
+            "Metodo di calcolo del replacement level per il VAR/ESV "
+            "blend. Identico al campo omonimo di AuctionConfigSchema: "
+            "'percentile' (bottom-N% per ruolo) oppure 'roster_depth' "
+            "(quota di rosa per ruolo)."
+        ),
+    )
     valuation_mode: str = "PER_MATCH_RATING"
     """Objective metric: PER_MATCH_RATING (default) or SEASON_VALUE."""
     strategy_names: Optional[list[str]] = None  # None ⇒ tutte e 4 di default

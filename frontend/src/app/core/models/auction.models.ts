@@ -33,6 +33,9 @@ export interface AlternativesConfig {
 /** Score metric used by VarEngine and the optimizer objective. */
 export type ValuationMode = 'PER_MATCH_RATING' | 'SEASON_VALUE';
 
+/** Replacement-level strategy used by VarEngine. */
+export type ReplacementMethod = 'percentile' | 'roster_depth';
+
 /** Auction market + roster quotas. */
 export interface AuctionConfig {
   numParticipants: number;
@@ -41,6 +44,27 @@ export interface AuctionConfig {
   marketDriftConfig: MarketDriftConfig;
   alternativesConfig: AlternativesConfig;
   useInflationBaseline: boolean;
+  /**
+   * Full inflation config (percentile threshold, max multiplier, base
+   * rate, baseline participants, Club Elo weight). When `useInflationBaseline`
+   * is `true` and this object is sent, the backend uses its values; when
+   * omitted, the backend uses its own defaults (mirrors Optimizer).
+   * Sending this object while `useInflationBaseline` is `false` is
+   * silently ignored by the backend.
+   */
+  inflationConfig?: Partial<InflationConfig> | null;
+  /**
+   * Pre-filter per il ranking VAR: scarta i giocatori con
+   * `start_probability` < soglia PRIMA del ranking. `null` (default)
+   * = nessun filtro, allineato al default Pydantic lato backend.
+   */
+  minStartProbability?: number | null;
+  /**
+   * Metodo di calcolo del replacement level per VAR/ESV.
+   * 'percentile' (default backend) = bottom-N% per ruolo,
+   * 'roster_depth' = quota di rosa per ruolo.
+   */
+  replacementMethod?: ReplacementMethod;
   /** Budget the quotation file is calibrated on (historical baseline). */
   referenceBudget: number;
   /** Budget per team for the current auction session. */

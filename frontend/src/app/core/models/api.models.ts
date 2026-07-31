@@ -101,6 +101,15 @@ export interface InflationConfig {
   maxInflationMultiplier: number;
   baseInflationRate: number;
   baselineParticipants: number;
+  /**
+   * Peso dell'aggiustamento Elo di Club sulla stima del costo di un
+   * giocatore. 0 = disattivato (default backend), valori più alti
+   * premiano i giocatori di squadre con Elo alto nel prezzo stimato
+   * (costa di più per le big, costa di meno per le piccole).
+   * Range suggerito: [0, 1.5]. Valori negativi non hanno effetto
+   * (Pydantic accetta solo `ge=0.0`).
+   */
+  teamStrengthMultiplier?: number;
 }
 
 export interface OptimizationRequest {
