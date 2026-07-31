@@ -107,13 +107,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           defenders: 5,
           midfielders: 3,
           forwards: 2,
-        },
-        {
-          label: "5-4-1",
-          defenders: 5,
-          midfielders: 4,
-          forwards: 1,
-        },
+        }
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.7,
@@ -206,13 +200,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           defenders: 5,
           midfielders: 3,
           forwards: 2,
-        },
-        {
-          label: "5-4-1",
-          defenders: 5,
-          midfielders: 4,
-          forwards: 1,
-        },
+        }
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.75,
@@ -328,13 +316,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           defenders: 5,
           midfielders: 3,
           forwards: 2,
-        },
-        {
-          label: "5-4-1",
-          defenders: 5,
-          midfielders: 4,
-          forwards: 1,
-        },
+        }
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.6,
@@ -449,13 +431,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           defenders: 5,
           midfielders: 3,
           forwards: 2,
-        },
-        {
-          label: "5-4-1",
-          defenders: 5,
-          midfielders: 4,
-          forwards: 1,
-        },
+        }
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.75,
@@ -560,13 +536,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           defenders: 5,
           midfielders: 3,
           forwards: 2,
-        },
-        {
-          label: "5-4-1",
-          defenders: 5,
-          midfielders: 4,
-          forwards: 1,
-        },
+        }
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.68,
@@ -681,13 +651,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           defenders: 5,
           midfielders: 3,
           forwards: 2,
-        },
-        {
-          label: "5-4-1",
-          defenders: 5,
-          midfielders: 4,
-          forwards: 1,
-        },
+        }
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.72,
@@ -802,13 +766,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           defenders: 5,
           midfielders: 3,
           forwards: 2,
-        },
-        {
-          label: "5-4-1",
-          defenders: 5,
-          midfielders: 4,
-          forwards: 1,
-        },
+        }
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.7,
@@ -906,13 +864,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           defenders: 5,
           midfielders: 3,
           forwards: 2,
-        },
-        {
-          label: "5-4-1",
-          defenders: 5,
-          midfielders: 4,
-          forwards: 1,
-        },
+        }
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.72,
@@ -1016,13 +968,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           defenders: 5,
           midfielders: 3,
           forwards: 2,
-        },
-        {
-          label: "5-4-1",
-          defenders: 5,
-          midfielders: 4,
-          forwards: 1,
-        },
+        }
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.55,
@@ -1249,13 +1195,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           defenders: 5,
           midfielders: 3,
           forwards: 2,
-        },
-        {
-          label: "5-4-1",
-          defenders: 5,
-          midfielders: 4,
-          forwards: 1,
-        },
+        }
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.7,
@@ -1348,13 +1288,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           defenders: 5,
           midfielders: 3,
           forwards: 2,
-        },
-        {
-          label: "5-4-1",
-          defenders: 5,
-          midfielders: 4,
-          forwards: 1,
-        },
+        }
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.68,
@@ -1469,13 +1403,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           defenders: 5,
           midfielders: 3,
           forwards: 2,
-        },
-        {
-          label: "5-4-1",
-          defenders: 5,
-          midfielders: 4,
-          forwards: 1,
-        },
+        }
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.75,
@@ -1579,13 +1507,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           defenders: 5,
           midfielders: 3,
           forwards: 2,
-        },
-        {
-          label: "5-4-1",
-          defenders: 5,
-          midfielders: 4,
-          forwards: 1,
-        },
+        }
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.65,
@@ -1695,13 +1617,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           defenders: 5,
           midfielders: 3,
           forwards: 2,
-        },
-        {
-          label: "5-4-1",
-          defenders: 5,
-          midfielders: 4,
-          forwards: 1,
-        },
+        }
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.68,
@@ -1816,13 +1732,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           defenders: 5,
           midfielders: 3,
           forwards: 2,
-        },
-        {
-          label: "5-4-1",
-          defenders: 5,
-          midfielders: 4,
-          forwards: 1,
-        },
+        }
       ],
       inflationConfig: {
         inflationPercentileThreshold: 0.7,
