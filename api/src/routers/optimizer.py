@@ -84,6 +84,7 @@ def _build_config(req: OptimizationRequest) -> OptimizationConfig:
         max_inflation_multiplier=req.inflation_config.max_inflation_multiplier,
         base_inflation_rate=req.inflation_config.base_inflation_rate,
         baseline_participants=req.inflation_config.baseline_participants,
+        team_strength_multiplier=req.inflation_config.team_strength_multiplier,
     )
     preferred_formation = (
         Formation(

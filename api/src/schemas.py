@@ -377,6 +377,15 @@ class InflationConfigSchema(_CamelModel):
     max_inflation_multiplier: float = 1.6
     base_inflation_rate: float = 0.05
     baseline_participants: int = 8
+    team_strength_multiplier: float = Field(default=0.0, ge=0.0)
+    """Peso dell'aggiustamento team-strength (Elo) sul costo effettivo.
+
+    Quando ``> 0``, il costo effettivo dei giocatori appartenenti a
+    squadre forti viene moltiplicato per ``1 + weight * normalized_elo``,
+    dove ``normalized_elo`` è il punteggio Elo normalizzato in ``[0, 1]``
+    caricato da :func:`ml.optimizer.team_strength.load_team_strength_scores`.
+    Default ``0.0`` preserva il comportamento storico (nessun boost).
+    """
 
 
 class PlayerSchema(_CamelModel):

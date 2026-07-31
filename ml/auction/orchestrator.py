@@ -474,6 +474,13 @@ def serialize_state(state: AuctionState) -> dict[str, object]:
         },
         "available_pool": [_player_to_dict(p) for p in state.available_pool],
         "role_percentile_map": dict(state.role_percentile_map),
+        # Elo scores are loaded once per session in ``initialize_auction``
+        # and are needed by every ``record_assignment`` that prices a
+        # player.  Without round-tripping them, a resumed auction would
+        # silently lose the team-strength adjustment (the field has a
+        # default_factory=dict, so no error is raised — the Elo signal
+        # just disappears).
+        "team_strength_scores": dict(state.team_strength_scores),
     }
 
 
@@ -544,6 +551,15 @@ def deserialize_state(payload: dict[str, object]) -> AuctionState:
         available_pool=available_pool,
         role_percentile_map=cast(
             dict[str, float], _as_dict(payload["role_percentile_map"])
+        ),
+        # Restore the Elo table so a resumed auction keeps pricing
+        # players with the team-strength adjustment.  Missing key
+        # tolerated for backward compat with pre-fix payloads: fall
+        # back to empty dict (no Elo signal — same as a brand-new
+        # state with ``team_strength_multiplier=0.0``).
+        team_strength_scores=cast(
+            dict[str, float],
+            _as_dict(payload.get("team_strength_scores", {})),
         ),
     )
 

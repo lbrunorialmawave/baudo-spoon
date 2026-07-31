@@ -238,6 +238,7 @@ async def init_auction(
                 max_inflation_multiplier=ic.max_inflation_multiplier,
                 base_inflation_rate=ic.base_inflation_rate,
                 baseline_participants=ic.baseline_participants,
+                team_strength_multiplier=ic.team_strength_multiplier,
             )
         else:
             inflation = InflationConfig()
