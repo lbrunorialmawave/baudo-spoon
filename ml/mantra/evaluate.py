@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid
-from datetime import datetime
 from typing import Any
 
 import numpy as np
@@ -36,52 +34,86 @@ def evaluate_mantra_vs_actuals(
     model_name='mantra-4pillar' so it appears in /model-metrics/compare.
 
     Returns metrics dict or None if insufficient data.
+
+    Notes
+    -----
+    ``player_season_aggregates.fantacalcio_id`` is a *misnomer*: the view
+    (migration 010) aliases ``player_season_stats.player_fotmob_id`` as
+    ``fantacalcio_id``. Both sides of the join to ``player_id_map.player_fotmob_id``
+    are therefore BIGINT FotMob ids — never cast to text.
     """
     players = mantra_result.get("players", [])
     if not players:
         log.warning("No MANTRA players to evaluate")
         return None
 
-    with engine.connect() as conn:
-        rows = conn.execute(sa.text("""
-            SELECT fantacalcio_id, vote_avg
-            FROM player_season_aggregates psa
-            JOIN player_id_map pim ON pim.player_fotmob_id = psa.fantacalcio_id::text
-            WHERE psa.season_start = :season_start AND vote_avg IS NOT NULL
-        """), {"season_start": season_start}).fetchall()
+    # Primary path: aggregates view keyed by FotMob id (aliased as fantacalcio_id)
+    # → map to real fantacalcio_id via player_id_map.
+    primary_sql = sa.text(
+        """
+        SELECT pim.fantacalcio_id, psa.vote_avg
+        FROM player_season_aggregates psa
+        JOIN player_id_map pim
+          ON pim.player_fotmob_id = psa.fantacalcio_id
+         AND pim.season_start = psa.season_start
+        WHERE psa.season_start = :season_start
+          AND psa.vote_avg IS NOT NULL
+          AND pim.fantacalcio_id IS NOT NULL
+        """
+    )
 
+    # Fallback: start from quotations (true fantacalcio_id) and join stats via map.
+    fallback_sql = sa.text(
+        """
+        SELECT pq.fantacalcio_id, psa.vote_avg
+        FROM player_quotations pq
+        JOIN player_id_map pim
+          ON pim.fantacalcio_id = pq.fantacalcio_id
+         AND pim.season_start = pq.season_start
+        JOIN player_season_aggregates psa
+          ON psa.fantacalcio_id = pim.player_fotmob_id
+         AND psa.season_start = pq.season_start
+        WHERE pq.season_start = :season_start
+          AND psa.vote_avg IS NOT NULL
+          AND pim.player_fotmob_id IS NOT NULL
+        """
+    )
+
+    with engine.connect() as conn:
+        rows = conn.execute(primary_sql, {"season_start": season_start}).fetchall()
         if not rows:
-            rows = conn.execute(sa.text("""
-                SELECT pq.fantacalcio_id, pss.vote_avg
-                FROM player_quotations pq
-                JOIN player_id_map pim ON pim.fantacalcio_id = pq.fantacalcio_id
-                    AND pim.season_start = pq.season_start
-                LEFT JOIN player_season_aggregates pss
-                    ON pss.fantacalcio_id = pim.player_fotmob_id::bigint
-                    AND pss.season_start = pq.season_start
-                WHERE pq.season_start = :season_start AND pss.vote_avg IS NOT NULL
-            """), {"season_start": season_start}).fetchall()
+            log.info(
+                "Primary MANTRA actuals query returned 0 rows for season %s; trying fallback",
+                season_start,
+            )
+            rows = conn.execute(fallback_sql, {"season_start": season_start}).fetchall()
 
     actuals = {int(r[0]): float(r[1]) for r in rows}
     if not actuals:
         log.warning("No actual ratings found for season %d", season_start)
         return None
 
-    y_true = []
-    y_pred = []
+    y_true: list[float] = []
+    y_pred: list[float] = []
     for p in players:
         fid = p.get("fantacalcio_id")
         vr = p.get("VR")
-        if fid in actuals and vr is not None:
-            y_true.append(actuals[fid])
+        if fid is None or vr is None:
+            continue
+        try:
+            fid_int = int(fid)
+        except (TypeError, ValueError):
+            continue
+        if fid_int in actuals:
+            y_true.append(actuals[fid_int])
             y_pred.append(float(vr))
 
     if len(y_true) < 10:
         log.warning("Too few matched players (%d) for MANTRA evaluation", len(y_true))
         return None
 
-    y_true_arr = np.array(y_true)
-    y_pred_arr = np.array(y_pred)
+    y_true_arr = np.array(y_true, dtype=float)
+    y_pred_arr = np.array(y_pred, dtype=float)
 
     rmse = float(np.sqrt(np.mean((y_true_arr - y_pred_arr) ** 2)))
     mae = float(np.mean(np.abs(y_true_arr - y_pred_arr)))
@@ -90,30 +122,50 @@ def evaluate_mantra_vs_actuals(
     r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
 
     metrics = {"rmse": round(rmse, 4), "mae": round(mae, 4), "r2": round(r2, 4)}
-    log.info("MANTRA evaluation: RMSE=%.4f MAE=%.4f R2=%.4f (n=%d)", rmse, mae, r2, len(y_true))
+    log.info(
+        "MANTRA evaluation: RMSE=%.4f MAE=%.4f R2=%.4f (n=%d)",
+        rmse,
+        mae,
+        r2,
+        len(y_true),
+    )
 
     run_id = f"mantra-{season_start}-{uuid.uuid4().hex[:8]}"
     try:
         with engine.begin() as conn:
-            conn.execute(sa.text("""
-                INSERT INTO model_runs
-                    (run_id, model_name, trained_at, season_start, git_commit, status)
-                VALUES
-                    (:run_id, 'mantra-4pillar', NOW(), :season_start, :git_commit, 'completed')
-                ON CONFLICT (run_id) DO NOTHING
-            """), {
-                "run_id": run_id,
-                "season_start": season_start,
-                "git_commit": _git_commit(),
-            })
+            conn.execute(
+                sa.text(
+                    """
+                    INSERT INTO model_runs
+                        (run_id, model_name, trained_at, season_start, git_commit, status)
+                    VALUES
+                        (:run_id, 'mantra-4pillar', NOW(), :season_start, :git_commit, 'completed')
+                    ON CONFLICT (run_id) DO NOTHING
+                    """
+                ),
+                {
+                    "run_id": run_id,
+                    "season_start": season_start,
+                    "git_commit": _git_commit(),
+                },
+            )
 
             for metric_name, value in metrics.items():
-                conn.execute(sa.text("""
-                    INSERT INTO model_metrics
-                        (run_id, metric_name, metric_value, split)
-                    VALUES (:run_id, :metric_name, :metric_value, 'test')
-                    ON CONFLICT DO NOTHING
-                """), {"run_id": run_id, "metric_name": metric_name, "metric_value": value})
+                conn.execute(
+                    sa.text(
+                        """
+                        INSERT INTO model_metrics
+                            (run_id, metric_name, metric_value, split)
+                        VALUES (:run_id, :metric_name, :metric_value, 'test')
+                        ON CONFLICT DO NOTHING
+                        """
+                    ),
+                    {
+                        "run_id": run_id,
+                        "metric_name": metric_name,
+                        "metric_value": value,
+                    },
+                )
 
         log.info("MANTRA metrics persisted as run %s", run_id)
     except Exception as exc:
