@@ -94,14 +94,25 @@ async def get_player_expert_ratings_by_fotmob(
 ) -> ORJSONResponse:
     """Look up ratings via player_id_map, since expert_ratings keys players
     by the scraper's own id space (``fc-{fantacalcio_id}``) while the rest
-    of the frontend addresses players by FotMob id."""
+    of the frontend addresses players by FotMob id.
+
+    player_id_map has one row per (fantacalcio_id, season_start), so a
+    player mapped across multiple seasons has multiple rows pointing at the
+    same fantacalcio_id. A plain JOIN on player_fotmob_id would fan out and
+    return each expert_ratings row once per mapped season — the DISTINCT
+    subquery collapses that back down to the actual set of fantacalcio_ids
+    before joining against expert_ratings.
+    """
     import sqlalchemy as sa
 
     result = await db.execute(
         sa.text("""
             SELECT er.* FROM expert_ratings er
-            JOIN player_id_map pim ON er.player_id = 'fc-' || pim.fantacalcio_id::text
-            WHERE pim.player_fotmob_id = :fid
+            WHERE er.player_id IN (
+                SELECT DISTINCT 'fc-' || pim.fantacalcio_id::text
+                FROM player_id_map pim
+                WHERE pim.player_fotmob_id = :fid
+            )
             ORDER BY er.season_start DESC, er.matchday DESC
         """),
         {"fid": player_fotmob_id},

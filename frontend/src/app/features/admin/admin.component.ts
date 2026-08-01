@@ -38,6 +38,8 @@ export class AdminComponent {
         // Pre-populate the season-scoped scraper params with the current season.
         const snai = this.scrapers.find(s => s.name === 'snai');
         if (snai && latest) snai.params[0].value.set(String(latest));
+        const oddsApi = this.scrapers.find(s => s.name === 'odds-api');
+        if (oddsApi && latest) oddsApi.params[0].value.set(String(latest));
         const esperti = this.scrapers.find(s => s.name === 'esperti');
         if (esperti && latest) esperti.params[0].value.set(String(latest));
       },
@@ -100,7 +102,19 @@ export class AdminComponent {
     {
       name: 'snai',
       label: 'Snai Odds',
-      description: 'Scrape Serie A winner odds from snai.it',
+      description: 'Scrape Serie A winner odds from snai.it (blocked from datacenter IPs)',
+      frequency: 'Pre-season + January',
+      params: [
+        { key: 'season_start', label: 'Season', placeholder: 'current', value: signal('') },
+      ],
+      running: signal(false),
+      result: signal<string | null>(null),
+      error: signal<string | null>(null),
+    },
+    {
+      name: 'odds-api',
+      label: 'Odds API (Snai replacement)',
+      description: 'Scrape Serie A winner odds via the-odds-api.com',
       frequency: 'Pre-season + January',
       params: [
         { key: 'season_start', label: 'Season', placeholder: 'current', value: signal('') },
@@ -144,6 +158,8 @@ export class AdminComponent {
     let obs;
     if (scraper.name === 'snai') {
       obs = this.mantraService.runSnaiScraper(seasonOrMatchday);
+    } else if (scraper.name === 'odds-api') {
+      obs = this.mantraService.runOddsApiScraper(seasonOrMatchday);
     } else if (scraper.name === 'esperti') {
       obs = this.mantraService.runEspertiScraper(seasonOrMatchday);
     } else {

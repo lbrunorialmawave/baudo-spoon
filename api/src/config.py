@@ -43,6 +43,11 @@ class APISettings(BaseSettings):
         description="TTL for Redis-cached ML results (seconds)",
     )
 
+    # The Odds API (the-odds-api.com) — used for Serie A winner outright odds,
+    # replacing the snai.it scraper which is blocked at the TLS level from
+    # datacenter IPs. Set via API_ODDS_API_KEY.
+    odds_api_key: str | None = Field(default=None, description="API key for the-odds-api.com")
+
     # Security — /v1/intelligence endpoints require this key via X-API-Key header.
     api_key_secret: str = Field(
         default="",

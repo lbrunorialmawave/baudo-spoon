@@ -137,4 +137,11 @@ export class MantraService {
     if (seasonStart) params = params.set('season_start', seasonStart);
     return this.http.post(`${this.baseUrl}/admin/scrape/esperti`, null, { params });
   }
+
+  /** Trigger The Odds API winner-odds scraper (snai replacement). */
+  runOddsApiScraper(seasonStart?: number): Observable<any> {
+    let params = new HttpParams();
+    if (seasonStart) params = params.set('season_start', seasonStart);
+    return this.http.post(`${this.baseUrl}/admin/scrape/odds-api`, null, { params });
+  }
 }
