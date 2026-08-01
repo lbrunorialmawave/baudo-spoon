@@ -10,6 +10,9 @@ import {
 import { PredictionService } from '../../core/services/prediction.service';
 import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.component';
 import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/error-boundary.component';
+import { PredictionDrawerComponent } from './components/prediction-drawer/prediction-drawer.component';
+import { PlayerDrawerComponent } from '../players/components/player-drawer/player-drawer.component';
+import { PlayerSeasonStat } from '../../core/models/stats.models';
 
 const SCORE_MIN = 4.5;
 const SCORE_MAX = 9.0;
@@ -31,7 +34,10 @@ const HYBRID_LABELS = [
 @Component({
   selector: 'app-predictions',
   standalone: true,
-  imports: [FormsModule, DatePipe, DecimalPipe, PercentPipe, SkeletonComponent, ErrorBoundaryComponent],
+  imports: [
+    FormsModule, DatePipe, DecimalPipe, PercentPipe, SkeletonComponent, ErrorBoundaryComponent,
+    PredictionDrawerComponent, PlayerDrawerComponent,
+  ],
   template: `
     <div style="background:var(--color-bg);min-height:100%">
       <!-- Page header -->
@@ -66,21 +72,24 @@ const HYBRID_LABELS = [
             <div class="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
               <div class="rounded-lg border px-3 py-2.5"
                    style="border-color:var(--color-border);background:var(--color-surface)">
-                <p class="text-[10px] font-medium uppercase tracking-wider" style="color:var(--color-text-secondary)">
+                <p class="text-[10px] font-medium uppercase tracking-wider" style="color:var(--color-text-secondary)"
+                   [title]="FP_TOOLTIP">
                   Media FP Ibrido</p>
                 <p class="text-lg font-bold tabular-nums mt-0.5" style="color:var(--color-accent)">
                   {{ s.avgFpIbrido | number:'1.1-1' }}</p>
               </div>
               <div class="rounded-lg border px-3 py-2.5"
                    style="border-color:var(--color-border);background:var(--color-surface)">
-                <p class="text-[10px] font-medium uppercase tracking-wider" style="color:var(--color-text-secondary)">
+                <p class="text-[10px] font-medium uppercase tracking-wider" style="color:var(--color-text-secondary)"
+                   [title]="CONF_TOOLTIP">
                   Media Confidence</p>
                 <p class="text-lg font-bold tabular-nums mt-0.5" style="color:var(--color-accent)">
                   {{ s.avgConfidenceScore | number:'1.1-1' }}</p>
               </div>
               <div class="rounded-lg border px-3 py-2.5"
                    style="border-color:var(--color-border);background:var(--color-surface)">
-                <p class="text-[10px] font-medium uppercase tracking-wider" style="color:var(--color-text-secondary)">
+                <p class="text-[10px] font-medium uppercase tracking-wider" style="color:var(--color-text-secondary)"
+                   [title]="GAP_TOOLTIP">
                   Gap Medio MANTRA–ML</p>
                 <p class="text-lg font-bold tabular-nums mt-0.5"
                     [style]="'color:' + (s.avgFpGap >= 0 ? '#16a34a' : '#ea580c')">
@@ -143,6 +152,19 @@ const HYBRID_LABELS = [
                 <option [value]="r">{{ r }}</option>
               }
             </select>
+
+            <input class="w-20 rounded-lg border px-2 py-1.5 text-sm outline-none"
+                   style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
+                   type="number" min="0" max="100" placeholder="FP min"
+                   [title]="FP_TOOLTIP"
+                   [ngModel]="fpMin()"
+                   (ngModelChange)="fpMin.set($event)" />
+            <input class="w-20 rounded-lg border px-2 py-1.5 text-sm outline-none"
+                   style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
+                   type="number" min="0" max="100" placeholder="FP max"
+                   [title]="FP_TOOLTIP"
+                   [ngModel]="fpMax()"
+                   (ngModelChange)="fpMax.set($event)" />
 
             <div class="flex flex-wrap gap-1">
               @for (preset of confidencePresets; track preset.value) {
@@ -243,7 +265,8 @@ const HYBRID_LABELS = [
                     <div class="flex items-center gap-4 shrink-0">
                       <!-- FP Ibrido big -->
                       <div class="text-right min-w-[60px]">
-                        <p class="text-xs text-[10px] uppercase tracking-wider" style="color:var(--color-text-secondary)">
+                        <p class="text-xs text-[10px] uppercase tracking-wider" style="color:var(--color-text-secondary)"
+                           [title]="FP_TOOLTIP">
                           FP Ibrido</p>
                         <p class="text-lg font-bold tabular-nums leading-tight" style="color:var(--color-accent)">
                           {{ p.fpIbrido != null ? (p.fpIbrido | number:'1.1-1') : '—' }}
@@ -258,7 +281,8 @@ const HYBRID_LABELS = [
 
                       <!-- Confidence + Gap mini -->
                       <div class="text-right min-w-[44px]">
-                        <p class="text-[10px] uppercase tracking-wider" style="color:var(--color-text-secondary)">
+                        <p class="text-[10px] uppercase tracking-wider" style="color:var(--color-text-secondary)"
+                           [title]="CONF_TOOLTIP">
                           Conf</p>
                         @if (p.confidenceScore != null) {
                           <p class="text-sm font-semibold tabular-nums"
@@ -269,7 +293,8 @@ const HYBRID_LABELS = [
                       </div>
 
                       <div class="text-right min-w-[44px]">
-                        <p class="text-[10px] uppercase tracking-wider" style="color:var(--color-text-secondary)">
+                        <p class="text-[10px] uppercase tracking-wider" style="color:var(--color-text-secondary)"
+                           [title]="GAP_TOOLTIP">
                           Gap</p>
                         @if (p.fpGap != null) {
                           <p class="text-sm font-semibold tabular-nums"
@@ -340,8 +365,11 @@ const HYBRID_LABELS = [
             <div class="rounded-lg border overflow-hidden" style="border-color:var(--color-border)">
               <div class="space-y-px">
                 @for (p of filteredNext(); let i = $index; track p.playerName) {
-                  <div class="flex items-center gap-3 px-4 py-2.5"
-                       style="background:var(--color-surface)">
+                  <div class="flex items-center gap-3 px-4 py-2.5 transition-colors"
+                       [class.cursor-pointer]="p.playerFotmobId != null"
+                       [title]="p.playerFotmobId == null ? 'Nessun id giocatore disponibile per il dettaglio' : ''"
+                       style="background:var(--color-surface)"
+                       (click)="p.playerFotmobId != null && nextSelectedPlayer.set(toPlayerSeasonStat(p))">
                     <span class="w-7 text-right font-mono text-xs shrink-0"
                           style="color:var(--color-text-secondary)">{{ i + 1 }}</span>
                     <p class="min-w-0 flex-1 truncate text-sm font-medium"
@@ -364,10 +392,21 @@ const HYBRID_LABELS = [
         </div>
       }
     </div>
+
+    @if (selectedPlayer(); as p) {
+      <app-prediction-drawer [player]="p" (closed)="selectedPlayer.set(null)" />
+    }
+    @if (nextSelectedPlayer(); as p) {
+      <app-player-drawer [player]="p" (closed)="nextSelectedPlayer.set(null)" />
+    }
   `,
 })
 export class PredictionsComponent {
   private readonly predService = inject(PredictionService);
+
+  readonly FP_TOOLTIP = 'Media pesata tra il punteggio storico MANTRA (FP_Corr) e la predizione ML normalizzata, 50/50 di default — scala 0-100.';
+  readonly CONF_TOOLTIP = 'Affidabilità della stima (0-100): combina la certezza del modello ML (bassa deviazione standard) e i minuti attesi in campo. 0 = nessun dato ML disponibile.';
+  readonly GAP_TOOLTIP = 'Differenza tra il punteggio MANTRA storico e la predizione ML (entrambi su scala 0-100). Positivo = MANTRA più ottimista di ML; negativo = il contrario. Oltre ±30 punti scatta l\'etichetta \'Contrasto\'.';
 
   readonly tabs = [
     { id: 'hybrid' as const, label: 'Ibrido' },
@@ -384,6 +423,8 @@ export class PredictionsComponent {
   readonly hybridSearch = signal('');
   readonly hybridRuolo = signal('');
   readonly hybridConfidenceMin = signal<number | null>(null);
+  readonly fpMin = signal<number | null>(null);
+  readonly fpMax = signal<number | null>(null);
   readonly hybridPage = signal(1);
   readonly hybridPageSize = signal(50);
   readonly sortField = signal<string | null>('fpIbrido');
@@ -413,6 +454,8 @@ export class PredictionsComponent {
     const ruolo = this.hybridRuolo();
     const confMin = this.hybridConfidenceMin();
     const labels = this.activeLabels();
+    const fpMin = this.fpMin();
+    const fpMax = this.fpMax();
 
     if (q) items = items.filter(p => (p.playerName ?? '').toLowerCase().includes(q));
     if (ruolo) items = items.filter(p => p.ruoloPrimario === ruolo);
@@ -420,6 +463,8 @@ export class PredictionsComponent {
       if (confMin === -1) items = items.filter(p => (p.confidenceScore ?? 100) < 30);
       else items = items.filter(p => (p.confidenceScore ?? 0) >= confMin);
     }
+    if (fpMin !== null) items = items.filter(p => (p.fpIbrido ?? -1) >= fpMin);
+    if (fpMax !== null) items = items.filter(p => (p.fpIbrido ?? Infinity) <= fpMax);
     if (labels.size > 0) {
       items = items.filter(p => (p.hybridLabels ?? []).some(l => labels.has(l)));
     }
@@ -455,6 +500,27 @@ export class PredictionsComponent {
   readonly nextError = signal<string | null>(null);
   readonly nextMlUnavailable = signal(false);
   readonly nextSearch = signal('');
+  /** Next Season row opened in the (reused) PlayerDrawerComponent. */
+  readonly nextSelectedPlayer = signal<PlayerSeasonStat | null>(null);
+
+  /**
+   * Adapts a NextSeasonPrediction row (playerName/playerFotmobId/
+   * predictedNextFantavoto only) into the shape PlayerDrawerComponent
+   * needs. Only the 4 fields the drawer actually reads (player_fotmob_id,
+   * player_name, team_name, stat_category) are meaningful here — the rest
+   * of PlayerSeasonStat has no equivalent in NextSeasonPrediction, hence
+   * the type assertion rather than a fully-populated fake object.
+   */
+  toPlayerSeasonStat(p: NextSeasonPrediction): PlayerSeasonStat {
+    // Only invoked from the template when p.playerFotmobId != null (see the
+    // click guard on the Next Season row), hence the non-null assertion.
+    return {
+      player_fotmob_id: p.playerFotmobId!,
+      player_name: p.playerName,
+      team_name: null,
+      stat_category: '',
+    } as PlayerSeasonStat;
+  }
 
   readonly filteredNext = computed(() => {
     const q = this.nextSearch().toLowerCase();
@@ -540,9 +606,25 @@ export class PredictionsComponent {
     });
   }
 
+  private lastHybridFilterSignature = '';
+
   constructor() {
     this.loadStatus();
     this.loadHybridData();
+
+    // Reset to page 1 whenever a filter (not the page itself) changes —
+    // no HTTP call needed here since filteredHybrid/paginatedHybrid are
+    // plain computed signals over the already-loaded hybridItems.
+    effect(() => {
+      const sig = JSON.stringify([
+        this.hybridSearch(), this.hybridRuolo(), this.hybridConfidenceMin(),
+        [...this.activeLabels()], this.fpMin(), this.fpMax(),
+      ]);
+      if (sig !== this.lastHybridFilterSignature) {
+        this.lastHybridFilterSignature = sig;
+        this.hybridPage.set(1);
+      }
+    });
 
     // Load next season lazily when tab selected
     effect(() => {

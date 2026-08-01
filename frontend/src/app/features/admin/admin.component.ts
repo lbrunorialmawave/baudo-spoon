@@ -23,6 +23,7 @@ export class AdminComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   readonly healthSources = signal<DataHealthSource[]>([]);
+  readonly healthLoading = signal(true);
   readonly healthError = signal<string | null>(null);
   readonly allOk = signal(false);
 
@@ -46,13 +47,18 @@ export class AdminComponent {
   }
 
   private loadHealth(): void {
+    this.healthLoading.set(true);
     this.healthError.set(null);
     this.mantraService.getDataHealth().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (res) => {
         this.healthSources.set(res.sources);
         this.allOk.set(res.sources.every(s => s.status === 'ok'));
+        this.healthLoading.set(false);
       },
-      error: (e) => this.healthError.set(e?.message ?? 'Failed to load health data'),
+      error: (e) => {
+        this.healthError.set(e?.message ?? 'Failed to load health data');
+        this.healthLoading.set(false);
+      },
     });
   }
 

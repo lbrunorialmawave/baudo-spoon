@@ -122,7 +122,7 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                 </td>
                 <td class="px-3 py-2.5 text-right font-mono text-xs whitespace-nowrap"
                     style="color:var(--color-text-secondary)">
-                  {{ mp?.Pz1 != null ? (mp.Pz1 | number:'1.0-0') + ' cr' : '—' }}
+                  {{ mp?.Prezzo_Massimo != null ? (mp.Prezzo_Massimo | number:'1.0-0') + ' cr' : '—' }}
                 </td>
               </tr>
             }

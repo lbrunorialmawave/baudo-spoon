@@ -320,12 +320,16 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
 
           <div class="field-group">
             <label class="field-label" for="opt-seasonStart">Stagione del pool (listini + predizioni ML)</label>
-            <select id="opt-seasonStart" class="field-input" [(ngModel)]="seasonStart"
-                    [attr.aria-describedby]="'legend-seasonStart'">
-              @for (s of seasons(); track s) {
-                <option [value]="s">{{ s }}/{{ s + 1 }}</option>
-              }
-            </select>
+            @if (seasonsLoading()) {
+              <app-skeleton height="36px" />
+            } @else {
+              <select id="opt-seasonStart" class="field-input" [(ngModel)]="seasonStart"
+                      [attr.aria-describedby]="'legend-seasonStart'">
+                @for (s of seasons(); track s) {
+                  <option [value]="s">{{ s }}/{{ s + 1 }}</option>
+                }
+              </select>
+            }
             <app-field-legend
               fieldId="legend-seasonStart"
               [description]="OPTIMIZER_LEGENDS['seasonStart'].description"
@@ -1118,6 +1122,7 @@ export class OptimizerComponent {
 
   // ── Basic ─────────────────────────────────────────────
   readonly seasons = signal<number[]>([]);
+  readonly seasonsLoading = signal(true);
   readonly seasonStart = signal<number>(2024);
   readonly budget = signal(500);
   readonly numParticipants = signal(8);
@@ -1189,8 +1194,12 @@ export class OptimizerComponent {
         const sorted = [...s].sort((a, b) => b - a);
         this.seasons.set(sorted);
         if (sorted.length) this.seasonStart.set(sorted[0]);
+        this.seasonsLoading.set(false);
       },
-      error: () => { this.seasons.set([2024, 2023, 2022]); },
+      error: () => {
+        this.seasons.set([2024, 2023, 2022]);
+        this.seasonsLoading.set(false);
+      },
     });
 
     this.optimizerService.getStrategies().subscribe({

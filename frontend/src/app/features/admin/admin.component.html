@@ -12,11 +12,15 @@
       <h2 class="text-sm font-semibold mb-3" style="color:var(--color-text-primary)">
         Data Health Check
       </h2>
-      @if (healthError()) {
+      @if (healthLoading()) {
+        <div class="grid gap-3">
+          @for (_ of [1,2,3]; track $index) { <app-skeleton height="72px" /> }
+        </div>
+      } @else if (healthError()) {
         <app-error-boundary [message]="healthError()!" />
       } @else if (healthSources().length === 0) {
         <div class="card p-4 text-sm text-center" style="color:var(--color-text-secondary)">
-          Loading health data&#8230;
+          No health data available.
         </div>
       } @else {
         <div class="grid gap-3">

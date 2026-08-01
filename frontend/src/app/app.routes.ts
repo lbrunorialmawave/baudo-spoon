@@ -1,13 +1,12 @@
 import { Routes } from '@angular/router';
 import { apiKeyGuard } from './core/guards/api-key.guard';
 import { adminGuard } from './core/guards/role.guard';
-import { dataReadyResolver } from './core/resolvers/data-ready.resolver';
 import { ShellComponent } from './shared/components/shell/shell.component';
 
 export const routes: Routes = [
   {
     path: '',
-    redirectTo: 'dashboard',
+    redirectTo: 'players',
     pathMatch: 'full',
   },
   {
@@ -15,12 +14,6 @@ export const routes: Routes = [
     component: ShellComponent,
     canActivate: [apiKeyGuard],
     children: [
-      {
-        path: 'dashboard',
-        resolve: { clusterData: dataReadyResolver },
-        loadComponent: () =>
-          import('./features/dashboard/dashboard.component').then((m) => m.DashboardComponent),
-      },
       {
         path: 'players',
         loadComponent: () =>

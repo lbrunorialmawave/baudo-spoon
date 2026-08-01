@@ -1,0 +1,190 @@
+import { Component, input, output } from '@angular/core';
+import { DecimalPipe } from '@angular/common';
+import { HybridPlayerPrediction } from '../../../../core/models/api.models';
+import { FASE7_LABELS } from '../../../../core/models/mantra.models';
+
+/**
+ * Read-only detail panel for a hybrid MANTRA+ML prediction row.
+ *
+ * Unlike PlayerDrawerComponent, this performs no HTTP calls: every field it
+ * shows is already present on the HybridPlayerPrediction row loaded by the
+ * Ibrido tab (predictions.component.ts), which has no player-fotmob-id to
+ * look up further history with anyway.
+ */
+@Component({
+  selector: 'app-prediction-drawer',
+  standalone: true,
+  imports: [DecimalPipe],
+  template: `
+    <div class="drawer-backdrop" (click)="closed.emit()"></div>
+
+    <aside class="drawer-panel">
+      <div class="drawer-header">
+        <div class="min-w-0">
+          <h2 class="truncate font-semibold" style="color:var(--color-text-primary)">
+            {{ player().playerName ?? '—' }}
+          </h2>
+          <p class="text-xs mt-0.5" style="color:var(--color-text-secondary)">
+            {{ player().team ?? '—' }} · {{ player().ruoloPrimario ?? '—' }}
+            @if (player().ruoliMantra?.length) {
+              ({{ player().ruoliMantra!.join(', ') }})
+            }
+          </p>
+        </div>
+        <button class="close-btn" (click)="closed.emit()" aria-label="Close">✕</button>
+      </div>
+
+      <div class="drawer-body">
+        @if (player().Fase7 || (player().hybridLabels?.length ?? 0) > 0) {
+          <section class="mb-5">
+            <div class="flex flex-wrap gap-1.5">
+              @if (player().Fase7; as f7) {
+                @let f7meta = FASE7_LABELS[f7];
+                <span class="rounded-full px-2 py-0.5 text-xs font-medium text-white"
+                      [style.background]="f7meta?.color ?? '#6B7280'">
+                  {{ f7meta?.icon ?? '' }} {{ f7meta?.label ?? f7 }}
+                </span>
+              }
+              @for (l of player().hybridLabels ?? []; track l) {
+                <span class="rounded-full px-2 py-0.5 text-xs font-medium"
+                      style="background:var(--color-surface-raised);color:var(--color-text-secondary)">
+                  {{ l }}
+                </span>
+              }
+            </div>
+          </section>
+        }
+
+        <section class="mb-5">
+          <h3 class="section-title">Punteggi MANTRA</h3>
+          <div class="grid grid-cols-2 gap-2">
+            @for (row of mantraRows(); track row.label) {
+              <div class="rounded-lg px-3 py-2" style="background:var(--color-surface)">
+                <p class="text-[10px] uppercase tracking-wider" style="color:var(--color-text-secondary)">{{ row.label }}</p>
+                <p class="font-mono text-sm font-semibold" style="color:var(--color-text-primary)">
+                  {{ row.value != null ? (row.value | number:'1.1-1') : '—' }}
+                </p>
+              </div>
+            }
+          </div>
+        </section>
+
+        <section class="mb-5">
+          <h3 class="section-title">Machine Learning</h3>
+          <div class="grid grid-cols-2 gap-2">
+            @for (row of mlRows(); track row.label) {
+              <div class="rounded-lg px-3 py-2" style="background:var(--color-surface)">
+                <p class="text-[10px] uppercase tracking-wider" style="color:var(--color-text-secondary)">{{ row.label }}</p>
+                <p class="font-mono text-sm font-semibold" style="color:var(--color-text-primary)">
+                  {{ row.value != null ? (row.value | number:'1.1-1') : '—' }}
+                </p>
+              </div>
+            }
+          </div>
+          @if (!player().hasMlData) {
+            <p class="text-xs mt-2" style="color:var(--color-text-secondary)">
+              Nessun dato ML disponibile per questo giocatore.
+            </p>
+          }
+        </section>
+
+        <section>
+          <h3 class="section-title">Ibrido</h3>
+          <div class="grid grid-cols-2 gap-2">
+            @for (row of hybridRows(); track row.label) {
+              <div class="rounded-lg px-3 py-2" style="background:var(--color-surface)">
+                <p class="text-[10px] uppercase tracking-wider" style="color:var(--color-text-secondary)">{{ row.label }}</p>
+                <p class="font-mono text-sm font-semibold" style="color:var(--color-text-primary)">
+                  {{ row.value != null ? (row.value | number:'1.1-1') : '—' }}
+                </p>
+              </div>
+            }
+          </div>
+        </section>
+      </div>
+    </aside>
+  `,
+  styles: [`
+    :host { display: contents; }
+    .drawer-backdrop {
+      position: fixed; inset: 0; z-index: 40;
+      background: rgba(0,0,0,0.5);
+    }
+    .drawer-panel {
+      position: fixed; right: 0; top: 0; bottom: 0; z-index: 50;
+      width: 400px;
+      display: flex; flex-direction: column;
+      background: var(--color-surface);
+      border-left: 1px solid var(--color-border);
+      animation: slide-in 180ms ease-out;
+    }
+    @keyframes slide-in {
+      from { transform: translateX(100%); }
+      to   { transform: translateX(0); }
+    }
+    .drawer-header {
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+      padding: 16px; border-bottom: 1px solid var(--color-border);
+    }
+    .close-btn {
+      flex-shrink: 0; width: 28px; height: 28px;
+      border-radius: 6px; font-size: 12px;
+      background: var(--color-surface-raised);
+      color: var(--color-text-secondary);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+    }
+    .close-btn:hover { color: var(--color-text-primary); }
+    .drawer-body { flex: 1; overflow-y: auto; padding: 16px; }
+    .section-title {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.06em; margin-bottom: 8px;
+      color: var(--color-text-secondary);
+    }
+  `],
+})
+export class PredictionDrawerComponent {
+  readonly player = input.required<HybridPlayerPrediction>();
+  readonly closed = output<void>();
+
+  readonly FASE7_LABELS = FASE7_LABELS;
+
+  mantraRows(): { label: string; value: number | null }[] {
+    const p = this.player();
+    return [
+      { label: 'P1', value: p.P1 },
+      { label: 'P2', value: p.P2 },
+      { label: 'P3', value: p.P3 },
+      { label: 'P4', value: p.P4 },
+      { label: 'CP', value: p.CP },
+      { label: 'FP', value: p.FP },
+      { label: 'FP_Mantra', value: p.FP_Mantra },
+      { label: 'VR', value: p.VR },
+      { label: 'Prezzo Massimo', value: p.Prezzo_Massimo },
+    ];
+  }
+
+  mlRows(): { label: string; value: number | null }[] {
+    const p = this.player();
+    return [
+      { label: 'Fantavoto previsto', value: p.predictedFantavoto },
+      { label: 'Deviazione std.', value: p.predictionStd },
+      { label: 'Minuti attesi', value: p.expectedMinutes },
+      { label: 'ML score (0-100)', value: p.mlScoreNorm },
+      { label: 'ML boost', value: p.mlBoost },
+      { label: 'Confidence', value: p.confidenceScore },
+    ];
+  }
+
+  hybridRows(): { label: string; value: number | null }[] {
+    const p = this.player();
+    return [
+      { label: 'FP Ibrido', value: p.fpIbrido },
+      { label: 'Gap MANTRA-ML', value: p.fpGap },
+      { label: 'Expected value', value: p.expectedValue },
+      { label: 'VAR score', value: p.varScore },
+      { label: 'ESV', value: p.esv },
+      { label: 'Next season', value: p.nextSeasonPredicted },
+    ];
+  }
+}

@@ -166,7 +166,7 @@ export class SetupComponent {
       : this.auth.register(email, password);
 
     request$.subscribe({
-      next: () => this.router.navigate(['/dashboard']),
+      next: () => this.router.navigate(['/players']),
       error: (err: HttpErrorResponse) => {
         if (this.mode() === 'register') {
           this.error.set(err.status === 409 ? 'Email già registrata' : 'Registrazione non riuscita');

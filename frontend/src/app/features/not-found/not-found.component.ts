@@ -16,10 +16,10 @@ import { RouterLink } from '@angular/router';
         <p class="text-sm" style="color: var(--color-text-secondary)">
           The route you requested doesn't exist.
         </p>
-        <a routerLink="/dashboard"
+        <a routerLink="/players"
            class="inline-block mt-2 rounded-lg bg-brand-500 px-4 py-2 text-sm
                   font-semibold text-white hover:bg-brand-600 transition">
-          Back to Dashboard
+          Back to Players
         </a>
       </div>
     </div>

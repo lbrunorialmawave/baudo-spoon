@@ -901,16 +901,20 @@ function makeParticipants(
 
             <div class="field-group">
               <label class="field-label" for="seasonStart">Stagione del pool (listini + predizioni ML)</label>
-              <select
-                id="seasonStart"
-                class="field-input"
-                [(ngModel)]="seasonStart"
-                [attr.aria-describedby]="'legend-seasonStart'"
-              >
-                @for (s of seasons(); track s) {
-                  <option [value]="s">{{ s }}/{{ s + 1 }}</option>
-                }
-              </select>
+              @if (seasonsLoading()) {
+                <app-skeleton height="36px" />
+              } @else {
+                <select
+                  id="seasonStart"
+                  class="field-input"
+                  [(ngModel)]="seasonStart"
+                  [attr.aria-describedby]="'legend-seasonStart'"
+                >
+                  @for (s of seasons(); track s) {
+                    <option [value]="s">{{ s }}/{{ s + 1 }}</option>
+                  }
+                </select>
+              }
               <app-field-legend
                 fieldId="legend-seasonStart"
                 [description]="SETUP_LEGENDS['seasonStart'].description"
@@ -1585,6 +1589,7 @@ export class AuctionComponent {
 
   // ── Async signals ────────────────────────────────────────────────────
   readonly seasons = signal<number[]>([]);
+  readonly seasonsLoading = signal(true);
   readonly participants = signal<AuctionParticipantSetup[]>(makeParticipants(8, 500));
   readonly starting = signal(false);
   readonly initError = signal<string | null>(null);
@@ -1708,8 +1713,12 @@ export class AuctionComponent {
         const sorted = [...s].sort((a, b) => b - a);
         this.seasons.set(sorted);
         if (sorted.length) this.seasonStart = sorted[0];
+        this.seasonsLoading.set(false);
       },
-      error: () => this.seasons.set([2025, 2024, 2023]),
+      error: () => {
+        this.seasons.set([2025, 2024, 2023]);
+        this.seasonsLoading.set(false);
+      },
     });
 
     // Pool autocomplete: debounce query → call pool endpoint
