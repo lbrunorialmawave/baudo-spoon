@@ -109,6 +109,25 @@ export class PredictionService {
     return this.http.get<any>(`${this.baseUrl}/model-metrics/runs`, { params });
   }
 
+  /** Launch the ML training pipeline in the background (admin only). */
+  trainModel(): Observable<{ status: string; started_at: string; pid: number }> {
+    return this.http.post<{ status: string; started_at: string; pid: number }>(
+      `${this.baseUrl}/admin/ml/train`, {}
+    );
+  }
+
+  /** Poll while a training run is in progress. */
+  getTrainingStatus(): Observable<{
+    status: 'idle' | 'running' | 'completed' | 'failed' | 'stale';
+    started_at?: string;
+    finished_at?: string;
+    returncode?: number;
+    log_tail?: string;
+    pid?: number;
+  }> {
+    return this.http.get<any>(`${this.baseUrl}/admin/ml/train/status`);
+  }
+
   invalidateCache(): Observable<{ detail: string }> {
     return this.http.post<{ detail: string }>(`${this.baseUrl}/intelligence/cache/invalidate`, {});
   }

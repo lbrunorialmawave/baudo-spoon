@@ -2,6 +2,8 @@
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { DatePipe, DecimalPipe, PercentPipe } from '@angular/common';
+import { Subscription, interval } from 'rxjs';
+import { switchMap } from 'rxjs/operators';
 import { MantraService } from '../../core/services/mantra.service';
 import { QuotationService } from '../../core/services/quotation.service';
 import { PredictionService } from '../../core/services/prediction.service';
@@ -48,6 +50,7 @@ export class AdminComponent {
     this.loadHybridStatus();
     this.loadHybridConfig();
     this.loadPipelineRuns();
+    this.loadTrainingStatus();
   }
 
   private loadHealth(): void {
@@ -297,6 +300,63 @@ export class AdminComponent {
         next: (res) => { this.pipelineRuns.set(res.items); this.pipelineLoading.set(false); },
         error: () => { this.pipelineRuns.set(null); this.pipelineLoading.set(false); },
       });
+  };
+
+  // ── ML Training trigger ───────────────────────────────
+
+  readonly trainingStatus = signal<{
+    status: 'idle' | 'running' | 'completed' | 'failed' | 'stale';
+    started_at?: string;
+    finished_at?: string;
+    returncode?: number;
+    log_tail?: string;
+  } | null>(null);
+  readonly trainingTriggering = signal(false);
+  readonly trainingError = signal<string | null>(null);
+  private trainingPollSub: Subscription | null = null;
+
+  readonly loadTrainingStatus = (): void => {
+    this.predService.getTrainingStatus().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (s) => {
+        this.trainingStatus.set(s);
+        if (s.status === 'running') this.startTrainingPoll();
+        else this.stopTrainingPoll();
+      },
+      error: () => {},
+    });
+  };
+
+  private startTrainingPoll(): void {
+    if (this.trainingPollSub) return;
+    this.trainingPollSub = interval(5000)
+      .pipe(switchMap(() => this.predService.getTrainingStatus()), takeUntilDestroyed(this.destroyRef))
+      .subscribe((s) => {
+        this.trainingStatus.set(s);
+        if (s.status !== 'running') {
+          this.stopTrainingPoll();
+          this.loadPipelineRuns();
+        }
+      });
+  }
+
+  private stopTrainingPoll(): void {
+    this.trainingPollSub?.unsubscribe();
+    this.trainingPollSub = null;
+  }
+
+  readonly triggerTraining = (): void => {
+    this.trainingTriggering.set(true);
+    this.trainingError.set(null);
+    this.predService.trainModel().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: () => {
+        this.trainingTriggering.set(false);
+        this.loadTrainingStatus();
+      },
+      error: (err) => {
+        this.trainingTriggering.set(false);
+        this.trainingError.set(err?.error?.detail || err?.message || 'Avvio training fallito');
+      },
+    });
   };
 
   readonly cacheInvalidating = signal(false);

@@ -273,6 +273,71 @@
         ML Pipeline Runs
       </h2>
 
+      <!-- Trigger training -->
+      <div class="card p-4 mb-3">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="min-w-0">
+            <h3 class="text-xs font-semibold" style="color:var(--color-text-primary)">
+              Training modello ML
+            </h3>
+            <p class="text-xs mt-0.5" style="color:var(--color-text-secondary)">
+              Retraining completo (feature engineering, modelli, backtest, clustering).
+              Richiede diversi minuti, gira in background.
+            </p>
+          </div>
+          <button class="rounded-lg border px-4 py-1.5 text-xs font-medium text-white shrink-0"
+                  style="background:var(--color-accent);border-color:transparent"
+                  [disabled]="trainingTriggering() || trainingStatus()?.status === 'running'"
+                  (click)="triggerTraining()">
+            @if (trainingTriggering()) {
+              Avvio&#8230;
+            } @else if (trainingStatus()?.status === 'running') {
+              ⏳ In esecuzione&#8230;
+            } @else {
+              🚀 Avvia Training
+            }
+          </button>
+        </div>
+
+        @if (trainingStatus(); as ts) {
+          @if (ts.status === 'running') {
+            <div class="mt-3 rounded border px-3 py-2 text-xs"
+                 style="border-color:#f59e0b44;background:#f59e0b11;color:#92400e">
+              In corso dalle {{ ts.started_at | date:'HH:mm:ss' }} — questa pagina si aggiorna da sola.
+            </div>
+          } @else if (ts.status === 'completed') {
+            <div class="mt-3 rounded border px-3 py-2 text-xs"
+                 style="border-color:#22c55e44;background:#22c55e11;color:#16a34a">
+              ✅ Ultimo training completato {{ ts.finished_at | date:'d MMM y, HH:mm:ss' }}.
+            </div>
+          } @else if (ts.status === 'failed') {
+            <div class="mt-3 rounded border px-3 py-2 text-xs"
+                 style="border-color:#dc262644;background:#dc262611;color:#dc2626">
+              ❌ Ultimo training fallito {{ ts.finished_at | date:'d MMM y, HH:mm:ss' }}
+              (exit code {{ ts.returncode }}).
+              @if (ts.log_tail) {
+                <details class="mt-1.5">
+                  <summary class="cursor-pointer font-medium">Log</summary>
+                  <pre class="mt-1 whitespace-pre-wrap text-[10px] max-h-40 overflow-y-auto">{{ ts.log_tail }}</pre>
+                </details>
+              }
+            </div>
+          } @else if (ts.status === 'stale') {
+            <div class="mt-3 rounded border px-3 py-2 text-xs"
+                 style="border-color:#f59e0b44;background:#f59e0b11;color:#92400e">
+              ⚠️ L'ultimo run risultava "in corso" da troppo tempo (probabile riavvio del server) —
+              puoi avviarne uno nuovo.
+            </div>
+          }
+        }
+        @if (trainingError(); as err) {
+          <div class="mt-3 rounded border px-3 py-2 text-xs"
+               style="border-color:#dc262644;background:#dc262611;color:#dc2626">
+            ❌ {{ err }}
+          </div>
+        }
+      </div>
+
       @if (pipelineLoading()) {
         <app-skeleton height="80px" />
       } @else if (pipelineRuns(); as runs) {
