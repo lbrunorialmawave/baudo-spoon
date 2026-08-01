@@ -87,6 +87,38 @@ async def list_expert_ratings(
     })
 
 
+@router.get("/ratings/by-fotmob/{player_fotmob_id}", summary="Ratings for a player by FotMob ID")
+async def get_player_expert_ratings_by_fotmob(
+    player_fotmob_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> ORJSONResponse:
+    """Look up ratings via player_id_map, since expert_ratings keys players
+    by the scraper's own id space (``fc-{fantacalcio_id}``) while the rest
+    of the frontend addresses players by FotMob id."""
+    import sqlalchemy as sa
+
+    result = await db.execute(
+        sa.text("""
+            SELECT er.* FROM expert_ratings er
+            JOIN player_id_map pim ON er.player_id = 'fc-' || pim.fantacalcio_id::text
+            WHERE pim.player_fotmob_id = :fid
+            ORDER BY er.season_start DESC, er.matchday DESC
+        """),
+        {"fid": player_fotmob_id},
+    )
+    rows = [dict(r._mapping) for r in result.all()]
+
+    ratings = [r["rating"] for r in rows if r.get("rating")]
+    avg_rating = round(sum(ratings) / len(ratings), 1) if ratings else None
+
+    return ORJSONResponse({
+        "player_fotmob_id": player_fotmob_id,
+        "total_ratings": len(rows),
+        "average_rating": avg_rating,
+        "ratings": rows,
+    })
+
+
 @router.get("/ratings/{player_id}", summary="Ratings for a specific player")
 async def get_player_expert_ratings(
     player_id: str,

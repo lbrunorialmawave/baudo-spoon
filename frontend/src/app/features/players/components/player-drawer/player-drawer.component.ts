@@ -3,9 +3,11 @@ import { DecimalPipe } from '@angular/common';
 import { PlayerSeasonStat } from '../../../../core/models/stats.models';
 import { PlayerQuotation } from '../../../../core/models/quotations.models';
 import { NextSeasonPrediction } from '../../../../core/models/api.models';
+import { ExpertRating } from '../../../../core/models/expert-ratings.models';
 import { StatsService } from '../../../../core/services/stats.service';
 import { QuotationService } from '../../../../core/services/quotation.service';
 import { PredictionService } from '../../../../core/services/prediction.service';
+import { ExpertRatingsService } from '../../../../core/services/expert-ratings.service';
 import { SkeletonComponent } from '../../../../shared/components/skeleton/skeleton.component';
 import { ErrorBoundaryComponent } from '../../../../shared/components/error-boundary/error-boundary.component';
 
@@ -112,6 +114,45 @@ import { ErrorBoundaryComponent } from '../../../../shared/components/error-boun
             <p class="text-xs" style="color:var(--color-text-secondary)">No quotation data</p>
           }
         </section>
+
+        <!-- Expert ratings (Gruppo Esperti) -->
+        <section class="mt-5">
+          <h3 class="section-title">Expert Opinion</h3>
+          @if (expertLoading()) {
+            <app-skeleton height="80px" />
+          } @else if (expertRatings().length) {
+            <ul class="space-y-2">
+              @for (r of expertRatings(); track r.id) {
+                <li class="rounded-lg p-3" style="background:var(--color-surface)">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-xs font-medium" style="color:var(--color-text-secondary)">
+                      {{ r.expert_name ?? 'Gruppo Esperti' }}
+                    </span>
+                    @if (r.rating != null) {
+                      <span class="text-sm tracking-tight" style="color:var(--color-accent)"
+                            [attr.aria-label]="r.rating + ' out of 5'">
+                        {{ stars(r.rating) }}
+                      </span>
+                    }
+                  </div>
+                  @if (r.comment) {
+                    <p class="text-xs mt-1.5 leading-snug" style="color:var(--color-text-primary)">
+                      {{ r.comment }}
+                    </p>
+                  }
+                  @if (r.url) {
+                    <a [href]="r.url" target="_blank" rel="noopener"
+                       class="text-xs mt-1.5 inline-block" style="color:var(--color-accent)">
+                      Fonte ↗
+                    </a>
+                  }
+                </li>
+              }
+            </ul>
+          } @else {
+            <p class="text-xs" style="color:var(--color-text-secondary)">No expert ratings</p>
+          }
+        </section>
       </div>
     </aside>
   `,
@@ -161,15 +202,21 @@ export class PlayerDrawerComponent {
   private readonly statsService = inject(StatsService);
   private readonly quotService = inject(QuotationService);
   private readonly predService = inject(PredictionService);
+  private readonly expertService = inject(ExpertRatingsService);
 
   readonly statsHistory = signal<PlayerSeasonStat[]>([]);
   readonly quotHistory = signal<PlayerQuotation[]>([]);
   readonly nextPred = signal<NextSeasonPrediction | null>(null);
+  readonly expertRatings = signal<ExpertRating[]>([]);
 
   readonly statsLoading = signal(false);
   readonly quotLoading = signal(false);
   readonly nextLoading = signal(false);
   readonly nextMlUnavailable = signal(false);
+  readonly expertLoading = signal(false);
+
+  readonly stars = (rating: number): string =>
+    '★'.repeat(rating) + '☆'.repeat(Math.max(0, 5 - rating));
 
   constructor() {
     effect(() => {
@@ -202,6 +249,13 @@ export class PlayerDrawerComponent {
           this.nextPred.set(null);
           this.nextLoading.set(false);
         },
+      });
+
+      // Expert ratings (Gruppo Esperti)
+      this.expertLoading.set(true);
+      this.expertService.getByFotmobId(p.player_fotmob_id).subscribe({
+        next: res => { this.expertRatings.set(res.ratings); this.expertLoading.set(false); },
+        error: () => { this.expertRatings.set([]); this.expertLoading.set(false); },
       });
     });
   }

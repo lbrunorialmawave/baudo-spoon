@@ -35,9 +35,11 @@ export class AdminComponent {
       next: (seasons) => {
         const latest = seasons.length ? Math.max(...seasons) : null;
         this.currentSeason.set(latest);
-        // Pre-populate the snai scraper param with the current season.
+        // Pre-populate the season-scoped scraper params with the current season.
         const snai = this.scrapers.find(s => s.name === 'snai');
         if (snai && latest) snai.params[0].value.set(String(latest));
+        const esperti = this.scrapers.find(s => s.name === 'esperti');
+        if (esperti && latest) esperti.params[0].value.set(String(latest));
       },
     });
     this.loadHealth();
@@ -119,6 +121,18 @@ export class AdminComponent {
       result: signal<string | null>(null),
       error: signal<string | null>(null),
     },
+    {
+      name: 'esperti',
+      label: 'Gruppo Esperti',
+      description: 'Scrape player ratings and comments from forum.gruppoesperti.it',
+      frequency: 'Season start + periodic re-scrape',
+      params: [
+        { key: 'season_start', label: 'Season', placeholder: 'current', value: signal('') },
+      ],
+      running: signal(false),
+      result: signal<string | null>(null),
+      error: signal<string | null>(null),
+    },
   ];
 
   readonly runScraper = (scraper: any): void => {
@@ -126,9 +140,15 @@ export class AdminComponent {
     scraper.result.set(null);
     scraper.error.set(null);
 
-    const obs = scraper.name === 'snai'
-      ? this.mantraService.runSnaiScraper(Number(scraper.params[0].value()) || undefined)
-      : this.mantraService.runProbabiliScraper(Number(scraper.params[0].value()) || undefined);
+    const seasonOrMatchday = Number(scraper.params[0].value()) || undefined;
+    let obs;
+    if (scraper.name === 'snai') {
+      obs = this.mantraService.runSnaiScraper(seasonOrMatchday);
+    } else if (scraper.name === 'esperti') {
+      obs = this.mantraService.runEspertiScraper(seasonOrMatchday);
+    } else {
+      obs = this.mantraService.runProbabiliScraper(seasonOrMatchday);
+    }
 
     obs.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (res: any) => {

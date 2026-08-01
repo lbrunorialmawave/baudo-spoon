@@ -4,6 +4,7 @@ Endpoints
 ---------
 POST /admin/scrape/snai           — Trigger Snai odds scraper
 POST /admin/scrape/probabili      — Trigger probabili formazioni scraper
+POST /admin/scrape/esperti        — Trigger Gruppo Esperti ratings scraper
 POST /admin/scrape/quotazioni     — Re-import listoni XLSX
 GET  /admin/scrape/status         — Status of all scrapers
 GET  /admin/scrape/logs/{name}    — Last execution log
@@ -34,6 +35,16 @@ router = APIRouter(
 )
 
 
+def _to_sync_url(url: str) -> str:
+    """Convert an async SQLAlchemy DSN to a sync psycopg2 one for scraper compatibility."""
+    return (
+        url.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+        .replace("postgres+asyncpg://", "postgres+psycopg2://")
+        .replace("?ssl=", "?sslmode=")
+        .replace("&ssl=", "&sslmode=")
+    )
+
+
 # ── Scraper triggers ─────────────────────────────────────────────────────────
 
 
@@ -43,7 +54,7 @@ async def trigger_snai(
 ) -> ORJSONResponse:
     try:
         # Don't use get_db dependency — create sync connection directly for scraper compatibility
-        sync_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://").replace("postgres+asyncpg://", "postgres+psycopg2://").replace("?ssl=", "?sslmode=").replace("&ssl=", "&sslmode=")
+        sync_url = _to_sync_url(settings.database_url)
         log.info("[trigger_snai] Starting scrape")
         from scraper.snai_odds import scrape, persist
         records = scrape(season_start=season_start)
@@ -60,7 +71,7 @@ async def trigger_probabili(
 ) -> ORJSONResponse:
     try:
         # Don't use get_db dependency — create sync connection directly for scraper compatibility
-        sync_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://").replace("postgres+asyncpg://", "postgres+psycopg2://").replace("?ssl=", "?sslmode=").replace("&ssl=", "&sslmode=")
+        sync_url = _to_sync_url(settings.database_url)
         log.info("[trigger_probabili] Starting scrape")
         from scraper.probabili_formazioni import scrape, persist
         records = scrape(matchday=matchday)
@@ -71,12 +82,38 @@ async def trigger_probabili(
         raise HTTPException(status_code=500, detail="Probabili formazioni scraper failed. Check server logs.")
 
 
+@router.post("/scrape/esperti", summary="Trigger Gruppo Esperti ratings scraper")
+async def trigger_esperti(
+    season_start: Optional[int] = Query(None, description="Season start year"),
+    team: Optional[str] = Query(None, description="Only scrape one team (e.g. 'Inter')"),
+) -> ORJSONResponse:
+    try:
+        sync_url = _to_sync_url(settings.database_url)
+        log.info("[trigger_esperti] Starting scrape")
+        from datetime import datetime
+
+        from scraper.gruppo_esperti import scrape, persist
+        resolved_season = season_start or datetime.now().year
+        players = scrape(team_filter=team)
+        n = persist(players, sync_url, resolved_season)
+        return ORJSONResponse({
+            "scraper": "esperti",
+            "scraped": len(players),
+            "records": n,
+            "unmatched": len(players) - n,
+            "status": "ok",
+        })
+    except Exception:
+        log.exception("Gruppo Esperti scraper failed")
+        raise HTTPException(status_code=500, detail="Gruppo Esperti scraper failed. Check server logs.")
+
+
 @router.post("/scrape/quotazioni", summary="Re-import listoni XLSX")
 async def trigger_quotazioni(
     quotazioni_dir: str = Query("./quotazioni", description="Directory with XLSX files"),
 ) -> ORJSONResponse:
     try:
-        sync_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://").replace("postgres+asyncpg://", "postgres+psycopg2://").replace("?ssl=", "?sslmode=").replace("&ssl=", "&sslmode=")
+        sync_url = _to_sync_url(settings.database_url)
         log.info(f"[trigger_quotazioni] Using sync_url: {sync_url}")
         import subprocess
         result = subprocess.run(
@@ -249,6 +286,12 @@ async def get_scraper_status() -> ORJSONResponse:
             "description": "Probabili formazioni Serie A",
             "frequency": "Every matchday",
             "configurable_params": ["matchday", "url"],
+        },
+        {
+            "name": "esperti",
+            "description": "Gruppo Esperti player ratings and comments",
+            "frequency": "Season start + periodic re-scrape",
+            "configurable_params": ["season_start", "team"],
         },
         {
             "name": "quotazioni",

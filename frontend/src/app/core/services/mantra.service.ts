@@ -130,4 +130,11 @@ export class MantraService {
     if (matchday) params = params.set('matchday', matchday);
     return this.http.post(`${this.baseUrl}/admin/scrape/probabili`, null, { params });
   }
+
+  /** Trigger Gruppo Esperti ratings scraper. */
+  runEspertiScraper(seasonStart?: number): Observable<any> {
+    let params = new HttpParams();
+    if (seasonStart) params = params.set('season_start', seasonStart);
+    return this.http.post(`${this.baseUrl}/admin/scrape/esperti`, null, { params });
+  }
 }
