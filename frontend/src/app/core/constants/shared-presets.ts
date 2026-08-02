@@ -1,30 +1,27 @@
 /**
  * Shared building blocks for the Optimizer / Auction preset catalogs.
  *
- * Rationale (extracted after a review of `optimizer-presets.ts` and
- * `auction-presets.ts`): every preset repeated the same 6-formation list,
- * the same 4 "big teams" array and the same 4-role quota map verbatim.
- * With 16 optimizer presets and 15 auction presets that was ~450 lines of
- * pure duplication and — more importantly — a single source of truth
- * violation: changing the default formation catalog, the big-teams list,
- * or the classic role quotas required touching 30+ call sites, and it is
- * exactly the kind of change a reviewer will miss in a large diff.
+ * Recalibrated against Quotazioni Fantacalcio 2025/26 (Qt.A distribution):
+ * - Overall Qt.A: mean≈8.0, median≈7, p75≈11, max=33
+ * - By role median: P=1, D=6, C=8, A=10
+ * - Qt.A=1 is mostly pure reserves (esp. GK); usable starters cluster ≥5–8
+ * - FVM correlates strongly with Qt.A (r≈0.76) → higher Qt.A = higher reliability
  *
  * Everything here is `readonly`/`as const` on purpose: presets must never
- * mutate a shared array in place (a single `.push()` on a preset's
- * `formations` array would silently corrupt every other preset sharing
- * the same reference).
+ * mutate a shared array in place.
  */
-
 import { FormationConfig } from '../models/api.models';
 import { AuctionRole } from '../models/auction.models';
 
-/** The 4 "big teams" used by every stock preset for the big-teams cap. */
-export const DEFAULT_BIG_TEAMS:  string[] = [
+/** The 7 "big teams" used by every stock preset for the big-teams cap. */
+export const DEFAULT_BIG_TEAMS: string[] = [
   'Inter',
   'Milan',
   'Juventus',
   'Napoli',
+  'Roma',
+  'Como',
+  'Atalanta',
 ] as const;
 
 /** Classic Fantacalcio role quotas (3P / 8D / 8C / 6A = 25 total). */
@@ -36,10 +33,9 @@ export const DEFAULT_CLASSIC_ROLE_QUOTAS: Readonly<Record<AuctionRole, number>> 
 } as const;
 
 /**
- * The 6 formations offered by every stock optimizer preset. This is the
- * *catalog of modules to evaluate feasibility for* (see
- * `OptimizationResult.formationFeasibility`); it is NOT a hard solver
- * constraint by itself — only `preferredFormation` is.
+ * The 6 formations offered by every stock optimizer preset.
+ * Catalog of modules to evaluate feasibility for — not a hard solver constraint
+ * unless `preferredFormation` is set.
  */
 export const DEFAULT_FORMATIONS: FormationConfig[] = [
   { label: '3-4-3', defenders: 3, midfielders: 4, forwards: 3 },
@@ -51,21 +47,46 @@ export const DEFAULT_FORMATIONS: FormationConfig[] = [
 ] as const;
 
 // ---------------------------------------------------------------------------
-// Guardrail helpers — invariants the *backend* would otherwise reject at
-// runtime (500 on a malformed request) or silently mis-price (a budget
-// share that doesn't sum to 1). Exercised by
-// `optimizer-presets.spec.ts` / `auction-presets.spec.ts` so a future
-// preset author gets a fast, readable failure in CI instead of a solver
-// 400 discovered by an end user mid-auction.
+// Empirical Qt.A anchors (Fantacalcio 2025/26)
+// Used by preset authors to keep minQtA / topTierCostThreshold coherent.
+// ---------------------------------------------------------------------------
+
+/**
+ * Reliability tiers derived from empirical Qt.A:
+ * - NOISE (1): pure reserves / listed backups — filter for almost all strategies
+ * - FRINGE (2–4): low reliability, rotation-only
+ * - USABLE (5–7): rotation / solid mid-tier
+ * - SOLID (8–11): good starters / value core
+ * - PREMIUM (12–17): high-quality semi-stars
+ * - ELITE (18+): true top-tier (≈30 players league-wide)
+ */
+export const QT_A_TIERS = {
+  noise: 1,
+  fringe: 3,
+  usable: 5,
+  solid: 8,
+  premium: 12,
+  elite: 18,
+} as const;
+
+/**
+ * Suggested topTierCostThreshold by aggressiveness.
+ * Anchored to empirical p80–p90 Qt.A mixed across roles (~12–20)
+ * and historical cost of premium names (Qt.A 20–28 band).
+ */
+export const TOP_TIER_COST = {
+  strict: 22,   // underdog / value — few true premiums
+  moderate: 26, // balanced / floor
+  open: 30,     // aggressive / ceiling
+  free: null as number | null, // no cap
+} as const;
+
+// ---------------------------------------------------------------------------
+// Guardrail helpers
 // ---------------------------------------------------------------------------
 
 const EPSILON = 1e-6;
 
-/**
- * Mirrors `StrategyProfile.__post_init__` in `ml/optimizer/models.py`:
- * every role weight map must define all 4 classic roles or the backend
- * raises `ValueError` and the whole strategy is rejected.
- */
 export function assertRoleWeightComplete(
   roleWeight: Record<string, number>,
   context: string,
@@ -80,11 +101,6 @@ export function assertRoleWeightComplete(
   }
 }
 
-/**
- * Budget shares that don't sum to ~1.0 don't fail loudly anywhere — the
- * auto-bidder just silently under- or over-allocates. Enforced here as a
- * lint-time invariant rather than relying on manual review of 15 presets.
- */
 export function assertBudgetShareSumsToOne(
   budgetShareByRole: Partial<Record<AuctionRole, number>> | undefined,
   context: string,
@@ -99,7 +115,6 @@ export function assertBudgetShareSumsToOne(
   }
 }
 
-/** Mirrors the backend `mantra_role_quotas must sum to TOTAL_SQUAD_SIZE` check. */
 export function assertMantraQuotasSumTo25(
   quotas: Record<string, number> | null | undefined,
   context: string,
@@ -111,7 +126,6 @@ export function assertMantraQuotasSumTo25(
   }
 }
 
-/** Mirrors `MarketDriftConfig.__post_init__`: 0 <= low < top <= 1. */
 export function assertTierThresholdsValid(
   thresholds: readonly [number, number],
   context: string,
