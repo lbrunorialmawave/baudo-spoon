@@ -328,13 +328,16 @@ def main() -> int:
                 mantra_metrics = evaluate_mantra_vs_actuals(mantra_result, engine, season_start)
                 if mantra_metrics:
                     log.info(
-                        "MANTRA 4-pillar: RMSE=%.4f MAE=%.4f R²=%.4f",
-                        mantra_metrics["rmse"],
-                        mantra_metrics["mae"],
-                        mantra_metrics["r2"],
+                        "MANTRA FP_Mantra-vs-vote ranking: Spearman ρ=%.4f, "
+                        "top20 precision=%.4f",
+                        mantra_metrics["fp_mantra_vote_spearman"],
+                        mantra_metrics["fp_mantra_vote_top20_precision"],
                     )
                 else:
-                    log.warning("MANTRA evaluation returned no metrics (insufficient data)")
+                    log.warning(
+                        "MANTRA evaluation returned no metrics "
+                        "(insufficient data, or degenerate distribution)"
+                    )
             else:
                 log.warning("Cannot determine season_start for MANTRA evaluation")
         except Exception:

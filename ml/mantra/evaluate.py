@@ -28,10 +28,26 @@ def evaluate_mantra_vs_actuals(
     engine: sa.Engine,
     season_start: int,
 ) -> dict[str, float] | None:
-    """Compare MANTRA VR predictions to actual fantavoto_medio from DB.
+    """Compare MANTRA FP_Mantra predictions to actual fantavoto_medio from DB.
 
-    Computes RMSE, MAE, R2 and persists to model_runs/model_metrics with
-    model_name='mantra-4pillar' so it appears in /model-metrics/compare.
+    ``FP_Mantra`` (0-100 merit score) and ``vote_avg`` (typically 5-8) are
+    on unrelated absolute scales, so this does NOT compute RMSE/MAE/R² —
+    those would be meaningless here (see git history for the incident this
+    fixes: an earlier version compared them directly and produced
+    RMSE > 100, R² in the -100000s). Instead it evaluates *ranking*
+    agreement, which is scale-invariant and also the property that actually
+    matters for MANTRA's use case (ordering players by value, not
+    predicting their literal average vote):
+
+    - ``spearman``: Spearman rank correlation between FP_Mantra and
+      vote_avg across all matched players (-1..1, higher is better).
+    - ``top20_precision``: fraction of the actual top-20%-by-vote_avg
+      players that MANTRA also places in its own top 20% by FP_Mantra.
+
+    Persists to model_runs/model_metrics with model_name='mantra-4pillar'
+    so it appears in /model-metrics/compare, under metric names prefixed
+    ``fp_mantra_vote_`` so they're never confused with the vote-scale
+    RMSE/MAE/R² reported by the regular fantavoto regression models.
 
     Returns metrics dict or None if insufficient data.
 
@@ -93,12 +109,16 @@ def evaluate_mantra_vs_actuals(
         log.warning("No actual ratings found for season %d", season_start)
         return None
 
+    # Compare against ``FP_Mantra`` (0-100 "merit score" pillar aggregate),
+    # NOT ``VR`` ("Valore Reale"). VR is an auction-value index (clip
+    # 0-300, centred ~100) that encodes convenience-relative-to-price, not
+    # an estimate of the player's rating.
     y_true: list[float] = []
     y_pred: list[float] = []
     for p in players:
         fid = p.get("fantacalcio_id")
-        vr = p.get("VR")
-        if fid is None or vr is None:
+        fp_mantra = p.get("FP_Mantra")
+        if fid is None or fp_mantra is None:
             continue
         try:
             fid_int = int(fid)
@@ -106,7 +126,7 @@ def evaluate_mantra_vs_actuals(
             continue
         if fid_int in actuals:
             y_true.append(actuals[fid_int])
-            y_pred.append(float(vr))
+            y_pred.append(float(fp_mantra))
 
     if len(y_true) < 10:
         log.warning("Too few matched players (%d) for MANTRA evaluation", len(y_true))
@@ -114,20 +134,38 @@ def evaluate_mantra_vs_actuals(
 
     y_true_arr = np.array(y_true, dtype=float)
     y_pred_arr = np.array(y_pred, dtype=float)
+    n = len(y_true_arr)
 
-    rmse = float(np.sqrt(np.mean((y_true_arr - y_pred_arr) ** 2)))
-    mae = float(np.mean(np.abs(y_true_arr - y_pred_arr)))
-    ss_res = float(np.sum((y_true_arr - y_pred_arr) ** 2))
-    ss_tot = float(np.sum((y_true_arr - np.mean(y_true_arr)) ** 2))
-    r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
+    if np.std(y_true_arr) == 0 or np.std(y_pred_arr) == 0:
+        log.warning(
+            "MANTRA evaluation: degenerate distribution (zero variance in "
+            "actuals or predictions) — rank correlation is undefined"
+        )
+        return None
 
-    metrics = {"rmse": round(rmse, 4), "mae": round(mae, 4), "r2": round(r2, 4)}
+    from scipy.stats import spearmanr
+
+    spearman_corr, spearman_p = spearmanr(y_pred_arr, y_true_arr)
+
+    # Top-20% precision: of the players actually best-rated (top 20% by
+    # vote_avg), what fraction does MANTRA also rank in its own top 20%
+    # (by FP_Mantra)? Directly meaningful for MANTRA's real use case
+    # (auction/draft prioritisation) and unaffected by scale differences.
+    k = max(1, round(n * 0.20))
+    true_top_idx = set(np.argsort(-y_true_arr)[:k])
+    pred_top_idx = set(np.argsort(-y_pred_arr)[:k])
+    top20_precision = len(true_top_idx & pred_top_idx) / k
+
+    metrics = {
+        "fp_mantra_vote_spearman": round(float(spearman_corr), 4),
+        "fp_mantra_vote_top20_precision": round(float(top20_precision), 4),
+    }
     log.info(
-        "MANTRA evaluation: RMSE=%.4f MAE=%.4f R2=%.4f (n=%d)",
-        rmse,
-        mae,
-        r2,
-        len(y_true),
+        "MANTRA evaluation: Spearman ρ=%.4f (p=%.4g), top20 precision=%.4f (n=%d)",
+        spearman_corr,
+        spearman_p,
+        top20_precision,
+        n,
     )
 
     run_id = f"mantra-{season_start}-{uuid.uuid4().hex[:8]}"
