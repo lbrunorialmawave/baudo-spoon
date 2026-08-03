@@ -128,7 +128,7 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                 </td>
                 <td class="px-3 py-2.5 text-xs hidden lg:table-cell whitespace-nowrap">
                   @let er = expertRatings()[item.fantacalcio_id];
-                  @if (er?.rating != null) {
+                  @if (er && er.rating != null) {
                     <span style="color:var(--color-accent)" [title]="er.comment ?? ''">{{ stars(er.rating) }}</span>
                   } @else {
                     <span class="opacity-30">—</span>
