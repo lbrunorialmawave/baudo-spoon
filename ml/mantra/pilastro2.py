@@ -102,9 +102,14 @@ def compute_p2(
     # ── Outfield players ──────────────────────────────────────────────────
     outfield_mask = work["ruolo_primario"] != "Por"
     if outfield_mask.any():
-        # Build role-specific pool (with pool fusion)
+        # Build role-specific pool (with pool fusion, gated on real sample size)
+        role_counts = (
+            work.loc[outfield_mask & above_threshold, "ruolo_primario"]
+            .value_counts()
+            .to_dict()
+        )
         for ruolo in work.loc[outfield_mask, "ruolo_primario"].unique():
-            pool_roles = calcola_pool_esteso(ruolo)
+            pool_roles = calcola_pool_esteso(ruolo, role_counts, cfg.SOGLIA_POOL)
             mask = (work["ruolo_primario"] == ruolo)
 
             # Statistical pool: same/fused role + above threshold

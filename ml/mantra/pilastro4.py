@@ -57,10 +57,11 @@ def compute_p4(
     cp = compute_cp(p1, p2, p3)
 
     # ── Prezzo massimo di ruolo ──────────────────────────────────────────────
-    # Compute CP_max per role pool (using pool fusion)
+    # Compute CP_max per role pool (using pool fusion, gated on real sample size)
+    role_counts = work["ruolo_primario"].value_counts().to_dict()
     cp_max_pool: dict[str, float] = {}
     for ruolo in work["ruolo_primario"].unique():
-        pool_roles = calcola_pool_esteso(ruolo)
+        pool_roles = calcola_pool_esteso(ruolo, role_counts, cfg.SOGLIA_POOL)
         pool_mask = work["ruolo_primario"].isin(pool_roles)
         pool_cp = cp[pool_mask]
         cp_max_pool[ruolo] = pool_cp.max() if len(pool_cp) > 0 else 1.0

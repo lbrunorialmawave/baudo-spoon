@@ -78,8 +78,10 @@ def _pool_thresholds(
     thresholds (too few players for a reliable percentile).
     """
     out: dict[str, dict[str, float]] = {}
+    role_counts = df["ruolo_primario"].value_counts().to_dict()
     for ruolo in df["ruolo_primario"].dropna().unique():
-        pool_mask = df["ruolo_primario"].isin(calcola_pool_esteso(ruolo))
+        pool_roles = calcola_pool_esteso(ruolo, role_counts, cfg.SOGLIA_POOL)
+        pool_mask = df["ruolo_primario"].isin(pool_roles)
         pool_size = int(pool_mask.sum())
         pool_dv = df.loc[pool_mask, "DV"].dropna()
         certezza_dv = (
@@ -138,8 +140,9 @@ def _absolute_thresholds(
     th = pd.DataFrame([fixed] * len(df), index=df.index)
 
     dv_mediane: dict[str, float] = {}
+    role_counts = df["ruolo_primario"].value_counts().to_dict()
     for ruolo in df["ruolo_primario"].unique():
-        pool_roles = calcola_pool_esteso(ruolo)
+        pool_roles = calcola_pool_esteso(ruolo, role_counts, cfg.SOGLIA_POOL)
         pool_dv = df.loc[df["ruolo_primario"].isin(pool_roles), "DV"].dropna()
         dv_mediane[ruolo] = (
             float(pool_dv.quantile(cfg.CERTEZZA_DV_PERCENTILE))

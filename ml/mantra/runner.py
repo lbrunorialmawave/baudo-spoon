@@ -268,7 +268,7 @@ def run_mantra(
     # 3. Scoring
     log.info("Computing FP, VR, Prezzo …")
     fp = compute_fp(p1, p2, p3, p4, cfg)
-    scores = compute_fp_corr(fp, cp, df["ruolo_primario"], df["num_ruoli"], cfg)
+    scores = compute_fp_corr(fp, cp, df["ruolo_primario"], df["num_ruoli"], df["Pz1"], cfg)
 
     # 4. Fase 7
     log.info("Classifying Fase 7 …")

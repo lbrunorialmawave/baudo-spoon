@@ -57,9 +57,11 @@ def compute_p1(
     # ── Handle neo-arrivi ────────────────────────────────────────────────
     neo_mask = work.get("is_neo_arrivo", pd.Series([False] * len(work)))
     if neo_mask.any():
+        pool_all = work[~neo_mask]
+        role_counts = pool_all["ruolo_primario"].value_counts().to_dict()
         for ruolo in work.loc[neo_mask, "ruolo_primario"].unique():
-            pool = work[~neo_mask]
-            ruolo_pool = pool[pool["ruolo_primario"].isin(calcola_pool_esteso(ruolo))]
+            pool_roles = calcola_pool_esteso(ruolo, role_counts, cfg.SOGLIA_POOL)
+            ruolo_pool = pool_all[pool_all["ruolo_primario"].isin(pool_roles)]
             if ruolo_pool.empty:
                 continue
             median_v = ruolo_pool["V"].median()

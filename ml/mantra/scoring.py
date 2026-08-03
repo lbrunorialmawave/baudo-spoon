@@ -12,7 +12,10 @@ Steps
 8. FP_Mantra = clip(FP_Corr * Fattore_Flessibilità, 0, 100)
 9. Fattore_Eroe = clip(1 + (1 - CP / CP_medio_tutti) * 0.5, 0.6, 1.6)
 10. VR = clip((FP_Mantra * Fattore_Eroe / CP_Corr) * 100, 0, 300)
-11. Prezzo_Massimo = max(CP * (VR / 100), 1)
+11. Quotazione_Media_Ruolo = mean(Pz1 > 0, extended role pool) — real listino price,
+    anchors Prezzo_Massimo to the role's actual market scale (CP is a 0-100
+    performance composite, not a credit amount, so it cannot do this on its own).
+12. Prezzo_Massimo = max(Quotazione_Media_Ruolo * (VR / 100), 1)
 """
 
 from __future__ import annotations
@@ -65,6 +68,7 @@ def compute_fp_corr(
     cp: pd.Series,
     roles: pd.Series,
     n_ruoli: pd.Series,
+    pz1: pd.Series,
     cfg: MantraConfig,
 ) -> dict[str, pd.Series]:
     """Compute all derived scores: FP_Corr, CP_Corr, FP_Mantra, VR, Prezzo.
@@ -79,6 +83,10 @@ def compute_fp_corr(
         Primary MANTRA role per player.
     n_ruoli:
         Number of MANTRA roles per player (1, 2, 3+).
+    pz1:
+        Current official listino quotation (``qt_a``) per player, 0 if
+        never quoted. Anchors ``Prezzo_Massimo`` to the role's real
+        market price scale.
     cfg:
         MantraConfig.
 
@@ -87,10 +95,11 @@ def compute_fp_corr(
     dict with keys: fp_corr, cp_corr, fp_mantra, fattore_flessibilita,
     fattore_eroe, vr, prezzo_massimo.
     """
-    # Build pool map for each role
+    # Build pool map for each role, fusing only roles with too few players
+    role_counts = roles.value_counts().to_dict()
     all_roles = roles.unique()
     pool_roles_map: dict[str, set[str]] = {
-        r: calcola_pool_esteso(r) for r in all_roles
+        r: calcola_pool_esteso(r, role_counts, cfg.SOGLIA_POOL) for r in all_roles
     }
 
     # ── FP standardisation ───────────────────────────────────────────────────
@@ -129,7 +138,24 @@ def compute_fp_corr(
     vr = vr.clip(lower=0, upper=300)
 
     # ── Prezzo Massimo ───────────────────────────────────────────────────────
-    prezzo = np.maximum(cp * (vr / 100.0), 1.0)
+    # Anchor to the role's real listino price (mean Pz1 in the role pool),
+    # not to CP: CP is a role-blind 0-100 performance composite, so scaling
+    # it directly produced similar credit amounts for every role regardless
+    # of how differently roles are actually priced at auction (e.g. forwards
+    # command far higher prices than defenders). VR still does the relative
+    # "better/worse than the role average" adjustment on top of that anchor.
+    pz1_valid = pz1.where(pz1 > 0)
+    quot_globale = pz1_valid.dropna().mean()
+    if pd.isna(quot_globale):
+        quot_globale = 1.0
+    quot_mean_ruolo: dict[str, float] = {}
+    for ruolo, pool_set in pool_roles_map.items():
+        mask = roles.isin(pool_set)
+        pool_vals = pz1_valid[mask].dropna()
+        quot_mean_ruolo[ruolo] = pool_vals.mean() if len(pool_vals) > 0 else quot_globale
+    quot_ancora_ruolo = roles.map(quot_mean_ruolo)
+
+    prezzo = np.maximum(quot_ancora_ruolo * (vr / 100.0), 1.0)
 
     return {
         "fp_corr": fp_corr,

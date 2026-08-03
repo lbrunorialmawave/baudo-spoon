@@ -106,22 +106,44 @@ def calcola_ruolo_primario(ruoli: list[str]) -> Optional[str]:
     return best
 
 
-def calcola_pool_esteso(ruolo: str) -> set[str]:
+def calcola_pool_esteso(
+    ruolo: str,
+    role_counts: dict[str, int] | None = None,
+    soglia: int = 20,
+) -> set[str]:
     """Return the set of roles that form the statistical pool for *ruolo*.
 
-    If *ruolo* has a fusion entry in ``POOL_FUSIONE``, the pool includes
-    both the role itself and all fused roles.  Otherwise the pool is just
-    the role itself (e.g. ``"Por"`` → ``{"Por"}``).
+    When *role_counts* is given and *ruolo* already has at least *soglia*
+    players on its own, no fusion happens — the pool is just ``{ruolo}``,
+    regardless of whether *ruolo* appears in ``POOL_FUSIONE`` (as a key or
+    as someone else's fusion target). Fusion is a small-sample safeguard,
+    not an unconditional merge.
+
+    Otherwise (role_counts not supplied, or *ruolo*'s own count is below
+    *soglia*): if *ruolo* has a fusion entry in ``POOL_FUSIONE``, the pool
+    includes both the role itself and all fused roles. If *ruolo* is the
+    target of someone else's fusion (e.g. ``"Dc"`` for ``"B"``), the pool
+    includes that base role too. Otherwise the pool is just the role
+    itself (e.g. ``"Por"`` → ``{"Por"}``).
 
     Parameters
     ----------
     ruolo:
         Canonical MANTRA role code.
+    role_counts:
+        Optional mapping of role code → number of players currently in
+        that role. When provided, gates fusion on *ruolo*'s own sample
+        size instead of merging unconditionally.
+    soglia:
+        Minimum sample size for *ruolo* to stand on its own (default 20,
+        matching ``MantraConfig.SOGLIA_POOL``).
 
     Returns
     -------
     A set of role codes that belong to the same statistical pool.
     """
+    if role_counts is not None and role_counts.get(ruolo, 0) >= soglia:
+        return {ruolo}
     fused = POOL_FUSIONE.get(ruolo)
     if fused:
         return {ruolo} | set(fused)
