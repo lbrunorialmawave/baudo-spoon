@@ -1,6 +1,7 @@
 import { Component, input, output } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { MantraPlayer, FASE7_LABELS, FASE7_TOOLTIPS, MATCHDAY_STATUS_CONFIG } from '../../../../core/models/mantra.models';
+import { ExpertRatingWithFantacalcioId } from '../../../../core/models/expert-ratings.models';
 import { SkeletonComponent } from '../../../../shared/components/skeleton/skeleton.component';
 
 @Component({
@@ -40,13 +41,14 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
             <th class="px-3 py-2 text-right sortable" (click)="sortChanged.emit('Prezzo_Massimo')" title="Prezzo massimo di mercato stimato in crediti">
               Prezzo @if (sortColumn() === 'Prezzo_Massimo') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
             </th>
+            <th class="px-3 py-2 text-left hidden lg:table-cell" title="Valutazione Gruppo Esperti (forum.gruppoesperti.it), 1-5 stelle">Esperti</th>
           </tr>
         </thead>
         <tbody>
           @if (loading()) {
             @for (_ of skeletonRows; track $index) {
               <tr>
-                @for (__ of [1,2,3,4,5,6,7,8,9,10,11]; track $index) {
+                @for (__ of [1,2,3,4,5,6,7,8,9,10,11,12]; track $index) {
                   <td class="px-3 py-2"><app-skeleton height="20px" /></td>
                 }
               </tr>
@@ -124,6 +126,14 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                     style="color:var(--color-text-secondary)">
                   {{ mp?.Prezzo_Massimo != null ? (mp.Prezzo_Massimo | number:'1.0-0') + ' cr' : '—' }}
                 </td>
+                <td class="px-3 py-2.5 text-xs hidden lg:table-cell whitespace-nowrap">
+                  @let er = expertRatings()[item.fantacalcio_id];
+                  @if (er?.rating != null) {
+                    <span style="color:var(--color-accent)" [title]="er.comment ?? ''">{{ stars(er.rating) }}</span>
+                  } @else {
+                    <span class="opacity-30">—</span>
+                  }
+                </td>
               </tr>
             }
           }
@@ -146,6 +156,7 @@ export class PlayerTableComponent {
   readonly mantraMap = input<Record<number, MantraPlayer>>({});
   readonly matchdayStatus = input<Record<number, any>>({});
   readonly teamStrength = input<Record<string, number>>({});
+  readonly expertRatings = input<Record<number, ExpertRatingWithFantacalcioId>>({});
   readonly sortColumn = input<string>('');
   readonly sortDirection = input<'asc' | 'desc'>('asc');
   readonly sortChanged = output<string>();
@@ -153,6 +164,9 @@ export class PlayerTableComponent {
 
   hoverId: number | null = null;
   readonly skeletonRows = Array.from({ length: 8 });
+
+  readonly stars = (rating: number): string =>
+    '★'.repeat(rating) + '☆'.repeat(Math.max(0, 5 - rating));
 
   // Expose constants for template
   readonly FASE7_LABELS = FASE7_LABELS;

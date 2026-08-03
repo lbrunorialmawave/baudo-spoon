@@ -55,3 +55,9 @@ logs/
 *.tmp
 *.bak
 response/
+
+
+# Agents & skills
+
+.agents
+.claude

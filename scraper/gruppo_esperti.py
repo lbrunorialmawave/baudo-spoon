@@ -89,12 +89,20 @@ _STATS_LINE_RE = re.compile(
 )
 
 #: A player header line: "SURNAME Firstname (1997) role description".
-#: Surnames are all-caps in the source and may be multi-word (DE VRIJ,
-#: ZAMBO ANGUISSA); extended Latin ranges cover Balkan/Central-European
+#: Surname and firstname are captured separately (rather than as one blob)
+#: because matching against player_quotations needs the surname alone —
+#: Fantacalcio listoni list players by surname only ("Acerbi", "Sommer"),
+#: and comparing "ACERBI Francesco" as a whole against "Acerbi" tanks a
+#: SequenceMatcher ratio just from the length mismatch, regardless of how
+#: correct the match is.
+#: The surname group is greedy over whole all-caps *words* (not just
+#: uppercase characters) so multi-word surnames (DE VRIJ, ZAMBO ANGUISSA,
+#: LUIS HENRIQUE) are captured whole, stopping at the first word that isn't
+#: fully uppercase. Extended Latin ranges cover Balkan/Central-European
 #: names (Ć, Đ, Š, Ž, ...).
 _NAME_LINE_RE = re.compile(
-    r"([A-ZÀ-ŽĀ-ſ][A-ZÀ-ŽĀ-ſ' \-]{1,40}?\s+"
-    r"[A-ZÀ-Üa-zà-ÿĀ-ſ][A-Za-zà-ÿĀ-ſ'.\- ]{0,40}?)\s*"
+    r"(?P<surname>(?:[A-ZÀ-ŽĀ-ſ][A-ZÀ-ŽĀ-ſ'\-]*\s+)+)"
+    r"(?P<firstname>[A-ZÀ-Üa-zà-ÿĀ-ſ][A-Za-zà-ÿĀ-ſ'.\- ]{0,40}?)\s*"
     r"\(((?:19|20)\d{2})\)\s*([^\n]*)"
 )
 
@@ -107,6 +115,7 @@ _TITLE_TEAM_RE = re.compile(r"^(.*?)\s*\[TOPIC UNICO\]", re.IGNORECASE)
 @dataclass
 class ScrapedPlayer:
     name: str
+    surname: str  # used for matching against player_quotations (surname-only)
     role: str  # GK / DEF / MID / FWD
     team: str
     consiglio_esperti: int  # 1-10
@@ -202,7 +211,10 @@ def _parse_role_section(text: str, role: str, team: str, url: str) -> list[Scrap
         if not name_matches:
             log.debug("Skipping unmatched player header before stats line in %s (%s)", team, role)
             continue
-        name = re.sub(r"\s+", " ", name_matches[-1].group(1)).strip()
+        best_name_match = name_matches[-1]
+        surname = re.sub(r"\s+", " ", best_name_match.group("surname")).strip()
+        firstname = re.sub(r"\s+", " ", best_name_match.group("firstname")).strip()
+        name = f"{surname} {firstname}".strip()
 
         next_start = stats_matches[i + 1].start() if i + 1 < len(stats_matches) else len(text)
         commentary_block = text[sm.end():next_start]
@@ -212,7 +224,7 @@ def _parse_role_section(text: str, role: str, team: str, url: str) -> list[Scrap
 
         consiglio_esperti = int(sm.group(5))
         players.append(ScrapedPlayer(
-            name=name, role=role, team=team,
+            name=name, surname=surname, role=role, team=team,
             consiglio_esperti=consiglio_esperti,
             comment=commentary, url=url,
         ))
@@ -266,14 +278,17 @@ def scrape(index_url: str = INDEX_URL, team_filter: Optional[str] = None) -> lis
 
 # ── Name → fantacalcio_id matching ──────────────────────────────────────────
 
-#: Known naming differences between the forum's team labels and
-#: player_quotations.team (Fantacalcio listone naming).
+#: Known naming differences between the forum's team labels (as derived from
+#: each topic's <title>, e.g. "HELLAS VERONA") and player_quotations.team
+#: (Fantacalcio listone naming, e.g. "Verona"). Keyed by the *forum* name.
 _TEAM_ALIASES: dict[str, str] = {
-    "VERONA": "HELLAS VERONA",
-    "COMO": "COMO",
+    "HELLAS VERONA": "VERONA",
 }
 
-_FUZZY_MATCH_THRESHOLD = 0.75
+#: Surnames are compared after normalization, so this can be a tight
+#: threshold — it only needs to absorb minor spelling/transliteration
+#: differences (e.g. missing apostrophe), not first-name noise.
+_FUZZY_MATCH_THRESHOLD = 0.85
 
 
 def _normalize(s: str) -> str:
@@ -298,16 +313,34 @@ def _load_quotations(conn, season_start: int) -> list[tuple[int, str, str]]:
 
 
 def _match_fantacalcio_id(
-    name: str, team: str, quotations: list[tuple[int, str, str]],
+    surname: str, team: str, quotations: list[tuple[int, str, str]],
 ) -> Optional[int]:
-    norm_name = _normalize(name)
+    """Match a scraped player's surname to a fantacalcio_id.
+
+    Matches on surname only, not the full name: Fantacalcio listoni list
+    players by surname alone ("Acerbi", "Sommer"), occasionally with a
+    disambiguating initial ("Kelly L.", "Moreno Alb."). Comparing the
+    forum's full "SURNAME Firstname" against that would tank a
+    SequenceMatcher ratio purely from length mismatch, independent of
+    whether the player is actually the same.
+    """
+    norm_surname = _normalize(surname)
     norm_team = _TEAM_ALIASES.get(_normalize(team), _normalize(team))
 
     candidates = [q for q in quotations if q[2] == norm_team] or quotations
 
+    # Tier 1: exact surname match, or one is a whitespace-bounded prefix of
+    # the other (covers "Kelly" vs "Kelly L.", "Moreno" vs "Moreno Alb.").
+    for fid, q_name, _ in candidates:
+        if norm_surname == q_name:
+            return fid
+        if q_name.startswith(norm_surname + " ") or norm_surname.startswith(q_name + " "):
+            return fid
+
+    # Tier 2: fuzzy fallback for minor spelling/transliteration differences.
     best_id, best_score = None, 0.0
     for fid, q_name, _ in candidates:
-        score = SequenceMatcher(None, norm_name, q_name).ratio()
+        score = SequenceMatcher(None, norm_surname, q_name).ratio()
         if score > best_score:
             best_id, best_score = fid, score
     if best_score >= _FUZZY_MATCH_THRESHOLD:
@@ -349,7 +382,7 @@ def persist(players: list[ScrapedPlayer], db_url: str, season_start: int, expert
                 "Import quotations first (ml.data.import_quotations).", season_start,
             )
         for p in players:
-            fid = _match_fantacalcio_id(p.name, p.team, quotations)
+            fid = _match_fantacalcio_id(p.surname, p.team, quotations)
             if fid is None:
                 unmatched += 1
                 log.debug("Unmatched player: %s (%s, %s)", p.name, p.team, p.role)

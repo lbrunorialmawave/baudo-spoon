@@ -2,9 +2,11 @@
 
 Endpoints
 ---------
-GET  /experts/ratings              — List expert ratings (paginated)
-GET  /experts/ratings/{player_id}  — Ratings for a specific player
-POST /experts/ratings              — Add or update an expert rating (API key)
+GET  /experts/ratings                       — List expert ratings (paginated)
+GET  /experts/ratings/for-season/{season}   — All ratings for a season, unpaginated (table overlay)
+GET  /experts/ratings/by-fotmob/{fotmob_id} — Ratings for a player by FotMob ID
+GET  /experts/ratings/{player_id}           — Ratings for a specific player
+POST /experts/ratings                       — Add or update an expert rating (API key)
 """
 
 from __future__ import annotations
@@ -83,6 +85,37 @@ async def list_expert_ratings(
         "total": int(count or 0),
         "page": page,
         "size": size,
+        "items": rows,
+    })
+
+
+@router.get("/ratings/for-season/{season_start}", summary="All ratings for a season, unpaginated")
+async def get_all_expert_ratings_for_season(
+    season_start: int,
+    source: str = Query("gruppo_esperti", description="Filter by source"),
+    db: AsyncSession = Depends(get_db),
+) -> ORJSONResponse:
+    """Returns every rating for a season in one shot, with fantacalcio_id
+    pulled out of the ``fc-{id}`` player_id convention, so the frontend can
+    build a client-side lookup map keyed the same way as mantraMap /
+    matchdayStatusMap (both keyed by fantacalcio_id) without N+1 requests
+    per page of the players table."""
+    import sqlalchemy as sa
+
+    result = await db.execute(
+        sa.text("""
+            SELECT *, SUBSTRING(player_id FROM 'fc-(\\d+)')::int AS fantacalcio_id
+            FROM expert_ratings
+            WHERE season_start = :season AND source = :source AND player_id LIKE 'fc-%'
+            ORDER BY id
+        """),
+        {"season": season_start, "source": source},
+    )
+    rows = [dict(r._mapping) for r in result.all()]
+
+    return ORJSONResponse({
+        "season_start": season_start,
+        "total": len(rows),
         "items": rows,
     })
 

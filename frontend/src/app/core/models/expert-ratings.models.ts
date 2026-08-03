@@ -20,3 +20,17 @@ export interface PlayerExpertRatingsResponse {
   average_rating: number | null;
   ratings: ExpertRating[];
 }
+
+/** Row shape from GET /experts/ratings/for-season/{season} — same as
+ * ExpertRating plus fantacalcio_id, pulled server-side from the
+ * `fc-{id}` player_id convention so it can key a client-side map the same
+ * way mantraMap / matchdayStatusMap are keyed. */
+export interface ExpertRatingWithFantacalcioId extends ExpertRating {
+  fantacalcio_id: number;
+}
+
+export interface SeasonExpertRatingsResponse {
+  season_start: number;
+  total: number;
+  items: ExpertRatingWithFantacalcioId[];
+}

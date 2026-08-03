@@ -7,6 +7,9 @@ import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { StatsService } from '../../core/services/stats.service';
 import { MantraService } from '../../core/services/mantra.service';
 import { TeamStrengthService } from '../../core/services/team-strength.service';
+import { QuotationService } from '../../core/services/quotation.service';
+import { ExpertRatingsService } from '../../core/services/expert-ratings.service';
+import { ExpertRatingWithFantacalcioId } from '../../core/models/expert-ratings.models';
 import { FASE7_LABELS, FASE7_TOOLTIPS, MANTRA_ROLES, MantraPlayer } from '../../core/models/mantra.models';
 import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/error-boundary.component';
 import { PlayerTableComponent } from './components/player-table/player-table.component';
@@ -117,6 +120,7 @@ import { PlayerDrawerComponent } from './components/player-drawer/player-drawer.
               [mantraMap]="mantraMap()"
               [matchdayStatus]="matchdayStatusMap()"
               [teamStrength]="teamStrengthScores()"
+              [expertRatings]="expertRatingsMap()"
               [sortColumn]="sortColumn()"
               [sortDirection]="sortDirection()"
               (sortChanged)="onSort($any($event))"
@@ -146,6 +150,8 @@ export class PlayersComponent {
   private readonly mantraService = inject(MantraService);
   private readonly statsService = inject(StatsService);
   private readonly teamStrengthService = inject(TeamStrengthService);
+  private readonly quotationService = inject(QuotationService);
+  private readonly expertRatingsService = inject(ExpertRatingsService);
   private readonly destroyRef = inject(DestroyRef);
 
   readonly teamStrengthScores = signal<Record<string, number>>({});
@@ -184,6 +190,7 @@ export class PlayersComponent {
   readonly activeQuickFilter = signal<string | null>(null);
   readonly selectedPlayer = signal<any | null>(null);
   readonly matchdayStatusMap = signal<Record<number, any>>({});
+  readonly expertRatingsMap = signal<Record<number, ExpertRatingWithFantacalcioId>>({});
   readonly sortColumn = signal<string>('');
   readonly sortDirection = signal<'asc' | 'desc'>('asc');
 
@@ -241,6 +248,13 @@ export class PlayersComponent {
     this.loadStats();
     this.loadMatchdayStatus();
     this.teamStrengthService.getScores().subscribe(s => this.teamStrengthScores.set(s));
+
+    this.quotationService.getSeasons().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (seasons) => {
+        const latest = seasons.length ? Math.max(...seasons) : null;
+        if (latest) this.loadExpertRatings(latest);
+      },
+    });
   }
 
   readonly onSearchChange = (value: string) => {
@@ -303,6 +317,19 @@ export class PlayersComponent {
           map[item.fantacalcio_id] = item;
         }
         this.matchdayStatusMap.set(map);
+      },
+      error: () => {},
+    });
+  }
+
+  private loadExpertRatings(seasonStart: number): void {
+    this.expertRatingsService.getForSeason(seasonStart).subscribe({
+      next: (res) => {
+        const map: Record<number, ExpertRatingWithFantacalcioId> = {};
+        for (const item of res.items) {
+          map[item.fantacalcio_id] = item;
+        }
+        this.expertRatingsMap.set(map);
       },
       error: () => {},
     });
