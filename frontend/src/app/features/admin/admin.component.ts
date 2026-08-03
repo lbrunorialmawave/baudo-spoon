@@ -2,7 +2,7 @@
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { DatePipe, DecimalPipe, PercentPipe } from '@angular/common';
-import { Subscription, interval } from 'rxjs';
+import { Subscription, timer } from 'rxjs';
 import { switchMap } from 'rxjs/operators';
 import { MantraService } from '../../core/services/mantra.service';
 import { QuotationService } from '../../core/services/quotation.service';
@@ -305,11 +305,12 @@ export class AdminComponent {
   // ── ML Training trigger ───────────────────────────────
 
   readonly trainingStatus = signal<{
-    status: 'idle' | 'running' | 'completed' | 'failed' | 'stale';
+    status: 'idle' | 'running' | 'completed' | 'failed';
+    run_number?: number;
     started_at?: string;
-    finished_at?: string;
-    returncode?: number;
-    log_tail?: string;
+    updated_at?: string;
+    conclusion?: string | null;
+    html_url?: string;
   } | null>(null);
   readonly trainingTriggering = signal(false);
   readonly trainingError = signal<string | null>(null);
@@ -326,9 +327,13 @@ export class AdminComponent {
     });
   };
 
-  private startTrainingPoll(): void {
+  /** @param initialDelayMs first poll delay — a longer grace period is used
+   *  right after triggering, since GitHub takes a few seconds to list a
+   *  freshly-dispatched run (otherwise the previous run's status would
+   *  briefly flash before the new one appears). */
+  private startTrainingPoll(initialDelayMs = 5000): void {
     if (this.trainingPollSub) return;
-    this.trainingPollSub = interval(5000)
+    this.trainingPollSub = timer(initialDelayMs, 5000)
       .pipe(switchMap(() => this.predService.getTrainingStatus()), takeUntilDestroyed(this.destroyRef))
       .subscribe((s) => {
         this.trainingStatus.set(s);
@@ -350,7 +355,10 @@ export class AdminComponent {
     this.predService.trainModel().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.trainingTriggering.set(false);
-        this.loadTrainingStatus();
+        // Optimistic: show "running" immediately rather than whatever the
+        // previous run's status was, while GitHub registers the new one.
+        this.trainingStatus.set({ status: 'running' });
+        this.startTrainingPoll(8000);
       },
       error: (err) => {
         this.trainingTriggering.set(false);

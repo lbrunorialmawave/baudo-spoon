@@ -109,21 +109,21 @@ export class PredictionService {
     return this.http.get<any>(`${this.baseUrl}/model-metrics/runs`, { params });
   }
 
-  /** Launch the ML training pipeline in the background (admin only). */
-  trainModel(): Observable<{ status: string; started_at: string; pid: number }> {
-    return this.http.post<{ status: string; started_at: string; pid: number }>(
-      `${this.baseUrl}/admin/ml/train`, {}
-    );
+  /** Trigger the "ML Training" GitHub Actions workflow (admin only). Runs on
+   *  GitHub's own runner, not locally — see api/src/routers/ml_pipeline.py. */
+  trainModel(): Observable<{ status: string }> {
+    return this.http.post<{ status: string }>(`${this.baseUrl}/admin/ml/train`, {});
   }
 
-  /** Poll while a training run is in progress. */
+  /** Poll while a training run is in progress. Reflects the most recent
+   *  GitHub Actions run of the ML Training workflow. */
   getTrainingStatus(): Observable<{
-    status: 'idle' | 'running' | 'completed' | 'failed' | 'stale';
+    status: 'idle' | 'running' | 'completed' | 'failed';
+    run_number?: number;
     started_at?: string;
-    finished_at?: string;
-    returncode?: number;
-    log_tail?: string;
-    pid?: number;
+    updated_at?: string;
+    conclusion?: string | null;
+    html_url?: string;
   }> {
     return this.http.get<any>(`${this.baseUrl}/admin/ml/train/status`);
   }

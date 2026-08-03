@@ -48,6 +48,16 @@ class APISettings(BaseSettings):
     # datacenter IPs. Set via API_ODDS_API_KEY.
     odds_api_key: str | None = Field(default=None, description="API key for the-odds-api.com")
 
+    # GitHub Actions trigger for ML training (see .github/workflows/ml-training.yml).
+    # The ml pipeline needs dependencies (xgboost, shap, matplotlib, ...) the API's
+    # own image deliberately doesn't install, so training can't run as a local
+    # subprocess in production — this dispatches the existing, already-secrets
+    # -configured GitHub Actions workflow instead. Set API_GITHUB_TOKEN to a PAT
+    # with `actions:write` on the repo.
+    github_token: str | None = Field(default=None, description="GitHub PAT with actions:write, for triggering ML training")
+    github_repo: str = Field(default="lbrunorialmawave/baudo-spoon", description="owner/repo for the ML training workflow")
+    github_default_branch: str = Field(default="main", description="Branch to dispatch the ML training workflow on")
+
     # Security — /v1/intelligence endpoints require this key via X-API-Key header.
     api_key_secret: str = Field(
         default="",

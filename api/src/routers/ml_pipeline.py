@@ -1,32 +1,33 @@
-"""Admin router: trigger and monitor the ML training pipeline.
+"""Admin router: trigger and monitor ML training via the GitHub Actions workflow.
 
 Endpoints
 ---------
-POST /admin/ml/train         — Launch `python -m ml.run_pipeline` in the background
-GET  /admin/ml/train/status  — Current status (idle/running/completed/failed)
+POST /admin/ml/train         — Dispatch the "ML Training" GitHub Actions workflow
+GET  /admin/ml/train/status  — Status of the most recent run of that workflow
 
-The pipeline (ml/run_pipeline.py -> ml/pipeline/trainer.py) does role-partitioned
-model training, walk-forward backtesting and clustering — realistically minutes,
-not seconds, so unlike POST /mantra/run it must not block the request. It is
-launched as a detached subprocess (same `python -m ml.run_pipeline` CLI entry
-point already used in Docker/manually — see DOCKER_GUIDE.txt), and a background
-task waits for it to finish and updates a status file on disk. Completed runs
-already show up via the existing GET /model-metrics/runs (populated by the
-pipeline itself); this router only adds the "start it and watch progress" half.
+The ml pipeline (ml/run_pipeline.py -> ml/pipeline/trainer.py) needs
+dependencies (xgboost, shap, matplotlib, ...) that the API's own Docker image
+deliberately does not install — api/requirements.txt and ml/requirements.txt
+are disjoint on purpose, since api and ml are separate deployable images.
+Running the pipeline as a subprocess inside the API process therefore cannot
+work in production (the API container has neither the ml/ source at the
+expected path nor its dependencies installed).
+
+The pipeline already has a working, production-secrets-configured entry
+point: .github/workflows/ml-training.yml (workflow_dispatch), which builds
+ml/Dockerfile fresh on GitHub's own runner and writes results to the same
+DB/R2 storage the API reads from. This router only proxies "start it" / "how's
+it going" to that workflow via the GitHub REST API — nothing runs locally.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import os
-import subprocess
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+import requests
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import ORJSONResponse
 
 from ..config import settings
@@ -40,136 +41,98 @@ router = APIRouter(
     dependencies=[Depends(require_admin)],
 )
 
-# A run stuck in "running" for longer than this is treated as stale (e.g. the
-# API process restarted mid-training, losing the watcher task) so a new run
-# isn't permanently blocked.
-_STALE_AFTER_SECONDS = 2 * 60 * 60
-
-# Repo root: api/src/routers/ml_pipeline.py -> api/src/routers -> api/src -> api -> repo root
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+_WORKFLOW_FILE = "ml-training.yml"
+_GITHUB_API = "https://api.github.com"
 
 
-def _artifacts_dir() -> Path:
-    return Path(settings.artifacts_dir) if hasattr(settings, "artifacts_dir") else Path("artifacts")
-
-
-def _status_path() -> Path:
-    return _artifacts_dir() / "training_status.json"
-
-
-def _log_path() -> Path:
-    return _artifacts_dir() / "training.log"
-
-
-def _read_status() -> dict:
-    path = _status_path()
-    if not path.exists():
-        return {"status": "idle"}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {"status": "idle"}
-
-
-def _write_status(data: dict) -> None:
-    path = _status_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data), encoding="utf-8")
-
-
-def _read_log_tail(max_chars: int = 4000) -> str:
-    path = _log_path()
-    if not path.exists():
-        return ""
-    try:
-        text = path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return ""
-    return text[-max_chars:]
-
-
-def _is_stale(status: dict) -> bool:
-    started_at = status.get("started_at")
-    if not started_at:
-        return True
-    try:
-        started = datetime.fromisoformat(started_at)
-    except ValueError:
-        return True
-    age = (datetime.now(timezone.utc) - started).total_seconds()
-    return age > _STALE_AFTER_SECONDS
-
-
-async def _watch_training(proc: subprocess.Popen) -> None:
-    """Background task: wait for the subprocess, then record the outcome."""
-    loop = asyncio.get_event_loop()
-    returncode = await loop.run_in_executor(None, proc.wait)
-
-    prior = _read_status()
-    _write_status({
-        **prior,
-        "status": "completed" if returncode == 0 else "failed",
-        "finished_at": datetime.now(timezone.utc).isoformat(),
-        "returncode": returncode,
-        "log_tail": _read_log_tail(),
-    })
-    log.info("ML pipeline finished with returncode=%s", returncode)
-
-
-@router.post("/train", summary="Launch the ML training pipeline (admin required)")
-async def trigger_training(background_tasks: BackgroundTasks) -> ORJSONResponse:
-    """Start `python -m ml.run_pipeline` as a background subprocess.
-
-    Returns immediately; poll GET /admin/ml/train/status for progress.
-    Rejects a second concurrent launch unless the previous "running" status
-    is stale (older than _STALE_AFTER_SECONDS — likely an orphaned run from
-    a server restart).
-    """
-    current = _read_status()
-    if current.get("status") == "running" and not _is_stale(current):
+def _headers() -> dict:
+    if not settings.github_token:
         raise HTTPException(
-            status_code=409,
-            detail="A training run is already in progress. Check GET /admin/ml/train/status.",
+            status_code=503,
+            detail="API_GITHUB_TOKEN not configured on the server — cannot trigger ML training.",
         )
+    return {
+        "Authorization": f"Bearer {settings.github_token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
 
-    sync_url = (
-        settings.database_url
-        .replace("postgresql+asyncpg://", "postgresql+psycopg2://")
-        .replace("postgres+asyncpg://", "postgres+psycopg2://")
+
+def _dispatch_workflow() -> None:
+    url = f"{_GITHUB_API}/repos/{settings.github_repo}/actions/workflows/{_WORKFLOW_FILE}/dispatches"
+    resp = requests.post(
+        url, headers=_headers(), json={"ref": settings.github_default_branch}, timeout=15
     )
-    env = {**os.environ, "ML_DATABASE_URL": sync_url}
+    resp.raise_for_status()
 
-    log_path = _log_path()
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_fh = log_path.open("w", encoding="utf-8")
 
+def _latest_run() -> Optional[dict]:
+    url = f"{_GITHUB_API}/repos/{settings.github_repo}/actions/workflows/{_WORKFLOW_FILE}/runs"
+    resp = requests.get(url, headers=_headers(), params={"per_page": 1}, timeout=15)
+    resp.raise_for_status()
+    runs = resp.json().get("workflow_runs", [])
+    return runs[0] if runs else None
+
+
+def _map_status(run: Optional[dict]) -> dict:
+    if run is None:
+        return {"status": "idle"}
+    gh_status = run.get("status")  # queued | in_progress | completed
+    conclusion = run.get("conclusion")  # success | failure | cancelled | ... | None
+    if gh_status in ("queued", "in_progress"):
+        status = "running"
+    elif gh_status == "completed":
+        status = "completed" if conclusion == "success" else "failed"
+    else:
+        status = "idle"
+    return {
+        "status": status,
+        "run_number": run.get("run_number"),
+        "started_at": run.get("run_started_at"),
+        "updated_at": run.get("updated_at"),
+        "conclusion": conclusion,
+        "html_url": run.get("html_url"),
+    }
+
+
+@router.post("/train", summary="Trigger the ML Training GitHub Actions workflow (admin required)")
+async def trigger_training() -> ORJSONResponse:
+    """Dispatch .github/workflows/ml-training.yml. Returns immediately;
+    poll GET /admin/ml/train/status for progress (the workflow itself
+    typically takes several minutes)."""
     try:
-        proc = subprocess.Popen(
-            ["python", "-m", "ml.run_pipeline", "--predict-next", "--evaluate-mantra"],
-            cwd=str(_REPO_ROOT),
-            env=env,
-            stdout=log_fh,
-            stderr=subprocess.STDOUT,
+        await asyncio.to_thread(_dispatch_workflow)
+    except HTTPException:
+        raise
+    except requests.HTTPError as e:
+        log.exception("Failed to dispatch ML Training workflow")
+        detail = (
+            f"GitHub API error {e.response.status_code}: {e.response.text[:300]}"
+            if e.response is not None else str(e)
         )
+        raise HTTPException(status_code=502, detail=detail)
     except Exception:
-        log.exception("Failed to launch ML training pipeline")
-        raise HTTPException(status_code=500, detail="Failed to launch training pipeline. Check server logs.")
-    finally:
-        # The child inherits its own duplicated file descriptor at spawn time —
-        # safe (and necessary, to avoid leaking the fd) to close our copy here.
-        log_fh.close()
+        log.exception("Failed to dispatch ML Training workflow")
+        raise HTTPException(status_code=500, detail="Failed to trigger training workflow. Check server logs.")
 
-    started_at = datetime.now(timezone.utc).isoformat()
-    _write_status({"status": "running", "started_at": started_at, "pid": proc.pid})
-
-    background_tasks.add_task(_watch_training, proc)
-
-    return ORJSONResponse({"status": "running", "started_at": started_at, "pid": proc.pid})
+    return ORJSONResponse({"status": "triggered"})
 
 
-@router.get("/train/status", summary="Current ML training status")
+@router.get("/train/status", summary="Status of the most recent ML training run")
 async def get_training_status() -> ORJSONResponse:
-    status = _read_status()
-    if status.get("status") == "running" and _is_stale(status):
-        status = {**status, "status": "stale"}
-    return ORJSONResponse(status)
+    try:
+        run = await asyncio.to_thread(_latest_run)
+    except HTTPException:
+        raise
+    except requests.HTTPError as e:
+        log.exception("Failed to fetch ML Training workflow status")
+        detail = (
+            f"GitHub API error {e.response.status_code}: {e.response.text[:300]}"
+            if e.response is not None else str(e)
+        )
+        raise HTTPException(status_code=502, detail=detail)
+    except Exception:
+        log.exception("Failed to fetch ML Training workflow status")
+        raise HTTPException(status_code=502, detail="Failed to fetch training status from GitHub.")
+
+    return ORJSONResponse(_map_status(run))

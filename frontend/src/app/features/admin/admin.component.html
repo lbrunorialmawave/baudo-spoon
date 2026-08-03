@@ -282,7 +282,7 @@
             </h3>
             <p class="text-xs mt-0.5" style="color:var(--color-text-secondary)">
               Retraining completo (feature engineering, modelli, backtest, clustering).
-              Richiede diversi minuti, gira in background.
+              Gira su GitHub Actions (richiede diversi minuti), non su questo server.
             </p>
           </div>
           <button class="rounded-lg border px-4 py-1.5 text-xs font-medium text-white shrink-0"
@@ -303,30 +303,27 @@
           @if (ts.status === 'running') {
             <div class="mt-3 rounded border px-3 py-2 text-xs"
                  style="border-color:#f59e0b44;background:#f59e0b11;color:#92400e">
-              In corso dalle {{ ts.started_at | date:'HH:mm:ss' }} — questa pagina si aggiorna da sola.
+              ⏳ In corso @if (ts.run_number) { (run #{{ ts.run_number }}) } — questa pagina si aggiorna da sola.
+              @if (ts.html_url) {
+                <a [href]="ts.html_url" target="_blank" rel="noopener" class="underline ml-1">Guarda su GitHub ↗</a>
+              }
             </div>
           } @else if (ts.status === 'completed') {
             <div class="mt-3 rounded border px-3 py-2 text-xs"
                  style="border-color:#22c55e44;background:#22c55e11;color:#16a34a">
-              ✅ Ultimo training completato {{ ts.finished_at | date:'d MMM y, HH:mm:ss' }}.
+              ✅ Ultimo training completato {{ ts.updated_at | date:'d MMM y, HH:mm:ss' }}.
+              @if (ts.html_url) {
+                <a [href]="ts.html_url" target="_blank" rel="noopener" class="underline ml-1">Log ↗</a>
+              }
             </div>
           } @else if (ts.status === 'failed') {
             <div class="mt-3 rounded border px-3 py-2 text-xs"
                  style="border-color:#dc262644;background:#dc262611;color:#dc2626">
-              ❌ Ultimo training fallito {{ ts.finished_at | date:'d MMM y, HH:mm:ss' }}
-              (exit code {{ ts.returncode }}).
-              @if (ts.log_tail) {
-                <details class="mt-1.5">
-                  <summary class="cursor-pointer font-medium">Log</summary>
-                  <pre class="mt-1 whitespace-pre-wrap text-[10px] max-h-40 overflow-y-auto">{{ ts.log_tail }}</pre>
-                </details>
+              ❌ Ultimo training fallito {{ ts.updated_at | date:'d MMM y, HH:mm:ss' }}
+              ({{ ts.conclusion }}).
+              @if (ts.html_url) {
+                <a [href]="ts.html_url" target="_blank" rel="noopener" class="underline ml-1">Log ↗</a>
               }
-            </div>
-          } @else if (ts.status === 'stale') {
-            <div class="mt-3 rounded border px-3 py-2 text-xs"
-                 style="border-color:#f59e0b44;background:#f59e0b11;color:#92400e">
-              ⚠️ L'ultimo run risultava "in corso" da troppo tempo (probabile riavvio del server) —
-              puoi avviarne uno nuovo.
             </div>
           }
         }
