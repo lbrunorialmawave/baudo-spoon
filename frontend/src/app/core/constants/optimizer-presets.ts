@@ -1,18 +1,23 @@
 /**
  * Optimizer strategy presets — single source of truth for the Optimizer UI.
  *
- * Recalibrated against Quotazioni Fantacalcio 2025/26 (Qt.A):
- * - Pool sizes (8-team need ~200 slots): minQtA=0→532, 3→416, 5→355, 8→248
- * - Qt.A=1 is pure noise (esp. GK reserves); higher Qt.A ↔ higher FVM reliability
- * - minQtA is strategy-congruent: floor/safe raise it, ceiling/risk keep it low
- * - topTierCostThreshold anchored to empirical elite band (Qt.A ~20–28)
+ * Recalibrated on Quotazioni Fantacalcio pooled 2023/24–2025/26 (Qt.A):
+ * - Pool sizes 2025/26 (8-team need ~200 slots): minQtA=0→532, 3→~420, 5→~355, 8→~248
+ * - Qt.A=1 ≈14% of the list (mostly GK reserves) — pure noise for almost every strategy
+ * - minQtA is strategy-congruent: floor/safe raise it (≥5), ceiling/risk keep it low (1–2)
+ * - topTierCostThreshold anchored to TOP_TIER_COST in shared-presets
+ *   (strict=20 / moderate=24 / open=28); ultra-elite ≥26 is rare (≤10 names in 2025/26)
+ * - maxSinglePlayerBudgetShare: 0.24 floor ↔ 0.40 ceiling; full-elite 25-man cost
+ *   ≈553–592 vs budget 500 → concentration caps are load-bearing
  *
  * @see OptimizationRequest in core/models/api.models.ts
+ * @see TOP_TIER_COST / QT_A_TIERS in shared-presets.ts
  */
-import { FormationConfig, OptimizationRequest, StrategyProfile } from '../models/api.models';
+import { OptimizationRequest } from '../models/api.models';
 import {
   DEFAULT_BIG_TEAMS,
   DEFAULT_FORMATIONS,
+  TOP_TIER_COST,
 } from './shared-presets';
 
 /** Semantic UI hints — never sent to the solver. */
@@ -157,7 +162,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           },
           minBudgetShareByRoles: [["P", "D"], 0.36],
           maxTopTierPlayers: 4,
-          topTierCostThreshold: 26.0,
+          topTierCostThreshold: TOP_TIER_COST.moderate,
         },
       ],
     },
@@ -192,8 +197,8 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
       bigTeamsCap: 14,
       formations: DEFAULT_FORMATIONS,
       inflationConfig: {
-        inflationPercentileThreshold: 0.58,
-        maxInflationMultiplier: 1.90,
+        inflationPercentileThreshold: 0.60,
+        maxInflationMultiplier: 1.80,
         baseInflationRate: 0.07,
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.25,
@@ -226,7 +231,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           },
           minBudgetShareByRoles: [["C", "A"], 0.70],
           maxTopTierPlayers: null,
-          topTierCostThreshold: null,
+          topTierCostThreshold: TOP_TIER_COST.free,
         },
       ],
     },
@@ -289,7 +294,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           },
           minBudgetShareByRoles: null,
           maxTopTierPlayers: 3,
-          topTierCostThreshold: 24.0,
+          topTierCostThreshold: 22,
         },
       ],
     },
@@ -358,7 +363,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           },
           minBudgetShareByRoles: [["C", "A"], 0.55],
           maxTopTierPlayers: 5,
-          topTierCostThreshold: 28.0,
+          topTierCostThreshold: TOP_TIER_COST.open,
         },
       ],
     },
@@ -426,7 +431,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           },
           minBudgetShareByRoles: [["P", "D"], 0.38],
           maxTopTierPlayers: 4,
-          topTierCostThreshold: 26.0,
+          topTierCostThreshold: TOP_TIER_COST.moderate,
         },
       ],
     },
@@ -544,7 +549,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           },
           minBudgetShareByRoles: null,
           maxTopTierPlayers: 4,
-          topTierCostThreshold: 25.0,
+          topTierCostThreshold: TOP_TIER_COST.moderate,
         },
       ],
     },
@@ -612,7 +617,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           },
           minBudgetShareByRoles: [["C", "A"], 0.65],
           maxTopTierPlayers: null,
-          topTierCostThreshold: null,
+          topTierCostThreshold: TOP_TIER_COST.free,
         },
       ],
     },
@@ -676,7 +681,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           },
           minBudgetShareByRoles: null,
           maxTopTierPlayers: 2,
-          topTierCostThreshold: 20.0,
+          topTierCostThreshold: TOP_TIER_COST.strict,
         },
       ],
     },
@@ -795,7 +800,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           },
           minBudgetShareByRoles: [["A"], 0.28],
           maxTopTierPlayers: 5,
-          topTierCostThreshold: 28.0,
+          topTierCostThreshold: TOP_TIER_COST.open,
         },
       ],
     },
@@ -859,7 +864,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           },
           minBudgetShareByRoles: null,
           maxTopTierPlayers: 3,
-          topTierCostThreshold: 24.0,
+          topTierCostThreshold: 22,
         },
       ],
     },
@@ -922,7 +927,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           },
           minBudgetShareByRoles: null,
           maxTopTierPlayers: 5,
-          topTierCostThreshold: 28.0,
+          topTierCostThreshold: TOP_TIER_COST.open,
         },
       ],
     },
@@ -996,7 +1001,7 @@ export const OPTIMIZER_PRESETS: readonly OptimizerPreset[] = [
           },
           minBudgetShareByRoles: [["P", "D"], 0.40],
           maxTopTierPlayers: 5,
-          topTierCostThreshold: 30.0,
+          topTierCostThreshold: TOP_TIER_COST.open,
         },
       ],
     },

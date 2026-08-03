@@ -1,11 +1,24 @@
 /**
  * Shared building blocks for the Optimizer / Auction preset catalogs.
  *
- * Recalibrated against Quotazioni Fantacalcio 2025/26 (Qt.A distribution):
- * - Overall Qt.A: mean≈8.0, median≈7, p75≈11, max=33
- * - By role median: P=1, D=6, C=8, A=10
- * - Qt.A=1 is mostly pure reserves (esp. GK); usable starters cluster ≥5–8
- * - FVM correlates strongly with Qt.A (r≈0.76) → higher Qt.A = higher reliability
+ * Recalibrated on Quotazioni Fantacalcio pooled across 2023/24–2025/26
+ * (sheet "Tutti", Qt.A):
+ *
+ * Overall (pooled ~1.6k rows):
+ *   mean≈8.1  median=7  p75≈11–12  p90≈16  p95≈20–21  max 41→40→33
+ *
+ * By role (pooled medians):
+ *   P≈1–3   D≈5–6   C≈8   A≈10–12
+ *
+ * Structure:
+ *   - Qt.A=1 ≈ 13–16% of the list (mostly GK reserves / pure noise)
+ *   - usable starters cluster ≥5 (≈63–67% of pool)
+ *   - solid core ≥8 (≈44–47%)
+ *   - elite ≥18: 49 → 49 → 39 names (market flattened in 2025/26)
+ *   - ultra-elite ≥26: 17 → 10 → 7  |  ≥30: 8 → 7 → 3
+ *   - corr(Qt.A, FVM) ≈ 0.76–0.81 → higher Qt.A ≈ higher reliability
+ *   - top-25 quota-cost (3P/8D/8C/6A) ≈ 553–592 vs budget 500 → full-elite
+ *     squads are structurally over budget; presets must not assume it
  *
  * Everything here is `readonly`/`as const` on purpose: presets must never
  * mutate a shared array in place.
@@ -13,15 +26,20 @@
 import { FormationConfig } from '../models/api.models';
 import { AuctionRole } from '../models/auction.models';
 
-/** The 7 "big teams" used by every stock preset for the big-teams cap. */
+/**
+ * "Big teams" for the hard bigTeamsCap constraint.
+ * Core six are stable top-sum Qt.A across 2023–25; Como is included because
+ * in 2025/26 it jumped into the top-4 by aggregate listino (Paz / Douvikas /
+ * Baturina) and is the current-season market reality the UI optimises for.
+ */
 export const DEFAULT_BIG_TEAMS: string[] = [
   'Inter',
   'Milan',
   'Juventus',
   'Napoli',
   'Roma',
-  'Como',
   'Atalanta',
+  'Como',
 ] as const;
 
 /** Classic Fantacalcio role quotas (3P / 8D / 8C / 6A = 25 total). */
@@ -47,7 +65,7 @@ export const DEFAULT_FORMATIONS: FormationConfig[] = [
 ] as const;
 
 // ---------------------------------------------------------------------------
-// Empirical Qt.A anchors (Fantacalcio 2025/26)
+// Empirical Qt.A anchors (pooled 2023/24 – 2025/26)
 // Used by preset authors to keep minQtA / topTierCostThreshold coherent.
 // ---------------------------------------------------------------------------
 
@@ -56,9 +74,10 @@ export const DEFAULT_FORMATIONS: FormationConfig[] = [
  * - NOISE (1): pure reserves / listed backups — filter for almost all strategies
  * - FRINGE (2–4): low reliability, rotation-only
  * - USABLE (5–7): rotation / solid mid-tier
- * - SOLID (8–11): good starters / value core
- * - PREMIUM (12–17): high-quality semi-stars
- * - ELITE (18+): true top-tier (≈30 players league-wide)
+ * - SOLID (8–11): good starters / value core  (≈p50–p75)
+ * - PREMIUM (12–17): high-quality semi-stars (≈p75–p90)
+ * - ELITE (18–24): true top-tier (~40–50 names historically; 39 in 2025/26)
+ * - ULTRA (25+): rare superstars (≤17 names/season; ≤7 in 2025/26)
  */
 export const QT_A_TIERS = {
   noise: 1,
@@ -67,18 +86,40 @@ export const QT_A_TIERS = {
   solid: 8,
   premium: 12,
   elite: 18,
+  ultra: 25,
 } as const;
 
 /**
  * Suggested topTierCostThreshold by aggressiveness.
- * Anchored to empirical p80–p90 Qt.A mixed across roles (~12–20)
- * and historical cost of premium names (Qt.A 20–28 band).
+ *
+ * Anchored to pooled p95≈20–21 and the observed compression of the ultra band
+ * in 2025/26 (max 33, only 3 names ≥30). Caps above 28 are almost never
+ * binding on the current listino and only inflate "premium" counts.
  */
 export const TOP_TIER_COST = {
-  strict: 22,   // underdog / value — few true premiums
-  moderate: 26, // balanced / floor
-  open: 30,     // aggressive / ceiling
-  free: null as number | null, // no cap
+  /** Underdog / pure value — almost no true premiums. */
+  strict: 20,
+  /** Floor / safe / anti-injury. */
+  moderate: 24,
+  /** Balanced / tournament / championship. */
+  open: 28,
+  /** Ceiling / risk-on — no hard cap. */
+  free: null as number | null,
+} as const;
+
+/**
+ * Empirical budget-share prior from quota-weighted mean Qt.A
+ * (3P·5.3 + 8D·6.3 + 8C·8.9 + 6A·11.7 ≈ 208 listino points):
+ *   P≈0.08  D≈0.24  C≈0.34  A≈0.34
+ *
+ * Auction strategies may deliberately overweight A (scoring leverage) or
+ * C (Mantra flexibility); this prior is the neutral reference.
+ */
+export const LISTINO_BUDGET_SHARE_PRIOR: Readonly<Record<AuctionRole, number>> = {
+  P: 0.08,
+  D: 0.24,
+  C: 0.34,
+  A: 0.34,
 } as const;
 
 // ---------------------------------------------------------------------------

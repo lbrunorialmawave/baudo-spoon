@@ -1,14 +1,18 @@
 /**
  * Auction strategy presets — single source of truth for the Auction setup UI.
  *
- * Recalibrated against Quotazioni Fantacalcio 2025/26:
- * - Qt.A mean≈8, median≈7; elite band ≥18 (≈30 players); solid band ≥8 (≈248)
- * - Higher Qt.A ↔ higher FVM reliability (r≈0.76)
- * - Tuning prioritises coherence: conservative protects residual & avoids noise;
- *   aggressive tolerates overpay on elite Qt.A names; value/late profiles
- *   lean on mid-tier (Qt.A 5–12) where projected_score/price is best.
+ * Recalibrated on Quotazioni Fantacalcio pooled 2023/24–2025/26 (Qt.A):
+ * - Overall: mean≈8.1, median=7, p75≈11–12, p90≈16, p95≈20–21
+ * - Elite ≥18: 49 → 49 → 39 names; ultra ≥26: 17 → 10 → 7 (2025/26 is flatter)
+ * - Role medians: P≈1–3, D≈5–6, C≈8, A≈10–12
+ * - Listino-implied budget prior (quota-weighted mean): P0.08 / D0.24 / C0.34 / A0.34
+ *   Strategy budgetShare may overweight A (scoring leverage) but should not
+ *   invent a market that no longer exists (max Qt.A compressed to 33)
+ * - Inflation: lower concentration at the top ⇒ slightly lower maxInflation for
+ *   aggressive profiles; value/late profiles stay tight (pctl ≥0.76)
  *
  * @see AuctionConfig / InitializeAuctionRequest in core/models/auction.models.ts
+ * @see LISTINO_BUDGET_SHARE_PRIOR / TOP_TIER_COST in shared-presets.ts
  */
 import { AuctionConfig } from '../models/auction.models';
 import { DEFAULT_CLASSIC_ROLE_QUOTAS } from './shared-presets';
@@ -113,8 +117,8 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       budgetShareByRole: {
         P: 0.08,
         D: 0.24,
-        C: 0.28,
-        A: 0.40,
+        C: 0.3,
+        A: 0.38,
       },
     },
   },
@@ -165,9 +169,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       rebidTriggerPctAboveExpected: 0.12,
       budgetShareByRole: {
         P: 0.07,
-        D: 0.21,
-        C: 0.30,
-        A: 0.42,
+        D: 0.22,
+        C: 0.32,
+        A: 0.39,
       },
     },
   },
@@ -194,7 +198,7 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       useInflationBaseline: true,
       inflationConfig: {
         inflationPercentileThreshold: 0.58,
-        maxInflationMultiplier: 1.85,
+        maxInflationMultiplier: 1.75,
         baseInflationRate: 0.07,
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.22,
@@ -218,9 +222,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       rebidTriggerPctAboveExpected: 0.24,
       budgetShareByRole: {
         P: 0.05,
-        D: 0.17,
-        C: 0.28,
-        A: 0.50,
+        D: 0.18,
+        C: 0.3,
+        A: 0.47,
       },
     },
   },
@@ -246,8 +250,8 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       },
       useInflationBaseline: true,
       inflationConfig: {
-        inflationPercentileThreshold: 0.52,
-        maxInflationMultiplier: 2.00,
+        inflationPercentileThreshold: 0.55,
+        maxInflationMultiplier: 1.90,
         baseInflationRate: 0.08,
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.28,
@@ -271,10 +275,10 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       rebidTriggerPctAboveExpected: 0.28,
       targetTopTierCount: 4,
       budgetShareByRole: {
-        P: 0.04,
-        D: 0.14,
-        C: 0.26,
-        A: 0.56,
+        P: 0.05,
+        D: 0.15,
+        C: 0.28,
+        A: 0.52,
       },
     },
   },
@@ -325,10 +329,10 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       preferLowCostAlternative: true,
       rebidTriggerPctAboveExpected: 0.05,
       budgetShareByRole: {
-        P: 0.07,
-        D: 0.23,
-        C: 0.31,
-        A: 0.39,
+        P: 0.08,
+        D: 0.24,
+        C: 0.32,
+        A: 0.36,
       },
     },
   },
@@ -355,7 +359,7 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       useInflationBaseline: true,
       inflationConfig: {
         inflationPercentileThreshold: 0.52,
-        maxInflationMultiplier: 2.00,
+        maxInflationMultiplier: 1.90,
         baseInflationRate: 0.09,
         baselineParticipants: 6,
         teamStrengthMultiplier: 0.25,
@@ -381,8 +385,8 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       budgetShareByRole: {
         P: 0.08,
         D: 0.25,
-        C: 0.30,
-        A: 0.37,
+        C: 0.32,
+        A: 0.35,
       },
     },
   },
@@ -434,9 +438,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       rebidTriggerPctAboveExpected: 0.20,
       budgetShareByRole: {
         P: 0.05,
-        D: 0.17,
-        C: 0.28,
-        A: 0.50,
+        D: 0.18,
+        C: 0.3,
+        A: 0.47,
       },
     },
   },
@@ -488,9 +492,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       rebidTriggerPctAboveExpected: 0.06,
       budgetShareByRole: {
         P: 0.08,
-        D: 0.23,
-        C: 0.30,
-        A: 0.39,
+        D: 0.24,
+        C: 0.32,
+        A: 0.36,
       },
     },
   },
@@ -543,9 +547,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       rebidTriggerPctAboveExpected: 0.14,
       budgetShareByRole: {
         P: 0.06,
-        D: 0.20,
-        C: 0.32,
-        A: 0.42,
+        D: 0.22,
+        C: 0.34,
+        A: 0.38,
       },
     },
   },
@@ -599,8 +603,8 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       budgetShareByRole: {
         P: 0.08,
         D: 0.25,
-        C: 0.28,
-        A: 0.39,
+        C: 0.3,
+        A: 0.37,
       },
     },
   },
@@ -626,8 +630,8 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       },
       useInflationBaseline: true,
       inflationConfig: {
-        inflationPercentileThreshold: 0.48,
-        maxInflationMultiplier: 2.00,
+        inflationPercentileThreshold: 0.52,
+        maxInflationMultiplier: 1.90,
         baseInflationRate: 0.08,
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.14,
@@ -652,9 +656,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       rebidTriggerPctAboveExpected: 0.28,
       budgetShareByRole: {
         P: 0.04,
-        D: 0.15,
-        C: 0.28,
-        A: 0.53,
+        D: 0.16,
+        C: 0.3,
+        A: 0.5,
       },
     },
   },
@@ -715,9 +719,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       },
       budgetShareByRole: {
         P: 0.06,
-        D: 0.26,
-        C: 0.30,
-        A: 0.38,
+        D: 0.28,
+        C: 0.32,
+        A: 0.34,
       },
     },
   },
@@ -770,8 +774,8 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       budgetShareByRole: {
         P: 0.08,
         D: 0.24,
-        C: 0.30,
-        A: 0.38,
+        C: 0.32,
+        A: 0.36,
       },
     },
   },
@@ -823,9 +827,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       rebidTriggerPctAboveExpected: 0.03,
       budgetShareByRole: {
         P: 0.08,
-        D: 0.24,
-        C: 0.30,
-        A: 0.38,
+        D: 0.25,
+        C: 0.32,
+        A: 0.35,
       },
     },
   },
@@ -882,9 +886,9 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
       rebidTriggerPctAboveExpected: 0.16,
       budgetShareByRole: {
         P: 0.06,
-        D: 0.20,
-        C: 0.30,
-        A: 0.44,
+        D: 0.22,
+        C: 0.32,
+        A: 0.4,
       },
     },
   },
