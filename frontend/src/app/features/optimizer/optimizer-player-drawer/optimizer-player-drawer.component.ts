@@ -1,6 +1,6 @@
 import { Component, input, output } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
-import { SquadPlayer } from '../../../../core/models/api.models';
+import { SquadPlayer } from '../../../core/models/api.models';
 
 /**
  * Read-only detail panel for an optimizer squad row.

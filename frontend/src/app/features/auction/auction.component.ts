@@ -21,7 +21,7 @@ import {
   VarRankingItem,
 } from '../../core/models/auction.models';
 import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.component';
-import { AuctionPlayerDrawerComponent, AuctionDrawerPlayer } from './components/auction-player-drawer/auction-player-drawer.component';
+import { AuctionPlayerDrawerComponent, AuctionDrawerPlayer } from './auction-player-drawer/auction-player-drawer.component';
 import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/error-boundary.component';
 import {
   FieldLegendComponent,

@@ -21,7 +21,7 @@ import {
   OPTIMIZER_PRESETS,
   OptimizerPreset,
 } from '../../core/constants/optimizer-presets';
-import { OptimizerPlayerDrawerComponent } from './components/optimizer-player-drawer/optimizer-player-drawer.component';
+import { OptimizerPlayerDrawerComponent } from './optimizer-player-drawer/optimizer-player-drawer.component';
 
 const STRATEGY_META: Record<string, { label: string; icon: string }> = {
   BALANCED:        { label: 'Bilanciata',      icon: '⚖️' },
