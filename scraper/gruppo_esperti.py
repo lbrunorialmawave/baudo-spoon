@@ -81,10 +81,18 @@ _ALL_MARKERS = set(ROLE_MARKERS) | {
     "PROBABILE.FORMAZIONE", "BALLOTTAGGI",
 }
 
+#: Some curators write "Titolarità: 9/10" (colon after the label), others
+#: "Titolarità 9/10" (no colon) — sometimes both styles appear in the same
+#: post (e.g. Atalanta uses no-colon for Portieri/Difensori but colons for
+#: Centrocampisti/Attaccanti, apparently from a later partial edit). Every
+#: label is followed by an optional colon to tolerate both.
 _STATS_LINE_RE = re.compile(
-    r"Titolarit[àa’]\s*(\d+)\s*/\s*10\s*-\s*Media voto\s*(\d+)\s*/\s*10\s*-\s*"
-    r"Salute\s*(\d+)\s*/\s*10\s*-\s*[^\d/\n]{2,30}?(\d+)\s*/\s*10\s*-\s*"
-    r"Consiglio Esperti\s*(\d+)\s*/\s*10\s*-\s*TOTALE\s*(\d+)\s*/\s*50",
+    r"Titolarit[àa’]\s*:?\s*(\d+)\s*/\s*10\s*-\s*"
+    r"Media voto\s*:?\s*(\d+)\s*/\s*10\s*-\s*"
+    r"Salute\s*:?\s*(\d+)\s*/\s*10\s*-\s*"
+    r"[^\d/\n]{2,30}?(\d+)\s*/\s*10\s*-\s*"
+    r"Consiglio Esperti\s*:?\s*(\d+)\s*/\s*10\s*-\s*"
+    r"TOTALE\s*:?\s*(\d+)\s*/\s*50",
     re.IGNORECASE,
 )
 
@@ -212,7 +220,21 @@ def _parse_role_section(text: str, role: str, team: str, url: str) -> list[Scrap
             log.debug("Skipping unmatched player header before stats line in %s (%s)", team, role)
             continue
         best_name_match = name_matches[-1]
-        surname = re.sub(r"\s+", " ", best_name_match.group("surname")).strip()
+        surname_words = re.sub(r"\s+", " ", best_name_match.group("surname")).strip().split(" ")
+        # The "all-caps word" character classes span Unicode blocks (e.g.
+        # Latin-1 Supplement) where upper/lowercase codepoints interleave,
+        # so an accented lowercase leftover from the *previous* player's
+        # comment (e.g. a trailing "però") can slip in as a leading token.
+        # str.isupper() is Unicode-aware and catches what the regex ranges
+        # can't; keep only the trailing run of genuinely all-caps words,
+        # since a leaked fragment always precedes the real surname.
+        uppercase_tail: list[str] = []
+        for word in reversed(surname_words):
+            if word.isupper():
+                uppercase_tail.insert(0, word)
+            else:
+                break
+        surname = " ".join(uppercase_tail) if uppercase_tail else " ".join(surname_words)
         firstname = re.sub(r"\s+", " ", best_name_match.group("firstname")).strip()
         name = f"{surname} {firstname}".strip()
 
