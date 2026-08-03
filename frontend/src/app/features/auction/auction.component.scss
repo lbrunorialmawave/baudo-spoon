@@ -455,3 +455,17 @@
   .participants-panel { max-height: none; overflow-y: visible; }
   .auction-main { overflow-y: visible; }
 }
+
+// Clickable player rows → presentational drawer
+.clickable-row {
+  cursor: pointer;
+
+  &:hover {
+    background: var(--color-surface-raised);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-brand-500, #6366f1);
+    outline-offset: -2px;
+  }
+}

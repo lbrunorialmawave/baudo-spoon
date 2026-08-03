@@ -8,6 +8,7 @@ import { AuctionService } from '../../core/services/auction.service';
 import { QuotationService } from '../../core/services/quotation.service';
 import {
   AUCTION_ROLES,
+  AssignmentRecord,
   AuctionParticipantSetup,
   AuctionParticipantState,
   AuctionPlayerSummary,
@@ -20,6 +21,7 @@ import {
   VarRankingItem,
 } from '../../core/models/auction.models';
 import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.component';
+import { AuctionPlayerDrawerComponent, AuctionDrawerPlayer } from './components/auction-player-drawer/auction-player-drawer.component';
 import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/error-boundary.component';
 import {
   FieldLegendComponent,
@@ -289,6 +291,7 @@ function makeParticipants(
     SkeletonComponent,
     ErrorBoundaryComponent,
     FieldLegendComponent,
+    AuctionPlayerDrawerComponent,
   ],
   template: `
     @if (sessionId()) {
@@ -629,7 +632,13 @@ function makeParticipants(
                     </thead>
                     <tbody>
                       @for (a of reversedAssignments(); track a.sequenceNumber) {
-                        <tr>
+                        <tr class="clickable-row"
+                            (click)="openAssignmentPlayer(a)"
+                            (keydown.enter)="openAssignmentPlayer(a)"
+                            (keydown.space)="$event.preventDefault(); openAssignmentPlayer(a)"
+                            tabindex="0"
+                            role="button"
+                            [attr.aria-label]="'Dettaglio ' + a.player.name">
                           <td class="seq">{{ a.sequenceNumber }}</td>
                           <td>
                             <p class="player-name">{{ a.player.name }}</p>
@@ -801,7 +810,13 @@ function makeParticipants(
                       </thead>
                       <tbody>
                         @for (v of sortedVarRanking(); track v.playerId) {
-                          <tr>
+                          <tr class="clickable-row"
+                              (click)="openVarPlayer(v)"
+                              (keydown.enter)="openVarPlayer(v)"
+                              (keydown.space)="$event.preventDefault(); openVarPlayer(v)"
+                              tabindex="0"
+                              role="button"
+                              [attr.aria-label]="'Dettaglio ' + v.name">
                             <td>{{ v.name }}</td>
                             <td>
                               <span
@@ -1513,6 +1528,10 @@ function makeParticipants(
         </div>
       </div>
     }
+
+    @if (selectedPlayer(); as p) {
+      <app-auction-player-drawer [player]="p" (closed)="selectedPlayer.set(null)" />
+    }
   `,
   styleUrls: ['./auction.component.scss'],
 })
@@ -1608,7 +1627,8 @@ export class AuctionComponent {
   readonly recordRejectionCode = signal<string | null>(null);
   readonly undoLoading = signal(false);
 
-  readonly varRanking = signal<VarRankingItem[]>([]);
+  readonly selectedPlayer = signal<AuctionDrawerPlayer | null>(null);
+    readonly varRanking = signal<VarRankingItem[]>([]);
   readonly varLoading = signal(false);
 
   /**
@@ -2115,6 +2135,36 @@ export class AuctionComponent {
   }
 
   // ── Template helpers ──────────────────────────────────────────────────
+
+
+  openVarPlayer(v: VarRankingItem): void {
+    this.selectedPlayer.set({
+      playerId: v.playerId,
+      name: v.name,
+      role: v.role,
+      projectedScore: v.projectedScore,
+      varScore: v.varScore,
+      expectedPrice: v.expectedPrice,
+      esv: v.esv,
+      calibrated: v.calibrated,
+      buySignal: v.buySignal,
+      seasonValue: v.seasonValue,
+      startProbability: v.startProbability,
+    });
+  }
+
+  openAssignmentPlayer(a: AssignmentRecord): void {
+    this.selectedPlayer.set({
+      playerId: a.player.playerId,
+      name: a.player.name,
+      role: a.player.role,
+      realTeam: a.player.realTeam,
+      cost: a.player.cost,
+      projectedScore: a.player.projectedScore,
+      finalPrice: a.finalPrice,
+      tier: a.tier,
+    });
+  }
 
   roleColor(role: string): string {
     return ROLE_COLOR[role] ?? 'var(--color-text-secondary)';

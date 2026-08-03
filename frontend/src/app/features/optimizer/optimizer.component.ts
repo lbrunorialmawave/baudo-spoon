@@ -21,6 +21,7 @@ import {
   OPTIMIZER_PRESETS,
   OptimizerPreset,
 } from '../../core/constants/optimizer-presets';
+import { OptimizerPlayerDrawerComponent } from './components/optimizer-player-drawer/optimizer-player-drawer.component';
 
 const STRATEGY_META: Record<string, { label: string; icon: string }> = {
   BALANCED:        { label: 'Bilanciata',      icon: '⚖️' },
@@ -272,7 +273,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
 @Component({
   selector: 'app-optimizer',
   standalone: true,
-  imports: [FormsModule, DecimalPipe, PercentPipe, SkeletonComponent, ErrorBoundaryComponent, FieldLegendComponent],
+  imports: [FormsModule, DecimalPipe, PercentPipe, SkeletonComponent, ErrorBoundaryComponent, FieldLegendComponent, OptimizerPlayerDrawerComponent],
   template: `
     <div class="optimizer-page">
 
@@ -813,7 +814,13 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                   </thead>
                   <tbody>
                     @for (p of sortedSquad(r); track p.playerId) {
-                      <tr>
+                      <tr class="clickable-row"
+                          (click)="selectedPlayer.set(p)"
+                          (keydown.enter)="selectedPlayer.set(p)"
+                          (keydown.space)="$event.preventDefault(); selectedPlayer.set(p)"
+                          tabindex="0"
+                          role="button"
+                          [attr.aria-label]="'Dettaglio ' + p.name">
                         <td>
                           <span class="role-badge" [style.color]="roleColor(p.role)"
                                 [style.border-color]="roleColor(p.role)">
@@ -836,6 +843,10 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
 
       </div>
     </div>
+
+    @if (selectedPlayer(); as p) {
+      <app-optimizer-player-drawer [player]="p" (closed)="selectedPlayer.set(null)" />
+    }
   `,
   styles: [`
     .optimizer-page { display:flex; flex-direction:column; height:100%; overflow:hidden; }
@@ -1108,6 +1119,10 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
       .results-panel { overflow: visible; min-height: auto; }
       .results-placeholder { overflow-y: visible; }
     }
+
+    .clickable-row { cursor: pointer; }
+    .clickable-row:hover { background: var(--color-surface-raised); }
+    .clickable-row:focus-visible { outline: 2px solid var(--color-brand-500, #6366f1); outline-offset: -2px; }
   `],
 })
 export class OptimizerComponent {
@@ -1126,6 +1141,8 @@ export class OptimizerComponent {
    * Currently selected preset id. Empty string = operator-driven custom config.
    * Applying a preset patches form signals; it does not auto-run the solver.
    */
+  readonly selectedPlayer = signal<SquadPlayer | null>(null);
+
   readonly selectedPresetId = signal<string>(OPTIMIZER_PRESET_NONE);
   readonly activePreset = computed(() => findOptimizerPreset(this.selectedPresetId()));
 
