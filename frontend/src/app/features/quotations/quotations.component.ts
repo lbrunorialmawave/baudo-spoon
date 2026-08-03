@@ -19,7 +19,7 @@ const ROLE_COLORS: Record<string, string> = {
   template: `
     <div style="background:var(--color-bg);min-height:100%">
       <!-- Page header -->
-      <div class="flex items-center justify-between border-b px-6 py-3.5"
+      <div class="flex flex-col gap-1 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-3.5"
            style="border-color:var(--color-border)">
         <h1 class="text-base font-semibold" style="color:var(--color-text-primary)">Quotations</h1>
         @if (selectedSeason()) {
@@ -29,7 +29,7 @@ const ROLE_COLORS: Record<string, string> = {
         }
       </div>
 
-      <div class="p-6 space-y-6">
+      <div class="p-4 space-y-6 sm:p-6">
         <!-- Summary cards -->
         @if (statsLoading()) {
           <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -99,9 +99,9 @@ const ROLE_COLORS: Record<string, string> = {
             </div>
 
             <!-- Search -->
-            <input class="rounded-lg border px-3 py-1.5 text-sm outline-none ml-auto"
+            <input class="w-full rounded-lg border px-3 py-1.5 text-sm outline-none sm:ml-auto sm:w-56"
                    style="background:var(--color-surface-raised);border-color:var(--color-border);
-                          color:var(--color-text-primary);width:200px"
+                          color:var(--color-text-primary)"
                    placeholder="Search player…"
                    [ngModel]="searchInput()"
                    (ngModelChange)="searchInput.set($event)" />
@@ -115,19 +115,19 @@ const ROLE_COLORS: Record<string, string> = {
           } @else if (tableError()) {
             <app-error-boundary [message]="tableError()!" />
           } @else {
-            <div class="overflow-x-auto">
-              <table class="w-full text-sm" style="border-collapse:collapse">
+            <div class="overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0" style="-webkit-overflow-scrolling:touch">
+              <table class="w-full text-sm" style="border-collapse:collapse;min-width:520px">
                 <thead>
                   <tr class="border-b text-xs font-medium uppercase tracking-wide"
                       style="border-color:var(--color-border);color:var(--color-text-secondary)">
                     <th class="px-3 py-2 text-left">Player</th>
-                    <th class="px-3 py-2 text-left">Team</th>
+                    <th class="px-3 py-2 text-left hidden sm:table-cell">Team</th>
                     <th class="px-3 py-2 text-center">Role</th>
                     <th class="px-3 py-2 text-center">Mapping</th>
                     <th class="px-3 py-2 text-right">qtA</th>
-                    <th class="px-3 py-2 text-right">qtI</th>
-                    <th class="px-3 py-2 text-right">FVM</th>
-                    <th class="px-3 py-2 text-right">Diff</th>
+                    <th class="px-3 py-2 text-right hidden md:table-cell">qtI</th>
+                    <th class="px-3 py-2 text-right hidden lg:table-cell">FVM</th>
+                    <th class="px-3 py-2 text-right hidden sm:table-cell">Diff</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -140,7 +140,7 @@ const ROLE_COLORS: Record<string, string> = {
                       <td class="px-3 py-2.5 font-medium" style="color:var(--color-text-primary)">
                         {{ q.playerName }}
                       </td>
-                      <td class="px-3 py-2.5 text-xs" style="color:var(--color-text-secondary)">{{ q.team }}</td>
+                      <td class="px-3 py-2.5 text-xs hidden sm:table-cell" style="color:var(--color-text-secondary)">{{ q.team }}</td>
                       <td class="px-3 py-2.5 text-center">
                         <span class="badge text-white text-xs" [style.background]="roleColor(q.role)">
                           {{ q.role }}
@@ -171,11 +171,11 @@ const ROLE_COLORS: Record<string, string> = {
                       </td>
                       <td class="px-3 py-2.5 text-right font-mono font-semibold"
                           style="color:var(--color-accent)">{{ q.qtA }}</td>
-                      <td class="px-3 py-2.5 text-right font-mono text-xs"
+                      <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell"
                           style="color:var(--color-text-secondary)">{{ q.qtI }}</td>
-                      <td class="px-3 py-2.5 text-right font-mono text-xs"
+                      <td class="px-3 py-2.5 text-right font-mono text-xs hidden lg:table-cell"
                           style="color:var(--color-text-secondary)">{{ q.fvm ?? '—' }}</td>
-                      <td class="px-3 py-2.5 text-right font-mono text-xs"
+                      <td class="px-3 py-2.5 text-right font-mono text-xs hidden sm:table-cell"
                           [style.color]="q.diffVal > 0 ? '#22C55E' : q.diffVal < 0 ? '#EF4444' : 'var(--color-text-secondary)'">
                         {{ q.diffVal > 0 ? '+' : '' }}{{ q.diffVal }}
                       </td>

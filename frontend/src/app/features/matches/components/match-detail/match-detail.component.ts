@@ -73,11 +73,19 @@ import { MatchStat } from '../../../../core/models/stats.models';
     }
     .drawer-panel {
       position: fixed; right: 0; top: 0; bottom: 0; z-index: 50;
-      width: 420px;
+      width: 100vw;
       display: flex; flex-direction: column;
       background: var(--color-surface);
       border-left: 1px solid var(--color-border);
       animation: slide-in 180ms ease-out;
+      padding-bottom: env(safe-area-inset-bottom, 0);
+      padding-right: env(safe-area-inset-right, 0);
+    }
+    @media (min-width: 640px) {
+      .drawer-panel { width: 420px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .drawer-panel { animation: none; }
     }
     @keyframes slide-in {
       from { transform: translateX(100%); }
@@ -86,10 +94,11 @@ import { MatchStat } from '../../../../core/models/stats.models';
     .drawer-header {
       display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
       padding: 16px; border-bottom: 1px solid var(--color-border);
+      padding-top: max(16px, env(safe-area-inset-top, 0));
     }
     .close-btn {
-      flex-shrink: 0; width: 28px; height: 28px;
-      border-radius: 6px; font-size: 12px;
+      flex-shrink: 0; width: 44px; height: 44px;
+      border-radius: 8px; font-size: 12px;
       background: var(--color-surface-raised);
       color: var(--color-text-secondary);
       display: flex; align-items: center; justify-content: center; cursor: pointer;

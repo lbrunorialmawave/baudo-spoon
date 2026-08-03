@@ -223,7 +223,7 @@ const HYBRID_LABELS = [
                 <div class="rounded-lg border px-3 py-2.5 cursor-pointer transition-all hover:opacity-85 hover:border-opacity-60 sm:px-4 sm:py-3"
                      style="border-color:var(--color-border);background:var(--color-surface)"
                      (click)="selectedPlayer.set(p)">
-                  <div class="flex items-center gap-3">
+                  <div class="flex flex-wrap items-center gap-x-3 gap-y-2 sm:flex-nowrap">
                     <!-- Rank -->
                     <span class="w-6 text-right text-xs font-mono shrink-0" style="color:var(--color-text-secondary)">
                       {{ (hybridPage() - 1) * hybridPageSize() + i + 1 }}
@@ -262,7 +262,7 @@ const HYBRID_LABELS = [
                     </div>
 
                     <!-- Score column -->
-                    <div class="flex items-center gap-4 shrink-0">
+                    <div class="flex items-center gap-4 shrink-0 basis-full justify-between ps-9 sm:basis-auto sm:justify-end sm:ps-0">
                       <!-- FP Ibrido big -->
                       <div class="text-right min-w-[60px]">
                         <p class="text-xs text-[10px] uppercase tracking-wider" style="color:var(--color-text-secondary)"

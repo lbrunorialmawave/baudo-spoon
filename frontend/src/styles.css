@@ -157,6 +157,19 @@ textarea {
   touch-action: manipulation;
 }
 
+/* Prevent iOS Safari auto-zoom on focus: any focusable input under 16px
+   triggers it. Tailwind's text-xs/text-sm utilities land well under that on
+   the mobile root font-size, so force the floor with !important — this is
+   a deliberate, narrow exception to override utility classes. Desktop
+   sizing (>= 640px) is untouched. */
+@media (max-width: 39.9375rem /* just under 640px sm */) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
 /* Focus styles: visible, not just on keyboard nav (mobile = no hover) */
 :focus-visible {
   outline: 2px solid var(--color-accent);

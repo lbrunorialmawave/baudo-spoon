@@ -438,3 +438,20 @@
 .preset-description.muted {
   opacity: 0.85;
 }
+
+/* ── Mobile/tablet (< lg): collapse the split-pane app-shell layout
+   (fixed-height page + independently-scrolling side panels) into one
+   normal flowing page. That split-pane feel only makes sense once there's
+   room for real side-by-side panels (>= lg); below that it produces a
+   confusing "scroll the inner box, then find the edge to scroll the page"
+   double-scroll interaction. Placed last so it wins over the min-width
+   overrides above in the 768–1023px range. ── */
+@media (max-width: 1023px) {
+  .auction-page { height: auto; overflow: visible; }
+  .setup-body { overflow: visible; min-height: auto; }
+  .config-panel { max-height: none; overflow-y: visible; }
+  .setup-right { overflow-y: visible; }
+  .auction-body { overflow: visible; min-height: auto; }
+  .participants-panel { max-height: none; overflow-y: visible; }
+  .auction-main { overflow-y: visible; }
+}

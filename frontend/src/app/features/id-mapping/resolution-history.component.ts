@@ -102,8 +102,8 @@ import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/e
           <app-error-boundary [message]="error()!" />
         } @else {
           <div class="card p-0 overflow-hidden">
-            <div class="table-scroll">
-              <table class="w-full text-sm">
+            <div class="overflow-x-auto" style="-webkit-overflow-scrolling:touch">
+              <table class="w-full text-sm" style="min-width:640px">
                 <thead>
                   <tr style="color:var(--color-text-secondary);border-color:var(--color-border)">
                     <th class="text-left px-3 py-2 sm:px-4 sm:py-2.5 font-medium text-xs">Fantacalcio</th>

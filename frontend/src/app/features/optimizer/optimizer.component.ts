@@ -1096,6 +1096,18 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
     .team-name { color:var(--color-text-secondary); font-size:12px; }
     .faded { color:var(--color-text-secondary); }
     .accent { color:var(--color-accent); font-weight:600; }
+
+    /* Mobile (< md): collapse the split-pane app-shell layout (fixed-height
+       page + independently-scrolling config/results panels) into one
+       normal flowing page instead of nested scroll boxes. Placed last so
+       it wins over the min-width overrides above below the md breakpoint. */
+    @media (max-width: 767px) {
+      .optimizer-page { height: auto; overflow: visible; }
+      .optimizer-body { overflow: visible; min-height: auto; }
+      .config-panel { max-height: none; overflow-y: visible; }
+      .results-panel { overflow: visible; min-height: auto; }
+      .results-placeholder { overflow-y: visible; }
+    }
   `],
 })
 export class OptimizerComponent {

@@ -47,13 +47,18 @@ interface TooltipState {
 
       <svg
         #svgEl
-        class="block w-full"
+        class="scatter-svg block w-full"
         [attr.aria-label]="ariaLabel()"
         role="img"
       ></svg>
     </div>
   `,
-  styles: [':host { display: block; }'],
+  styles: [`
+    :host { display: block; }
+    /* d3-zoom owns pan/pinch on this element; without this the browser's
+       own scroll gesture fights the zoom behavior on touch devices. */
+    .scatter-svg { touch-action: none; }
+  `],
 })
 export class PcaScatterComponent {
   readonly players     = input.required<PlayerCluster[]>();
@@ -221,6 +226,13 @@ export class PcaScatterComponent {
           .transition().duration(80)
           .attr('r', 5.5).attr('fill-opacity', 0.82);
         this.tooltip.set(null);
+      })
+      .on('touchstart', (event: TouchEvent, d: PlayerCluster) => {
+        // Touch has no hover: surface the same preview mouseenter gives,
+        // the tap that follows still opens the full player card via 'click'.
+        const r    = (event.currentTarget as Element).getBoundingClientRect();
+        const cBox = container.getBoundingClientRect();
+        this.tooltip.set({ x: r.left - cBox.left + r.width / 2, y: r.top - cBox.top, player: d });
       })
       .on('click', (_: MouseEvent, d: PlayerCluster) => this.playerSelected.emit(d));
 
