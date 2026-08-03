@@ -112,14 +112,14 @@ async def trigger_esperti(
     try:
         sync_url = _to_sync_url(settings.database_url)
         log.info("[trigger_esperti] Starting scrape")
-        from datetime import datetime
-
         from scraper.gruppo_esperti import scrape, persist
-        resolved_season = season_start or datetime.now().year
         players = scrape(team_filter=team)
-        n = persist(players, sync_url, resolved_season)
+        # season_start=None resolves internally to the latest season present
+        # in player_quotations, rather than guessing from the calendar date.
+        n, resolved_season = persist(players, sync_url, season_start)
         return ORJSONResponse({
             "scraper": "esperti",
+            "season_start": resolved_season,
             "scraped": len(players),
             "records": n,
             "unmatched": len(players) - n,

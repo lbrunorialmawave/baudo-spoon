@@ -363,11 +363,26 @@ _UPSERT_SQL = """
 """
 
 
-def persist(players: list[ScrapedPlayer], db_url: str, season_start: int, expert_name: str = "gruppoesperti_staff") -> int:
+def persist(
+    players: list[ScrapedPlayer], db_url: str, season_start: Optional[int] = None,
+    expert_name: str = "gruppoesperti_staff",
+) -> tuple[int, Optional[int]]:
     """Match players to fantacalcio_id and upsert ratings into expert_ratings.
 
     Players that can't be confidently matched to a known player_quotations
     row are skipped (and logged) rather than persisted with a guessed id.
+
+    If season_start is not given, it's resolved to the latest season present
+    in player_quotations rather than derived from the current calendar date.
+    A "current year" guess is unreliable right around the actual season
+    boundary — e.g. forum threads for the 2025/26 season are still the
+    active content through mid-2026, while ``datetime.now().year`` flips to
+    2026 as soon as January does, well before that season's data exists.
+
+    Returns
+    -------
+    (rows_persisted, resolved_season_start) — season_start is None only if
+    player_quotations was completely empty and nothing could be resolved.
     """
     import sqlalchemy as sa
 
@@ -375,6 +390,17 @@ def persist(players: list[ScrapedPlayer], db_url: str, season_start: int, expert
     count = 0
     unmatched = 0
     with engine.begin() as conn:
+        if season_start is None:
+            season_start = conn.execute(
+                sa.text("SELECT MAX(season_start) FROM player_quotations")
+            ).scalar()
+            if season_start is None:
+                log.warning(
+                    "player_quotations is empty — cannot resolve a season_start or any "
+                    "player_id. Import quotations first (ml.data.import_quotations)."
+                )
+                return 0, None
+            log.info("No --season-start given; resolved to latest available: %d", season_start)
         quotations = _load_quotations(conn, season_start)
         if not quotations:
             log.warning(
@@ -404,7 +430,7 @@ def persist(players: list[ScrapedPlayer], db_url: str, season_start: int, expert
             count += 1
     if unmatched:
         log.warning("%d/%d scraped players could not be matched to a fantacalcio_id.", unmatched, len(players))
-    return count
+    return count, season_start
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
@@ -436,9 +462,8 @@ def main() -> None:
         log.warning("No --db-url provided; use --dry-run to inspect data.")
         return
 
-    season_start = args.season_start or datetime.now().year
-    n = persist(players, args.db_url, season_start)
-    log.info("Persisted %d/%d ratings to DB.", n, len(players))
+    n, resolved_season = persist(players, args.db_url, args.season_start)
+    log.info("Persisted %d/%d ratings to DB (season_start=%s).", n, len(players), resolved_season)
 
 
 if __name__ == "__main__":
