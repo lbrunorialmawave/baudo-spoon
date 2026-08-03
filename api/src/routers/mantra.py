@@ -15,7 +15,6 @@ GET  /mantra/stats                      — Summary statistics
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Optional
@@ -23,6 +22,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import ORJSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from ml.storage.artifact_store import ArtifactStore, R2Config
 
 from ..config import settings
 from ..deps import get_db, require_role
@@ -34,47 +35,36 @@ router = APIRouter(
     tags=["mantra"],
 )
 
-
-def _r2_upload(path: Path) -> None:
-    if not settings.r2_endpoint_url:
-        return
-    import boto3
-    boto3.client(
-        "s3",
-        endpoint_url=settings.r2_endpoint_url,
-        aws_access_key_id=settings.r2_access_key_id,
-        aws_secret_access_key=settings.r2_secret_access_key,
-    ).upload_file(str(path), settings.r2_bucket_name, path.name)
-    log.info("Uploaded to R2: %s", path.name)
+# Unica porta d'ingresso R2/disco locale per questo router. Lazy-init:
+# costruita al primo utilizzo con le Settings correnti. Tutta la I/O R2
+# passa da ArtifactStore (design doc "R2 come source of truth per gli
+# artefatti ML/MANTRA", 2026-08-02).
+_artifact_store: ArtifactStore | None = None
 
 
-def _r2_download(path: Path) -> None:
-    if not settings.r2_endpoint_url:
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    import boto3
-    try:
-        boto3.client(
-            "s3",
-            endpoint_url=settings.r2_endpoint_url,
-            aws_access_key_id=settings.r2_access_key_id,
-            aws_secret_access_key=settings.r2_secret_access_key,
-        ).download_file(settings.r2_bucket_name, path.name, str(path))
-        log.info("Downloaded from R2: %s", path.name)
-    except Exception as exc:
-        log.warning("R2 download skipped for %s: %s", path.name, exc)
+def _get_artifact_store() -> ArtifactStore:
+    global _artifact_store
+    if _artifact_store is None:
+        artifacts_dir = Path(settings.artifacts_dir) if hasattr(settings, 'artifacts_dir') else Path("artifacts")
+        _artifact_store = ArtifactStore(
+            local_dir=artifacts_dir,
+            r2_config=R2Config(
+                endpoint_url=settings.r2_endpoint_url,
+                access_key_id=settings.r2_access_key_id,
+                secret_access_key=settings.r2_secret_access_key,
+                bucket_name=settings.r2_bucket_name,
+            ),
+        )
+    return _artifact_store
 
 
 def _load_mantra_results() -> dict:
-    """Load the latest MANTRA results JSON from disk, falling back to R2."""
-    artifacts_dir = Path(settings.artifacts_dir) if hasattr(settings, 'artifacts_dir') else Path("artifacts")
+    """Load the latest MANTRA results JSON: local disk → R2, via ArtifactStore."""
+    store = _get_artifact_store()
     for season in [2026, 2025, 2024]:
-        path = artifacts_dir / f"mantra_results_{season}.json"
-        if not path.exists():
-            _r2_download(path)
-        if path.exists():
-            with path.open("r", encoding="utf-8") as f:
-                return json.load(f)
+        data = store.load_json(f"mantra_results_{season}.json")
+        if data is not None:
+            return data
     raise FileNotFoundError(
         "No MANTRA results found. Run POST /mantra/run first."
     )
@@ -294,8 +284,6 @@ async def run_mantra(
 
         artifacts_dir = Path(settings.artifacts_dir) if hasattr(settings, 'artifacts_dir') else Path("artifacts")
         result = compute(sync_engine, season_start=season_start, output_dir=artifacts_dir)
-
-        _r2_upload(artifacts_dir / f"mantra_results_{season_start}.json")
 
         return ORJSONResponse({
             "status": "ok",

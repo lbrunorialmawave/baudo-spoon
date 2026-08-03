@@ -387,13 +387,14 @@ def run_mantra(
         },
     }
 
-    # Optionally write to disk
+    # Optionally write to disk (and upload to R2, best-effort — see
+    # design doc "R2 come source of truth", Fase 2)
     if output_dir:
         output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        out_path = output_dir / f"mantra_results_{season_start}.json"
-        with out_path.open("w", encoding="utf-8") as f:
-            json.dump(result, f, ensure_ascii=False, indent=2)
+        from ml.storage.artifact_store import ArtifactStore, R2Config
+
+        store = ArtifactStore(local_dir=output_dir, r2_config=R2Config.from_env())
+        out_path = store.save_json(result, f"mantra_results_{season_start}.json")
         log.info("Results written to %s", out_path)
 
     log.info("MANTRA pipeline complete. %d players scored.", len(players_out))

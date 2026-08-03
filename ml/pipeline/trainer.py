@@ -83,6 +83,7 @@ from ..preprocessing.features import (
 )
 from ..preprocessing.pipeline import build_preprocessor, get_feature_names
 from ..optimizer.models import DEFAULT_BUDGET, ROLE_QUOTAS, TOTAL_SQUAD_SIZE
+from ..storage.artifact_store import ArtifactStore, R2Config
 
 log = logging.getLogger(__name__)
 
@@ -300,39 +301,22 @@ class Trainer:
         self._artifacts_dir = cfg.artifacts_dir
         self._artifacts_dir.mkdir(parents=True, exist_ok=True)
         self._run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Unica porta d'ingresso per lettura/scrittura artefatti (cache-aside
+        # locale + R2). Vedi design doc "R2 come source of truth" (2026-08-02).
+        self._artifact_store = ArtifactStore(
+            local_dir=self._artifacts_dir,
+            r2_config=R2Config(
+                endpoint_url=cfg.r2_endpoint_url,
+                access_key_id=cfg.r2_access_key_id,
+                secret_access_key=cfg.r2_secret_access_key,
+                bucket_name=cfg.r2_bucket_name,
+            ),
+        )
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
     def _artifact(self, filename: str) -> Path:
         return self._artifacts_dir / filename
-
-    def _r2_client(self) -> Any:
-        if not hasattr(self, "_s3"):
-            import boto3
-            self._s3 = boto3.client(
-                "s3",
-                endpoint_url=self.cfg.r2_endpoint_url,
-                aws_access_key_id=self.cfg.r2_access_key_id,
-                aws_secret_access_key=self.cfg.r2_secret_access_key,
-            )
-        return self._s3
-
-    def _upload_to_r2(self, local_path: Path) -> None:
-        if not self.cfg.r2_endpoint_url:
-            return
-        key = local_path.name
-        try:
-            self._r2_client().upload_file(str(local_path), self.cfg.r2_bucket_name, key)
-            log.info("Uploaded to R2: %s", key)
-        except Exception as exc:
-            log.warning("R2 upload failed (non-fatal): %s — %s", key, exc)
-
-    def _save_json(self, data: Any, filename: str) -> None:
-        path = self._artifact(filename)
-        with path.open("w", encoding="utf-8") as f:
-            json.dump(_json_safe(data), f, indent=2, ensure_ascii=False)
-        log.info("Saved %s", path)
-        self._upload_to_r2(path)
 
     def _save_model(
         self,
@@ -357,10 +341,13 @@ class Trainer:
         """
         hash_short = data_hash.replace("sha256:", "")[:8]
         stem = f"{role_prefix}{model_name}_{hash_short}_{self._run_id}"
-        model_path = self._artifact(f"{stem}.joblib")
+        model_filename = f"{stem}.joblib"
+        model_path = self._artifact(model_filename)
         joblib.dump(pipeline, model_path)
         log.info("Model saved: %s", model_path)
-        self._upload_to_r2(model_path)
+        # joblib needs a real local path to dump to; ArtifactStore.save_binary
+        # is a no-op copy (source == dest) and just handles the R2 upload.
+        self._artifact_store.save_binary(model_path, model_filename)
 
         # Companion metadata for traceability
         meta = {
@@ -370,7 +357,7 @@ class Trainer:
             "run_id": self._run_id,
             "artifact": str(model_path.name),
         }
-        self._save_json(meta, f"{stem}_meta.json")
+        self._artifact_store.save_json(_json_safe(meta), f"{stem}_meta.json")
         return model_path
 
     def _export_telemetry(
@@ -406,7 +393,10 @@ class Trainer:
         with log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(_json_safe(record)) + "\n")
         log.info("Telemetry appended to %s", log_path)
-        self._upload_to_r2(log_path)
+        # NDJSON is append-only — ArtifactStore.save_json would overwrite it,
+        # so we keep the local append above and just delegate the R2 upload
+        # of the (already-updated) file via save_binary (no-op copy).
+        self._artifact_store.save_binary(log_path, "telemetry_log.ndjson")
 
     # ── Role-partitioned sub-pipeline ─────────────────────────────────────────
 
@@ -515,7 +505,7 @@ class Trainer:
 
         # ── 1b. Build and persist run metadata ────────────────────────────────
         metadata = _gather_metadata(self._run_id, cfg, data_hash)
-        self._save_json(metadata, f"metadata_{self._run_id}.json")
+        self._artifact_store.save_json(_json_safe(metadata), f"metadata_{self._run_id}.json")
         log.info("Run metadata saved (deps: %s)", list(metadata["dependencies"].keys()))
 
         # ── 2. Attach target ──────────────────────────────────────────────────
@@ -847,7 +837,7 @@ class Trainer:
                 .reset_index(drop=True)
             )
             next_season_predictions = next_season_col.to_dict(orient="records")
-            self._save_json(next_season_predictions, "next_season_predictions.json")
+            self._artifact_store.save_json(_json_safe(next_season_predictions), "next_season_predictions.json")
             log.info(
                 "Next-season predictions saved: %d players",
                 len(next_season_predictions),
@@ -945,7 +935,8 @@ class Trainer:
         }
 
         # Persist
-        self._save_json(output, f"results_{self._run_id}.json")
+        output_safe = _json_safe(output)
+        self._artifact_store.save_json(output_safe, f"results_{self._run_id}.json")
         self._save_model(best_pipe, best_name, data_hash)
         if role_partitioned:
             self._save_model(best_gk_pipe, best_gk_name, data_hash, role_prefix="gk_")
@@ -967,10 +958,7 @@ class Trainer:
         )
 
         # Latest snapshot for easy reference
-        latest_path = self._artifact("results_latest.json")
-        with latest_path.open("w", encoding="utf-8") as f:
-            json.dump(_json_safe(output), f, indent=2, ensure_ascii=False)
-        self._upload_to_r2(latest_path)
+        self._artifact_store.save_json(output_safe, "results_latest.json")
 
         self._persist_metrics_to_db(output)
 

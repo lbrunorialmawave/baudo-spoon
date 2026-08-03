@@ -9,6 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import ORJSONResponse
 
+from ml.storage.artifact_store import ArtifactStore, R2Config
+
 from .config import settings
 from .data_repository import DataRepository
 from .logging_cfg import configure_logging
@@ -37,14 +39,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         log.warning("Redis unavailable (%s) — caching disabled", exc)
         redis_client = None
 
+    # Unica porta d'ingresso per lettura/scrittura artefatti (cache-aside
+    # locale + R2), condivisa da tutti i router e da DataRepository. Vedi
+    # design doc "R2 come source of truth per gli artefatti ML/MANTRA"
+    # (2026-08-02), Fase 3 e Fase 4.
+    app.state.artifact_store = ArtifactStore(
+        local_dir=settings.artifacts_dir,
+        r2_config=R2Config(
+            endpoint_url=settings.r2_endpoint_url,
+            access_key_id=settings.r2_access_key_id,
+            secret_access_key=settings.r2_secret_access_key,
+            bucket_name=settings.r2_bucket_name,
+        ),
+    )
+    log.info("ArtifactStore initialised (artifacts_dir=%s)", settings.artifacts_dir)
+
     app.state.repo = DataRepository(
         artifacts_dir=settings.artifacts_dir,
         redis_client=redis_client,
         cache_ttl=settings.cache_ttl_seconds,
-        r2_endpoint_url=settings.r2_endpoint_url,
-        r2_access_key_id=settings.r2_access_key_id,
-        r2_secret_access_key=settings.r2_secret_access_key,
-        r2_bucket_name=settings.r2_bucket_name,
+        artifact_store=app.state.artifact_store,
     )
     log.info("DataRepository initialised (artifacts_dir=%s)", settings.artifacts_dir)
 

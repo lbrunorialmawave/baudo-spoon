@@ -1,4 +1,9 @@
-"""Load and normalize team strength (Elo) scores for inflation adjustment."""
+"""Load and normalize team strength (Elo) scores for inflation adjustment.
+
+R2 download goes through ``ArtifactStore`` (the single boto3 entry-point);
+see design doc "R2 come source of truth per gli artefatti ML/MANTRA"
+(2026-08-02), Fase 5.
+"""
 
 from __future__ import annotations
 
@@ -12,22 +17,31 @@ _DEFAULT_PATH = Path(__file__).resolve().parents[2] / "config" / "team_strength_
 
 
 def _download_from_r2(path: Path) -> None:
-    """Download team_strength_elo.json from R2 if configured."""
-    from ml.config import settings
+    """Ensure ``path`` is present locally, fetching from R2 via ArtifactStore if needed.
 
-    if not settings.r2_endpoint_url:
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
+    Best-effort: any failure (missing credentials, import error, network) is
+    logged and swallowed so the caller can fall back to an empty scores dict.
+    """
     try:
-        import boto3
-        client = boto3.client(
-            "s3",
-            endpoint_url=settings.r2_endpoint_url,
-            aws_access_key_id=settings.r2_access_key_id,
-            aws_secret_access_key=settings.r2_secret_access_key,
+        from ml.config import settings
+        from ml.storage.artifact_store import ArtifactStore, R2Config
+    except Exception as exc:  # noqa: BLE001
+        log.warning("R2 download skipped for %s (import): %s", path.name, exc)
+        return
+
+    try:
+        store = ArtifactStore(
+            local_dir=path.parent,
+            r2_config=R2Config(
+                endpoint_url=settings.r2_endpoint_url,
+                access_key_id=settings.r2_access_key_id,
+                secret_access_key=settings.r2_secret_access_key,
+                bucket_name=settings.r2_bucket_name,
+            ),
         )
-        client.download_file(settings.r2_bucket_name, path.name, str(path))
-        log.info("Downloaded from R2: %s", path.name)
+        # load_json downloads into local_dir if missing; we only care about the
+        # side-effect of materialising the file (caller re-reads path).
+        store.load_json(path.name)
     except Exception as exc:  # noqa: BLE001
         log.warning("R2 download skipped for %s: %s", path.name, exc)
 

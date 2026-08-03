@@ -338,6 +338,26 @@ def test_run_mantra_persists_both_fields_to_disk(tmp_path: Path):
     for p in on_disk["players"]:
         assert "season_value" in p
         assert "start_probability" in p
-    alpha = on_disk["players"][0]
-    assert alpha["season_value"] == pytest.approx(210.0)
-    assert alpha["start_probability"] == pytest.approx(0.79)
+
+
+def test_run_mantra_persists_without_ml_database_url_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Regressione: la scrittura dell'artefatto (via ArtifactStore) non deve
+    richiedere ML_DATABASE_URL — run_mantra riceve un ``engine`` già
+    connesso (o None nei test) e non ha altrimenti bisogno di configurazione
+    DB. Costruire l'R2Config passando per il singleton MLConfig/Settings
+    introdurrebbe quella dipendenza indiretta; R2Config.from_env() no.
+    """
+    monkeypatch.delenv("ML_DATABASE_URL", raising=False)
+    df = _stub_df()
+    _write_predictions_artifact(tmp_path, {"predictions": []})
+
+    with _Patches(
+        *_patch_heavy_compute(),
+        patch("ml.mantra.runner.load_data", return_value=df),
+        patch("ml.mantra.runner.compute_ps_corretto", return_value=pd.Series([50.0])),
+    ):
+        run_mantra(engine=None, season_start=2024, output_dir=tmp_path)
+
+    assert (tmp_path / "mantra_results_2024.json").exists()

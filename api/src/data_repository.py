@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import MatchMethodEnum, PlayerIdMap, PlayerMantraRole, PlayerQuotation
 from ml.domain.predictions import resolve_season_value_fields
+from ml.storage.artifact_store import ArtifactStore, R2Config
 
 log = logging.getLogger(__name__)
 
@@ -57,11 +58,18 @@ class DataRepository:
         redis_client: An optional ``redis.asyncio`` client.  When *None*,
             caching is disabled and every read goes directly to disk.
         cache_ttl: TTL in seconds for Redis cache entries (default 1 h).
-        r2_endpoint_url: Cloudflare R2 endpoint. When set, missing local
+        r2_endpoint_url: Cloudflare R2 endpoint. When set (and
+            ``artifact_store`` is not passed explicitly), missing local
             files are fetched from R2 before raising FileNotFoundError.
         r2_access_key_id: R2 access key.
         r2_secret_access_key: R2 secret key.
         r2_bucket_name: R2 bucket name.
+        artifact_store: Pre-built :class:`ArtifactStore` to reuse (e.g. the
+            app-scoped instance in ``app.state.artifact_store``). When
+            given, the ``r2_*`` kwargs above are ignored. When omitted, a
+            store is built internally from the ``r2_*`` kwargs. All R2 I/O
+            goes through :class:`ArtifactStore` (design doc "R2 come
+            source of truth per gli artefatti ML/MANTRA", 2026-08-02).
     """
 
     def __init__(
@@ -73,59 +81,30 @@ class DataRepository:
         r2_access_key_id: str | None = None,
         r2_secret_access_key: str | None = None,
         r2_bucket_name: str | None = None,
+        artifact_store: ArtifactStore | None = None,
     ) -> None:
         self._dir = artifacts_dir
         self._redis = redis_client
         self._ttl = cache_ttl
-        self._r2_endpoint_url = r2_endpoint_url
-        self._r2_access_key_id = r2_access_key_id
-        self._r2_secret_access_key = r2_secret_access_key
-        self._r2_bucket_name = r2_bucket_name
-
-    def _r2_client(self) -> Any:
-        if not hasattr(self, "_s3"):
-            import boto3
-            self._s3 = boto3.client(
-                "s3",
-                endpoint_url=self._r2_endpoint_url,
-                aws_access_key_id=self._r2_access_key_id,
-                aws_secret_access_key=self._r2_secret_access_key,
-            )
-        return self._s3
-
-    def _download_from_r2(self, path: Path) -> None:
-        """Download *path.name* from R2 into *path* if R2 is configured."""
-        if not self._r2_endpoint_url:
-            return
-        self._dir.mkdir(parents=True, exist_ok=True)
-        try:
-            self._r2_client().download_file(self._r2_bucket_name, path.name, str(path))
-        except Exception as exc:  # noqa: BLE001
-            # R2 returns 403 for missing objects (no public listing); treat as absent.
-            log.warning("R2 download skipped for %s: %s", path.name, exc)
-            return
-        log.info("Downloaded from R2: %s", path.name)
+        self._artifact_store = artifact_store or ArtifactStore(
+            local_dir=artifacts_dir,
+            r2_config=R2Config(
+                endpoint_url=r2_endpoint_url,
+                access_key_id=r2_access_key_id,
+                secret_access_key=r2_secret_access_key,
+                bucket_name=r2_bucket_name or "baudo-spoon-ml-artifacts",
+            ),
+        )
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
-    async def _read_json(self, path: Path) -> dict:
-        """Read a JSON file from disk in a thread-pool executor."""
-        try:
-            import orjson  # type: ignore[import]
-
-            def _load() -> dict:
-                return orjson.loads(path.read_bytes())
-        except ImportError:
-            import json
-
-            def _load() -> dict:  # type: ignore[misc]
-                return json.loads(path.read_text(encoding="utf-8"))
-
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, _load)
-
-    async def _cached(self, key: str, path: Path) -> dict:
-        """Return JSON data from Redis cache or fall back to disk."""
+    async def _cached_artifact(self, key: str, filename: str) -> dict | None:
+        """Return JSON data from Redis cache or fall back to ArtifactStore
+        (local disk → R2, via ``ArtifactStore.load_json_async``). Returns
+        ``None`` if the artefact is not found anywhere (never raises for
+        an R2 problem — callers that need readiness detail should use
+        ``ArtifactStore.exists_async`` directly, as ``/hybrid/status`` does).
+        """
         if self._redis is not None:
             try:
                 raw = await self._redis.get(key)
@@ -141,7 +120,9 @@ class DataRepository:
             except Exception:
                 log.warning("Redis read failed for key=%s; falling back to disk", key)
 
-        data = await self._read_json(path)
+        data = await self._artifact_store.load_json_async(filename)
+        if data is None:
+            return None
 
         if self._redis is not None:
             try:
@@ -163,13 +144,10 @@ class DataRepository:
 
     async def get_latest_results(self) -> dict:
         """Load the full ``results_latest.json`` artifact (cached)."""
-        path = self._dir / "results_latest.json"
-        if not path.exists():
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, self._download_from_r2, path)
-        if not path.exists():
-            raise FileNotFoundError(f"No ML artifact found at {path}")
-        return await self._cached(_CACHE_KEY, path)
+        data = await self._cached_artifact(_CACHE_KEY, "results_latest.json")
+        if data is None:
+            raise FileNotFoundError(f"No ML artifact found at {self._dir / 'results_latest.json'}")
+        return data
 
     async def get_predictions(self) -> list[dict]:
         data = await self.get_latest_results()
@@ -189,12 +167,8 @@ class DataRepository:
 
     async def get_next_season_predictions(self) -> list[dict]:
         """Return next-season predictions from the companion file if present."""
-        next_path = self._dir / "next_season_predictions.json"
-        if not next_path.exists():
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, self._download_from_r2, next_path)
-        if next_path.exists():
-            data = await self._cached(_NEXT_CACHE_KEY, next_path)
+        data = await self._cached_artifact(_NEXT_CACHE_KEY, "next_season_predictions.json")
+        if data is not None:
             # File may itself be a list or a dict with a list inside.
             return data if isinstance(data, list) else data.get("next_season_predictions", [])
         # Fall back to embedded key in the main artifact.
@@ -241,28 +215,24 @@ class DataRepository:
         Falls back to R2 if the file is missing locally; if still missing,
         runs the merger + scoring on the fly.
         """
-        path = self._dir / f"mantra_ibrido_results_{season}.json"
-
-        if not path.exists():
-            self._download_from_r2(path)
-
-        if path.exists():
-            return await self._read_json(path)
+        filename = f"mantra_ibrido_results_{season}.json"
+        data = await self._artifact_store.load_json_async(filename)
+        if data is not None:
+            return data
 
         # Lazy init
-        mantra_path = self._dir / f"mantra_results_{season}.json"
-        ml_path = self._dir / "results_latest.json"
-
-        if not mantra_path.exists():
-            self._download_from_r2(mantra_path)
-
-        if not mantra_path.exists():
+        mantra_filename = f"mantra_results_{season}.json"
+        mantra_data = await self._artifact_store.load_json_async(mantra_filename)
+        if mantra_data is None:
             raise FileNotFoundError(
                 f"MANTRA results not found for season {season}. "
                 "Run POST /mantra/run first."
             )
 
         from ml.mantra_ibrido.runner import run_hybrid_computation
+
+        mantra_path = self._dir / mantra_filename
+        ml_path = self._dir / "results_latest.json"
 
         result = run_hybrid_computation(mantra_path, ml_path, self._dir)
         return result

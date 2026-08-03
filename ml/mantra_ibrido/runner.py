@@ -8,10 +8,7 @@ keeping experimental results invisible to regular users.
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-import tempfile
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -115,24 +112,15 @@ def run_hybrid_computation(
         "classifications": classifications,
     }
 
-    # ── Persist (atomic write) ────────────────────────────────────────────────
+    # ── Persist (atomic write + best-effort R2 upload — see design doc
+    # "R2 come source of truth", Fase 2) ────────────────────────────────────
     output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
     filename = output_filename or f"mantra_ibrido_results_{season}.json"
-    final_path = output_dir / filename
 
-    fd, tmp_path = tempfile.mkstemp(dir=output_dir, suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(result, f, indent=2, ensure_ascii=False)
-        os.replace(tmp_path, final_path)
-    except BaseException:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
+    from ml.storage.artifact_store import ArtifactStore, R2Config
+
+    store = ArtifactStore(local_dir=output_dir, r2_config=R2Config.from_env())
+    final_path = store.save_json(result, filename)
 
     log.info("Hybrid results written to %s", final_path)
     return result
