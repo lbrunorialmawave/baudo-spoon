@@ -11,6 +11,15 @@ import { MetricPoint, ModelRun, CompareResponse } from '../../core/models/model-
 import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.component';
 import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/error-boundary.component';
 
+/** Backtest / validation run written after the main training step. */
+const MANTRA_MODEL_NAME = 'mantra-4pillar';
+
+/** MANTRA backtest metrics (not RMSE/MAE/R²). */
+const MANTRA_METRICS = {
+  spearman: 'fp_mantra_vote_spearman',
+  top20: 'fp_mantra_vote_top20_precision',
+} as const;
+
 @Component({
   selector: 'app-model-monitoring',
   standalone: true,
@@ -35,7 +44,7 @@ import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/e
         <app-skeleton [height]="'280px'" />
         <app-skeleton [height]="'200px'" style="margin-top:1rem" />
       } @else {
-        <!-- RMSE chart -->
+        <!-- RMSE chart (training runs only; MANTRA has no RMSE) -->
         <section class="card chart-card">
           <h2 class="section-title">RMSE over time (test split)</h2>
           <div class="chart-wrap" #chartContainer>
@@ -43,20 +52,20 @@ import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/e
           </div>
         </section>
 
-        <!-- Compare -->
+        <!-- Compare: only training runs — comparing against MANTRA yields empty RMSE/MAE/R² -->
         <section class="card runs-card">
           <h2 class="section-title">Compare runs</h2>
           <div class="compare-row">
             <select class="compare-select" [(ngModel)]="compareRunA">
               <option value="">Select run A</option>
-              @for (run of runs(); track run.run_id) {
+              @for (run of trainingRuns(); track run.run_id) {
                 <option [value]="run.run_id">{{ run.model_name }} — {{ run.run_id | slice:0:8 }}</option>
               }
             </select>
             <span class="compare-vs">vs</span>
             <select class="compare-select" [(ngModel)]="compareRunB">
               <option value="">Select run B</option>
-              @for (run of runs(); track run.run_id) {
+              @for (run of trainingRuns(); track run.run_id) {
                 <option [value]="run.run_id">{{ run.model_name }} — {{ run.run_id | slice:0:8 }}</option>
               }
             </select>
@@ -102,15 +111,41 @@ import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/e
               </thead>
               <tbody>
                 @for (run of runs(); track run.run_id) {
-                  <tr [class.degraded-row]="run.status === 'degraded'">
+                  <tr [class.degraded-row]="run.status === 'degraded'"
+                      [class.mantra-row]="isMantraRun(run)">
                     <td class="run-id-cell">{{ run.run_id }}</td>
-                    <td>{{ run.model_name }}</td>
+                    <td>
+                      <div class="model-cell">
+                        <span>{{ run.model_name }}</span>
+                        @if (isMantraRun(run)) {
+                          <span class="kind-badge"
+                                title="Backtest di validazione — non genera nuove previsioni">
+                            Backtest
+                          </span>
+                        }
+                      </div>
+                    </td>
                     <td>{{ run.trained_at | date:'dd MMM yy HH:mm' }}</td>
                     <td class="col-season">{{ run.season_start ?? '—' }}</td>
                     <td class="mono col-git">{{ run.git_commit ?? '—' }}</td>
-                    <td class="mono">{{ metricValue(run, 'rmse', 'test') }}</td>
-                    <td class="mono col-mae">{{ metricValue(run, 'mae', 'test') }}</td>
-                    <td class="mono col-r2">{{ metricValue(run, 'r2', 'test') }}</td>
+                    @if (isMantraRun(run)) {
+                      <td class="mono" colspan="3" title="Metriche di ranking MANTRA (non RMSE/MAE/R²)">
+                        <span class="mantra-metrics">
+                          <span>
+                            <span class="metric-k">Spearman</span>
+                            {{ metricValue(run, MANTRA_METRICS.spearman, 'test') }}
+                          </span>
+                          <span>
+                            <span class="metric-k">Top20 prec.</span>
+                            {{ metricValue(run, MANTRA_METRICS.top20, 'test') }}
+                          </span>
+                        </span>
+                      </td>
+                    } @else {
+                      <td class="mono">{{ metricValue(run, 'rmse', 'test') }}</td>
+                      <td class="mono col-mae">{{ metricValue(run, 'mae', 'test') }}</td>
+                      <td class="mono col-r2">{{ metricValue(run, 'r2', 'test') }}</td>
+                    }
                     <td>
                       <span class="status-badge" [attr.data-status]="run.status">
                         {{ run.status }}
@@ -168,6 +203,38 @@ import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/e
     @media (min-width: 640px) { .run-id-cell { font-size: 0.8rem; } }
     .mono { font-family: monospace; }
     .degraded-row td { background: #fff7ed; }
+    .mantra-row td { background: color-mix(in srgb, var(--color-surface-raised, #f3f4f6) 55%, transparent); }
+
+    .model-cell { display: flex; flex-direction: column; gap: 0.2rem; align-items: flex-start; }
+    @media (min-width: 640px) {
+      .model-cell { flex-direction: row; align-items: center; gap: 0.4rem; }
+    }
+    .kind-badge {
+      display: inline-block;
+      padding: 0.1rem 0.4rem;
+      border-radius: 9999px;
+      font-size: 0.625rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      background: #e0e7ff;
+      color: #3730a3;
+      border: 1px solid #c7d2fe;
+      cursor: help;
+      white-space: nowrap;
+    }
+    .mantra-metrics {
+      display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem;
+    }
+    .mantra-metrics .metric-k {
+      display: block;
+      font-size: 0.625rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--color-text-secondary);
+      font-family: inherit;
+    }
 
     /* Hide non-essential columns on small screens */
     .col-git, .col-mae, .col-r2 { display: none; }
@@ -189,6 +256,7 @@ import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/e
     .status-badge { padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; white-space: nowrap; }
     @media (min-width: 640px) { .status-badge { font-size: 0.75rem; } }
     .status-badge[data-status="ok"] { background: #dcfce7; color: #16a34a; }
+    .status-badge[data-status="completed"] { background: #dcfce7; color: #16a34a; }
     .status-badge[data-status="degraded"] { background: #fef9c3; color: #a16207; }
     .status-badge[data-status="error"] { background: #fef2f2; color: #dc2626; }
   `],
@@ -198,6 +266,9 @@ export class ModelMonitoringComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
 
+  /** Exposed for template metric keys (MANTRA backtest). */
+  readonly MANTRA_METRICS = MANTRA_METRICS;
+
   readonly chartContainer = viewChild<ElementRef<HTMLDivElement>>('chartContainer');
   readonly chartSvg = viewChild<ElementRef<SVGSVGElement>>('chartSvg');
 
@@ -206,7 +277,22 @@ export class ModelMonitoringComponent {
   readonly history = signal<MetricPoint[]>([]);
   readonly runs = signal<ModelRun[]>([]);
 
-  readonly isDegraded = computed(() => this.runs()[0]?.status === 'degraded');
+  /**
+   * Training runs only — excludes MANTRA 4-pillar backtest rows.
+   * Used for degrade badge and compare dropdown so a validation step
+   * written after training never masks the real training status.
+   */
+  readonly trainingRuns = computed(() =>
+    this.runs().filter((r) => !this.isMantraRun(r)),
+  );
+
+  /**
+   * Badge must reflect the latest *training* run, not the MANTRA backtest
+   * that is inserted afterwards (newer trained_at, always non-degraded).
+   */
+  readonly isDegraded = computed(
+    () => this.trainingRuns()[0]?.status === 'degraded',
+  );
 
   // Compare
   readonly compareRunA = signal('');
@@ -240,9 +326,18 @@ export class ModelMonitoringComponent {
     });
   }
 
+  isMantraRun(run: ModelRun): boolean {
+    return run.model_name === MANTRA_MODEL_NAME;
+  }
+
   metricValue(run: ModelRun, metric: string, split: string): string {
-    const m = run.metrics?.find(x => x.metric === metric && x.split === split);
-    return m ? m.value.toFixed(4) : '—';
+    // MANTRA metrics may be stored without a split or with split='test' —
+    // prefer exact match, then fall back to metric name only.
+    const metrics = run.metrics ?? [];
+    const exact = metrics.find((x) => x.metric === metric && x.split === split);
+    if (exact) return exact.value.toFixed(4);
+    const byName = metrics.find((x) => x.metric === metric);
+    return byName ? byName.value.toFixed(4) : '—';
   }
 
   runCompare(): void {
