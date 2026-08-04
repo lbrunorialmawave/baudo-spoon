@@ -763,7 +763,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
               <!-- Near-optimal alternatives -->
               @if (r.nearOptimal?.length) {
                 <details class="near-opt">
-                  <summary>🔁 Alternative near‑optimal ({{ r.nearOptimal.length }})</summary>
+                  <summary>🔁 Alternative near‑optimal ({{ r.nearOptimal?.length }})</summary>
                   @for (alt of r.nearOptimal; track $index) {
                     <div class="alt-item">
                       <p>Δ score {{ alt.scoreDelta | number:'1.2-2' }} ({{ alt.scoreDeltaPct | percent:'1.1-1' }}) · esclusi: {{ alt.excludedPlayerIds.join(', ') }}</p>
