@@ -317,468 +317,756 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
   standalone: true,
   imports: [FormsModule, DecimalPipe, PercentPipe, SkeletonComponent, ErrorBoundaryComponent, FieldLegendComponent, OptimizerPlayerDrawerComponent],
   template: `
-    <div class="optimizer-root">
+    <div class="optimizer-page">
 
-      <!-- HEADER -->
-      <div class="header">
-        <div class="header-left">
-          <h1 class="header-title">Ottimizzatore Rosa</h1>
-          <p class="header-subtitle">Costruisci la miglior squadra con ILP e robustezza Monte Carlo</p>
+      <header class="page-header">
+        <div>
+          <h1 class="page-title">Ottimizzatore Rosa</h1>
+          <p class="page-subtitle">ILP + robustezza opzionale Monte Carlo: score, vincoli, stability e alternative near-optimal</p>
         </div>
-        <button class="header-run-btn" (click)="run()" [disabled]="running() || !canRun()"
-                aria-label="Esegui ottimizzatore">
-          @if (running()) { <span class="spinner"></span> }
-          {{ running() ? 'Calcolo...' : '⚡ Esegui' }}
-        </button>
-      </div>
+      </header>
 
-      <!-- MAIN LAYOUT -->
-      <div class="main-grid">
+      <div class="optimizer-body">
 
-        <!-- CONFIG PANEL (scrollable aside) -->
-        <aside class="config-panel">
-          <!-- Preset picker always visible -->
-          <details class="config-group" open>
-            <summary class="config-group-title">🎯 Profilo strategico</summary>
-            <div class="config-body">
-              <label class="field-label" for="opt-preset">Preset (precompila tutto)</label>
-              <select id="opt-preset" class="field-input"
-                      [ngModel]="selectedPresetId()"
-                      (ngModelChange)="onPresetChange($event)">
-                <option [ngValue]="OPTIMIZER_PRESET_NONE">Personalizzato</option>
-                @for (p of presets; track p.id) {
-                  <option [ngValue]="p.id">{{ p.labelIt }} — {{ p.name }}</option>
+        <!-- ── Config panel ──────────────────────────────── -->
+        <aside class="config-panel card">
+
+          <!-- PRESETS -->
+          <p class="section-divider">Profilo strategico</p>
+
+          <div class="field-group">
+            <label class="field-label" for="opt-preset">Preset strategia (precompila leve obiettivo e vincoli)</label>
+            <select
+              id="opt-preset"
+              class="field-input"
+              [ngModel]="selectedPresetId()"
+              (ngModelChange)="onPresetChange($event)"
+              [attr.aria-describedby]="'legend-preset'"
+            >
+              <option [ngValue]="OPTIMIZER_PRESET_NONE">Personalizzato (nessun preset)</option>
+              @for (p of presets; track p.id) {
+                <option [ngValue]="p.id">{{ p.labelIt }} — {{ p.name }}</option>
+              }
+            </select>
+            @if (activePreset(); as preset) {
+              <p class="preset-description" id="legend-preset">{{ preset.description }}</p>
+            } @else {
+              <p class="preset-description muted" id="legend-preset">
+                Scegli un profilo per precompilare vincoli, rischio, inflazione e strategie.
+                Stagione, include/exclude restano sotto il tuo controllo.
+              </p>
+            }
+          </div>
+
+          <!-- BASIC -->
+          <p class="section-divider">Pool e budget</p>
+
+          <div class="field-group">
+            <label class="field-label" for="opt-seasonStart">Stagione del pool (listini + predizioni ML)</label>
+            @if (seasonsLoading()) {
+              <app-skeleton height="36px" />
+            } @else {
+              <select id="opt-seasonStart" class="field-input" [(ngModel)]="seasonStart"
+                      [attr.aria-describedby]="'legend-seasonStart'">
+                @for (s of seasons(); track s) {
+                  <option [value]="s">{{ s }}/{{ s + 1 }}</option>
                 }
               </select>
-              @if (activePreset(); as preset) {
-                <p class="preset-desc">{{ preset.description }}</p>
-              } @else {
-                <p class="preset-desc muted">Scegli un profilo per impostare rapidamente vincoli, rischio e strategie. Stagione e include/exclude restano sotto il tuo controllo.</p>
-              }
-            </div>
-          </details>
+            }
+            <app-field-legend
+              fieldId="legend-seasonStart"
+              [description]="OPTIMIZER_LEGENDS['seasonStart'].description"
+              [examples]="OPTIMIZER_LEGENDS['seasonStart'].examples" />
+          </div>
 
-          <!-- Pool & Budget -->
-          <details class="config-group" open>
-            <summary class="config-group-title">🏊 Pool e budget</summary>
-            <div class="config-body">
-              <div class="field-row">
-                <label class="field-label" for="opt-seasonStart">Stagione</label>
-                @if (seasonsLoading()) { <app-skeleton height="36px" /> }
-                @else {
-                  <select id="opt-seasonStart" class="field-input" [(ngModel)]="seasonStart">
-                    @for (s of seasons(); track s) { <option [value]="s">{{ s }}/{{ s + 1 }}</option> }
-                  </select>
-                }
-              </div>
-              <div class="field-row">
-                <label class="field-label" for="opt-budget">Budget (cr.)</label>
-                <input id="opt-budget" class="field-input" type="number" min="200" max="1000" step="25" [(ngModel)]="budget" />
-              </div>
-              <div class="field-row">
-                <label class="field-label" for="opt-numParticipants">Partecipanti</label>
-                <input id="opt-numParticipants" class="field-input" type="number" min="4" max="16" step="1" [(ngModel)]="numParticipants" />
-              </div>
-              <div class="field-row">
-                <label class="field-label" for="opt-minQtA">Listino minimo (qt_a ≥)</label>
-                <input id="opt-minQtA" class="field-input" type="number" min="0" max="10" step="1" [(ngModel)]="minQtA" />
-              </div>
-              <div class="field-row">
-                <label class="field-label" for="opt-solverTimeout">Timeout solver (s)</label>
-                <input id="opt-solverTimeout" class="field-input" type="number" min="5" max="300" step="5" [(ngModel)]="solverTimeoutSeconds" />
-              </div>
+          <div class="field-row">
+            <div class="field-group">
+              <label class="field-label" for="opt-budget">Budget rosa (tetto costi effettivi) <span class="field-hint">cr.</span></label>
+              <input id="opt-budget" class="field-input" type="number" min="200" max="1000" step="25"
+                     [(ngModel)]="budget"
+                     [attr.aria-describedby]="'legend-budget'" />
+              <app-field-legend
+                fieldId="legend-budget"
+                [description]="OPTIMIZER_LEGENDS['budget'].description"
+                [examples]="OPTIMIZER_LEGENDS['budget'].examples" />
             </div>
-          </details>
-
-          <!-- Vincoli rosa -->
-          <details class="config-group">
-            <summary class="config-group-title">⛓️ Vincoli rosa</summary>
-            <div class="config-body">
-              <div class="field-row">
-                <label class="field-label" for="opt-minDistinctTeams">Club distinti min</label>
-                <input id="opt-minDistinctTeams" class="field-input" type="number" min="1" max="25" step="1" [(ngModel)]="minDistinctTeams" />
-              </div>
-              <div class="field-row">
-                <label class="field-label" for="opt-maxPlayersPerTeam">Max per club</label>
-                <input id="opt-maxPlayersPerTeam" class="field-input" type="number" min="1" max="10" step="1" [(ngModel)]="maxPlayersPerTeam" />
-              </div>
-              <div class="field-row">
-                <label class="field-label" for="opt-bigTeamsCap">Max big team</label>
-                <input id="opt-bigTeamsCap" class="field-input" type="number" min="0" max="25" step="1" [(ngModel)]="bigTeamsCap" />
-              </div>
-              <div class="field-row">
-                <label class="field-label" for="opt-maxShare">Max budget per giocatore (fraz.)</label>
-                <input id="opt-maxShare" class="field-input" type="number" min="0.05" max="1" step="0.05" [(ngModel)]="maxSinglePlayerBudgetShare" />
-              </div>
-              <div class="field-row">
-                <label class="field-label" for="opt-bigTeamsRaw">Big teams (nomi club)</label>
-                <textarea id="opt-bigTeamsRaw" class="field-input field-textarea" rows="2" [(ngModel)]="bigTeamsRaw" placeholder="Inter, Milan..."></textarea>
-              </div>
+            <div class="field-group">
+              <label class="field-label" for="opt-numParticipants">Partecipanti lega (spinge l'inflazione dei costi)</label>
+              <input id="opt-numParticipants" class="field-input" type="number" min="4" max="16" step="1"
+                     [(ngModel)]="numParticipants"
+                     [attr.aria-describedby]="'legend-numParticipants'" />
+              <app-field-legend
+                fieldId="legend-numParticipants"
+                [description]="OPTIMIZER_LEGENDS['numParticipants'].description"
+                [examples]="OPTIMIZER_LEGENDS['numParticipants'].examples" />
             </div>
-          </details>
+          </div>
 
-          <!-- Include / Exclude -->
-          <details class="config-group">
-            <summary class="config-group-title">✅ Include / ❌ Exclude</summary>
-            <div class="config-body">
-              <div class="field-row">
-                <label class="field-label" for="opt-mustInclude">Must‑include</label>
-                <textarea id="opt-mustInclude" class="field-input field-textarea" rows="2" [(ngModel)]="mustIncludeRaw" placeholder="fm-12345, fm-67890"></textarea>
-              </div>
-              <div class="field-row">
-                <label class="field-label" for="opt-exclude">Exclude</label>
-                <textarea id="opt-exclude" class="field-input field-textarea" rows="2" [(ngModel)]="excludeRaw" placeholder="fm-12345, fm-67890"></textarea>
-              </div>
+          <div class="field-row">
+            <div class="field-group">
+              <label class="field-label" for="opt-minQtA">Listino minimo per entrare nel pool <span class="field-hint">qt_a ≥</span></label>
+              <input id="opt-minQtA" class="field-input" type="number" min="0" max="10" step="1"
+                     [(ngModel)]="minQtA"
+                     [attr.aria-describedby]="'legend-minQtA'" />
+              <app-field-legend
+                fieldId="legend-minQtA"
+                [description]="OPTIMIZER_LEGENDS['minQtA'].description"
+                [examples]="OPTIMIZER_LEGENDS['minQtA'].examples" />
             </div>
-          </details>
+            <div class="field-group">
+              <label class="field-label" for="opt-solverTimeout">Timeout solver ILP <span class="field-hint">secondi, non cambia l'obiettivo</span></label>
+              <input id="opt-solverTimeout" class="field-input" type="number" min="5" max="300" step="5"
+                     [(ngModel)]="solverTimeoutSeconds"
+                     [attr.aria-describedby]="'legend-solverTimeoutSeconds'" />
+              <app-field-legend
+                fieldId="legend-solverTimeoutSeconds"
+                [description]="OPTIMIZER_LEGENDS['solverTimeoutSeconds'].description"
+                [examples]="OPTIMIZER_LEGENDS['solverTimeoutSeconds'].examples" />
+            </div>
+          </div>
 
-          <!-- Obiettivo & Rischio -->
-          <details class="config-group">
-            <summary class="config-group-title">🎯 Funzione obiettivo</summary>
-            <div class="config-body">
-              <div class="field-row">
-                <label class="field-label" for="opt-ruleset">Ruleset</label>
-                <select id="opt-ruleset" class="field-input" [(ngModel)]="ruleset">
-                  <option value="CLASSIC">CLASSIC (4 ruoli)</option>
-                  <option value="MANTRA">MANTRA (12 ruoli)</option>
+          <!-- SQUAD CONSTRAINTS -->
+          <p class="section-divider">Vincoli hard sulla rosa</p>
+
+          <div class="field-row">
+            <div class="field-group">
+              <label class="field-label" for="opt-minDistinctTeams">Min. club distinti in rosa <span class="field-hint">vincolo hard</span></label>
+              <input id="opt-minDistinctTeams" class="field-input" type="number" min="1" max="25" step="1"
+                     [(ngModel)]="minDistinctTeams"
+                     [attr.aria-describedby]="'legend-minDistinctTeams'" />
+              <app-field-legend
+                fieldId="legend-minDistinctTeams"
+                [description]="OPTIMIZER_LEGENDS['minDistinctTeams'].description"
+                [examples]="OPTIMIZER_LEGENDS['minDistinctTeams'].examples" />
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="opt-maxPlayersPerTeam">Max giocatori dallo stesso club <span class="field-hint">vincolo hard</span></label>
+              <input id="opt-maxPlayersPerTeam" class="field-input" type="number" min="1" max="10" step="1"
+                     [(ngModel)]="maxPlayersPerTeam"
+                     [attr.aria-describedby]="'legend-maxPlayersPerTeam'" />
+              <app-field-legend
+                fieldId="legend-maxPlayersPerTeam"
+                [description]="OPTIMIZER_LEGENDS['maxPlayersPerTeam'].description"
+                [examples]="OPTIMIZER_LEGENDS['maxPlayersPerTeam'].examples" />
+            </div>
+          </div>
+
+          <div class="field-row">
+            <div class="field-group">
+              <label class="field-label" for="opt-bigTeamsCap">Tetto giocatori dalle big team <span class="field-hint">vincolo hard aggregato</span></label>
+              <input id="opt-bigTeamsCap" class="field-input" type="number" min="0" max="25" step="1"
+                     [(ngModel)]="bigTeamsCap"
+                     [attr.aria-describedby]="'legend-bigTeamsCap'" />
+              <app-field-legend
+                fieldId="legend-bigTeamsCap"
+                [description]="OPTIMIZER_LEGENDS['bigTeamsCap'].description"
+                [examples]="OPTIMIZER_LEGENDS['bigTeamsCap'].examples" />
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="opt-maxShare">Max costo effettivo su un giocatore <span class="field-hint">frazione del budget</span></label>
+              <input id="opt-maxShare" class="field-input" type="number" min="0.05" max="1" step="0.05"
+                     [(ngModel)]="maxSinglePlayerBudgetShare"
+                     [attr.aria-describedby]="'legend-maxSinglePlayerBudgetShare'" />
+              <app-field-legend
+                fieldId="legend-maxSinglePlayerBudgetShare"
+                [description]="OPTIMIZER_LEGENDS['maxSinglePlayerBudgetShare'].description"
+                [examples]="OPTIMIZER_LEGENDS['maxSinglePlayerBudgetShare'].examples" />
+            </div>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label" for="opt-bigTeamsRaw">Club conteggiati come big team <span class="field-hint">nomi real_team, separati da virgola</span></label>
+            <textarea id="opt-bigTeamsRaw" class="field-input field-textarea" rows="2"
+                      [(ngModel)]="bigTeamsRaw"
+                      placeholder="Inter, Milan, Juventus, Napoli"
+                      [attr.aria-describedby]="'legend-bigTeams'"></textarea>
+            <app-field-legend
+              fieldId="legend-bigTeams"
+              [description]="OPTIMIZER_LEGENDS['bigTeams'].description"
+              [examples]="OPTIMIZER_LEGENDS['bigTeams'].examples" />
+          </div>
+
+          <!-- PLAYER FILTERS -->
+          <p class="section-divider">Include / exclude (vincoli hard)</p>
+
+          <div class="field-group">
+            <label class="field-label" for="opt-mustInclude">Must-include <span class="field-hint">player_id obbligatori, vincolo hard</span></label>
+            <textarea id="opt-mustInclude" class="field-input field-textarea" rows="2"
+                      [(ngModel)]="mustIncludeRaw"
+                      placeholder="fm-12345, fm-67890"
+                      [attr.aria-describedby]="'legend-mustInclude'"></textarea>
+            <app-field-legend
+              fieldId="legend-mustInclude"
+              [description]="OPTIMIZER_LEGENDS['mustInclude'].description"
+              [examples]="OPTIMIZER_LEGENDS['mustInclude'].examples" />
+          </div>
+
+          <div class="field-group">
+            <label class="field-label" for="opt-exclude">Exclude <span class="field-hint">player_id fuori dal pool</span></label>
+            <textarea id="opt-exclude" class="field-input field-textarea" rows="2"
+                      [(ngModel)]="excludeRaw"
+                      placeholder="fm-12345, fm-67890"
+                      [attr.aria-describedby]="'legend-exclude'"></textarea>
+            <app-field-legend
+              fieldId="legend-exclude"
+              [description]="OPTIMIZER_LEGENDS['exclude'].description"
+              [examples]="OPTIMIZER_LEGENDS['exclude'].examples" />
+          </div>
+
+          <!-- RULESET & RISK -->
+          <p class="section-divider">Ruleset e funzione obiettivo</p>
+
+          <div class="field-row">
+            <div class="field-group">
+              <label class="field-label" for="opt-ruleset">Ruleset quote/ruoli <span class="field-hint">CLASSIC 4 ruoli · MANTRA 12</span></label>
+              <select id="opt-ruleset" class="field-input" [(ngModel)]="ruleset"
+                      [attr.aria-describedby]="'legend-ruleset'">
+                <option value="CLASSIC">CLASSIC — quote P3/D8/C8/A6</option>
+                <option value="MANTRA">MANTRA — 12 ruoli multi-slot</option>
+              </select>
+              <app-field-legend
+                fieldId="legend-ruleset"
+                [description]="OPTIMIZER_LEGENDS['ruleset'].description"
+                [examples]="OPTIMIZER_LEGENDS['ruleset'].examples" />
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="opt-riskAversion">Risk aversion <span class="field-hint">penalità × prediction_std in obiettivo</span></label>
+              <input id="opt-riskAversion" class="field-input" type="number" min="0" max="5" step="0.1"
+                     [(ngModel)]="riskAversion"
+                     [attr.aria-describedby]="'legend-riskAversion'" />
+              <app-field-legend
+                fieldId="legend-riskAversion"
+                [description]="OPTIMIZER_LEGENDS['riskAversion'].description"
+                [examples]="OPTIMIZER_LEGENDS['riskAversion'].examples" />
+            </div>
+
+          <!-- MONTE CARLO ROBUSTNESS -->
+          <p class="section-divider">Robustezza Monte Carlo</p>
+
+          <div class="field-group field-group--toggle">
+            <label class="field-label" for="opt-mc-enabled">
+              <input id="opt-mc-enabled" type="checkbox"
+                     [ngModel]="monteCarloEnabled()"
+                     (ngModelChange)="monteCarloEnabled.set($event)"
+                     [attr.aria-describedby]="'legend-mc-enabled'" />
+              Abilita Monte Carlo <span class="field-hint">default off = ILP deterministico</span>
+            </label>
+            <app-field-legend
+              fieldId="legend-mc-enabled"
+              [description]="OPTIMIZER_LEGENDS['monteCarloEnabled'].description"
+              [examples]="OPTIMIZER_LEGENDS['monteCarloEnabled'].examples" />
+          </div>
+
+          @if (monteCarloEnabled()) {
+            <div class="field-row">
+              <div class="field-group">
+                <label class="field-label" for="opt-mc-mode">Mode</label>
+                <select id="opt-mc-mode" class="field-input"
+                        [ngModel]="monteCarloMode()"
+                        (ngModelChange)="monteCarloMode.set($event)"
+                        [attr.aria-describedby]="'legend-mc-mode'">
+                  <option value="saa_frequency">saa_frequency — frequenza scenari</option>
+                  <option value="mean_std">mean_std — mean − λ·std</option>
                 </select>
+                <app-field-legend
+                  fieldId="legend-mc-mode"
+                  [description]="OPTIMIZER_LEGENDS['monteCarloMode'].description"
+                  [examples]="OPTIMIZER_LEGENDS['monteCarloMode'].examples" />
               </div>
-              <div class="field-row">
-                <label class="field-label" for="opt-riskAversion">Risk aversion</label>
-                <input id="opt-riskAversion" class="field-input" type="number" min="0" max="5" step="0.1" [(ngModel)]="riskAversion" />
-              </div>
-              <div class="field-row">
-                <label class="field-label" for="opt-varBlend">VAR blend</label>
-                <input id="opt-varBlend" class="field-input" type="number" min="0" max="1" step="0.1" [(ngModel)]="varBlend" />
-              </div>
-              <div class="field-row">
-                <label class="field-label" for="opt-esvWeight">ESV weight</label>
-                <input id="opt-esvWeight" class="field-input" type="number" min="0" max="5" step="0.1" [(ngModel)]="esvWeight" />
-              </div>
-              <div class="field-row">
-                <label class="field-label" for="opt-valuationMode">Metrica base</label>
-                <select id="opt-valuationMode" class="field-input" [(ngModel)]="valuationMode">
-                  <option value="PER_MATCH_RATING">Per partita</option>
-                  <option value="SEASON_VALUE">Valore stagionale</option>
-                </select>
-              </div>
-              <div class="field-row">
-                <label class="field-label" for="opt-minStartProb">Prob. titolarità minima</label>
-                <input id="opt-minStartProb" class="field-input" type="number" min="0" max="1" step="0.05"
-                       [ngModel]="minStartProbability()"
-                       (ngModelChange)="minStartProbability.set($event === '' ? null : +$event)" />
+              <div class="field-group">
+                <label class="field-label" for="opt-mc-n">N simulazioni</label>
+                <input id="opt-mc-n" class="field-input" type="number" min="1" max="200" step="1"
+                       [ngModel]="nSimulations()"
+                       (ngModelChange)="nSimulations.set(+$event)"
+                       [attr.aria-describedby]="'legend-mc-n'" />
+                <app-field-legend
+                  fieldId="legend-mc-n"
+                  [description]="OPTIMIZER_LEGENDS['nSimulations'].description"
+                  [examples]="OPTIMIZER_LEGENDS['nSimulations'].examples" />
               </div>
             </div>
-          </details>
-
-          <!-- Monte Carlo -->
-          <details class="config-group">
-            <summary class="config-group-title">🎲 Monte Carlo</summary>
-            <div class="config-body">
-              <label class="toggle-row">
-                <input type="checkbox" [ngModel]="monteCarloEnabled()" (ngModelChange)="monteCarloEnabled.set($event)" />
-                <span>Abilita</span>
-              </label>
-              @if (monteCarloEnabled()) {
-                <div class="field-row">
-                  <label class="field-label" for="opt-mc-mode">Mode</label>
-                  <select id="opt-mc-mode" class="field-input" [ngModel]="monteCarloMode()" (ngModelChange)="monteCarloMode.set($event)">
-                    <option value="saa_frequency">SAA frequency</option>
-                    <option value="mean_std">mean – λ·std</option>
-                  </select>
-                </div>
-                <div class="field-row">
-                  <label class="field-label" for="opt-mc-n">N simulazioni</label>
-                  <input id="opt-mc-n" class="field-input" type="number" min="1" max="200" step="1"
-                         [ngModel]="nSimulations()" (ngModelChange)="nSimulations.set(+$event)" />
-                </div>
-                @if (monteCarloMode() === 'mean_std') {
-                  <div class="field-row">
-                    <label class="field-label" for="opt-mc-lambda">λ rischio</label>
-                    <input id="opt-mc-lambda" class="field-input" type="number" min="0" max="3" step="0.1"
-                           [ngModel]="riskLambda()" (ngModelChange)="riskLambda.set(+$event)" />
-                  </div>
-                }
-                @if (riskAversion() > 0) {
-                  <div class="warning">⚠️ riskAversion={{ riskAversion() }} + MC attivi: evita doppia penalizzazione.</div>
-                }
-              }
-              <label class="toggle-row">
-                <input type="checkbox" [ngModel]="nearOptimalEnabled()" (ngModelChange)="nearOptimalEnabled.set($event)" />
-                <span>Alternative near‑optimal</span>
-              </label>
-            </div>
-          </details>
-
-          <!-- Moduli -->
-          <details class="config-group">
-            <summary class="config-group-title">📐 Moduli</summary>
-            <div class="config-body">
-              <div class="chip-grid">
-                @for (f of allFormations; track f.label) {
-                  <label class="chip" [class.active]="selectedFormations().has(f.label)">
-                    <input type="checkbox" [checked]="selectedFormations().has(f.label)" (change)="toggleFormation(f.label)" />
-                    {{ f.label }}
-                  </label>
-                }
+            @if (monteCarloMode() === 'mean_std') {
+              <div class="field-group">
+                <label class="field-label" for="opt-mc-lambda">Risk λ (mean_std)</label>
+                <input id="opt-mc-lambda" class="field-input" type="number" min="0" max="3" step="0.1"
+                       [ngModel]="riskLambda()"
+                       (ngModelChange)="riskLambda.set(+$event)" />
               </div>
-              <div class="field-row" style="margin-top:8px">
-                <label class="field-label" for="opt-preferredFormation">Vincolo hard</label>
-                <select id="opt-preferredFormation" class="field-input" [(ngModel)]="preferredFormationLabel">
-                  <option value="">Nessuno</option>
-                  @for (f of allFormations; track f.label) {
-                    <option [value]="f.label">{{ f.label }}</option>
-                  }
-                </select>
-              </div>
-            </div>
-          </details>
-
-          <!-- Costo effettivo -->
-          <details class="config-group">
-            <summary class="config-group-title">💰 Costo effettivo (inflazione)</summary>
-            <div class="config-body">
-              <div class="field-row">
-                <label class="field-label" for="opt-inflationPercentile">Soglia percentile</label>
-                <input id="opt-inflationPercentile" class="field-input" type="number" min="0" max="1" step="0.05" [(ngModel)]="inflationPercentileThreshold" />
-              </div>
-              <div class="field-row">
-                <label class="field-label" for="opt-maxInflation">Cap moltiplicatore</label>
-                <input id="opt-maxInflation" class="field-input" type="number" min="1" max="5" step="0.1" [(ngModel)]="maxInflationMultiplier" />
-              </div>
-              <div class="field-row">
-                <label class="field-label" for="opt-baseRate">Tasso base</label>
-                <input id="opt-baseRate" class="field-input" type="number" min="0" max="1" step="0.01" [(ngModel)]="baseInflationRate" />
-              </div>
-              <div class="field-row">
-                <label class="field-label" for="opt-baselinePart">Baseline partecipanti</label>
-                <input id="opt-baselinePart" class="field-input" type="number" min="2" max="20" step="1" [(ngModel)]="baselineParticipants" />
-              </div>
-              <div class="field-row">
-                <label class="field-label" for="opt-teamStrengthMul">Peso Elo club</label>
-                <input id="opt-teamStrengthMul" class="field-input" type="number" min="0" max="2" step="0.05" [(ngModel)]="teamStrengthMultiplier" />
-              </div>
-            </div>
-          </details>
-
-          <!-- Strategie -->
-          <details class="config-group">
-            <summary class="config-group-title">📋 Strategie</summary>
-            <div class="config-body">
-              <div class="strategy-list">
-                @for (s of availableStrategies(); track s) {
-                  <label class="strategy-chip" [class.active]="selectedStrategies().has(s)">
-                    <input type="checkbox" [checked]="selectedStrategies().has(s)" (change)="toggleStrategy(s)" />
-                    <span>{{ meta(s).icon }} {{ meta(s).label }}</span>
-                  </label>
-                }
-              </div>
-              @if (singleStrategySelected()) {
-                <button class="text-btn" (click)="showCustomWeights.set(!showCustomWeights())">
-                  Pesi ruolo {{ showCustomWeights() ? '▲' : '▼' }}
-                </button>
-                @if (showCustomWeights()) {
-                  <div class="weights-panel">
-                    @for (role of ['P','D','C','A']; track role) {
-                      <div class="weight-row">
-                        <span>{{ roleLabel(role) }}</span>
-                        <input type="range" min="0.1" max="3" step="0.05"
-                               [ngModel]="customWeights()[role]" (ngModelChange)="setCustomWeight(role, $event)" />
-                        <span class="weight-value">{{ customWeights()[role] | number:'1.2-2' }}</span>
-                      </div>
-                    }
-                  </div>
-                }
-              }
-            </div>
-          </details>
-
-          <!-- Error & Run button inside config -->
-          @if (error()) {
-            <app-error-boundary title="Errore" [message]="error()!" />
+            }
+            @if (riskAversion() > 0 && monteCarloEnabled()) {
+              <p class="field-warning" role="status">
+                Attenzione: riskAversion={{ riskAversion() }} e Monte Carlo sono entrambi attivi.
+                Preferisci uno dei due o tieni riskAversion basso (≤0.3) per evitare doppia penalizzazione.
+              </p>
+            }
           }
+
+          <div class="field-group field-group--toggle">
+            <label class="field-label" for="opt-near-opt">
+              <input id="opt-near-opt" type="checkbox"
+                     [ngModel]="nearOptimalEnabled()"
+                     (ngModelChange)="nearOptimalEnabled.set($event)"
+                     [attr.aria-describedby]="'legend-near-opt'" />
+              Alternative near-optimal <span class="field-hint">esclude top scorer e ri-ottimizza</span>
+            </label>
+            <app-field-legend
+              fieldId="legend-near-opt"
+              [description]="OPTIMIZER_LEGENDS['nearOptimal'].description"
+              [examples]="OPTIMIZER_LEGENDS['nearOptimal'].examples" />
+          </div>
+          </div>
+
+          <div class="field-row">
+            <div class="field-group">
+              <label class="field-label" for="opt-varBlend">VAR blend <span class="field-hint">(1−w)×metric + w×var_score</span></label>
+              <input id="opt-varBlend" class="field-input" type="number" min="0" max="1" step="0.1"
+                     [(ngModel)]="varBlend"
+                     [attr.aria-describedby]="'legend-varBlend'" />
+              <app-field-legend
+                fieldId="legend-varBlend"
+                [description]="OPTIMIZER_LEGENDS['varBlend'].description"
+                [examples]="OPTIMIZER_LEGENDS['varBlend'].examples" />
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="opt-esvWeight">ESV weight <span class="field-hint">+ w×surplus value (affare)</span></label>
+              <input id="opt-esvWeight" class="field-input" type="number" min="0" max="5" step="0.1"
+                     [(ngModel)]="esvWeight"
+                     [attr.aria-describedby]="'legend-esvWeight'" />
+              <app-field-legend
+                fieldId="legend-esvWeight"
+                [description]="OPTIMIZER_LEGENDS['esvWeight'].description"
+                [examples]="OPTIMIZER_LEGENDS['esvWeight'].examples" />
+            </div>
+          </div>
+
+          <!-- VAR/ESV ADVANCED -->
+          <div class="field-row">
+            <div class="field-group">
+              <label class="field-label" for="opt-valuationMode">Metrica base in obiettivo</label>
+              <select id="opt-valuationMode" class="field-input" [(ngModel)]="valuationMode"
+                      [attr.aria-describedby]="'legend-valuationMode'">
+                <option value="PER_MATCH_RATING">projected_score / partita (default)</option>
+                <option value="SEASON_VALUE">season_value (rating × presenze)</option>
+              </select>
+              <app-field-legend
+                fieldId="legend-valuationMode"
+                [description]="OPTIMIZER_LEGENDS['valuationMode'].description"
+                [examples]="OPTIMIZER_LEGENDS['valuationMode'].examples" />
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="opt-replacementMethod">Replacement level (per VAR/ESV)</label>
+              <select id="opt-replacementMethod" class="field-input" [(ngModel)]="replacementMethod"
+                      [attr.aria-describedby]="'legend-replacementMethod'">
+                <option value="percentile">Percentile basso per ruolo (default)</option>
+                <option value="roster_depth">Roster depth (quota × partecipanti)</option>
+              </select>
+              <app-field-legend
+                fieldId="legend-replacementMethod"
+                [description]="OPTIMIZER_LEGENDS['replacementMethod'].description"
+                [examples]="OPTIMIZER_LEGENDS['replacementMethod'].examples" />
+            </div>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label" for="opt-minStartProb">Filtro start_probability minima <span class="field-hint">pre-ILP, vuoto = off</span></label>
+            <input id="opt-minStartProb" class="field-input" type="number" min="0" max="1" step="0.05"
+                   [ngModel]="minStartProbability()"
+                   (ngModelChange)="minStartProbability.set($event === '' ? null : +$event)"
+                   [attr.aria-describedby]="'legend-minStartProbability'" />
+            <app-field-legend
+              fieldId="legend-minStartProbability"
+              [description]="OPTIMIZER_LEGENDS['minStartProbability'].description"
+              [examples]="OPTIMIZER_LEGENDS['minStartProbability'].examples" />
+          </div>
+
+          <!-- FORMATIONS -->
+          <p class="section-divider">Moduli (check post-hoc e vincolo hard)</p>
+
+          <div class="check-grid" role="group" aria-label="Moduli tattici ammessi">
+            @for (f of allFormations; track f.label) {
+              <label class="check-chip" [class.active]="selectedFormations().has(f.label)">
+                <input type="checkbox" [checked]="selectedFormations().has(f.label)"
+                       (change)="toggleFormation(f.label)" />
+                {{ f.label }}
+              </label>
+            }
+          </div>
+          <app-field-legend
+            fieldId="legend-formations"
+            [description]="OPTIMIZER_LEGENDS['formations'].description"
+            [examples]="OPTIMIZER_LEGENDS['formations'].examples" />
+
+          <div class="field-group">
+            <label class="field-label" for="opt-preferredFormation">Modulo imposto al solver <span class="field-hint">vincolo hard; le altre solo check</span></label>
+            <select id="opt-preferredFormation" class="field-input" [(ngModel)]="preferredFormationLabel"
+                    [attr.aria-describedby]="'legend-preferredFormation'">
+              <option value="">Nessuna (nessun vincolo)</option>
+              @for (f of allFormations; track f.label) {
+                <option [value]="f.label">{{ f.label }}</option>
+              }
+            </select>
+            <app-field-legend
+              fieldId="legend-preferredFormation"
+              [description]="OPTIMIZER_LEGENDS['preferredFormation'].description"
+              [examples]="OPTIMIZER_LEGENDS['preferredFormation'].examples" />
+          </div>
+
+          <!-- INFLATION MODEL -->
+          <p class="section-divider">Costo effettivo (inflazione listino)</p>
+
+          <div class="field-row">
+            <div class="field-group">
+              <label class="field-label" for="opt-inflationPercentile">Soglia percentile: sotto = costo = listino</label>
+              <input id="opt-inflationPercentile" class="field-input" type="number" min="0" max="1" step="0.05"
+                     [(ngModel)]="inflationPercentileThreshold"
+                     [attr.aria-describedby]="'legend-inflationPercentileThreshold'" />
+              <app-field-legend
+                fieldId="legend-inflationPercentileThreshold"
+                [description]="OPTIMIZER_LEGENDS['inflationPercentileThreshold'].description"
+                [examples]="OPTIMIZER_LEGENDS['inflationPercentileThreshold'].examples" />
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="opt-maxInflation">Cap moltiplicatore costo effettivo / listino</label>
+              <input id="opt-maxInflation" class="field-input" type="number" min="1" max="5" step="0.1"
+                     [(ngModel)]="maxInflationMultiplier"
+                     [attr.aria-describedby]="'legend-maxInflationMultiplier'" />
+              <app-field-legend
+                fieldId="legend-maxInflationMultiplier"
+                [description]="OPTIMIZER_LEGENDS['maxInflationMultiplier'].description"
+                [examples]="OPTIMIZER_LEGENDS['maxInflationMultiplier'].examples" />
+            </div>
+          </div>
+
+          <div class="field-row">
+            <div class="field-group">
+              <label class="field-label" for="opt-baseRate">Tasso base inflazione (partecipanti extra)</label>
+              <input id="opt-baseRate" class="field-input" type="number" min="0" max="1" step="0.01"
+                     [(ngModel)]="baseInflationRate"
+                     [attr.aria-describedby]="'legend-baseInflationRate'" />
+              <app-field-legend
+                fieldId="legend-baseInflationRate"
+                [description]="OPTIMIZER_LEGENDS['baseInflationRate'].description"
+                [examples]="OPTIMIZER_LEGENDS['baseInflationRate'].examples" />
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="opt-baselinePart">Baseline partecipanti (oltre → extra inflazione)</label>
+              <input id="opt-baselinePart" class="field-input" type="number" min="2" max="20" step="1"
+                     [(ngModel)]="baselineParticipants"
+                     [attr.aria-describedby]="'legend-baselineParticipants'" />
+              <app-field-legend
+                fieldId="legend-baselineParticipants"
+                [description]="OPTIMIZER_LEGENDS['baselineParticipants'].description"
+                [examples]="OPTIMIZER_LEGENDS['baselineParticipants'].examples" />
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="opt-teamStrengthMul">Peso Elo club sul costo effettivo <span class="field-hint">0 = off</span></label>
+              <input id="opt-teamStrengthMul" class="field-input" type="number" min="0" max="2" step="0.05"
+                     [(ngModel)]="teamStrengthMultiplier"
+                     [attr.aria-describedby]="'legend-teamStrengthMultiplier'" />
+              <app-field-legend
+                fieldId="legend-teamStrengthMultiplier"
+                [description]="OPTIMIZER_LEGENDS['teamStrengthMultiplier'].description"
+                [examples]="OPTIMIZER_LEGENDS['teamStrengthMultiplier'].examples" />
+            </div>
+          </div>
+
+          <!-- STRATEGIES -->
+          <p class="section-divider">StrategyProfile (pesi ruolo e vincoli soft)</p>
+
+          <div class="check-col" role="group" aria-label="Strategie da eseguire">
+            @for (s of availableStrategies(); track s) {
+              <label class="strategy-check" [class.active]="selectedStrategies().has(s)">
+                <input type="checkbox" [checked]="selectedStrategies().has(s)"
+                       (change)="toggleStrategy(s)" />
+                <span>{{ meta(s).icon }}</span>
+                <span>{{ meta(s).label }}</span>
+              </label>
+            }
+          </div>
+
+          @if (singleStrategySelected()) {
+            <button class="advanced-toggle" style="margin-top:4px"
+                    (click)="showCustomWeights.set(!showCustomWeights())">
+              Personalizza pesi per ruolo {{ showCustomWeights() ? '▲' : '▼' }}
+            </button>
+            @if (showCustomWeights()) {
+              <app-field-legend
+                fieldId="legend-customWeights"
+                [description]="OPTIMIZER_LEGENDS['customWeights'].description"
+                [examples]="OPTIMIZER_LEGENDS['customWeights'].examples" />
+              <div class="custom-weights-panel">
+                @for (role of ['P','D','C','A']; track role) {
+                  <div class="field-group">
+                    <label class="field-label" style="display:flex;justify-content:space-between">
+                      <span>Peso ruolo {{ roleLabel(role) }} ({{ role }})</span>
+                      <span class="field-hint">{{ customWeights()[role] | number:'1.2-2' }}</span>
+                    </label>
+                    <input type="range" min="0.1" max="3" step="0.05"
+                           [ngModel]="customWeights()[role]"
+                           (ngModelChange)="setCustomWeight(role, $event)"
+                           [attr.aria-label]="'Peso per il ruolo ' + roleLabel(role)" />
+                  </div>
+                }
+              </div>
+            }
+          }
+
           <button class="run-btn" (click)="run()" [disabled]="running() || !canRun()">
-            @if (running()) { <span class="spinner"></span> }
-            {{ running() ? 'Ottimizzazione...' : 'Esegui ottimizzatore' }}
-            @if (monteCarloEnabled() && nSimulations() > 25) { <small>(async)</small> }
+            @if (running()) {
+              <span class="spinner"></span>
+              @if (jobStatus(); as js) {
+                Job {{ js }}{{ jobId() ? ' · ' + jobId()!.slice(0, 8) : '' }}…
+              } @else {
+                Ottimizzazione in corso…
+              }
+            } @else {
+              Esegui ottimizzatore
+              @if (monteCarloEnabled() && nSimulations() > 25) {
+                <span class="field-hint"> (async N&gt;25)</span>
+              }
+            }
           </button>
           @if (usedAsyncJob() && jobStatus()) {
-            <p class="job-status">Stato job: {{ jobStatus() }}</p>
+            <p class="muted job-hint" role="status">
+              Esecuzione asincrona: il server elabora SAA in background e questa UI fa polling.
+            </p>
+          }
+
+          @if (error()) {
+            <app-error-boundary title="Errore ottimizzatore" [message]="error()!" />
           }
         </aside>
 
-        <!-- RESULTS PANEL -->
+        <!-- ── Results panel ─────────────────────────────── -->
         <section class="results-panel">
-          @if (!results() && !running()) {
-            <div class="empty-state">
-              <div class="empty-icon">🏗️</div>
-              <h2 class="empty-title">Nessuna rosa ancora generata</h2>
-              <p class="empty-desc">Configura i parametri a sinistra e avvia l'ottimizzatore per vedere la tua formazione ideale.</p>
-            </div>
-          }
-
-          @if (running() && !results()) {
-            <div class="loading-state">
-              @for (_ of [1,2,3,4]; track $index) { <app-skeleton height="80px" /> }
-            </div>
-          }
-
-          @if (results()) {
-            <!-- Strategy tabs -->
-            <nav class="strategy-tabs" role="tablist">
+          @if (!results()) {
+            @if (running()) {
+              <div class="results-placeholder">
+                <div style="width:100%;max-width:480px;display:flex;flex-direction:column;gap:12px">
+                  @for (_ of [1,2,3,4]; track $index) {
+                    <app-skeleton height="120px" />
+                  }
+                </div>
+              </div>
+            } @else {
+              <div class="results-placeholder">
+                <div class="placeholder-icon">🏗️</div>
+                <p class="placeholder-text">Configura i parametri e avvia l'ottimizzatore per vedere la rosa consigliata</p>
+              </div>
+            }
+          } @else {
+            <div class="strategy-tabs" role="tablist" aria-label="Risultati per strategia">
               @for (name of resultKeys(); track name) {
-                <button class="tab" [class.active]="activeStrategy() === name"
-                        (click)="activeStrategy.set(name)" role="tab"
+                <button class="strategy-tab"
+                        [class.active]="activeStrategy() === name"
+                        (click)="activeStrategy.set(name)"
+                        [attr.role]="'tab'"
                         [attr.aria-selected]="activeStrategy() === name">
-                  <span>{{ meta(name).icon }} {{ meta(name).label }}</span>
+                  <span>{{ meta(name).icon }}</span>
+                  <span>{{ meta(name).label }}</span>
                   @if (resultFor(name); as r) {
-                    <span class="tab-score">{{ r.totalProjectedScore | number:'1.1-1' }}</span>
+                    <span class="tab-score" title="Punteggio proiettato totale della rosa">Score {{ r.totalProjectedScore | number:'1.1-1' }}</span>
                   }
                 </button>
               }
-            </nav>
+            </div>
 
-            <!-- Diversity insight -->
+            
             @if (results()?.diversity; as div) {
-              <div class="insight-banner" [class.warn]="div.lowDiversity">
-                <strong>Diversità:</strong> Jaccard {{ div.meanPairwiseJaccard | number:'1.2-2' }}
-                @if (div.lowDiversity) { <span class="badge warn">Bassa diversità</span> } @else { <span class="badge ok">OK</span> }
+              <div class="insight-banner" [class.insight-banner--warn]="div.lowDiversity" role="status">
+                <strong>Diversità strategie</strong>
+                · Jaccard medio {{ div.meanPairwiseJaccard | number:'1.2-2' }}
+                @if (div.lowDiversity) {
+                  <span class="badge badge--warn">bassa diversità — le rose sono quasi uguali</span>
+                } @else {
+                  <span class="badge badge--ok">ok</span>
+                }
               </div>
             }
 
-            <!-- Monte Carlo summary -->
             @if (multiMcSummary(); as mc) {
-              <div class="mc-card">
-                <div class="mc-header">
-                  <h3>🎲 Monte Carlo</h3>
+              <div class="mc-summary card" aria-label="Monte Carlo summary">
+                <div class="mc-summary__header">
+                  <h3 class="mc-summary__title">Monte Carlo</h3>
                   <span class="badge">{{ mc.mode }} · N={{ mc.nSimulations }}</span>
-                </div>
-                <div class="mc-grid">
-                  <div><span class="mc-label">Stability</span> {{ mc.stabilityIndex ?? 0 | number:'1.2-2' }}</div>
-                  <div><span class="mc-label">Jaccard medio</span> {{ mc.meanPairwiseJaccard ?? 0 | number:'1.2-2' }}</div>
-                  @if (mc.yieldStability?.probAboveThreshold != null) {
-                    <div><span class="mc-label">P(yield ≥ soglia)</span> {{ mc.yieldStability!.probAboveThreshold | percent:'1.0-0' }}</div>
+                  @if (mc.scenariosCompleted != null) {
+                    <span class="muted">scenari {{ mc.scenariosCompleted }}</span>
+                  }
+                  @if (mc.wallTimeSeconds != null) {
+                    <span class="muted">{{ mc.wallTimeSeconds | number:'1.2-2' }}s</span>
                   }
                 </div>
-                @if (topSelectionFrequency(); as freq) {
-                  <details>
-                    <summary class="mc-label" style="cursor:pointer">Frequenza selezione (top 12)</summary>
+                <div class="mc-summary__stats">
+                  <div class="stat-card">
+                    <p class="stat-label">Stability index</p>
+                    <p class="stat-value">{{ mc.stabilityIndex ?? 0 | number:'1.2-2' }}</p>
+                  </div>
+                  <div class="stat-card">
+                    <p class="stat-label">Jaccard scenari</p>
+                    <p class="stat-value">{{ mc.meanPairwiseJaccard ?? 0 | number:'1.2-2' }}</p>
+                  </div>
+                  @if (mc.yieldStability?.probAboveThreshold != null) {
+                    <div class="stat-card">
+                      <p class="stat-label">P(yield ≥ soglia)</p>
+                      <p class="stat-value">{{ mc.yieldStability!.probAboveThreshold | percent:'1.0-0' }}</p>
+                    </div>
+                  }
+                </div>
+                @if (topSelectionFrequency(); as freqRows) {
+                  <div class="freq-table-wrap">
+                    <p class="stat-label">Frequenza selezione (top)</p>
                     <table class="freq-table">
-                      @for (row of freq; track row.id) {
-                        <tr>
-                          <td>{{ row.name }}</td>
-                          <td><progress max="1" [value]="row.freq" style="width:60px"></progress> {{ row.freq | percent:'1.0-0' }}</td>
-                        </tr>
-                      }
+                      <thead><tr><th>Player</th><th>Freq</th></tr></thead>
+                      <tbody>
+                        @for (row of freqRows; track row.id) {
+                          <tr>
+                            <td [title]="row.id">{{ row.name }}</td>
+                            <td>
+                              <div class="freq-bar-track" aria-hidden="true">
+                                <div class="freq-bar-fill" [style.width.%]="row.freq * 100"></div>
+                              </div>
+                              {{ row.freq | percent:'1.0-0' }}
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
                     </table>
-                  </details>
+                  </div>
+                }
+                @if (mc.warnings?.length) {
+                  <ul class="mc-warnings">
+                    @for (w of mc.warnings; track w) {
+                      <li>{{ w }}</li>
+                    }
+                  </ul>
                 }
               </div>
             }
 
             @if (activeResult(); as r) {
-              <!-- Key metrics -->
-              <div class="metrics-grid">
-                <div class="metric">
-                  <span class="metric-label">Score totale</span>
-                  <span class="metric-value">{{ r.totalProjectedScore | number:'1.2-2' }}</span>
+              <div class="summary-row">
+                <div class="stat-card">
+                  <p class="stat-label">Punteggio proiettato totale</p>
+                  <p class="stat-value">{{ r.totalProjectedScore | number:'1.2-2' }}</p>
                 </div>
-                <div class="metric">
-                  <span class="metric-label">Costo nom.</span>
-                  <span class="metric-value">{{ r.totalNominalCost }}</span>
+                <div class="stat-card">
+                  <p class="stat-label">Costo nominale (somma listini)</p>
+                  <p class="stat-value">{{ r.totalNominalCost }}</p>
                 </div>
-                <div class="metric">
-                  <span class="metric-label">Costo eff.</span>
-                  <span class="metric-value">{{ r.totalEffectiveCost | number:'1.1-1' }}</span>
+                <div class="stat-card">
+                  <p class="stat-label">Costo effettivo (post-inflazione)</p>
+                  <p class="stat-value">{{ r.totalEffectiveCost | number:'1.1-1' }}</p>
                 </div>
-                <div class="metric">
-                  <span class="metric-label">Residuo budget</span>
-                  <span class="metric-value">{{ r.budgetResidual | number:'1.0-0' }}</span>
+                <div class="stat-card">
+                  <p class="stat-label">Residuo di budget</p>
+                  <p class="stat-value">{{ r.budgetResidual | number:'1.0-0' }}</p>
                 </div>
-                <div class="metric">
-                  <span class="metric-label">Club</span>
-                  <span class="metric-value">{{ r.distinctTeamsCount }}</span>
+                <div class="stat-card">
+                  <p class="stat-label">Squadre di Serie A in rosa</p>
+                  <p class="stat-value">{{ r.distinctTeamsCount }}</p>
                 </div>
-                <div class="metric">
-                  <span class="metric-label">Stato</span>
-                  <span class="metric-value" [class.text-green]="r.status === 'Optimal'">{{ r.status === 'Optimal' ? 'Ottimale' : r.status }}</span>
+                <div class="stat-card">
+                  <p class="stat-label">Stato del risolutore</p>
+                  <p class="stat-value" [class.text-green]="r.status === 'Optimal'">{{ r.status === 'Optimal' ? 'Ottimale' : r.status }}</p>
                 </div>
                 @if (r.winProbability != null) {
-                  <div class="metric">
-                    <span class="metric-label">Prob. successo budget</span>
-                    <span class="metric-value" [style.color]="r.winProbability < 0.4 ? '#EF4444' : r.winProbability < 0.7 ? '#F59E0B' : ''">
+                  <div class="stat-card" title="Stima Monte Carlo: probabilità che la rosa rimanga entro il budget dopo l'asta">
+                    <p class="stat-label">Probabilità successo budget</p>
+                    <p class="stat-value" [class.text-green]="r.winProbability >= 0.7"
+                       [style.color]="r.winProbability < 0.4 ? '#EF4444' : r.winProbability < 0.7 ? '#F59E0B' : ''">
                       {{ r.winProbability | percent:'1.0-0' }}
-                    </span>
+                    </p>
                   </div>
                 }
               </div>
 
-              <!-- Formations feasibility -->
-              <div class="formation-check">
-                <span class="metric-label">Moduli:</span>
-                @for (entry of formationEntries(r); track entry[0]) {
-                  <span class="form-chip" [class.ok]="entry[1]">{{ entry[0] }} {{ entry[1] ? '✓' : '✗' }}</span>
-                }
+              <div class="formation-row">
+                <p class="section-label">Fattibilità moduli tattici</p>
+                <div class="formation-chips">
+                  @for (entry of formationEntries(r); track entry[0]) {
+                    <span class="formation-chip" [class.ok]="entry[1]"
+                          [title]="(entry[1] ? 'Modulo giocabile' : 'Modulo NON giocabile con questa rosa')">
+                      {{ entry[0] }} {{ entry[1] ? '✓' : '✗' }}
+                    </span>
+                  }
+                </div>
               </div>
 
-              <!-- Role breakdown -->
-              <div class="role-strip">
+
+              @if (r.nearOptimal?.length) {
+                <div class="near-optimal card" aria-label="Alternative near-optimal">
+                  <h3 class="mc-summary__title">Alternative near-optimal</h3>
+                  <p class="muted">Rose ricalcolate escludendo i top scorer della soluzione primaria.</p>
+                  <div class="near-optimal__list">
+                    @for (alt of r.nearOptimal; track $index) {
+                      <details class="near-optimal__item">
+                        <summary>
+                          Δ score {{ alt.scoreDelta | number:'1.2-2' }}
+                          ({{ alt.scoreDeltaPct | percent:'1.1-1' }})
+                          · esclusi: {{ alt.excludedPlayerIds.join(', ') }}
+                        </summary>
+                        <ul class="near-optimal__squad">
+                          @for (pl of alt.squad; track pl.playerId) {
+                            <li>{{ pl.name }} <span class="muted">({{ pl.role }} · {{ pl.projectedScore | number:'1.1-1' }})</span></li>
+                          }
+                        </ul>
+                      </details>
+                    }
+                  </div>
+                </div>
+              }
+
+              <div class="role-breakdown">
                 @for (role of ['P','D','C','A']; track role) {
-                  <span class="role-badge" [style.border-color]="roleColor(role)" [style.color]="roleColor(role)">
-                    {{ roleLabel(role) }} {{ r.roleBreakdown[role] || 0 }}
-                  </span>
+                  <div class="role-strip" [style.border-color]="roleColor(role)"
+                       [title]="'Numero di giocatori nel ruolo ' + roleLabel(role)">
+                    <span class="role-label" [style.color]="roleColor(role)">{{ roleLabel(role) }}</span>
+                    <span class="role-count">{{ r.roleBreakdown[role] || 0 }}</span>
+                  </div>
                 }
               </div>
 
-              <!-- Squad table -->
-              <div class="table-wrap">
+              <div class="squad-table-wrap">
                 <table class="squad-table">
                   <thead>
                     <tr>
                       <th>Ruolo</th>
                       <th>Giocatore</th>
-                      <th class="opt-col">Squadra</th>
+                      <th class="hide-sm">Squadra</th>
                       <th class="num">Costo</th>
-                      <th class="num opt-col">Eff.</th>
+                      <th class="num hide-sm">Eff.</th>
                       <th class="num">Score</th>
                     </tr>
                   </thead>
                   <tbody>
                     @for (p of sortedSquad(r); track p.playerId) {
-                      <tr tabindex="0" (click)="selectedPlayer.set(p)" (keydown.enter)="selectedPlayer.set(p)"
-                          (keydown.space)="$event.preventDefault(); selectedPlayer.set(p)" role="button"
-                          class="clickable-row" [attr.aria-label]="'Dettaglio ' + p.name">
-                        <td><span class="role-chip" [style.color]="roleColor(p.role)" [style.border-color]="roleColor(p.role)">{{ roleLabel(p.role) }}</span></td>
-                        <td>{{ p.name }}</td>
-                        <td class="opt-col">{{ p.realTeam }}</td>
-                        <td class="num">{{ p.cost }}</td>
-                        <td class="num opt-col muted">{{ p.effectiveCost | number:'1.1-1' }}</td>
-                        <td class="num accent">{{ p.projectedScore | number:'1.2-2' }}</td>
+                      <tr class="clickable-row"
+                          (click)="selectedPlayer.set(p)"
+                          (keydown.enter)="selectedPlayer.set(p)"
+                          (keydown.space)="$event.preventDefault(); selectedPlayer.set(p)"
+                          tabindex="0"
+                          role="button"
+                          [attr.aria-label]="'Dettaglio ' + p.name">
+                        <td>
+                          <span class="role-badge" [style.color]="roleColor(p.role)"
+                                [style.border-color]="roleColor(p.role)">
+                            {{ roleLabel(p.role) }}
+                          </span>
+                        </td>
+                        <td class="player-name">{{ p.name }}</td>
+                        <td class="team-name hide-sm">{{ p.realTeam }}</td>
+                        <td class="num" title="Costo nominale (listino base)">{{ p.cost }}</td>
+                        <td class="num faded hide-sm" title="Costo effettivo post-inflazione">{{ p.effectiveCost | number:'1.1-1' }}</td>
+                        <td class="num accent" title="Punteggio proiettato per il giocatore">{{ p.projectedScore | number:'1.2-2' }}</td>
                       </tr>
                     }
                   </tbody>
                 </table>
               </div>
-
-              <!-- Near-optimal alternatives -->
-              @if (r.nearOptimal?.length) {
-                <details class="near-opt">
-                  <summary>🔁 Alternative near‑optimal ({{ r.nearOptimal?.length }})</summary>
-                  @for (alt of r.nearOptimal; track $index) {
-                    <div class="alt-item">
-                      <p>Δ score {{ alt.scoreDelta | number:'1.2-2' }} ({{ alt.scoreDeltaPct | percent:'1.1-1' }}) · esclusi: {{ alt.excludedPlayerIds.join(', ') }}</p>
-                      <ul>
-                        @for (pl of alt.squad; track pl.playerId) {
-                          <li>{{ pl.name }} ({{ pl.role }} · {{ pl.projectedScore | number:'1.1-1' }})</li>
-                        }
-                      </ul>
-                    </div>
-                  }
-                </details>
-              }
             }
           }
         </section>
+
       </div>
     </div>
 
@@ -787,233 +1075,381 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
     }
   `,
   styles: [`
-    /* ── ROOT & RESET ─────────────────────────────── */
-    .optimizer-root {
-      display: flex; flex-direction: column;
-      height: 100dvh; overflow: hidden;
-      background: var(--color-bg, #0e0e10);
-      color: var(--color-text-primary, #f8f9fa);
-      font-family: var(--font-sans, system-ui, sans-serif);
+    .optimizer-page { display:flex; flex-direction:column; height:100%; overflow:hidden; }
+    .page-header { padding:16px; border-bottom:1px solid var(--color-border); flex-shrink:0; }
+    @media (min-width: 640px) { .page-header { padding:20px 24px 16px; } }
+    .page-title { font-size:16px; font-weight:700; color:var(--color-text-primary); margin:0; }
+    @media (min-width: 640px) { .page-title { font-size:18px; } }
+    .page-subtitle { font-size:11px; color:var(--color-text-secondary); margin:2px 0 0; }
+    @media (min-width: 640px) { .page-subtitle { font-size:12px; } }
+
+    .optimizer-body {
+      display:flex; flex-direction:column;
+      flex:1; overflow:hidden; min-height:0;
+    }
+    @media (min-width: 768px) {
+      .optimizer-body {
+        display:grid; grid-template-columns:300px 1fr;
+      }
     }
 
-    /* ── HEADER ───────────────────────────────────── */
-    .header {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 12px 16px; border-bottom: 1px solid var(--color-border, #2a2a35);
-      background: var(--color-surface, #13131a);
-      flex-shrink: 0;
-    }
-    .header-left { display: flex; flex-direction: column; gap: 2px; }
-    .header-title { font-size: 1.1rem; font-weight: 700; margin: 0; }
-    .header-subtitle { font-size: 0.75rem; color: var(--color-text-secondary, #a1a1aa); margin: 0; }
-    .header-run-btn {
-      background: var(--color-accent, #6366f1); color: white; border: none;
-      padding: 8px 16px; border-radius: 8px; font-weight: 600;
-      display: flex; align-items: center; gap: 6px; cursor: pointer;
-      transition: opacity 0.15s;
-    }
-    .header-run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-    .spinner {
-      width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3);
-      border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* ── GRID LAYOUT ──────────────────────────────── */
-    .main-grid {
-      display: flex; flex: 1; overflow: hidden;
-    }
-
-    /* ── CONFIG PANEL ─────────────────────────────── */
+    /* Config panel */
     .config-panel {
-      width: 320px; max-width: 100%; flex-shrink: 0;
-      border-right: 1px solid var(--color-border);
-      overflow-y: auto; padding: 16px 12px 24px;
-      background: var(--color-surface, #13131a);
-      display: flex; flex-direction: column; gap: 12px;
+      border-radius:0; border-top:none; border-bottom:1px solid var(--color-border);
+      border-left:none; border-right:none;
+      padding:16px; overflow-y:auto; max-height:50vh;
+      display:flex; flex-direction:column; gap:10px;
     }
-    .config-group {
-      border: 1px solid var(--color-border); border-radius: 10px;
-      background: var(--color-bg, #0e0e10); overflow: hidden;
+    @media (min-width: 768px) {
+      .config-panel {
+        max-height:none; border-bottom:none;
+        border-right:1px solid var(--color-border);
+      }
     }
-    .config-group[open] { border-color: var(--color-accent, #6366f1); }
-    .config-group-title {
-      padding: 10px 12px; font-weight: 600; font-size: 0.85rem;
-      cursor: pointer; user-select: none;
-      display: flex; align-items: center; gap: 8px;
-      background: var(--color-surface-raised, #1a1a22);
+    .section-divider {
+      font-size:10px; font-weight:700; text-transform:uppercase;
+      letter-spacing:0.08em; color:var(--color-text-secondary);
+      margin:6px 0 0; padding-bottom:6px;
+      border-bottom:1px solid var(--color-border);
     }
-    .config-body { padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; }
+    .field-group { display:flex; flex-direction:column; gap:4px; min-width:0; }
+    .field-row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .field-label { font-size:11px; font-weight:500; color:var(--color-text-secondary); }
+    .preset-description {
+      margin: 6px 0 0;
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--color-text-secondary);
+    }
+    .preset-description.muted { opacity: 0.85; }
 
-    .field-label { font-size: 0.75rem; color: var(--color-text-secondary); }
+    .field-hint { font-size:10px; opacity:0.6; }
     .field-input {
-      background: var(--color-bg); border: 1px solid var(--color-border);
-      border-radius: 6px; padding: 8px; font-size: 0.9rem;
-      color: var(--color-text-primary); width: 100%;
+      background:var(--color-bg); border:1px solid var(--color-border);
+      border-radius:6px; padding:8px;
+      color:var(--color-text-primary); font-size:13px;
+      outline:none; width:100%; min-width:0;
     }
-    .field-textarea { resize: vertical; min-height: 48px; }
-    .field-row { display: flex; flex-direction: column; gap: 4px; }
-    .preset-desc { font-size: 0.75rem; color: var(--color-text-secondary); margin: 4px 0 0; }
-    .muted { opacity: 0.7; }
+    @media (min-width: 640px) {
+      .field-input { padding:6px 8px; font-size:12px; }
+    }
+    .field-input:focus { border-color:var(--color-accent); }
+    .field-textarea { resize:vertical; font-family:var(--font-sans); }
 
-    .toggle-row {
-      display: flex; align-items: center; gap: 8px; cursor: pointer;
-      font-size: 0.85rem;
+    /* Formations check grid */
+    .check-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+    .check-chip {
+      display:flex; align-items:center; justify-content:center;
+      padding:8px; border-radius:6px;
+      border:1px solid var(--color-border); background:var(--color-bg);
+      cursor:pointer; font-size:12px; font-weight:500;
+      color:var(--color-text-secondary);
+      transition:border-color 100ms, color 100ms;
+      min-height:36px;
     }
-    .warning {
-      background: #F59E0B18; border: 1px solid #F59E0B44;
-      color: #FBBF24; font-size: 0.75rem; padding: 6px 10px; border-radius: 6px;
+    .check-chip.active {
+      border-color:var(--color-accent); color:var(--color-text-primary);
+      background:color-mix(in srgb, var(--color-accent) 8%, transparent);
     }
+    .check-chip input { display:none; }
 
-    .chip-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; }
-    .chip {
-      padding: 6px; text-align: center; border: 1px solid var(--color-border);
-      border-radius: 8px; cursor: pointer; font-size: 0.8rem; font-weight: 500;
+    /* Strategies column */
+    .check-col { display:flex; flex-direction:column; gap:5px; }
+    .strategy-check {
+      display:flex; align-items:center; gap:8px;
+      padding:8px 10px; border-radius:6px;
+      border:1px solid var(--color-border); background:var(--color-bg);
+      cursor:pointer; font-size:12px; color:var(--color-text-secondary);
+      transition:border-color 100ms, color 100ms;
+      min-height:36px;
     }
-    .chip.active { border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
-    .chip input { display: none; }
-
-    .strategy-list { display: flex; flex-direction: column; gap: 6px; }
-    .strategy-chip {
-      display: flex; align-items: center; gap: 8px; padding: 8px;
-      border: 1px solid var(--color-border); border-radius: 8px; cursor: pointer;
+    .strategy-check.active {
+      border-color:var(--color-accent); color:var(--color-text-primary);
+      background:color-mix(in srgb, var(--color-accent) 8%, transparent);
     }
-    .strategy-chip.active { border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
-    .strategy-chip input { display: none; }
-
-    .text-btn { background: none; border: none; color: var(--color-accent); cursor: pointer; font-size: 0.8rem; padding: 4px 0; }
-    .weights-panel { display: flex; flex-direction: column; gap: 8px; }
-    .weight-row { display: flex; align-items: center; gap: 8px; }
-    .weight-row input[type=range] { flex: 1; }
-    .weight-value { font-size: 0.8rem; min-width: 36px; }
+    .strategy-check input { display:none; }
 
     .run-btn {
-      background: var(--color-accent); color: white; border: none;
-      padding: 12px; border-radius: 8px; font-weight: 600;
-      display: flex; align-items: center; justify-content: center; gap: 6px;
-      cursor: pointer; margin-top: 8px;
+      margin-top:4px; width:100%; padding:10px;
+      border-radius:8px; background:var(--color-accent);
+      color:#fff; font-size:13px; font-weight:600;
+      border:none; cursor:pointer;
+      display:flex; align-items:center; justify-content:center; gap:6px;
+      transition:opacity 120ms;
+      min-height:40px;
     }
-    .run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .job-status { font-size: 0.75rem; color: var(--color-text-secondary); margin: 0; }
+    .run-btn:disabled { opacity:0.5; cursor:not-allowed; }
+    .run-btn:not(:disabled):hover { opacity:0.9; }
+    .spinner {
+      width:14px; height:14px;
+      border:2px solid rgba(255,255,255,0.3);
+      border-top-color:#fff; border-radius:50%;
+      animation:spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform:rotate(360deg); } }
 
-    /* ── RESULTS PANEL ─────────────────────────────── */
+    /* Results panel */
     .results-panel {
-      flex: 1; overflow-y: auto; padding: 16px;
-      display: flex; flex-direction: column; gap: 16px;
+      display:flex; flex-direction:column; overflow:hidden;
+      min-height:0;
     }
-    .empty-state, .loading-state {
-      flex: 1; display: flex; flex-direction: column;
-      align-items: center; justify-content: center; text-align: center; gap: 12px;
+    @media (min-width: 768px) {
+      .results-panel { border-left:none; }
     }
-    .empty-icon { font-size: 3rem; }
-    .empty-title { font-size: 1.2rem; }
-    .empty-desc { color: var(--color-text-secondary); max-width: 320px; }
+    .results-placeholder {
+      flex:1; display:flex; flex-direction:column;
+      align-items:center; justify-content:center;
+      gap:12px; padding:24px 16px; overflow-y:auto;
+    }
+    @media (min-width: 640px) { .results-placeholder { padding:32px; } }
+    .placeholder-icon { font-size:40px; }
+    .placeholder-text {
+      font-size:13px; color:var(--color-text-secondary);
+      text-align:center; max-width:280px;
+    }
 
     .strategy-tabs {
-      display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--color-border);
+      display:flex; border-bottom:1px solid var(--color-border);
+      flex-shrink:0; padding:0 12px; overflow-x:auto;
+      -webkit-overflow-scrolling:touch;
     }
-    .tab {
-      display: flex; align-items: center; gap: 6px; padding: 10px 14px;
-      background: none; border: none; border-bottom: 2px solid transparent;
-      font-size: 0.85rem; color: var(--color-text-secondary); cursor: pointer;
+    @media (min-width: 640px) { .strategy-tabs { padding:0 16px; } }
+    .strategy-tab {
+      display:flex; align-items:center; gap:6px;
+      padding:12px 10px; border:none; background:none;
+      color:var(--color-text-secondary); font-size:12px; font-weight:500;
+      border-bottom:2px solid transparent; cursor:pointer;
+      white-space:nowrap; transition:color 100ms, border-color 100ms;
+      min-height:44px;
     }
-    .tab.active { color: var(--color-accent); border-bottom-color: var(--color-accent); }
-    .tab-score { background: var(--color-surface-raised); border-radius: 999px; padding: 2px 8px; font-size: 0.75rem; }
+    @media (min-width: 640px) { .strategy-tab { padding:12px 14px; } }
+    .strategy-tab.active { color:var(--color-accent); border-bottom-color:var(--color-accent); }
+    .tab-score {
+      background:var(--color-surface-raised); border-radius:9999px;
+      padding:1px 7px; font-size:11px; color:var(--color-text-secondary);
+    }
 
-    .insight-banner {
-      display: flex; align-items: center; gap: 10px; padding: 10px;
-      border-radius: 8px; background: var(--color-surface-raised);
-      border: 1px solid var(--color-border);
+    .summary-row {
+      display:grid; grid-template-columns:repeat(2,1fr);
+      border-bottom:1px solid var(--color-border); flex-shrink:0;
     }
-    .insight-banner.warn { border-color: #F59E0B55; background: #F59E0B12; }
-    .badge { padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 600; }
-    .badge.warn { background: #F59E0B33; color: #FBBF24; }
-    .badge.ok { background: #10B98133; color: #34D399; }
+    @media (min-width: 640px) { .summary-row { grid-template-columns:repeat(3,1fr); } }
+    @media (min-width: 1024px) { .summary-row { grid-template-columns:repeat(6,1fr); } }
+    .stat-card {
+      padding:10px 12px;
+      border-right:1px solid var(--color-border);
+      border-bottom:1px solid var(--color-border);
+    }
+    @media (min-width: 640px) {
+      .stat-card:nth-child(2n) { border-right:none; }
+      .stat-card:nth-last-child(-n+2) { border-bottom:none; }
+    }
+    @media (min-width: 1024px) {
+      .stat-card { padding:12px 14px; border-bottom:none; }
+      .stat-card { border-right:1px solid var(--color-border); }
+      .stat-card:last-child { border-right:none; }
+    }
+    .stat-label {
+      font-size:10px; font-weight:500; text-transform:uppercase;
+      letter-spacing:0.06em; color:var(--color-text-secondary); margin:0 0 3px;
+    }
+    .stat-value {
+      font-size:14px; font-weight:700;
+      font-variant-numeric:tabular-nums; color:var(--color-text-primary); margin:0;
+    }
+    @media (min-width: 1024px) { .stat-value { font-size:16px; } }
+    .text-green { color:#22C55E !important; }
 
-    .mc-card {
-      border: 1px solid var(--color-border); border-radius: 10px;
-      padding: 12px; background: var(--color-surface);
+    .formation-row {
+      display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+      padding:8px 12px; border-bottom:1px solid var(--color-border); flex-shrink:0;
     }
-    .mc-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
-    .mc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: 8px; margin-bottom: 8px; }
-    .mc-label { font-size: 0.75rem; color: var(--color-text-secondary); }
+    @media (min-width: 640px) { .formation-row { padding:8px 16px; } }
+    .section-label {
+      font-size:10px; font-weight:600; text-transform:uppercase;
+      letter-spacing:0.06em; color:var(--color-text-secondary); margin:0; white-space:nowrap;
+    }
+    .formation-chips { display:flex; flex-wrap:wrap; gap:4px; }
+    .formation-chip {
+      padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:500;
+      background:var(--color-surface-raised); color:var(--color-text-secondary);
+      border:1px solid var(--color-border);
+    }
+    .formation-chip.ok {
+      background:color-mix(in srgb,#22C55E 12%,transparent);
+      color:#22C55E; border-color:#22C55E;
+    }
 
-    .metrics-grid {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(120px,1fr));
-      gap: 8px;
+    .role-breakdown {
+      display:grid; grid-template-columns:repeat(2,1fr);
+      flex-shrink:0; border-bottom:1px solid var(--color-border);
     }
-    .metric {
-      background: var(--color-surface); border: 1px solid var(--color-border);
-      border-radius: 8px; padding: 10px;
-      display: flex; flex-direction: column; gap: 4px;
+    @media (min-width: 640px) { .role-breakdown { grid-template-columns:repeat(4,1fr); } }
+    .role-strip {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:6px 12px;
+      border-right:1px solid var(--color-border);
+      border-bottom:1px solid var(--color-border);
+      border-left:3px solid transparent;
     }
-    .metric-label { font-size: 0.7rem; color: var(--color-text-secondary); text-transform: uppercase; }
-    .metric-value { font-size: 1.1rem; font-weight: 700; }
-    .text-green { color: #22C55E; }
+    @media (min-width: 640px) {
+      .role-strip { border-bottom:none; padding:6px 14px; }
+    }
+    .role-strip:nth-child(2n) { border-right:none; }
+    @media (min-width: 640px) { .role-strip:nth-child(2n) { border-right:1px solid var(--color-border); } }
+    .role-strip:last-child { border-right:none; }
+    .role-label { font-size:11px; font-weight:600; }
+    .role-count { font-size:14px; font-weight:700; color:var(--color-text-primary); }
 
-    .formation-check {
-      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-      padding: 8px 0;
+    .squad-table-wrap {
+      flex:1; overflow:auto; min-height:0;
+      margin:0 -12px;
     }
-    .form-chip {
-      padding: 2px 8px; border-radius: 999px; font-size: 0.75rem;
-      background: var(--color-surface-raised); border: 1px solid var(--color-border);
+    @media (min-width: 640px) { .squad-table-wrap { margin:0 -16px; } }
+    .squad-table { width:100%; min-width:520px; border-collapse:collapse; font-size:13px; }
+    .hide-sm { display:none; }
+    @media (min-width: 640px) { .hide-sm { display:table-cell; } }
+    .squad-table thead th {
+      position:sticky; top:0; z-index:1;
+      background:var(--color-surface); padding:8px 10px; text-align:left;
+      font-size:10px; font-weight:600; text-transform:uppercase;
+      letter-spacing:0.05em; color:var(--color-text-secondary);
+      border-bottom:1px solid var(--color-border);
     }
-    .form-chip.ok { background: #22C55E18; border-color: #22C55E; color: #22C55E; }
+    @media (min-width: 640px) { .squad-table thead th { padding:8px 14px; } }
+    .squad-table tbody tr {
+      border-bottom:1px solid var(--color-border); transition:background 100ms;
+    }
+    .squad-table tbody tr:hover { background:var(--color-surface-raised); }
+    .squad-table tbody td { padding:8px 10px; color:var(--color-text-primary); }
+    @media (min-width: 640px) { .squad-table tbody td { padding:8px 14px; } }
+    .squad-table .num { text-align:right; font-variant-numeric:tabular-nums; }
+    .role-badge {
+      display:inline-flex; align-items:center; justify-content:center;
+      width:36px; padding:1px 0; border-radius:4px;
+      border:1px solid; font-size:10px; font-weight:700;
+    }
+    .player-name { font-weight:500; }
+    .team-name { color:var(--color-text-secondary); font-size:12px; }
+    .faded { color:var(--color-text-secondary); }
+    .accent { color:var(--color-accent); font-weight:600; }
 
-    .role-strip { display: flex; gap: 12px; padding: 4px 0; }
-    .role-badge { padding: 2px 8px; border: 1px solid; border-radius: 6px; font-size: 0.75rem; }
-
-    .table-wrap { overflow-x: auto; margin: 0 -16px; padding: 0 16px; }
-    .squad-table { width: 100%; min-width: 480px; border-collapse: collapse; font-size: 0.85rem; }
-    .squad-table th {
-      text-align: left; padding: 8px; border-bottom: 1px solid var(--color-border);
-      font-size: 0.7rem; text-transform: uppercase; color: var(--color-text-secondary);
+    /* Mobile (< md): collapse the split-pane app-shell layout (fixed-height
+       page + independently-scrolling config/results panels) into one
+       normal flowing page instead of nested scroll boxes. Placed last so
+       it wins over the min-width overrides above below the md breakpoint. */
+    @media (max-width: 767px) {
+      .optimizer-page { height: auto; overflow: visible; }
+      .optimizer-body { overflow: visible; min-height: auto; }
+      .config-panel { max-height: none; overflow-y: visible; }
+      .results-panel { overflow: visible; min-height: auto; }
+      .results-placeholder { overflow-y: visible; }
     }
-    .squad-table td { padding: 8px; border-bottom: 1px solid var(--color-border); }
-    .num { text-align: right; font-variant-numeric: tabular-nums; }
-    .accent { color: var(--color-accent); font-weight: 600; }
+
     .clickable-row { cursor: pointer; }
     .clickable-row:hover { background: var(--color-surface-raised); }
-    .role-chip { display: inline-block; padding: 1px 6px; border: 1px solid; border-radius: 4px; font-size: 0.7rem; }
-    .opt-col { display: none; }
+    .clickable-row:focus-visible { outline: 2px solid var(--color-brand-500, #6366f1); outline-offset: -2px; }
 
-    .near-opt { margin-top: 8px; }
-    .alt-item { margin: 8px 0; padding-left: 16px; border-left: 2px solid var(--color-border); }
-
-    /* ── RESPONSIVE ────────────────────────────────── */
-    @media (max-width: 767px) {
-      .main-grid { flex-direction: column; }
-      .config-panel {
-        width: 100%; border-right: none; border-bottom: 1px solid var(--color-border);
-        max-height: 50vh; padding: 12px;
-      }
-      .header { flex-wrap: wrap; gap: 8px; }
-      .header-run-btn { width: 100%; justify-content: center; }
-      .opt-col { display: table-cell; } /* show more on mobile? maybe not all, keep some hidden for space */
+    /* Monte Carlo / diversity insights */
+    .insight-banner {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+      padding: 10px 14px; margin-bottom: 12px;
+      border-radius: var(--radius-md, 8px);
+      background: var(--color-surface-2, #1a1a22);
+      border: 1px solid var(--color-border, #2a2a35);
+      font-size: 0.875rem;
     }
-
-    @media (min-width: 768px) {
-      .opt-col { display: table-cell; }
+    .insight-banner--warn {
+      border-color: #F59E0B55;
+      background: #F59E0B12;
     }
+    .badge {
+      display: inline-flex; align-items: center;
+      padding: 2px 8px; border-radius: 999px;
+      font-size: 0.75rem; font-weight: 600;
+      background: var(--color-surface-3, #252530);
+    }
+    .badge--warn { background: #F59E0B33; color: #FBBF24; }
+    .badge--ok { background: #10B98133; color: #34D399; }
+    .field-warning {
+      margin: 0 0 12px; padding: 8px 12px;
+      border-radius: 6px; font-size: 0.8rem;
+      background: #F59E0B18; border: 1px solid #F59E0B44; color: #FBBF24;
+    }
+    .field-group--toggle .field-label {
+      display: flex; align-items: center; gap: 8px; cursor: pointer;
+    }
+    .mc-summary {
+      padding: 14px 16px; margin-bottom: 14px;
+    }
+    .mc-summary__header {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+      margin-bottom: 10px;
+    }
+    .mc-summary__title {
+      margin: 0; font-size: 1rem; font-weight: 600;
+    }
+    .mc-summary__stats {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 8px; margin-bottom: 12px;
+    }
+    .freq-table-wrap { margin-top: 8px; }
+    .freq-table {
+      width: 100%; border-collapse: collapse; font-size: 0.8125rem;
+    }
+    .freq-table th, .freq-table td {
+      padding: 6px 8px; text-align: left;
+      border-bottom: 1px solid var(--color-border, #2a2a35);
+    }
+    .freq-bar-track {
+      display: inline-block; width: 72px; height: 6px;
+      margin-right: 8px; vertical-align: middle;
+      background: var(--color-surface-3, #252530); border-radius: 3px;
+      overflow: hidden;
+    }
+    .freq-bar-fill {
+      height: 100%; background: var(--color-accent, #6366f1); border-radius: 3px;
+    }
+    .mc-warnings {
+      margin: 8px 0 0; padding-left: 18px; font-size: 0.75rem;
+      color: var(--color-text-secondary, #a1a1aa);
+    }
+    .near-optimal { padding: 14px 16px; margin: 12px 0; }
+    .near-optimal__item { margin: 6px 0; }
+    .near-optimal__squad {
+      margin: 6px 0 0; padding-left: 18px; font-size: 0.8125rem;
+    }
+    .muted { color: var(--color-text-secondary, #a1a1aa); font-size: 0.8125rem; }
+    .job-hint { margin: 8px 0 0; }
+
   `],
 })
 export class OptimizerComponent {
-  // ... (tutto il codice TypeScript esistente rimane identico)
   private readonly optimizerService = inject(OptimizerService);
   private readonly quotationService = inject(QuotationService);
   private readonly destroyRef = inject(DestroyRef);
 
   readonly allFormations = ALL_FORMATIONS;
+  /** Legende dei campi del configuratore, esposte al template. */
   protected readonly OPTIMIZER_LEGENDS = OPTIMIZER_LEGENDS;
+
+  /** Preset catalog (immutable). Exposed for the template select. */
   readonly presets: readonly OptimizerPreset[] = OPTIMIZER_PRESETS;
   protected readonly OPTIMIZER_PRESET_NONE = OPTIMIZER_PRESET_NONE;
+
+  /**
+   * Currently selected preset id. Empty string = operator-driven custom config.
+   * Applying a preset patches form signals; it does not auto-run the solver.
+   */
   readonly selectedPlayer = signal<SquadPlayer | null>(null);
+
   readonly selectedPresetId = signal<string>(OPTIMIZER_PRESET_NONE);
   readonly activePreset = computed(() => findOptimizerPreset(this.selectedPresetId()));
+
+  // Strategies loaded from API; fallback to known names if unavailable
   readonly availableStrategies = signal<string[]>(['BALANCED', 'SUPER_DEFENSIVE', 'SUPER_OFFENSIVE', 'MIXED']);
 
+  // ── Basic ─────────────────────────────────────────────
   readonly seasons = signal<number[]>([]);
   readonly seasonsLoading = signal(true);
   readonly seasonStart = signal<number>(2024);
@@ -1022,26 +1458,34 @@ export class OptimizerComponent {
   readonly minQtA = signal(1);
   readonly solverTimeoutSeconds = signal(30);
 
+  // ── Squad constraints ─────────────────────────────────
   readonly minDistinctTeams = signal(12);
   readonly maxPlayersPerTeam = signal(4);
   readonly bigTeamsCap = signal(10);
   readonly bigTeamsRaw = signal('Inter, Milan, Juventus, Napoli');
   readonly maxSinglePlayerBudgetShare = signal(0.30);
 
+  // ── Must include / exclude ─────────────────────────────
   readonly mustIncludeRaw = signal('');
   readonly excludeRaw = signal('');
 
+  // ── Formations ────────────────────────────────────────
   readonly selectedFormations = signal(new Set(ALL_FORMATIONS.map(f => f.label)));
   readonly preferredFormationLabel = signal<string>('');
 
+  // ── Ruleset ───────────────────────────────────────────
   readonly ruleset = signal<'CLASSIC' | 'MANTRA'>('CLASSIC');
 
+  // ── Inflation model ───────────────────────────────────
   readonly inflationPercentileThreshold = signal(0.7);
   readonly maxInflationMultiplier = signal(1.6);
   readonly baseInflationRate = signal(0.05);
   readonly baselineParticipants = signal(8);
+  /** Club Elo team-strength adjustment on the effective cost. 0 = disabled
+   *  (matches the backend Pydantic default; see `InflationConfigSchema.team_strength_multiplier`). */
   readonly teamStrengthMultiplier = signal(0.0);
 
+  // ── Risk & VAR ────────────────────────────────────────
   readonly riskAversion = signal(0.0);
   readonly monteCarloEnabled = signal(false);
   readonly monteCarloMode = signal<'mean_std' | 'saa_frequency'>('saa_frequency');
@@ -1055,6 +1499,7 @@ export class OptimizerComponent {
   readonly minStartProbability = signal<number | null>(null);
   readonly replacementMethod = signal<'percentile' | 'roster_depth'>('percentile');
 
+  // ── Strategies ────────────────────────────────────────
   readonly selectedStrategies = signal(new Set(['BALANCED', 'SUPER_DEFENSIVE', 'SUPER_OFFENSIVE', 'MIXED']));
   readonly strategyProfilesMap = signal<Record<string, StrategyProfile>>({});
   readonly showCustomWeights = signal(false);
@@ -1062,7 +1507,9 @@ export class OptimizerComponent {
 
   readonly singleStrategySelected = computed(() => this.selectedStrategies().size === 1);
 
+  // ── Results ───────────────────────────────────────────
   readonly running = signal(false);
+  /** Async job progress label (queued|running|…). Empty when sync. */
   readonly jobStatus = signal<string | null>(null);
   readonly jobId = signal<string | null>(null);
   readonly usedAsyncJob = signal(false);
@@ -1072,6 +1519,7 @@ export class OptimizerComponent {
   readonly activeStrategy = signal<string>('');
 
   readonly resultKeys = computed(() => Object.keys(this.results()?.results ?? {}));
+  /** Top-level or per-strategy MC summary from last multi response. */
   readonly multiMcSummary = computed(() => {
     const res = this.results();
     if (!res) return null;
@@ -1079,6 +1527,7 @@ export class OptimizerComponent {
       ?? res.results[this.activeStrategy()]?.monteCarloSummary
       ?? null;
   });
+  /** playerId → display name from all squads in the last result set. */
   readonly playerNameById = computed(() => {
     const map = new Map<string, string>();
     const res = this.results();
@@ -1146,6 +1595,10 @@ export class OptimizerComponent {
     });
   }
 
+  /**
+   * Handles preset select changes. Applying a preset never clears
+   * operator-owned inputs (season, mustInclude, exclude).
+   */
   onPresetChange(presetId: string): void {
     this.selectedPresetId.set(presetId ?? OPTIMIZER_PRESET_NONE);
     const preset = findOptimizerPreset(presetId);
@@ -1154,6 +1607,10 @@ export class OptimizerComponent {
     }
   }
 
+  /**
+   * Patches form signals from a preset request payload.
+   * Intentionally pure w.r.t. results / running state.
+   */
   applyPreset(preset: OptimizerPreset): void {
     const req = preset.request;
 
@@ -1194,6 +1651,7 @@ export class OptimizerComponent {
     if (req.replacementMethod === 'percentile' || req.replacementMethod === 'roster_depth') {
       this.replacementMethod.set(req.replacementMethod);
     }
+    // null = clear filter; number = set threshold
     if (req.minStartProbability === null) {
       this.minStartProbability.set(null);
     } else if (typeof req.minStartProbability === 'number') {
@@ -1229,12 +1687,14 @@ export class OptimizerComponent {
       this.preferredFormationLabel.set('');
     }
 
+    // Strategies: customStrategies takes precedence over strategyNames (API contract).
     if (req.customStrategies?.length) {
       const names = req.customStrategies.map(s => s.name);
       this.selectedStrategies.set(new Set(names));
       const primary = req.customStrategies[0];
       this.customWeights.set({ P: 1, D: 1, C: 1, A: 1, ...primary.roleWeight });
       this.showCustomWeights.set(true);
+      // Merge into local profile map so subsequent custom edits keep constraints.
       this.strategyProfilesMap.update(map => {
         const next = { ...map };
         for (const s of req.customStrategies!) {
@@ -1249,6 +1709,8 @@ export class OptimizerComponent {
   }
 
   toggleStrategy(name: string): void {
+    // Manual strategy edits leave the preset in "custom" mode so the select
+    // reflects that the form no longer matches a canned profile.
     this.selectedPresetId.set(OPTIMIZER_PRESET_NONE);
     this.selectedStrategies.update(s => {
       const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n;
@@ -1298,7 +1760,12 @@ export class OptimizerComponent {
     });
   }
 
+  /**
+   * Enqueue MC job and poll until completed/failed or max attempts.
+   * Maps the single-strategy job result into MultiStrategyResult for the existing UI.
+   */
   private _runAsyncJob(req: OptimizationRequest): void {
+    // Prefer customStrategies (body wins on API); else first selected default name.
     const strategyName = this._resolveStrategyName(req);
 
     this.jobStatus.set('queued');
@@ -1345,6 +1812,7 @@ export class OptimizerComponent {
           this.jobStatus.set('failed');
         },
         complete: () => {
+          // Exhausted polls without terminal state
           if (this.running()) {
             this.error.set(
               'Timeout polling job async: aumenta N gradualmente o riprova più tardi.',
@@ -1356,6 +1824,7 @@ export class OptimizerComponent {
       });
   }
 
+  /** Build OptimizationRequest from current form signals (single source of truth). */
   private _buildRequest(): OptimizationRequest {
     const bigTeams = this.bigTeamsRaw()
       .split(',').map(t => t.trim()).filter(Boolean);
@@ -1415,7 +1884,7 @@ export class OptimizerComponent {
     };
   }
 
-  setCustomWeight(role: string, value: number): void {
+    setCustomWeight(role: string, value: number): void {
     this.customWeights.update(w => ({ ...w, [role]: +value }));
   }
 
