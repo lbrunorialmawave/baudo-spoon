@@ -920,7 +920,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                       <tbody>
                         @for (row of freqRows; track row.id) {
                           <tr>
-                            <td>{{ row.id }}</td>
+                            <td [title]="row.id">{{ row.name }}</td>
                             <td>
                               <div class="freq-bar-track" aria-hidden="true">
                                 <div class="freq-bar-fill" [style.width.%]="row.freq * 100"></div>
@@ -1527,11 +1527,34 @@ export class OptimizerComponent {
       ?? res.results[this.activeStrategy()]?.monteCarloSummary
       ?? null;
   });
+  /** playerId → display name from all squads in the last result set. */
+  readonly playerNameById = computed(() => {
+    const map = new Map<string, string>();
+    const res = this.results();
+    if (!res) return map;
+    for (const r of Object.values(res.results)) {
+      for (const pl of r.squad ?? []) {
+        if (pl.playerId) map.set(pl.playerId, pl.name || pl.playerId);
+      }
+      for (const alt of r.nearOptimal ?? []) {
+        for (const pl of alt.squad ?? []) {
+          if (pl.playerId) map.set(pl.playerId, pl.name || pl.playerId);
+        }
+      }
+    }
+    return map;
+  });
+
   readonly topSelectionFrequency = computed(() => {
     const freq = this.multiMcSummary()?.selectionFrequency;
-    if (!freq) return [] as { id: string; freq: number }[];
+    if (!freq) return [] as { id: string; name: string; freq: number }[];
+    const names = this.playerNameById();
     return Object.entries(freq)
-      .map(([id, f]) => ({ id, freq: f as number }))
+      .map(([id, f]) => ({
+        id,
+        name: names.get(id) ?? id,
+        freq: f as number,
+      }))
       .sort((a, b) => b.freq - a.freq)
       .slice(0, 12);
   });
@@ -1742,10 +1765,8 @@ export class OptimizerComponent {
    * Maps the single-strategy job result into MultiStrategyResult for the existing UI.
    */
   private _runAsyncJob(req: OptimizationRequest): void {
-    const strategyName =
-      (req.strategyNames && req.strategyNames[0]) ||
-      (req.customStrategies && req.customStrategies[0]?.name) ||
-      'BALANCED';
+    // Prefer customStrategies (body wins on API); else first selected default name.
+    const strategyName = this._resolveStrategyName(req);
 
     this.jobStatus.set('queued');
     this.optimizerService
