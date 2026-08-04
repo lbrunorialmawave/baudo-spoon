@@ -660,6 +660,43 @@ class Trainer:
             bt_result,
             str(self._artifact("residual_drift.png")),
         )
+        # Upload residual drift chart to R2 (best-effort via ArtifactStore)
+        try:
+            drift_path = self._artifact("residual_drift.png")
+            if drift_path.exists():
+                self._artifact_store.save_binary(drift_path, "residual_drift.png")
+        except Exception as _drift_exc:  # noqa: BLE001
+            log.warning("residual_drift.png upload skipped: %s", _drift_exc)
+
+        # Persist walk-forward residuals for optimizer Monte Carlo (local + R2)
+        try:
+            from ml.evaluation.residuals_export import (
+                build_residuals_payload,
+                summarize_residuals,
+            )
+            residual_rows = list(getattr(bt_result, "residuals", None) or [])
+            payload = build_residuals_payload(
+                residual_rows,
+                run_id=self._run_id,
+                model_name=getattr(bt_result, "model_name", "") or best_name,
+                source="walkforward_backtest",
+                extra_meta={
+                    "mean_rmse": getattr(bt_result, "mean_rmse", None),
+                    "mean_mae": getattr(bt_result, "mean_mae", None),
+                    "n_seasons_tested": len(getattr(bt_result, "season_metrics", []) or []),
+                },
+            )
+            self._artifact_store.save_json(payload, "residuals.json")
+            # Also versioned copy for audit
+            self._artifact_store.save_json(
+                payload, f"residuals_{self._run_id}.json"
+            )
+            log.info(
+                "Residuals exported: %s",
+                summarize_residuals(residual_rows),
+            )
+        except Exception as _res_exc:  # noqa: BLE001 - never fail the pipeline
+            log.warning("residuals.json export failed (non-critical): %s", _res_exc)
 
         # ── 10. Explainability ────────────────────────────────────────────────
         log.info("Step 10/12 — Computing explainability")

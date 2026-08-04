@@ -50,6 +50,8 @@ class BacktestResult:
     mean_rmse: float
     mean_mae: float
     mean_r2: float
+    # Walk-forward residuals: actual − predicted per test-row (for Monte Carlo).
+    residuals: list[dict] = field(default_factory=list)
 
 
 # ── Core metric functions ─────────────────────────────────────────────────────
@@ -147,9 +149,11 @@ def backtest(
             mean_rmse=float("nan"),
             mean_mae=float("nan"),
             mean_r2=float("nan"),
+            residuals=[],
         )
 
     season_metrics = []
+    residual_rows: list[dict] = []
     for i in range(1, len(seasons)):
         train_seasons = seasons[:i]
         test_season = seasons[i]
@@ -176,9 +180,31 @@ def backtest(
         )
         season_metrics.append({
             "test_season": test_season,
-            "train_seasons": train_seasons,
+            "train_seasons": list(train_seasons) if not isinstance(train_seasons, list) else train_seasons,
             **m.as_dict(),
         })
+
+        # Collect per-row residuals for optimizer Monte Carlo bootstrap
+        test_df = df.loc[test_mask]
+        pid_col = next(
+            (c for c in ("player_fotmob_id", "player_id", "playerId") if c in test_df.columns),
+            None,
+        )
+        role_col = next(
+            (c for c in ("canonical_role", "role", "ruolo") if c in test_df.columns),
+            None,
+        )
+        if pid_col is not None:
+            y_true_arr = y_test.values
+            for j, (_, row) in enumerate(test_df.iterrows()):
+                residual_rows.append({
+                    "player_id": str(row[pid_col]),
+                    "role": str(row[role_col]) if role_col else "C",
+                    "residual": float(y_true_arr[j] - y_pred[j]),
+                    "actual": float(y_true_arr[j]),
+                    "predicted": float(y_pred[j]),
+                    "season_start": int(test_season) if test_season is not None else None,
+                })
 
     if not season_metrics:
         return BacktestResult(
@@ -187,14 +213,16 @@ def backtest(
             mean_rmse=float("nan"),
             mean_mae=float("nan"),
             mean_r2=float("nan"),
+            residuals=[],
         )
 
     return BacktestResult(
         model_name=model_name,
         season_metrics=season_metrics,
-        mean_rmse=float(np.mean([s["rmse"] for s in season_metrics])),
-        mean_mae=float(np.mean([s["mae"] for s in season_metrics])),
-        mean_r2=float(np.mean([s["r2"] for s in season_metrics])),
+        mean_rmse=float(np.mean([s['rmse'] for s in season_metrics])),
+        mean_mae=float(np.mean([s['mae'] for s in season_metrics])),
+        mean_r2=float(np.mean([s['r2'] for s in season_metrics])),
+        residuals=residual_rows,
     )
 
 
