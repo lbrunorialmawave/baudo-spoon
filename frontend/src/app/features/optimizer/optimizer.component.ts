@@ -1,13 +1,18 @@
 import {
-  Component, computed, inject, signal,
+  Component, computed, inject, signal, DestroyRef,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { DecimalPipe, PercentPipe } from '@angular/common';
+import {
+  catchError, finalize, interval, map, of, startWith, switchMap, take, takeWhile, throwError,
+} from 'rxjs';
 import { OptimizerService } from '../../core/services/optimizer.service';
 import { QuotationService } from '../../core/services/quotation.service';
 import {
   FormationConfig,
   MultiStrategyResult,
+  OptimizationRequest,
   OptimizationResult,
   SquadPlayer,
   StrategyProfile,
@@ -38,6 +43,12 @@ const ROLE_COLORS: Record<string, string> = {
 };
 
 const ROLE_LABELS: Record<string, string> = { P: 'GK', D: 'DEF', C: 'MID', A: 'FWD' };
+
+/** Above this N with MC enabled, UI uses POST /optimize/jobs + polling. */
+const ASYNC_MC_THRESHOLD = 25;
+const JOB_POLL_MS = 1500;
+const JOB_MAX_POLLS = 120; // ~3 min
+
 
 const ALL_FORMATIONS: FormationConfig[] = [
   { label: '3-4-3', defenders: 3, midfielders: 4, forwards: 3 },
@@ -167,6 +178,37 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
       { label: '1.2–1.5', value: 'floor alto, preferisce titolari stabili' },
     ],
   },
+
+  monteCarloEnabled: {
+    description: 'Attiva robustezza Monte Carlo sullo score. Default off = ILP deterministico (legacy). Con SAA il solver riesegue N scenari con score campionati da residuali / prediction_std e restituisce frequenza di selezione e stability index.',
+    examples: [
+      { label: 'off', value: 'path classico, 1× ILP' },
+      { label: 'on + mean_std', value: '1× ILP su mean − λ·std' },
+      { label: 'on + saa_frequency', value: 'N× ILP; ranking per frequenza' },
+    ],
+  },
+  monteCarloMode: {
+    description: 'mean_std: singolo solve risk-adjusted. saa_frequency: N scenari; rosa rappresentativa + selection frequency. Non combinare SAA aggressivo con riskAversion alto senza leggere entrambi gli effetti.',
+    examples: [
+      { label: 'mean_std', value: 'latenza ~1×, buon default prudente' },
+      { label: 'saa_frequency', value: 'latenza ~N×; N≤10 sync consigliato' },
+    ],
+  },
+  nSimulations: {
+    description: 'Numero scenari SAA (o campioni per mean_std). Sync tipico 5–25; oltre ~50 preferire job async. Cap server: API_OPTIMIZER_MAX_SIMULATIONS.',
+    examples: [
+      { label: '5–10', value: 'UI reattiva / MANTRA' },
+      { label: '25–50', value: 'CLASSIC sync accettabile' },
+      { label: '100+', value: 'solo async /jobs' },
+    ],
+  },
+  nearOptimal: {
+    description: 'Dopo la rosa ottima, esclude i top-M scorer e ri-ottimizza per alternative vicine in score. Utile in asta quando i top vengono comprati da altri.',
+    examples: [
+      { label: 'off', value: 'solo rosa primaria' },
+      { label: 'on, top-2, 3 alt', value: 'default sensato' },
+    ],
+  },
   varBlend: {
     description: 'Peso in [0,1] del VAR nella funzione obiettivo: (1−varBlend)×base_metric + varBlend×var_score. 0 = solo projected_score/season_value; 1 = puro Value Above Replacement.',
     examples: [
@@ -280,7 +322,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
       <header class="page-header">
         <div>
           <h1 class="page-title">Ottimizzatore Rosa</h1>
-          <p class="page-subtitle">Rosa ottima via ILP: massimizza lo score (metric + VAR/ESV − rischio) sotto budget e vincoli</p>
+          <p class="page-subtitle">ILP + robustezza opzionale Monte Carlo: score, vincoli, stability e alternative near-optimal</p>
         </div>
       </header>
 
@@ -497,6 +539,81 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                 [description]="OPTIMIZER_LEGENDS['riskAversion'].description"
                 [examples]="OPTIMIZER_LEGENDS['riskAversion'].examples" />
             </div>
+
+          <!-- MONTE CARLO ROBUSTNESS -->
+          <p class="section-divider">Robustezza Monte Carlo</p>
+
+          <div class="field-group field-group--toggle">
+            <label class="field-label" for="opt-mc-enabled">
+              <input id="opt-mc-enabled" type="checkbox"
+                     [ngModel]="monteCarloEnabled()"
+                     (ngModelChange)="monteCarloEnabled.set($event)"
+                     [attr.aria-describedby]="'legend-mc-enabled'" />
+              Abilita Monte Carlo <span class="field-hint">default off = ILP deterministico</span>
+            </label>
+            <app-field-legend
+              fieldId="legend-mc-enabled"
+              [description]="OPTIMIZER_LEGENDS['monteCarloEnabled'].description"
+              [examples]="OPTIMIZER_LEGENDS['monteCarloEnabled'].examples" />
+          </div>
+
+          @if (monteCarloEnabled()) {
+            <div class="field-row">
+              <div class="field-group">
+                <label class="field-label" for="opt-mc-mode">Mode</label>
+                <select id="opt-mc-mode" class="field-input"
+                        [ngModel]="monteCarloMode()"
+                        (ngModelChange)="monteCarloMode.set($event)"
+                        [attr.aria-describedby]="'legend-mc-mode'">
+                  <option value="saa_frequency">saa_frequency — frequenza scenari</option>
+                  <option value="mean_std">mean_std — mean − λ·std</option>
+                </select>
+                <app-field-legend
+                  fieldId="legend-mc-mode"
+                  [description]="OPTIMIZER_LEGENDS['monteCarloMode'].description"
+                  [examples]="OPTIMIZER_LEGENDS['monteCarloMode'].examples" />
+              </div>
+              <div class="field-group">
+                <label class="field-label" for="opt-mc-n">N simulazioni</label>
+                <input id="opt-mc-n" class="field-input" type="number" min="1" max="200" step="1"
+                       [ngModel]="nSimulations()"
+                       (ngModelChange)="nSimulations.set(+$event)"
+                       [attr.aria-describedby]="'legend-mc-n'" />
+                <app-field-legend
+                  fieldId="legend-mc-n"
+                  [description]="OPTIMIZER_LEGENDS['nSimulations'].description"
+                  [examples]="OPTIMIZER_LEGENDS['nSimulations'].examples" />
+              </div>
+            </div>
+            @if (monteCarloMode() === 'mean_std') {
+              <div class="field-group">
+                <label class="field-label" for="opt-mc-lambda">Risk λ (mean_std)</label>
+                <input id="opt-mc-lambda" class="field-input" type="number" min="0" max="3" step="0.1"
+                       [ngModel]="riskLambda()"
+                       (ngModelChange)="riskLambda.set(+$event)" />
+              </div>
+            }
+            @if (riskAversion() > 0 && monteCarloEnabled()) {
+              <p class="field-warning" role="status">
+                Attenzione: riskAversion={{ riskAversion() }} e Monte Carlo sono entrambi attivi.
+                Preferisci uno dei due o tieni riskAversion basso (≤0.3) per evitare doppia penalizzazione.
+              </p>
+            }
+          }
+
+          <div class="field-group field-group--toggle">
+            <label class="field-label" for="opt-near-opt">
+              <input id="opt-near-opt" type="checkbox"
+                     [ngModel]="nearOptimalEnabled()"
+                     (ngModelChange)="nearOptimalEnabled.set($event)"
+                     [attr.aria-describedby]="'legend-near-opt'" />
+              Alternative near-optimal <span class="field-hint">esclude top scorer e ri-ottimizza</span>
+            </label>
+            <app-field-legend
+              fieldId="legend-near-opt"
+              [description]="OPTIMIZER_LEGENDS['nearOptimal'].description"
+              [examples]="OPTIMIZER_LEGENDS['nearOptimal'].examples" />
+          </div>
           </div>
 
           <div class="field-row">
@@ -696,11 +813,24 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
 
           <button class="run-btn" (click)="run()" [disabled]="running() || !canRun()">
             @if (running()) {
-              <span class="spinner"></span> Ottimizzazione in corso…
+              <span class="spinner"></span>
+              @if (jobStatus(); as js) {
+                Job {{ js }}{{ jobId() ? ' · ' + jobId()!.slice(0, 8) : '' }}…
+              } @else {
+                Ottimizzazione in corso…
+              }
             } @else {
               Esegui ottimizzatore
+              @if (monteCarloEnabled() && nSimulations() > 25) {
+                <span class="field-hint"> (async N&gt;25)</span>
+              }
             }
           </button>
+          @if (usedAsyncJob() && jobStatus()) {
+            <p class="muted job-hint" role="status">
+              Esecuzione asincrona: il server elabora SAA in background e questa UI fa polling.
+            </p>
+          }
 
           @if (error()) {
             <app-error-boundary title="Errore ottimizzatore" [message]="error()!" />
@@ -740,6 +870,78 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                 </button>
               }
             </div>
+
+            
+            @if (results()?.diversity; as div) {
+              <div class="insight-banner" [class.insight-banner--warn]="div.lowDiversity" role="status">
+                <strong>Diversità strategie</strong>
+                · Jaccard medio {{ div.meanPairwiseJaccard | number:'1.2-2' }}
+                @if (div.lowDiversity) {
+                  <span class="badge badge--warn">bassa diversità — le rose sono quasi uguali</span>
+                } @else {
+                  <span class="badge badge--ok">ok</span>
+                }
+              </div>
+            }
+
+            @if (multiMcSummary(); as mc) {
+              <div class="mc-summary card" aria-label="Monte Carlo summary">
+                <div class="mc-summary__header">
+                  <h3 class="mc-summary__title">Monte Carlo</h3>
+                  <span class="badge">{{ mc.mode }} · N={{ mc.nSimulations }}</span>
+                  @if (mc.scenariosCompleted != null) {
+                    <span class="muted">scenari {{ mc.scenariosCompleted }}</span>
+                  }
+                  @if (mc.wallTimeSeconds != null) {
+                    <span class="muted">{{ mc.wallTimeSeconds | number:'1.2-2' }}s</span>
+                  }
+                </div>
+                <div class="mc-summary__stats">
+                  <div class="stat-card">
+                    <p class="stat-label">Stability index</p>
+                    <p class="stat-value">{{ mc.stabilityIndex ?? 0 | number:'1.2-2' }}</p>
+                  </div>
+                  <div class="stat-card">
+                    <p class="stat-label">Jaccard scenari</p>
+                    <p class="stat-value">{{ mc.meanPairwiseJaccard ?? 0 | number:'1.2-2' }}</p>
+                  </div>
+                  @if (mc.yieldStability?.probAboveThreshold != null) {
+                    <div class="stat-card">
+                      <p class="stat-label">P(yield ≥ soglia)</p>
+                      <p class="stat-value">{{ mc.yieldStability!.probAboveThreshold | percent:'1.0-0' }}</p>
+                    </div>
+                  }
+                </div>
+                @if (topSelectionFrequency(); as freqRows) {
+                  <div class="freq-table-wrap">
+                    <p class="stat-label">Frequenza selezione (top)</p>
+                    <table class="freq-table">
+                      <thead><tr><th>Player</th><th>Freq</th></tr></thead>
+                      <tbody>
+                        @for (row of freqRows; track row.id) {
+                          <tr>
+                            <td>{{ row.id }}</td>
+                            <td>
+                              <div class="freq-bar-track" aria-hidden="true">
+                                <div class="freq-bar-fill" [style.width.%]="row.freq * 100"></div>
+                              </div>
+                              {{ row.freq | percent:'1.0-0' }}
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                }
+                @if (mc.warnings?.length) {
+                  <ul class="mc-warnings">
+                    @for (w of mc.warnings; track w) {
+                      <li>{{ w }}</li>
+                    }
+                  </ul>
+                }
+              </div>
+            }
 
             @if (activeResult(); as r) {
               <div class="summary-row">
@@ -789,6 +991,30 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                   }
                 </div>
               </div>
+
+
+              @if (r.nearOptimal?.length) {
+                <div class="near-optimal card" aria-label="Alternative near-optimal">
+                  <h3 class="mc-summary__title">Alternative near-optimal</h3>
+                  <p class="muted">Rose ricalcolate escludendo i top scorer della soluzione primaria.</p>
+                  <div class="near-optimal__list">
+                    @for (alt of r.nearOptimal; track $index) {
+                      <details class="near-optimal__item">
+                        <summary>
+                          Δ score {{ alt.scoreDelta | number:'1.2-2' }}
+                          ({{ alt.scoreDeltaPct | percent:'1.1-1' }})
+                          · esclusi: {{ alt.excludedPlayerIds.join(', ') }}
+                        </summary>
+                        <ul class="near-optimal__squad">
+                          @for (pl of alt.squad; track pl.playerId) {
+                            <li>{{ pl.name }} <span class="muted">({{ pl.role }} · {{ pl.projectedScore | number:'1.1-1' }})</span></li>
+                          }
+                        </ul>
+                      </details>
+                    }
+                  </div>
+                </div>
+              }
 
               <div class="role-breakdown">
                 @for (role of ['P','D','C','A']; track role) {
@@ -1123,11 +1349,85 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
     .clickable-row { cursor: pointer; }
     .clickable-row:hover { background: var(--color-surface-raised); }
     .clickable-row:focus-visible { outline: 2px solid var(--color-brand-500, #6366f1); outline-offset: -2px; }
+
+    /* Monte Carlo / diversity insights */
+    .insight-banner {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+      padding: 10px 14px; margin-bottom: 12px;
+      border-radius: var(--radius-md, 8px);
+      background: var(--color-surface-2, #1a1a22);
+      border: 1px solid var(--color-border, #2a2a35);
+      font-size: 0.875rem;
+    }
+    .insight-banner--warn {
+      border-color: #F59E0B55;
+      background: #F59E0B12;
+    }
+    .badge {
+      display: inline-flex; align-items: center;
+      padding: 2px 8px; border-radius: 999px;
+      font-size: 0.75rem; font-weight: 600;
+      background: var(--color-surface-3, #252530);
+    }
+    .badge--warn { background: #F59E0B33; color: #FBBF24; }
+    .badge--ok { background: #10B98133; color: #34D399; }
+    .field-warning {
+      margin: 0 0 12px; padding: 8px 12px;
+      border-radius: 6px; font-size: 0.8rem;
+      background: #F59E0B18; border: 1px solid #F59E0B44; color: #FBBF24;
+    }
+    .field-group--toggle .field-label {
+      display: flex; align-items: center; gap: 8px; cursor: pointer;
+    }
+    .mc-summary {
+      padding: 14px 16px; margin-bottom: 14px;
+    }
+    .mc-summary__header {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+      margin-bottom: 10px;
+    }
+    .mc-summary__title {
+      margin: 0; font-size: 1rem; font-weight: 600;
+    }
+    .mc-summary__stats {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 8px; margin-bottom: 12px;
+    }
+    .freq-table-wrap { margin-top: 8px; }
+    .freq-table {
+      width: 100%; border-collapse: collapse; font-size: 0.8125rem;
+    }
+    .freq-table th, .freq-table td {
+      padding: 6px 8px; text-align: left;
+      border-bottom: 1px solid var(--color-border, #2a2a35);
+    }
+    .freq-bar-track {
+      display: inline-block; width: 72px; height: 6px;
+      margin-right: 8px; vertical-align: middle;
+      background: var(--color-surface-3, #252530); border-radius: 3px;
+      overflow: hidden;
+    }
+    .freq-bar-fill {
+      height: 100%; background: var(--color-accent, #6366f1); border-radius: 3px;
+    }
+    .mc-warnings {
+      margin: 8px 0 0; padding-left: 18px; font-size: 0.75rem;
+      color: var(--color-text-secondary, #a1a1aa);
+    }
+    .near-optimal { padding: 14px 16px; margin: 12px 0; }
+    .near-optimal__item { margin: 6px 0; }
+    .near-optimal__squad {
+      margin: 6px 0 0; padding-left: 18px; font-size: 0.8125rem;
+    }
+    .muted { color: var(--color-text-secondary, #a1a1aa); font-size: 0.8125rem; }
+    .job-hint { margin: 8px 0 0; }
+
   `],
 })
 export class OptimizerComponent {
   private readonly optimizerService = inject(OptimizerService);
   private readonly quotationService = inject(QuotationService);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly allFormations = ALL_FORMATIONS;
   /** Legende dei campi del configuratore, esposte al template. */
@@ -1187,6 +1487,12 @@ export class OptimizerComponent {
 
   // ── Risk & VAR ────────────────────────────────────────
   readonly riskAversion = signal(0.0);
+  readonly monteCarloEnabled = signal(false);
+  readonly monteCarloMode = signal<'mean_std' | 'saa_frequency'>('saa_frequency');
+  readonly nSimulations = signal(10);
+  readonly riskLambda = signal(0.5);
+  readonly nearOptimalEnabled = signal(false);
+
   readonly varBlend = signal(0.0);
   readonly esvWeight = signal(0.0);
   readonly valuationMode = signal<'PER_MATCH_RATING' | 'SEASON_VALUE'>('PER_MATCH_RATING');
@@ -1203,11 +1509,33 @@ export class OptimizerComponent {
 
   // ── Results ───────────────────────────────────────────
   readonly running = signal(false);
+  /** Async job progress label (queued|running|…). Empty when sync. */
+  readonly jobStatus = signal<string | null>(null);
+  readonly jobId = signal<string | null>(null);
+  readonly usedAsyncJob = signal(false);
+
   readonly error = signal<string | null>(null);
   readonly results = signal<MultiStrategyResult | null>(null);
   readonly activeStrategy = signal<string>('');
 
   readonly resultKeys = computed(() => Object.keys(this.results()?.results ?? {}));
+  /** Top-level or per-strategy MC summary from last multi response. */
+  readonly multiMcSummary = computed(() => {
+    const res = this.results();
+    if (!res) return null;
+    return res.monteCarloSummary
+      ?? res.results[this.activeStrategy()]?.monteCarloSummary
+      ?? null;
+  });
+  readonly topSelectionFrequency = computed(() => {
+    const freq = this.multiMcSummary()?.selectionFrequency;
+    if (!freq) return [] as { id: string; freq: number }[];
+    return Object.entries(freq)
+      .map(([id, f]) => ({ id, freq: f as number }))
+      .sort((a, b) => b.freq - a.freq)
+      .slice(0, 12);
+  });
+
   readonly activeResult = computed((): OptimizationResult | null =>
     this.results()?.results[this.activeStrategy()] ?? null,
   );
@@ -1280,6 +1608,18 @@ export class OptimizerComponent {
       this.ruleset.set(req.ruleset);
     }
     if (req.riskAversion != null) this.riskAversion.set(req.riskAversion);
+    if (req.monteCarlo != null) {
+      this.monteCarloEnabled.set(!!req.monteCarlo.enabled);
+      if (req.monteCarlo.mode) this.monteCarloMode.set(req.monteCarlo.mode);
+      if (req.monteCarlo.nSimulations != null) this.nSimulations.set(req.monteCarlo.nSimulations);
+      if (req.monteCarlo.riskLambda != null) this.riskLambda.set(req.monteCarlo.riskLambda);
+    } else {
+      this.monteCarloEnabled.set(false);
+    }
+    if (req.nearOptimal != null) {
+      this.nearOptimalEnabled.set(!!req.nearOptimal.enabled);
+    }
+
     if (req.varBlend != null) this.varBlend.set(req.varBlend);
     if (req.esvWeight != null) this.esvWeight.set(req.esvWeight);
     if (req.valuationMode === 'PER_MATCH_RATING' || req.valuationMode === 'SEASON_VALUE') {
@@ -1369,31 +1709,122 @@ export class OptimizerComponent {
   run(): void {
     this.running.set(true);
     this.error.set(null);
+    this.jobStatus.set(null);
+    this.jobId.set(null);
+    this.usedAsyncJob.set(false);
 
+    const req = this._buildRequest();
+    const useAsync =
+      !!req.monteCarlo?.enabled &&
+      (req.monteCarlo.nSimulations ?? 0) > ASYNC_MC_THRESHOLD;
+
+    if (useAsync) {
+      this.usedAsyncJob.set(true);
+      this._runAsyncJob(req);
+      return;
+    }
+
+    this.optimizerService.runMulti(req).subscribe({
+      next: res => {
+        this.results.set(res);
+        this.activeStrategy.set(Object.keys(res.results)[0] ?? '');
+        this.running.set(false);
+      },
+      error: err => {
+        this.error.set(err.error?.detail ?? err.message ?? 'Unknown error');
+        this.running.set(false);
+      },
+    });
+  }
+
+  /**
+   * Enqueue MC job and poll until completed/failed or max attempts.
+   * Maps the single-strategy job result into MultiStrategyResult for the existing UI.
+   */
+  private _runAsyncJob(req: OptimizationRequest): void {
+    const strategyName =
+      (req.strategyNames && req.strategyNames[0]) ||
+      (req.customStrategies && req.customStrategies[0]?.name) ||
+      'BALANCED';
+
+    this.jobStatus.set('queued');
+    this.optimizerService
+      .createJob(req, strategyName)
+      .pipe(
+        switchMap(created => {
+          this.jobId.set(created.jobId);
+          this.jobStatus.set(created.status || 'queued');
+          return interval(JOB_POLL_MS).pipe(
+            startWith(0),
+            take(JOB_MAX_POLLS),
+            switchMap(() => this.optimizerService.pollJobStatus(created.jobId)),
+            takeWhile(
+              job => job.status === 'queued' || job.status === 'running',
+              true,
+            ),
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe({
+        next: job => {
+          this.jobStatus.set(job.status);
+          if (job.status === 'completed' && job.result) {
+            const name = job.result.strategyName || strategyName;
+            const multi: MultiStrategyResult = {
+              results: { [name]: job.result },
+              monteCarloSummary:
+                job.monteCarloSummary ?? job.result.monteCarloSummary ?? null,
+              diversity: null,
+            };
+            this.results.set(multi);
+            this.activeStrategy.set(name);
+            this.running.set(false);
+          } else if (job.status === 'failed') {
+            this.error.set(job.error || 'Job Monte Carlo fallito');
+            this.running.set(false);
+          }
+        },
+        error: err => {
+          this.error.set(err.error?.detail ?? err.message ?? 'Job async error');
+          this.running.set(false);
+          this.jobStatus.set('failed');
+        },
+        complete: () => {
+          // Exhausted polls without terminal state
+          if (this.running()) {
+            this.error.set(
+              'Timeout polling job async: aumenta N gradualmente o riprova più tardi.',
+            );
+            this.running.set(false);
+            this.jobStatus.set('timeout');
+          }
+        },
+      });
+  }
+
+  /** Build OptimizationRequest from current form signals (single source of truth). */
+  private _buildRequest(): OptimizationRequest {
     const bigTeams = this.bigTeamsRaw()
       .split(',').map(t => t.trim()).filter(Boolean);
 
     const formations = ALL_FORMATIONS.filter(f => this.selectedFormations().has(f.label));
+    const preferredFormation =
+      formations.find(f => f.label === this.preferredFormationLabel()) ?? null;
 
     const mustInclude = this.mustIncludeRaw()
-      .split(',').map(s => s.trim()).filter(Boolean);
-
+      .split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
     const exclude = this.excludeRaw()
-      .split(',').map(s => s.trim()).filter(Boolean);
+      .split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
 
-    const preferredLabel = this.preferredFormationLabel();
-    const preferredFormation = preferredLabel
-      ? (ALL_FORMATIONS.find(f => f.label === preferredLabel) ?? null)
-      : null;
-
-    this.optimizerService.runMulti({
+    return {
       seasonStart: this.seasonStart(),
       budget: this.budget(),
       numParticipants: this.numParticipants(),
       minQtA: this.minQtA(),
-      solverTimeoutSeconds: this.solverTimeoutSeconds(),
       minDistinctTeams: this.minDistinctTeams(),
       maxPlayersPerTeam: this.maxPlayersPerTeam(),
+      solverTimeoutSeconds: this.solverTimeoutSeconds(),
       bigTeamsCap: this.bigTeamsCap(),
       bigTeams,
       formations,
@@ -1410,6 +1841,18 @@ export class OptimizerComponent {
       ruleset: this.ruleset(),
       preferredFormation,
       riskAversion: this.riskAversion(),
+      monteCarlo: this.monteCarloEnabled()
+        ? {
+            enabled: true,
+            nSimulations: this.nSimulations(),
+            mode: this.monteCarloMode(),
+            riskLambda: this.riskLambda(),
+            randomSeed: 42,
+          }
+        : undefined,
+      nearOptimal: this.nearOptimalEnabled()
+        ? { enabled: true, nAlternatives: 3, excludeTopM: 2, maxScoreDropPct: 0.15 }
+        : undefined,
       varBlend: this.varBlend(),
       esvWeight: this.esvWeight(),
       valuationMode: this.valuationMode(),
@@ -1417,20 +1860,10 @@ export class OptimizerComponent {
       replacementMethod: this.replacementMethod(),
       strategyNames: this.showCustomWeights() ? null : [...this.selectedStrategies()],
       customStrategies: this.showCustomWeights() ? this._buildCustomStrategies() : null,
-    }).subscribe({
-      next: res => {
-        this.results.set(res);
-        this.activeStrategy.set(Object.keys(res.results)[0] ?? '');
-        this.running.set(false);
-      },
-      error: err => {
-        this.error.set(err.error?.detail ?? err.message ?? 'Unknown error');
-        this.running.set(false);
-      },
-    });
+    };
   }
 
-  setCustomWeight(role: string, value: number): void {
+    setCustomWeight(role: string, value: number): void {
     this.customWeights.update(w => ({ ...w, [role]: +value }));
   }
 

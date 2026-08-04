@@ -138,6 +138,91 @@ export interface OptimizationRequest {
   replacementMethod?: 'percentile' | 'roster_depth';
   strategyNames?: string[] | null;
   customStrategies?: StrategyProfile[] | null;
+  /** Monte Carlo robustness block. Omit or enabled=false keeps deterministic ILP. */
+  monteCarlo?: MonteCarloConfig | null;
+  /** Near-optimal alternatives (exclude top scorers, re-solve). Default off. */
+  nearOptimal?: NearOptimalConfig | null;
+}
+
+/** Request block for score-space Monte Carlo robustness. */
+export interface MonteCarloConfig {
+  enabled: boolean;
+  /** SAA scenarios; sync path typically 5–50, hard-capped by API. */
+  nSimulations?: number;
+  /** mean_std = one risk-adjusted ILP; saa_frequency = N scenario ILPs + frequency. */
+  mode?: 'mean_std' | 'saa_frequency';
+  /** Only for mean_std: mean − λ·std. */
+  riskLambda?: number;
+  minSelectionFrequency?: number;
+  randomSeed?: number;
+  /** Soft wall budget for SAA; 0 = server default. */
+  timeoutSeconds?: number;
+}
+
+export interface NearOptimalConfig {
+  enabled: boolean;
+  nAlternatives?: number;
+  excludeTopM?: number;
+  maxScoreDropPct?: number;
+}
+
+export interface YieldStabilitySummary {
+  nSimulations?: number;
+  threshold?: number;
+  probAboveThreshold?: number;
+  meanTotal?: number;
+  p10Total?: number;
+  p50Total?: number;
+  p90Total?: number;
+}
+
+export interface MonteCarloSummary {
+  nSimulations: number;
+  mode: string;
+  randomSeed?: number;
+  stabilityIndex?: number;
+  selectionFrequency?: Record<string, number>;
+  squadScorePercentiles?: Record<string, number>;
+  meanPairwiseJaccard?: number;
+  scenariosCompleted?: number;
+  wallTimeSeconds?: number;
+  samplingMethodsCounts?: Record<string, number>;
+  warnings?: string[];
+  yieldStability?: YieldStabilitySummary | null;
+}
+
+export interface NearOptimalAlternative {
+  excludedPlayerIds: string[];
+  scoreDelta: number;
+  scoreDeltaPct: number;
+  squad: SquadPlayer[];
+  totalProjectedScore: number;
+  status: string;
+}
+
+export interface DiversityMetrics {
+  meanPairwiseJaccard: number;
+  maxPairwiseJaccard?: number;
+  minPairwiseJaccard?: number;
+  meanOverlapCount?: number;
+  maxOverlapCount?: number;
+  lowDiversity: boolean;
+  pairwiseJaccard?: Record<string, number>;
+}
+
+export interface OptimizeJobCreateResponse {
+  jobId: string;
+  status: string;
+}
+
+export interface OptimizeJobStatus {
+  jobId: string;
+  status: 'queued' | 'running' | 'completed' | 'failed' | string;
+  createdAt: string;
+  updatedAt: string;
+  error?: string | null;
+  result?: OptimizationResult | null;
+  monteCarloSummary?: MonteCarloSummary | null;
 }
 
 export interface SquadPlayer {
@@ -166,10 +251,14 @@ export interface OptimizationResult {
   formationFeasibility: Record<string, boolean>;
   diagnostics: Record<string, unknown>;
   winProbability: number | null;
+  monteCarloSummary?: MonteCarloSummary | null;
+  nearOptimal?: NearOptimalAlternative[];
 }
 
 export interface MultiStrategyResult {
   results: Record<string, OptimizationResult>;
+  monteCarloSummary?: MonteCarloSummary | null;
+  diversity?: DiversityMetrics | null;
 }
 
 export interface StrategyProfile {
