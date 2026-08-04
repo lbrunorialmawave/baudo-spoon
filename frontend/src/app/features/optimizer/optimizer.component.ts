@@ -1888,6 +1888,17 @@ export class OptimizerComponent {
     this.customWeights.update(w => ({ ...w, [role]: +value }));
   }
 
+  private _resolveStrategyName(req: OptimizationRequest): string {
+      if (req.customStrategies?.length) {
+        return req.customStrategies[0].name || 'BALANCED';
+      }
+      if (req.strategyNames?.length) {
+        return req.strategyNames[0];
+      }
+    const selected = [...this.selectedStrategies()];
+    return selected[0] ?? 'BALANCED';
+  }
+
   private _buildCustomStrategies(): StrategyProfile[] {
     const [name] = [...this.selectedStrategies()];
     const base = this.strategyProfilesMap()[name];
