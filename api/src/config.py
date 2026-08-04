@@ -83,6 +83,11 @@ class APISettings(BaseSettings):
         description="Rate-limit sliding-window size in seconds",
     )
 
+    optimizer_max_simulations: int = Field(default=1000, description="Hard cap for monte_carlo.n_simulations")
+    optimizer_mc_default_enabled: bool = Field(default=False)
+    optimizer_saa_timeout_seconds: float = Field(default=120.0)
+    optimizer_async_threshold: int = Field(default=200)
+
     @computed_field  # type: ignore[misc]
     @property
     def async_database_url(self) -> str:

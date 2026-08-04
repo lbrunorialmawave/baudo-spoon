@@ -401,6 +401,8 @@ class PlayerSchema(_CamelModel):
     eligible_roles: list[str] = Field(default_factory=list)  # MANTRA only
     prediction_std: Optional[float] = None  # ensemble std; drives risk_aversion penalty
     historical_overpay_ratio: Optional[float] = None  # Picco/listino from pilastro4
+    season_value: Optional[float] = None
+    start_probability: Optional[float] = None
 
 
 class OptimizationRequest(_CamelModel):
@@ -479,11 +481,101 @@ class OptimizationRequest(_CamelModel):
             "(quota di rosa per ruolo)."
         ),
     )
-    valuation_mode: str = "PER_MATCH_RATING"
-    """Objective metric: PER_MATCH_RATING (default) or SEASON_VALUE."""
-    strategy_names: Optional[list[str]] = None  # None ⇒ tutte e 4 di default
-    custom_strategies: Optional[list["StrategyProfileSchema"]] = None  # overrides strategy_names
+    valuation_mode: str = Field(
+        default="PER_MATCH_RATING",
+        description="PER_MATCH_RATING (default) or SEASON_VALUE (needs season_value on pool).",
+    )
+    strategy_names: Optional[list[str]] = None
+    custom_strategies: Optional[list["StrategyProfileSchema"]] = None
     pool_override: Optional[list[PlayerSchema]] = Field(default=None, max_length=500)
+    monte_carlo: Optional["MonteCarloConfigSchema"] = Field(default=None)
+    near_optimal: Optional["NearOptimalConfigSchema"] = Field(default=None)
+
+
+class MonteCarloConfigSchema(_CamelModel):
+    """Monte Carlo robustness block. Default off — omit for legacy deterministic ILP.
+
+    Trade-offs:
+    * ``mean_std``: 1× ILP latency, risk-adjusted point estimate (mean − λ·std).
+    * ``saa_frequency``: N× ILP latency; returns selection frequency + stability_index.
+      Prefer N≤50 sync; N>200 → POST /optimize/jobs. Caps: API_OPTIMIZER_MAX_SIMULATIONS.
+    * Do not combine high ``risk_aversion`` with MC without reading both effects
+      (risk_aversion shrinks projected_score once; MC re-samples scores).
+    """
+    enabled: bool = Field(default=False, description="Master switch; false keeps deterministic path.")
+    n_simulations: int = Field(
+        default=200, ge=1, le=1000,
+        description="SAA scenarios. Sync path capped by API_OPTIMIZER_MAX_SIMULATIONS.",
+    )
+    mode: str = Field(
+        default="saa_frequency",
+        description="mean_std (fast risk-adjusted single solve) | saa_frequency (distributional).",
+    )
+    risk_lambda: float = Field(default=0.5, ge=0.0, description="Only for mean_std: mean − λ·std.")
+    min_selection_frequency: float = Field(
+        default=0.0, ge=0.0, le=1.0,
+        description="Warn when representative players fall below this SAA frequency.",
+    )
+    random_seed: int = Field(default=42, description="Reproducible residual draws / scenario order.")
+    timeout_seconds: float = Field(
+        default=0.0, ge=0.0,
+        description="Soft SAA wall budget; 0 → API_OPTIMIZER_SAA_TIMEOUT_SECONDS default.",
+    )
+
+
+class MonteCarloSummarySchema(_CamelModel):
+    n_simulations: int
+    mode: str
+    random_seed: int = 42
+    stability_index: float = 0.0
+    selection_frequency: dict[str, float] = Field(default_factory=dict)
+    squad_score_percentiles: dict[str, float] = Field(default_factory=dict)
+    mean_pairwise_jaccard: float = 0.0
+    scenarios_completed: int = 0
+    wall_time_seconds: float = 0.0
+    sampling_methods_counts: dict[str, int] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class NearOptimalConfigSchema(_CamelModel):
+    enabled: bool = False
+    n_alternatives: int = Field(default=3, ge=1, le=10)
+    exclude_top_m: int = Field(default=2, ge=1, le=10)
+    max_score_drop_pct: float = Field(default=0.15, ge=0.0, le=1.0)
+
+
+class NearOptimalAlternativeSchema(_CamelModel):
+    excluded_player_ids: list[str]
+    score_delta: float
+    score_delta_pct: float
+    squad: list["SquadPlayerSchema"]
+    total_projected_score: float
+    status: str
+
+
+class DiversityMetricsSchema(_CamelModel):
+    mean_pairwise_jaccard: float = 0.0
+    max_pairwise_jaccard: float = 0.0
+    min_pairwise_jaccard: float = 0.0
+    mean_overlap_count: float = 0.0
+    max_overlap_count: int = 0
+    low_diversity: bool = False
+    pairwise_jaccard: dict[str, float] = Field(default_factory=dict)
+
+
+class OptimizeJobCreateResponse(_CamelModel):
+    job_id: str
+    status: str = "queued"
+
+
+class OptimizeJobStatusSchema(_CamelModel):
+    job_id: str
+    status: str
+    created_at: str
+    updated_at: str
+    error: Optional[str] = None
+    result: Optional["OptimizationResultSchema"] = None
+    monte_carlo_summary: Optional[MonteCarloSummarySchema] = None
 
 
 class SquadPlayerSchema(_CamelModel):
@@ -515,12 +607,16 @@ class OptimizationResultSchema(_CamelModel):
     formation_feasibility: dict[str, bool]
     diagnostics: dict[str, Any]
     win_probability: Optional[float] = None
+    monte_carlo_summary: Optional[MonteCarloSummarySchema] = None
+    near_optimal: list[NearOptimalAlternativeSchema] = Field(default_factory=list)
 
 
 class MultiStrategyResultSchema(_CamelModel):
     """Output di ``POST /optimize/multi``: una entry per strategia richiesta."""
 
     results: dict[str, OptimizationResultSchema]
+    monte_carlo_summary: Optional[MonteCarloSummarySchema] = None
+    diversity: Optional[DiversityMetricsSchema] = None
 
 
 class StrategyProfileSchema(_CamelModel):
