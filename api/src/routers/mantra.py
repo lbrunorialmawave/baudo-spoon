@@ -200,7 +200,7 @@ async def list_mantra_players(
     ),
     percentile_soglia: float = Query(0.7, ge=0.0, le=1.0),
     tasso_base: float = Query(0.05, ge=0.0),
-    partecipanti_baseline: int = Query(8, ge=1),
+    partecipanti_baseline: int = Query(4, ge=1),
     moltiplicatore_max: float = Query(1.6, ge=1.0),
     override_ruolo_json: Optional[str] = Query(
         None,
