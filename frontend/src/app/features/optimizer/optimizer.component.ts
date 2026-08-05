@@ -521,6 +521,25 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
             }
           </section>
 
+          <!-- Advanced config group: everything past "Essenziali" is optional
+               tuning (VAR blend, ESV weight, Monte Carlo, inflation curve, ...).
+               Collapsed by default so the page opens on just the essentials. -->
+          <div class="opt-advanced">
+            <button type="button" class="opt-advanced__toggle"
+                    (click)="showAdvancedConfig.set(!showAdvancedConfig())"
+                    [attr.aria-expanded]="showAdvancedConfig()">
+              <span class="opt-advanced__title">Impostazioni avanzate</span>
+              <span class="opt-advanced__badge">5</span>
+              <span class="opt-section__chev" [class.opt-section__chev--open]="showAdvancedConfig()" aria-hidden="true"></span>
+            </button>
+            <p class="opt-advanced__hint">
+              Vincoli extra, funzione obiettivo, robustezza, moduli/costi e filtri manuali.
+              Lasciale ai valori di default se non hai esigenze specifiche.
+            </p>
+          </div>
+
+          @if (showAdvancedConfig()) {
+
           <!-- Constraints -->
           <section class="opt-section" [class.open]="isSectionOpen('constraints')">
             <button type="button" class="opt-section__head" (click)="toggleSection('constraints')"
@@ -877,6 +896,8 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
               </div>
             }
           </section>
+
+          } <!-- /showAdvancedConfig -->
 
           @if (error()) {
             <app-error-boundary title="Errore ottimizzatore" [message]="error()!" />
@@ -1434,6 +1455,53 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
       margin-bottom: 4px;
     }
     .opt-section.open .opt-section__chev { transform: rotate(225deg); margin-bottom: 0; margin-top: 4px; }
+    .opt-section__chev--open { transform: rotate(225deg); margin-bottom: 0; margin-top: 4px; }
+
+    /* ── Advanced config toggle ──────────────────────── */
+    /* Dashed border + muted surface (vs. .opt-section's solid border) marks
+       this as a meta-toggle for a group, not another data-bearing section. */
+    .opt-advanced {
+      border: 1px dashed var(--color-border, #27272a);
+      border-radius: 12px;
+      margin-bottom: 10px;
+      overflow: hidden;
+    }
+    .opt-advanced__toggle {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      min-height: 44px;
+      border: none;
+      background: transparent;
+      color: var(--color-text-secondary, #a1a1aa);
+      text-align: left;
+      cursor: pointer;
+    }
+    .opt-advanced__toggle:hover { color: var(--color-text-primary, #f4f4f5); }
+    .opt-advanced__title { font-size: 0.8125rem; font-weight: 600; }
+    .opt-advanced__badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 999px;
+      background: var(--color-border, #27272a);
+      color: var(--color-text-secondary, #a1a1aa);
+      font-size: 0.65rem;
+      font-weight: 700;
+    }
+    .opt-advanced__toggle .opt-section__chev { margin-left: auto; }
+    .opt-advanced__hint {
+      margin: 0;
+      padding: 0 14px 12px;
+      font-size: 0.7rem;
+      line-height: 1.4;
+      color: var(--color-text-secondary, #a1a1aa);
+    }
     .opt-section__body {
       display: flex;
       flex-direction: column;
@@ -2023,6 +2091,11 @@ export class OptimizerComponent {
   readonly mobilePane = signal<'config' | 'results' | 'analysis'>('config');
   /** Open accordion sections in the config column. */
   readonly openSections = signal<ReadonlySet<string>>(new Set(['essentials', 'objective']));
+  /** Whether the "advanced config" group (constraints/objective/robustness/
+   * formations/filters) is expanded. Collapsed by default: these are expert-
+   * level knobs (VAR blend, ESV weight, Monte Carlo, inflation curve, ...)
+   * that shouldn't compete visually with the essentials on first load. */
+  readonly showAdvancedConfig = signal(false);
 
   isSectionOpen(id: string): boolean {
     return this.openSections().has(id);
