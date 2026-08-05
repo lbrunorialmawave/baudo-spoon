@@ -205,7 +205,21 @@ def _enrich_pool_with_blends(pool: list[Player], config: OptimizationConfig, req
     return pool
 
 
-def _mc_config_from_request(req: OptimizationRequest) -> MonteCarloOptConfig | None:
+def _mc_config_from_request(
+    req: OptimizationRequest,
+    *,
+    sync_path: bool = True,
+) -> MonteCarloOptConfig | None:
+    """Build MC config from the request, enforcing simulation caps.
+
+    Args:
+        req: Incoming optimization request.
+        sync_path: When True (default), enforce ``API_OPTIMIZER_ASYNC_THRESHOLD``
+            for ``saa_frequency`` so expensive N-scenario SAA cannot block a
+            worker. Async job endpoints pass ``sync_path=False`` and only the
+            hard ``API_OPTIMIZER_MAX_SIMULATIONS`` ceiling applies.
+            ``mean_std`` is always allowed on the sync path (single ILP solve).
+    """
     mc = req.monte_carlo
     if mc is None:
         if not settings.optimizer_mc_default_enabled:
@@ -218,10 +232,27 @@ def _mc_config_from_request(req: OptimizationRequest) -> MonteCarloOptConfig | N
         n_sim, mode = mc.n_simulations, mc.mode
         risk_lambda, min_freq, seed = mc.risk_lambda, mc.min_selection_frequency, mc.random_seed
         timeout = mc.timeout_seconds or settings.optimizer_saa_timeout_seconds
-    if n_sim > settings.optimizer_max_simulations:
-        raise HTTPException(status_code=422, detail=f"n_simulations={n_sim} exceeds max {settings.optimizer_max_simulations}")
     if mode not in ("mean_std", "saa_frequency"):
         raise HTTPException(status_code=422, detail=f"invalid monte_carlo.mode {mode!r}")
+    max_sim = settings.optimizer_max_simulations
+    if n_sim > max_sim:
+        raise HTTPException(
+            status_code=422,
+            detail=f"n_simulations={n_sim} exceeds max {max_sim} (API_OPTIMIZER_MAX_SIMULATIONS)",
+        )
+    # Sync path: saa_frequency scales as N× ILP — force clients onto the
+    # async job endpoint above the configured threshold. mean_std is O(1).
+    if sync_path and mode == "saa_frequency":
+        async_threshold = settings.optimizer_async_threshold
+        if n_sim > async_threshold:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"n_simulations={n_sim} exceeds sync threshold {async_threshold} "
+                    f"for mode=saa_frequency (API_OPTIMIZER_ASYNC_THRESHOLD). "
+                    f"Use POST /optimize/jobs for N up to {max_sim}."
+                ),
+            )
     return MonteCarloOptConfig(
         enabled=True, n_simulations=n_sim, mode=mode,  # type: ignore[arg-type]
         risk_lambda=risk_lambda, min_selection_frequency=min_freq, random_seed=seed, timeout_seconds=timeout,
@@ -842,7 +873,8 @@ def _run_mc_job_sync(job_id, pool, config, strategy, mc_cfg):
 
 @router.post("/jobs", response_model=OptimizeJobCreateResponse)
 async def create_optimize_job(req: OptimizationRequest, strategy_name: str = "Bilanciata", db=Depends(get_db)):
-    mc_cfg = _mc_config_from_request(req)
+    # Async jobs may run up to API_OPTIMIZER_MAX_SIMULATIONS; skip the sync threshold.
+    mc_cfg = _mc_config_from_request(req, sync_path=False)
     if mc_cfg is None:
         raise HTTPException(status_code=422, detail="monte_carlo.enabled must be true for async jobs")
     strategy = _strategy_by_name(strategy_name) if not req.custom_strategies else _custom_strategies(req.custom_strategies)[0]

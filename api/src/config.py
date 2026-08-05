@@ -83,10 +83,28 @@ class APISettings(BaseSettings):
         description="Rate-limit sliding-window size in seconds",
     )
 
-    optimizer_max_simulations: int = Field(default=1000, description="Hard cap for monte_carlo.n_simulations")
+    # Monte Carlo: hard ceiling for n_simulations on every path (sync + async jobs).
+    optimizer_max_simulations: int = Field(
+        default=1000,
+        ge=1,
+        description=(
+            "Hard cap for monte_carlo.n_simulations on sync and async paths "
+            "(env: API_OPTIMIZER_MAX_SIMULATIONS)."
+        ),
+    )
     optimizer_mc_default_enabled: bool = Field(default=False)
     optimizer_saa_timeout_seconds: float = Field(default=120.0)
-    optimizer_async_threshold: int = Field(default=200)
+    # Above this N, sync endpoints (/optimize/multi, /optimize/single) reject
+    # saa_frequency requests and instruct the client to use POST /optimize/jobs.
+    # mean_std is exempt (O(1) ILP solves). Prefer threshold <= max_simulations.
+    optimizer_async_threshold: int = Field(
+        default=50,
+        ge=1,
+        description=(
+            "Max n_simulations allowed on the synchronous path for saa_frequency "
+            "(env: API_OPTIMIZER_ASYNC_THRESHOLD). Higher N must use POST /optimize/jobs."
+        ),
+    )
 
     @computed_field  # type: ignore[misc]
     @property

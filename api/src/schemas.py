@@ -525,15 +525,20 @@ class MonteCarloConfigSchema(_CamelModel):
 
     Trade-offs:
     * ``mean_std``: 1× ILP latency, risk-adjusted point estimate (mean − λ·std).
+      Always allowed on the sync path (``/optimize/multi``, ``/optimize/single``).
     * ``saa_frequency``: N× ILP latency; returns selection frequency + stability_index.
-      Prefer N≤50 sync; N>200 → POST /optimize/jobs. Caps: API_OPTIMIZER_MAX_SIMULATIONS.
+      Sync path capped by ``API_OPTIMIZER_ASYNC_THRESHOLD`` (default 50).
+      Higher N must use ``POST /optimize/jobs`` (up to ``API_OPTIMIZER_MAX_SIMULATIONS``).
     * Do not combine high ``risk_aversion`` with MC without reading both effects
       (risk_aversion shrinks projected_score once; MC re-samples scores).
     """
     enabled: bool = Field(default=False, description="Master switch; false keeps deterministic path.")
     n_simulations: int = Field(
         default=200, ge=1, le=1000,
-        description="SAA scenarios. Sync path capped by API_OPTIMIZER_MAX_SIMULATIONS.",
+        description=(
+            "SAA scenarios. Sync saa_frequency capped by API_OPTIMIZER_ASYNC_THRESHOLD; "
+            "hard ceiling API_OPTIMIZER_MAX_SIMULATIONS on all paths."
+        ),
     )
     mode: str = Field(
         default="saa_frequency",
