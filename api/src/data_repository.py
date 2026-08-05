@@ -516,20 +516,17 @@ class DataRepository:
                 PlayerMantraRole.ruolo_primario == mantra_role
             )
         if unresolved_only:
-            # Unresolved = unmatched OR fuzzy OR no mantra roles OR not validated
+            # A mapping is unresolved when it has no valid FotMob identity:
+            # an explicit unmatched/fuzzy match, or a row with no fotmob id.
+            # A manual mapping WITH a valid fotmob_id is resolved regardless
+            # of whether a player_mantra_roles row exists — a missing MANTRA
+            # role is a separate concern (the FK to player_quotations can
+            # legitimately be absent for e.g. a cross-season mapping), so it
+            # must NOT mark an otherwise-resolved player as unresolved.
             filters.append(
                 sa.or_(
                     PlayerIdMap.match_method.in_(["unmatched", "fuzzy_name"]),
-                    ~sa.exists(
-                        sa.select(PlayerMantraRole.fantacalcio_id)
-                        .where(
-                            and_(
-                                PlayerMantraRole.fantacalcio_id == PlayerIdMap.fantacalcio_id,
-                                PlayerMantraRole.season_start == PlayerIdMap.season_start,
-                            )
-                        )
-                        .correlate(PlayerIdMap)
-                    ),
+                    PlayerIdMap.player_fotmob_id.is_(None),
                 )
             )
 
@@ -874,14 +871,30 @@ class DataRepository:
             mantra_row = mantra_result.scalar_one_or_none()
 
             if mantra_row is None:
-                # Create new MANTRA role row
-                mantra_row = PlayerMantraRole(
-                    fantacalcio_id=fantacalcio_id,
-                    season_start=season_start,
-                    ruolo_primario=ruolo_primario or "C",
-                    ruoli_mantra=ruoli_mantra or [ruolo_primario or "C"],
+                # player_mantra_roles has a composite FK back to
+                # player_quotations(fantacalcio_id, season_start). A mapping
+                # row can exist for a (player, season) that has no quotation
+                # (e.g. propagated/cross-season mappings), so inserting a NEW
+                # mantra-role row would fail with a FK violation on commit.
+                # Guard by skipping the insert (not the whole update) instead
+                # of surfacing a 500 to the operator.
+                has_quotation = await db.scalar(
+                    select(PlayerQuotation.id).where(
+                        and_(
+                            PlayerQuotation.fantacalcio_id == fantacalcio_id,
+                            PlayerQuotation.season_start == season_start,
+                        )
+                    )
                 )
-                db.add(mantra_row)
+                if has_quotation is not None:
+                    # Create new MANTRA role row
+                    mantra_row = PlayerMantraRole(
+                        fantacalcio_id=fantacalcio_id,
+                        season_start=season_start,
+                        ruolo_primario=ruolo_primario or "C",
+                        ruoli_mantra=ruoli_mantra or [ruolo_primario or "C"],
+                    )
+                    db.add(mantra_row)
             else:
                 if ruoli_mantra is not None:
                     mantra_row.ruoli_mantra = ruoli_mantra
