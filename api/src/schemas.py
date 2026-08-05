@@ -489,6 +489,10 @@ class OptimizationRequest(_CamelModel):
     custom_strategies: Optional[list["StrategyProfileSchema"]] = None
     pool_override: Optional[list[PlayerSchema]] = Field(default=None, max_length=500)
     monte_carlo: Optional["MonteCarloConfigSchema"] = Field(default=None)
+    diversify_strategies: bool = Field(
+        default=False,
+        description="If true on /multi, re-solve secondary strategies excluding core of the primary when overlap is high.",
+    )
     near_optimal: Optional["NearOptimalConfigSchema"] = Field(default=None)
 
 
@@ -535,6 +539,11 @@ class MonteCarloSummarySchema(_CamelModel):
     wall_time_seconds: float = 0.0
     sampling_methods_counts: dict[str, int] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
+    # Residual provenance (walk-forward file vs prediction_std fallback)
+    residual_source: Optional[str] = None
+    residual_using: Optional[str] = None
+    residual_rows: Optional[int] = None
+    residual_merged_rows: Optional[int] = None
 
 
 class NearOptimalConfigSchema(_CamelModel):

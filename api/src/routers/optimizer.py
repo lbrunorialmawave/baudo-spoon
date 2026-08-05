@@ -40,7 +40,7 @@ from ..schemas import (
     StrategyProfileSchema,
 )
 from ml.optimizer.diagnostics import build_pool_diagnostics, merge_result_diagnostics
-from ml.optimizer.diversity import NearOptimalConfig, compute_diversity_metrics, generate_near_optimal_alternatives
+from ml.optimizer.diversity import diversify_secondary_strategies, NearOptimalConfig, compute_diversity_metrics, generate_near_optimal_alternatives
 from ml.optimizer.inflation import compute_role_percentile_map, estimate_effective_cost
 from ml.optimizer.job_store import job_store
 from ml.optimizer.monte_carlo_opt import MonteCarloOptConfig, build_simulator_from_pool, run_monte_carlo_opt
@@ -441,17 +441,40 @@ async def run_multi_strategy(
     multi_results: dict[str, OptimizationResult]
     try:
         if mc_cfg is not None:
-            sim, _mc_warn, _mc_meta = build_simulator_preferring_residuals(pool, random_seed=mc_cfg.random_seed, artifacts_dir=settings.artifacts_dir)
+            sim, _mc_warn, _mc_meta = build_simulator_preferring_residuals(
+                pool,
+                random_seed=mc_cfg.random_seed,
+                artifacts_dir=str(settings.artifacts_dir),
+                r2_endpoint_url=settings.r2_endpoint_url,
+                r2_access_key_id=settings.r2_access_key_id,
+                r2_secret_access_key=settings.r2_secret_access_key,
+                r2_bucket_name=settings.r2_bucket_name,
+            )
             multi_results, last_summary = {}, None
             for strat in strategies:
                 saa = await asyncio.to_thread(run_monte_carlo_opt, pool, config, strat, mc_cfg, sim)
                 if saa.representative is None:
                     continue
                 multi_results[strat.name] = _with_pool_diagnostics(saa.representative, pool, extra={
-                    "mc_wall_time_seconds": saa.wall_time_seconds, "mc_scenarios_completed": saa.scenarios_completed,
-                    "mc_mode": saa.mode, "mc_seed": saa.random_seed,
+                    "mc_wall_time_seconds": saa.wall_time_seconds,
+                    "mc_scenarios_completed": saa.scenarios_completed,
+                    "mc_mode": saa.mode,
+                    "mc_seed": saa.random_seed,
+                    "residual_source": _mc_meta.get("residual_source"),
+                    "residual_using": _mc_meta.get("using"),
+                    "residual_rows": _mc_meta.get("n_rows"),
+                    "residual_merged_rows": _mc_meta.get("merged_rows"),
                 })
                 last_summary = saa.to_summary_dict()
+                last_summary["residual_source"] = _mc_meta.get("residual_source")
+                last_summary["residual_using"] = _mc_meta.get("using")
+                last_summary["residual_rows"] = _mc_meta.get("n_rows")
+                last_summary["residual_merged_rows"] = _mc_meta.get("merged_rows")
+                if _mc_warn:
+                    last_summary.setdefault("warnings", [])
+                    for w in _mc_warn:
+                        if w not in last_summary["warnings"]:
+                            last_summary["warnings"].append(w)
             if last_summary:
                 top_mc_summary = _serialize_mc_summary(last_summary)
             if not multi_results:
@@ -472,7 +495,15 @@ async def run_multi_strategy(
         )
         for p in pool
     }
+    # Optional soft diversity: re-solve secondary strategies excluding primary core
+    if getattr(req, "diversify_strategies", False) and len(multi_results) > 1:
+        multi_results = await asyncio.to_thread(
+            diversify_secondary_strategies, pool, config, strategies, multi_results,
+        )
+        multi_results = {n: _with_pool_diagnostics(r, pool) for n, r in multi_results.items()}
+
     diversity = compute_diversity_metrics(multi_results)
+
     wp_config = WinProbabilityConfig()
     serialized = {}
     first_name = next(iter(multi_results))
@@ -594,12 +625,25 @@ async def get_team_strength() -> dict[str, float]:
 def _run_mc_job_sync(job_id, pool, config, strategy, mc_cfg):
     try:
         job_store.set_running(job_id)
-        saa = run_monte_carlo_opt(pool, config, strategy, mc_cfg)
+        sim, mc_warn, mc_meta = build_simulator_preferring_residuals(
+            pool,
+            random_seed=mc_cfg.random_seed,
+            artifacts_dir=str(settings.artifacts_dir),
+            r2_endpoint_url=settings.r2_endpoint_url,
+            r2_access_key_id=settings.r2_access_key_id,
+            r2_secret_access_key=settings.r2_secret_access_key,
+            r2_bucket_name=settings.r2_bucket_name,
+        )
+        saa = run_monte_carlo_opt(pool, config, strategy, mc_cfg, sim)
         if saa.representative is None:
             job_store.set_failed(job_id, "Monte Carlo produced no representative squad"); return
         result = _with_pool_diagnostics(saa.representative, pool, extra={
             "mc_wall_time_seconds": saa.wall_time_seconds, "mc_scenarios_completed": saa.scenarios_completed,
             "mc_mode": saa.mode, "mc_seed": saa.random_seed, "async_job": True,
+            "residual_source": mc_meta.get("residual_source"),
+            "residual_using": mc_meta.get("using"),
+            "residual_rows": mc_meta.get("n_rows"),
+            "residual_merged_rows": mc_meta.get("merged_rows"),
         })
         percentiles = compute_role_percentile_map(pool)
         known = {p.real_team for p in pool if p.real_team}
@@ -610,8 +654,18 @@ def _run_mc_job_sync(job_id, pool, config, strategy, mc_cfg):
                 num_participants=config.num_participants, config=config.inflation_config, team_strength_scores=ts,
             ) for p in pool
         }
-        schema = _serialize_result(result, effective_lookup, monte_carlo_summary=_serialize_mc_summary(saa.to_summary_dict()))
-        job_store.set_completed(job_id, result=schema.model_dump(), monte_carlo_summary=saa.to_summary_dict())
+        summary = saa.to_summary_dict()
+        summary["residual_source"] = mc_meta.get("residual_source")
+        summary["residual_using"] = mc_meta.get("using")
+        summary["residual_rows"] = mc_meta.get("n_rows")
+        summary["residual_merged_rows"] = mc_meta.get("merged_rows")
+        if mc_warn:
+            summary.setdefault("warnings", [])
+            for w in mc_warn:
+                if w not in summary["warnings"]:
+                    summary["warnings"].append(w)
+        schema = _serialize_result(result, effective_lookup, monte_carlo_summary=_serialize_mc_summary(summary))
+        job_store.set_completed(job_id, result=schema.model_dump(), monte_carlo_summary=summary)
     except Exception as exc:
         log.exception("async MC job %s failed", job_id)
         job_store.set_failed(job_id, str(exc))

@@ -22,6 +22,7 @@ log = logging.getLogger(__name__)
 __all__ = [
     "load_residuals_from_path",
     "load_residuals_from_artifacts",
+    "load_residuals_preferring_r2",
     "ResidualLoadReport",
 ]
 
@@ -128,6 +129,98 @@ def load_residuals_from_artifacts(artifacts_dir: str | Path | None) -> ResidualL
         0,
         [f"no residual file under {root}; tried {[str(c.name) for c in candidates]}"],
     )
+
+
+
+def load_residuals_preferring_r2(
+    artifacts_dir: str | Path | None = None,
+    *,
+    r2_endpoint_url: str | None = None,
+    r2_access_key_id: str | None = None,
+    r2_secret_access_key: str | None = None,
+    r2_bucket_name: str | None = None,
+) -> ResidualLoadReport:
+    """Load residuals from local disk, then pull ``residuals.json`` from R2 if missing.
+
+    Order:
+    1. Local candidates under artifacts_dir (same as ``load_residuals_from_artifacts``)
+    2. ArtifactStore.load_json("residuals.json") — downloads from R2 into local cache
+    3. Empty report with warnings
+    """
+    import os
+
+    art = artifacts_dir or os.environ.get("API_ARTIFACTS_DIR") or os.environ.get("ARTIFACTS_DIR")
+    local = load_residuals_from_artifacts(art)
+    if local.residuals:
+        return local
+
+    # Attempt R2 via ArtifactStore
+    try:
+        from ml.storage.artifact_store import ArtifactStore, R2Config
+    except Exception as exc:  # noqa: BLE001
+        return ResidualLoadReport(
+            [],
+            "r2_unavailable",
+            0,
+            0,
+            local.warnings + [f"ArtifactStore import failed: {exc}"],
+        )
+
+    root = Path(art) if art else Path("artifacts")
+    root.mkdir(parents=True, exist_ok=True)
+
+    endpoint = r2_endpoint_url or os.environ.get("API_R2_ENDPOINT_URL") or os.environ.get("ML_R2_ENDPOINT_URL")
+    key_id = r2_access_key_id or os.environ.get("API_R2_ACCESS_KEY_ID") or os.environ.get("ML_R2_ACCESS_KEY_ID")
+    secret = r2_secret_access_key or os.environ.get("API_R2_SECRET_ACCESS_KEY") or os.environ.get("ML_R2_SECRET_ACCESS_KEY")
+    bucket = r2_bucket_name or os.environ.get("API_R2_BUCKET_NAME") or os.environ.get("ML_R2_BUCKET_NAME")
+
+    r2_cfg = None
+    if endpoint and key_id and secret and bucket:
+        r2_cfg = R2Config(
+            endpoint_url=endpoint,
+            access_key_id=key_id,
+            secret_access_key=secret,
+            bucket_name=bucket,
+        )
+
+    store = ArtifactStore(local_dir=root, r2_config=r2_cfg)
+    data = store.load_json("residuals.json")
+    if data is None:
+        return ResidualLoadReport(
+            [],
+            "not_found_local_or_r2",
+            0,
+            0,
+            local.warnings + ["residuals.json not found locally or on R2"],
+        )
+
+    # Reuse path loader after download (file now on disk) or parse in-memory
+    local_path = root / "residuals.json"
+    if local_path.exists():
+        report = load_residuals_from_path(local_path)
+        if report.residuals:
+            report.source = f"r2_or_local:{local_path}"
+            report.warnings = local.warnings + report.warnings
+            return report
+
+    # In-memory parse if load_json returned data without writing (shouldn't happen)
+    rows: list[dict] = []
+    warnings = list(local.warnings)
+    payload = data
+    if isinstance(data, dict) and "residuals" in data:
+        payload = data["residuals"]
+    if isinstance(payload, list):
+        for raw in payload:
+            if isinstance(raw, dict):
+                norm = _normalize_row(raw)
+                if norm:
+                    rows.append(norm)
+    else:
+        warnings.append("residuals.json payload is not a list")
+    players = {r["player_id"] for r in rows}
+    roles = {r["role"] for r in rows}
+    return ResidualLoadReport(rows, "r2:residuals.json", len(players), len(roles), warnings)
+
 
 
 def merge_with_prediction_std(

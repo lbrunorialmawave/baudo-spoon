@@ -11,5 +11,5 @@ export const serverRoutes: ServerRoute[] = [
   { path: 'id-mapping',              renderMode: RenderMode.Client },
   { path: 'id-mapping/resolutions',  renderMode: RenderMode.Client },
   { path: 'admin',                   renderMode: RenderMode.Client },
-  { path: '**',               renderMode: RenderMode.Prerender },
+  { path: '**',               renderMode: RenderMode.Client  },
 ];

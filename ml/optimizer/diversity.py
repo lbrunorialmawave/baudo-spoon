@@ -6,7 +6,7 @@ from typing import Sequence
 from ml.optimizer.models import OptimizationConfig, OptimizationResult, Player, StrategyProfile
 from ml.optimizer.optimizer import optimize_squad
 log = logging.getLogger(__name__)
-__all__ = ["DiversityMetrics", "NearOptimalConfig", "NearOptimalAlternative", "compute_diversity_metrics", "generate_near_optimal_alternatives", "DEFAULT_LOW_DIVERSITY_THRESHOLD"]
+__all__ = ["DiversityMetrics", "NearOptimalConfig", "NearOptimalAlternative", "compute_diversity_metrics", "generate_near_optimal_alternatives", "diversify_secondary_strategies", "DEFAULT_LOW_DIVERSITY_THRESHOLD"]
 DEFAULT_LOW_DIVERSITY_THRESHOLD = 0.85
 
 @dataclass(frozen=True)
@@ -92,4 +92,49 @@ def generate_near_optimal_alternatives(pool, config, strategy, reference, near_c
         if pct < -near_cfg.max_score_drop_pct:
             continue
         out.append(NearOptimalAlternative(tuple(sorted(exclude_ids)), delta, pct, alt))
+    return out
+
+
+def diversify_secondary_strategies(
+    pool: Sequence[Player],
+    config: OptimizationConfig,
+    strategies: Sequence[StrategyProfile],
+    results: dict[str, OptimizationResult],
+    *,
+    core_fraction: float = 0.35,
+    max_exclude: int = 6,
+) -> dict[str, OptimizationResult]:
+    """If strategies share a large core, re-solve secondary ones excluding top core players.
+
+    Primary strategy (first OPTIMAL with squad) is kept; others are re-optimized with
+    those core player_ids in ``config.exclude``. Failures keep the original result.
+    Feature is opt-in at the API layer.
+    """
+    if len(results) < 2:
+        return results
+    ordered = [s.name for s in strategies if s.name in results]
+    if not ordered:
+        ordered = list(results.keys())
+    primary_name = ordered[0]
+    primary = results.get(primary_name)
+    if primary is None or not primary.squad:
+        return results
+
+    ranked = sorted(primary.squad, key=lambda p: p.projected_score, reverse=True)
+    n_core = max(1, min(max_exclude, int(round(len(ranked) * core_fraction))))
+    core_ids = {p.player_id for p in ranked[:n_core]}
+
+    out = dict(results)
+    for name in ordered[1:]:
+        strat = next((s for s in strategies if s.name == name), None)
+        if strat is None:
+            continue
+        exclude = list(set(config.exclude) | core_ids)
+        cfg2 = replace(config, exclude=exclude)
+        try:
+            alt = optimize_squad(pool, cfg2, strat)
+            if alt.squad:
+                out[name] = alt
+        except Exception as exc:  # noqa: BLE001
+            log.warning("diversify_secondary_strategies: %s failed (%s); keep original", name, exc)
     return out
