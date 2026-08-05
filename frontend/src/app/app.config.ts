@@ -11,6 +11,7 @@ import { HttpClient, provideHttpClient, withFetch, withInterceptors } from '@ang
 
 import { routes } from './app.routes';
 import { apiKeyInterceptor } from './core/interceptors/api-key.interceptor';
+import { healthCheckInterceptor } from './core/interceptors/health-check.interceptor';
 import { API_BASE_URL } from './core/tokens/api-base-url.token';
 
 // Runtime config holder — populated by loadRuntimeConfig before bootstrap.
@@ -39,7 +40,7 @@ export const appConfig: ApplicationConfig = {
     provideZonelessChangeDetection(),
     provideRouter(routes, withViewTransitions()),
     provideClientHydration(withEventReplay()),
-    provideHttpClient(withFetch(), withInterceptors([apiKeyInterceptor])),
+    provideHttpClient(withFetch(), withInterceptors([apiKeyInterceptor, healthCheckInterceptor])),
     {
       provide: APP_INITIALIZER,
       useFactory: loadRuntimeConfig,
