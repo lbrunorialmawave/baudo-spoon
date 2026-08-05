@@ -349,9 +349,18 @@ def _load_fotmob_reference(
         JOIN player_season_stats pss
           ON pss.player_fotmob_id = psr.player_fotmob_id
          AND pss.season_id = (
+             -- Always Serie A: this function resolves the Fantacalcio Serie A
+             -- listino, regardless of the caller's league_name filter (used
+             -- only for the broader candidate pool below). Without this,
+             -- ingesting a second league sharing this season_start (e.g.
+             -- Premier League) would let Postgres arbitrarily pick either
+             -- league's season_id here, breaking matching non-deterministically
+             -- for anyone with rows in both.
              SELECT s2.id
              FROM seasons s2
+             JOIN leagues l2 ON l2.id = s2.league_id
              WHERE s2.season_start = psr.season_start
+               AND l2.name = 'Serie A'
              LIMIT 1
          )
         JOIN seasons s ON s.id = pss.season_id
@@ -393,7 +402,11 @@ def _load_fotmob_reference(
                    s.season_start,
                    ROW_NUMBER() OVER (
                        PARTITION BY pss.player_fotmob_id
-                       ORDER BY s.season_start DESC
+                       -- Serie A wins ties on season_start against any other
+                       -- ingested league, rather than leaving it to Postgres's
+                       -- arbitrary row-arrival order (see the primary query's
+                       -- season_id subquery above for the same rationale).
+                       ORDER BY (l.name = 'Serie A') DESC, s.season_start DESC
                    ) AS rn
             FROM player_season_stats pss
             JOIN seasons s ON s.id = pss.season_id

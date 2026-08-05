@@ -163,7 +163,9 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         metavar="NAME",
         help="Filter to a specific league (partial match, e.g. 'Serie A'). "
-             "Defaults to all leagues.",
+             "Defaults to Serie A (MLConfig.league_name) when unset — set "
+             "the ML_LEAGUE_NAME env var to an empty value to opt into "
+             "multi-league training instead.",
     )
     parser.add_argument(
         "--fantavoto-csv",

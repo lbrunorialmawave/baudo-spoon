@@ -132,6 +132,7 @@ def _stub_df() -> pd.DataFrame:
             "is_neo_arrivo": [False, False],
             "is_starter": [True, False],
             "stats_from_prior_season": [False, False],
+            "stats_from_foreign_league": [False, False],
         }
     )
     return df

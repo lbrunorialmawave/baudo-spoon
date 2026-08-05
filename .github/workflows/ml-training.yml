@@ -5,9 +5,9 @@ on:
   workflow_dispatch:
     inputs:
       league:
-        description: "Lega da filtrare (vuoto = tutte)"
+        description: "Lega da filtrare (default Serie A — vedi MLConfig.league_name)"
         required: false
-        default: ""
+        default: "Serie A"
 
       tune:
         description: "Esegui RandomizedSearchCV (più lento, più preciso)"

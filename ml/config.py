@@ -49,8 +49,12 @@ class MLConfig(BaseSettings):
     min_minutes: int = 800
 
     # ── League filter ─────────────────────────────────────────────────────────
-    # When None, all leagues in the database are used.
-    league_name: str | None = None
+    # Defaults to Serie A: once foreign leagues are scraped (for MANTRA's
+    # cross-league neo-arrivo fallback, see ml/mantra/runner.py), a training
+    # run without this filter would silently start pooling their rows into
+    # the Serie A predictor's training set. Pass None explicitly to opt into
+    # multi-league training deliberately.
+    league_name: str | None = "Serie A"
 
     # ── Clustering ────────────────────────────────────────────────────────────
     n_clusters: int = 6

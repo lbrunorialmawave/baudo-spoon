@@ -18,6 +18,20 @@ comes from the target season's own quotations, since that's the one input
 that *is* available pre-season. Each player record carries a
 ``stats_from_prior_season`` flag so callers can tell which rows used the
 fallback.
+
+Cross-league fallback for players new to Serie A
+-------------------------------------------------
+A player with zero Serie A history (e.g. a transfer just arrived from
+another league) has no rows in ``player_season_aggregates`` for either the
+target season or the one before it. A third COALESCE tier,
+``player_latest_stats_any_league`` (a view with no league filter — see
+migration 018), supplies his single most recent season anywhere, so he's
+scored on real performance instead of ``pilastro1.py``'s role-median guess
+for neo-arrivi. This tier deliberately does **not** feed ``Stagioni_IT``
+(``seasons_in_italy`` stays Serie-A-only): "has real stats somewhere" and
+"has adapted to Italian football" are different facts, and ``is_neo_arrivo``
+downstream must keep meaning the latter. Rows using this tier carry
+``stats_from_foreign_league = True``.
 """
 
 from __future__ import annotations
@@ -73,24 +87,30 @@ _PLAYER_DATA_SQL = sa.text("""
         pim.player_fotmob_id,
         -- Stats from player_season_stats (aggregated), falling back to the
         -- prior season when the target season has no played matches yet
-        -- (pre-season valuation, e.g. before the auction) — see the
-        -- "MANTRA pre-season fallback" note in this module's docstring.
-        COALESCE(pss.minutes_avg, pss_prev.minutes_avg)             AS "Min_annuo",
-        COALESCE(pss.vote_avg, pss_prev.vote_avg)                   AS "V",
-        COALESCE(pss.vote_std, pss_prev.vote_std)                   AS "DV",
-        COALESCE(pss.presence_rate, pss_prev.presence_rate)         AS "Pr",
-        COALESCE(pss.xg_per90, pss_prev.xg_per90)                   AS "xG90",
-        COALESCE(pss.xa_per90, pss_prev.xa_per90)                   AS "xA90",
-        COALESCE(pss.goals_per90, pss_prev.goals_per90)             AS "G90",
-        COALESCE(pss.assists_per90, pss_prev.assists_per90)         AS "A90",
-        COALESCE(pss.saves_per90, pss_prev.saves_per90)             AS saves_per90,
-        COALESCE(pss.clean_sheet_per90, pss_prev.clean_sheet_per90) AS clean_sheet_per90,
+        -- (pre-season valuation, e.g. before the auction), then to the
+        -- player's most recent season in ANY league when he has no Serie A
+        -- history at all — see the module docstring's two fallback notes.
+        COALESCE(pss.minutes_avg, pss_prev.minutes_avg, pss_foreign.minutes_avg)             AS "Min_annuo",
+        COALESCE(pss.vote_avg, pss_prev.vote_avg, pss_foreign.vote_avg)                       AS "V",
+        COALESCE(pss.vote_std, pss_prev.vote_std, pss_foreign.vote_std)                       AS "DV",
+        COALESCE(pss.presence_rate, pss_prev.presence_rate, pss_foreign.presence_rate)        AS "Pr",
+        COALESCE(pss.xg_per90, pss_prev.xg_per90, pss_foreign.xg_per90)                       AS "xG90",
+        COALESCE(pss.xa_per90, pss_prev.xa_per90, pss_foreign.xa_per90)                       AS "xA90",
+        COALESCE(pss.goals_per90, pss_prev.goals_per90, pss_foreign.goals_per90)              AS "G90",
+        COALESCE(pss.assists_per90, pss_prev.assists_per90, pss_foreign.assists_per90)        AS "A90",
+        COALESCE(pss.saves_per90, pss_prev.saves_per90, pss_foreign.saves_per90)              AS saves_per90,
+        COALESCE(pss.clean_sheet_per90, pss_prev.clean_sheet_per90, pss_foreign.clean_sheet_per90) AS clean_sheet_per90,
+        -- Serie-A-only, deliberately no foreign tier — see docstring.
         COALESCE(pss.seasons_in_italy, pss_prev.seasons_in_italy)   AS "Stagioni_IT",
         (pss.fantacalcio_id IS NULL AND pss_prev.fantacalcio_id IS NOT NULL) AS stats_from_prior_season,
+        (pss.fantacalcio_id IS NULL AND pss_prev.fantacalcio_id IS NULL
+         AND pss_foreign.fantacalcio_id IS NOT NULL)                AS stats_from_foreign_league,
         -- Context (nullable when player_profiles match is missing)
         CAST(NULL AS FLOAT)   AS "Eta",
         FALSE                 AS "Cambio_Squadra",
-        -- Team strength (from team_season_stats), same prior-season fallback
+        -- Team strength (from team_season_stats), same prior-season fallback.
+        -- Pinned to Serie A: pq.team is always an Italian club, and this
+        -- table now holds other leagues' clubs too (migration 018).
         COALESCE(ts.team_rank_norm, ts_prev.team_rank_norm)         AS team_rank_norm,
         COALESCE(ts.prev_season_points, ts_prev.prev_season_points) AS prev_season_points,
         COALESCE(ts.goal_difference, ts_prev.goal_difference)       AS goal_difference,
@@ -109,14 +129,18 @@ _PLAYER_DATA_SQL = sa.text("""
     LEFT JOIN player_season_aggregates pss_prev
         ON pss_prev.fantacalcio_id = pim.player_fotmob_id::bigint
         AND pss_prev.season_start = pq.season_start - 1
+    LEFT JOIN player_latest_stats_any_league pss_foreign
+        ON pss_foreign.fantacalcio_id = pim.player_fotmob_id::bigint
     LEFT JOIN player_profiles p
         ON p.player_fotmob_id = pim.player_fotmob_id::bigint
     LEFT JOIN team_strength_aggregates ts
         ON ts.team_name = pq.team
         AND ts.season_start = pq.season_start
+        AND ts.league_name = 'Serie A'
     LEFT JOIN team_strength_aggregates ts_prev
         ON ts_prev.team_name = pq.team
         AND ts_prev.season_start = pq.season_start - 1
+        AND ts_prev.league_name = 'Serie A'
     WHERE pq.season_start = :season_start
     ORDER BY pq.player_name
 """)
@@ -198,6 +222,7 @@ def load_data(
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
     df["stats_from_prior_season"] = df["stats_from_prior_season"].fillna(False).astype(bool)
+    df["stats_from_foreign_league"] = df["stats_from_foreign_league"].fillna(False).astype(bool)
 
     if df.empty:
         raise ValueError(
@@ -364,6 +389,9 @@ def run_mantra(
             # True when P1/P2/P3 fell back to the prior season's performance
             # data because the target season has no played matches yet.
             "stats_from_prior_season": bool(df.at[idx, "stats_from_prior_season"]),
+            # True when the player has no Serie A history at all and P1/P2/P3
+            # instead used his most recent season in another league.
+            "stats_from_foreign_league": bool(df.at[idx, "stats_from_foreign_league"]),
             # Computed pillars
             "P1": round(float(p1.iloc[idx]), 2),
             "P2": round(float(p2.iloc[idx]), 2),
@@ -399,6 +427,7 @@ def run_mantra(
             },
             "n_players": len(players_out),
             "n_players_prior_season_fallback": int(df["stats_from_prior_season"].sum()),
+            "n_players_foreign_fallback": int(df["stats_from_foreign_league"].sum()),
         },
         "players": players_out,
         "classifications": {
