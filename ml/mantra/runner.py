@@ -404,6 +404,7 @@ def run_mantra(
             "FP_Mantra": round(float(scores["fp_mantra"].iloc[idx]), 2),
             "VR": round(float(scores["vr"].iloc[idx]), 2),
             "Prezzo_Massimo": round(float(scores["prezzo_massimo"].iloc[idx]), 2),
+            "Percentile_Ruolo": round(float(scores["percentile_ruolo"].iloc[idx]), 4),
             "Fase7": str(fase7_label.iloc[idx]) if pd.notna(fase7_label.iloc[idx]) else None,
             "Fase7_Motivo": str(fase7_motivo.iloc[idx]) if pd.notna(fase7_motivo.iloc[idx]) else None,
             "rischio": str(classification_8g.iloc[idx]) if pd.notna(classification_8g.iloc[idx]) else None,

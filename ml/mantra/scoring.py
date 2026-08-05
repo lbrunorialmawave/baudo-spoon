@@ -12,10 +12,18 @@ Steps
 8. FP_Mantra = clip(FP_Corr * Fattore_Flessibilità, 0, 100)
 9. Fattore_Eroe = clip(1 + (1 - CP / CP_medio_tutti) * 0.5, 0.6, 1.6)
 10. VR = clip((FP_Mantra * Fattore_Eroe / CP_Corr) * 100, 0, 300)
-11. Quotazione_Media_Ruolo = mean(Pz1 > 0, extended role pool) — real listino price,
-    anchors Prezzo_Massimo to the role's actual market scale (CP is a 0-100
-    performance composite, not a credit amount, so it cannot do this on its own).
-12. Prezzo_Massimo = max(Quotazione_Media_Ruolo * (VR / 100), 1)
+11. Prezzo_Massimo = max(Pz1, 1) — the player's own real listino price.
+    Players never quoted (Pz1<=0, e.g. new arrivals) fall back to the mean
+    Pz1 of their extended role pool. VR does NOT modulate this value: an
+    earlier version anchored to the role-pool's mean listino price scaled
+    by VR/100, which collapses any player whose own price is an outlier
+    relative to role peers (e.g. an attacking-profile player tagged with a
+    cheap defensive MANTRA role) down to the pool average. Prezzo_Massimo
+    is now always the real, correct market price.
+12. Percentile_Ruolo = rank-based percentile (0=worst, 1=best) of FP_Mantra
+    within the extended role pool. Exposed for downstream, opt-in "auction
+    estimate" pricing (see ml.optimizer.inflation) applied at request time
+    by the API — never baked into Prezzo_Massimo itself.
 """
 
 from __future__ import annotations
@@ -25,6 +33,25 @@ import pandas as pd
 
 from ml.mantra.config import MantraConfig
 from ml.mantra.roles import calcola_pool_esteso
+
+
+def _pool_percentile(
+    fp_mantra: pd.Series,
+    roles: pd.Series,
+    pool_roles_map: dict[str, set[str]],
+) -> pd.Series:
+    """Rank-based percentile (0=worst, 1=best) of ``fp_mantra`` within the
+    extended role pool of each player. Pools with a single player get 1.0."""
+    out = pd.Series(1.0, index=fp_mantra.index)
+    for ruolo, pool_set in pool_roles_map.items():
+        mask = roles.isin(pool_set)
+        idx = fp_mantra[mask].index
+        n = len(idx)
+        if n <= 1:
+            continue
+        ranks = fp_mantra[idx].rank(method="average") - 1.0
+        out[idx] = ranks / (n - 1)
+    return out
 
 
 def _pool_mean_std(
@@ -85,15 +112,15 @@ def compute_fp_corr(
         Number of MANTRA roles per player (1, 2, 3+).
     pz1:
         Current official listino quotation (``qt_a``) per player, 0 if
-        never quoted. Anchors ``Prezzo_Massimo`` to the role's real
-        market price scale.
+        never quoted. Anchors ``Prezzo_Massimo`` directly (own price), with
+        the role-pool mean as fallback only for never-quoted players.
     cfg:
         MantraConfig.
 
     Returns
     -------
     dict with keys: fp_corr, cp_corr, fp_mantra, fattore_flessibilita,
-    fattore_eroe, vr, prezzo_massimo.
+    fattore_eroe, vr, prezzo_massimo, percentile_ruolo.
     """
     # Build pool map for each role, fusing only roles with too few players
     role_counts = roles.value_counts().to_dict()
@@ -138,12 +165,13 @@ def compute_fp_corr(
     vr = vr.clip(lower=0, upper=300)
 
     # ── Prezzo Massimo ───────────────────────────────────────────────────────
-    # Anchor to the role's real listino price (mean Pz1 in the role pool),
-    # not to CP: CP is a role-blind 0-100 performance composite, so scaling
-    # it directly produced similar credit amounts for every role regardless
-    # of how differently roles are actually priced at auction (e.g. forwards
-    # command far higher prices than defenders). VR still does the relative
-    # "better/worse than the role average" adjustment on top of that anchor.
+    # Anchor to the player's own real listino price. The role-pool mean is
+    # only a fallback for players never quoted (Pz1<=0, e.g. new arrivals):
+    # anchoring every quoted player to their role's mean price (previous
+    # behaviour) collapses role outliers — e.g. an attacking-profile
+    # midfielder tagged with a cheap defensive MANTRA role — down to the
+    # pool average. VR does not modulate this value (see module docstring);
+    # it remains available as its own column.
     pz1_valid = pz1.where(pz1 > 0)
     quot_globale = pz1_valid.dropna().mean()
     if pd.isna(quot_globale):
@@ -155,7 +183,8 @@ def compute_fp_corr(
         quot_mean_ruolo[ruolo] = pool_vals.mean() if len(pool_vals) > 0 else quot_globale
     quot_ancora_ruolo = roles.map(quot_mean_ruolo)
 
-    prezzo = np.maximum(quot_ancora_ruolo * (vr / 100.0), 1.0)
+    prezzo = np.maximum(pz1_valid.fillna(quot_ancora_ruolo), 1.0)
+    percentile_ruolo = _pool_percentile(fp_mantra, roles, pool_roles_map)
 
     return {
         "fp_corr": fp_corr,
@@ -165,4 +194,5 @@ def compute_fp_corr(
         "fattore_eroe": fattore_eroe,
         "vr": vr,
         "prezzo_massimo": prezzo,
+        "percentile_ruolo": percentile_ruolo,
     }

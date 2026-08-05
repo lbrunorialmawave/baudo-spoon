@@ -98,8 +98,25 @@ async def list_mantra_players(
     sort_dir: Optional[str] = Query("asc", description="Sort direction: asc or desc"),
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
+    stima_asta: bool = Query(
+        False,
+        description="Applica una stima del prezzo d'asta (percentile ruolo + partecipanti) invece della sola quotazione ufficiale",
+    ),
+    num_partecipanti: Optional[int] = Query(
+        None, ge=1, description="Numero partecipanti alla lega (richiesto se stima_asta=True)"
+    ),
+    percentile_soglia: float = Query(0.7, ge=0.0, le=1.0),
+    tasso_base: float = Query(0.05, ge=0.0),
+    partecipanti_baseline: int = Query(8, ge=1),
+    moltiplicatore_max: float = Query(1.6, ge=1.0),
     db: AsyncSession = Depends(get_db),
 ) -> ORJSONResponse:
+    if stima_asta and num_partecipanti is None:
+        raise HTTPException(
+            status_code=400,
+            detail="num_partecipanti è richiesto quando stima_asta=True",
+        )
+
     try:
         data = await _load_mantra_results(db)
     except FileNotFoundError as e:
@@ -118,13 +135,39 @@ async def list_mantra_players(
         players = [p for p in players if search.lower() in p.get("player_name", "").lower()]
     if min_fp is not None:
         players = [p for p in players if (p.get("FP_Mantra") or 0) >= min_fp]
+    if fantacalcio_ids is not None:
+        ids = {int(x) for x in fantacalcio_ids.split(",") if x.strip().isdigit()}
+        players = [p for p in players if p.get("fantacalcio_id") in ids]
+
+    # Stima d'asta on-demand: sovrascrive Prezzo_Massimo su copie dei dict
+    # (mai in place — `players` condivide le entry con la cache di
+    # `_load_mantra_results`) usando lo stesso modello percentile +
+    # partecipanti già usato da ml.optimizer/ml.auction. Applicata prima del
+    # filtro min_price/max_price così quest'ultimo lavora sul valore stimato.
+    if stima_asta:
+        from ml.optimizer.inflation import InflationConfig, inflation_multiplier
+
+        inflation_cfg = InflationConfig(
+            inflation_percentile_threshold=percentile_soglia,
+            base_inflation_rate=tasso_base,
+            baseline_participants=partecipanti_baseline,
+            max_inflation_multiplier=moltiplicatore_max,
+        )
+        stimati = []
+        for p in players:
+            pct = p.get("Percentile_Ruolo") or 0.0
+            base = p.get("Prezzo_Massimo") or 1
+            mult = inflation_multiplier(pct, num_partecipanti, inflation_cfg)
+            p2 = dict(p)
+            p2["Prezzo_Base_Listino"] = base
+            p2["Prezzo_Massimo"] = round(max(base * mult, 1.0), 2)
+            stimati.append(p2)
+        players = stimati
+
     if min_price is not None:
         players = [p for p in players if (p.get("Prezzo_Massimo") or 0) >= min_price]
     if max_price is not None:
         players = [p for p in players if (p.get("Prezzo_Massimo") or 999) <= max_price]
-    if fantacalcio_ids is not None:
-        ids = {int(x) for x in fantacalcio_ids.split(",") if x.strip().isdigit()}
-        players = [p for p in players if p.get("fantacalcio_id") in ids]
 
     # Sorting
     if sort_by:
@@ -151,6 +194,7 @@ async def list_mantra_players(
         "page": page,
         "size": size,
         "items": items,
+        "stima_asta_attiva": stima_asta,
         "meta": data.get("meta"),
     })
 

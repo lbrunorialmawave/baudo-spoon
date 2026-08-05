@@ -99,11 +99,30 @@ Fattore_Eroe = clip(1 + (1 - CP / CP_medio_tutti) * 0.5, 0.6, 1.6)
 
 VR = clip(FP_Mantra * Fattore_Eroe / CP_Corr * 100, 0, 300)
 
-Prezzo_Massimo = max(CP * (VR / 100), 1)
+Prezzo_Massimo = max(Pz1, 1)   # fallback: media Pz1 del pool esteso di ruolo se mai quotato (Pz1<=0)
+Percentile_Ruolo = rank_percentile(FP_Mantra, pool esteso di ruolo)   # 0=peggiore, 1=migliore
 ```
 
 **Nota**: `z_score` con mean/std calcolati sul pool esteso del ruolo.
 `k` = clip(1 / %(giocatori con |z|>1.5), 1, CAP_K=6). Più il ruolo è eterogeneo, più k è alto → i valori vengono "spalmati".
+
+**Nota su Prezzo_Massimo**: ancorato al prezzo reale del giocatore stesso
+(`Pz1`), non a VR/CP né alla media di ruolo. Un'ancora basata sulla media
+del pool di ruolo (versione precedente) collassa gli outlier di ruolo — es.
+un centrocampista offensivo taggato con un ruolo MANTRA difensivo economico
+— al prezzo medio dei suoi compagni di ruolo, molto più economici. La media
+di ruolo resta solo un fallback per i giocatori mai quotati (Pz1≤0, neo
+arrivi). `Percentile_Ruolo` (rank di `FP_Mantra` nel pool esteso) è esposto
+per uso downstream ma non modifica `Prezzo_Massimo` in pipeline.
+
+**Stima d'asta (opzionale, calcolata a runtime, non in pipeline)**: l'API
+`GET /mantra/players` accetta i parametri opzionali `stima_asta` e
+`num_partecipanti` per sovrascrivere `Prezzo_Massimo` con una proiezione
+che aumenta il prezzo sopra al listino in base al `Percentile_Ruolo` del
+giocatore e al numero di partecipanti alla lega, riusando
+`ml.optimizer.inflation.inflation_multiplier` — lo stesso modello già usato
+dall'ottimizzatore rose e dal tracker d'asta live (`ml/auction/`). Senza
+questi parametri, `Prezzo_Massimo` resta la quotazione reale.
 
 ---
 

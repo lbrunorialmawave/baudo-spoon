@@ -149,3 +149,52 @@ def test_mantra_players_endpoint_passes_through_filters_with_new_fields(
     assert only["player_name"] == "Alpha"
     assert only["season_value"] == pytest.approx(210.0)
     assert only["start_probability"] == pytest.approx(0.79)
+
+
+def test_mantra_players_endpoint_defaults_to_plain_quotation(mantra_client):
+    """Without stima_asta, Prezzo_Massimo is served untouched and the
+    response flags the estimate as inactive."""
+    payload = _mantra_payload()
+    with patch("api.routers.mantra._load_mantra_results", return_value=payload):
+        response = mantra_client.get("/mantra/players")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["stima_asta_attiva"] is False
+    alpha = body["items"][0]
+    assert alpha["Prezzo_Massimo"] == pytest.approx(15.0)
+    assert "Prezzo_Base_Listino" not in alpha
+
+
+def test_mantra_players_endpoint_requires_num_partecipanti_for_stima(mantra_client):
+    payload = _mantra_payload()
+    with patch("api.routers.mantra._load_mantra_results", return_value=payload):
+        response = mantra_client.get("/mantra/players", params={"stima_asta": True})
+
+    assert response.status_code == 400
+
+
+def test_mantra_players_endpoint_stima_asta_inflates_top_percentile(mantra_client):
+    """A player at the top percentile of his role, with enough participants
+    above baseline, must be inflated above his own Prezzo_Massimo; a player
+    below the percentile threshold must be left untouched."""
+    payload = _mantra_payload()
+    payload["players"][0]["Percentile_Ruolo"] = 1.0  # Alpha: top of role
+    payload["players"][1]["Percentile_Ruolo"] = 0.2  # Beta: below threshold
+    with patch("api.routers.mantra._load_mantra_results", return_value=payload):
+        response = mantra_client.get(
+            "/mantra/players",
+            params={"stima_asta": True, "num_partecipanti": 12},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["stima_asta_attiva"] is True
+    items = {p["player_name"]: p for p in body["items"]}
+
+    alpha = items["Alpha"]
+    assert alpha["Prezzo_Base_Listino"] == pytest.approx(15.0)
+    assert alpha["Prezzo_Massimo"] > 15.0
+
+    beta = items["Beta"]
+    assert beta["Prezzo_Massimo"] == pytest.approx(7.0)

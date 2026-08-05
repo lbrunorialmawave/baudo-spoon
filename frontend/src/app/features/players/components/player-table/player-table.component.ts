@@ -38,7 +38,10 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
             <th class="px-3 py-2 text-left">
               Profilo <span class="opacity-60 cursor-help" [title]="PROFILO_LEGEND">ⓘ</span>
             </th>
-            <th class="px-3 py-2 text-right sortable" (click)="sortChanged.emit('Prezzo_Massimo')" title="Prezzo massimo stimato = prezzo medio reale del ruolo del giocatore (dal listone) moltiplicato per il suo indice di Valore Reale (VR). Sotto, tra parentesi, la quotazione ufficiale corrente del listone.">
+            <th class="px-3 py-2 text-right sortable" (click)="sortChanged.emit('Prezzo_Massimo')"
+                [title]="stimaAstaActive()
+                  ? 'Prezzo massimo stimato = quotazione ufficiale del listone, aumentata in base al percentile del giocatore nel ruolo e al numero di partecipanti alla lega (modello asta). Sotto, tra parentesi, la quotazione ufficiale di listone.'
+                  : 'Prezzo massimo = quotazione ufficiale corrente del listone. Attiva la stima prezzo d\\'asta per una proiezione basata su percentile di ruolo e numero di partecipanti.'">
               Prezzo @if (sortColumn() === 'Prezzo_Massimo') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
             </th>
             <th class="px-3 py-2 text-left hidden lg:table-cell" title="Valutazione Gruppo Esperti (forum.gruppoesperti.it), 1-5 stelle">Esperti</th>
@@ -124,7 +127,7 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                 </td>
                 <td class="px-3 py-2.5 text-right font-mono text-xs whitespace-nowrap"
                     style="color:var(--color-text-secondary)">
-                  {{ mp?.Prezzo_Massimo != null ? (mp.Prezzo_Massimo | number:'1.0-0') + ' cr' : '—' }}
+                  {{ mp?.Prezzo_Massimo != null ? (stimaAstaActive() ? '~' : '') + (mp.Prezzo_Massimo | number:'1.0-0') + ' cr' : '—' }}
                   @if (mp?.Pz1 != null) {
                     <div class="opacity-60" style="font-size:10px" title="Quotazione ufficiale corrente (listone)">list. {{ mp.Pz1 | number:'1.0-0' }}</div>
                   }
@@ -162,6 +165,8 @@ export class PlayerTableComponent {
   readonly expertRatings = input<Record<number, ExpertRatingWithFantacalcioId>>({});
   readonly sortColumn = input<string>('');
   readonly sortDirection = input<'asc' | 'desc'>('asc');
+  /** True quando "Prezzo" riflette la stima d'asta invece della sola quotazione ufficiale. */
+  readonly stimaAstaActive = input<boolean>(false);
   readonly sortChanged = output<string>();
   readonly playerSelected = output<any>();
 

@@ -21,6 +21,10 @@ export interface MantraPlayer {
   FP_Mantra: number;
   VR: number;
   Prezzo_Massimo: number;
+  /** Percentile (0-1) di FP_Mantra nel pool esteso del ruolo del giocatore. */
+  Percentile_Ruolo?: number;
+  /** Presente solo quando la stima d'asta è attiva: la quotazione reale pre-inflazione. */
+  Prezzo_Base_Listino?: number;
   Fase7: string | null;
   /** Only populated when Fase7 is null — explains why no rule matched. */
   Fase7_Motivo?: string | null;
@@ -34,6 +38,8 @@ export interface MantraPlayersResponse {
   page: number;
   size: number;
   items: MantraPlayer[];
+  /** True quando Prezzo_Massimo riflette la stima d'asta invece della sola quotazione. */
+  stima_asta_attiva?: boolean;
   meta?: {
     season_start: number;
     generated_at: string;

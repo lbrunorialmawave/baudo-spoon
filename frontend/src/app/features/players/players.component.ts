@@ -82,6 +82,18 @@ import { PlayerDrawerComponent } from './components/player-drawer/player-drawer.
                type="number" min="0" placeholder="Prezzo max"
                [ngModel]="priceMax()" (ngModelChange)="priceMax.set($event)" />
 
+        <label class="flex items-center gap-1.5 text-sm w-full md:w-auto" style="color:var(--color-text-secondary)"
+               title="Stima il prezzo massimo d'asta in base al percentile del giocatore nel ruolo e al numero di partecipanti alla lega, invece di mostrare solo la quotazione ufficiale">
+          <input type="checkbox" [ngModel]="stimaAstaEnabled()" (ngModelChange)="stimaAstaEnabled.set($event)" />
+          Stima prezzo d'asta
+        </label>
+        @if (stimaAstaEnabled()) {
+          <input class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full md:w-32"
+                 style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
+                 type="number" min="1" placeholder="N. partecipanti"
+                 [ngModel]="numPartecipanti()" (ngModelChange)="numPartecipanti.set($event)" />
+        }
+
         <div class="flex flex-wrap gap-1.5 md:ml-auto">
           @for (qf of quickFilters; track qf.key) {
             <button class="rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors"
@@ -117,6 +129,7 @@ import { PlayerDrawerComponent } from './components/player-drawer/player-drawer.
               [loading]="loading()"
               [page]="currentPage()"
               [pageSize]="pageSize"
+              [stimaAstaActive]="stimaAstaActive()"
               [mantraMap]="mantraMap()"
               [matchdayStatus]="matchdayStatusMap()"
               [teamStrength]="teamStrengthScores()"
@@ -187,6 +200,11 @@ export class PlayersComponent {
   readonly searchInput = signal('');
   readonly priceMin = signal<number | null>(null);
   readonly priceMax = signal<number | null>(null);
+  readonly stimaAstaEnabled = signal(false);
+  readonly numPartecipanti = signal<number | null>(null);
+  /** Riflette se l'ultima risposta del backend ha applicato la stima (può
+   * essere false anche con stimaAstaEnabled=true finché numPartecipanti è vuoto). */
+  readonly stimaAstaActive = signal(false);
   readonly activeQuickFilter = signal<string | null>(null);
   readonly selectedPlayer = signal<any | null>(null);
   readonly matchdayStatusMap = signal<Record<number, any>>({});
@@ -231,6 +249,8 @@ export class PlayersComponent {
         this.priceMin(),
         this.priceMax(),
         this.matchdayStatusMap(),
+        this.stimaAstaEnabled(),
+        this.numPartecipanti(),
       ]);
       const filtersChanged = signature !== this.lastFilterSignature;
       this.lastFilterSignature = signature;
@@ -277,6 +297,8 @@ export class PlayersComponent {
           .map((mds: any) => mds.fantacalcio_id)
       : undefined;
 
+    const stimaAsta = this.stimaAstaEnabled() && this.numPartecipanti() != null;
+
     this.mantraService.listPlayers({
       ruolo: this.selectedRuolo() || undefined,
       team: this.selectedTeam() || undefined,
@@ -289,10 +311,13 @@ export class PlayersComponent {
       sortDir: this.sortDirection() || undefined,
       page: this.currentPage(),
       size: this.pageSize,
+      stimaAsta,
+      numPartecipanti: stimaAsta ? this.numPartecipanti()! : undefined,
     }).subscribe({
       next: (res) => {
         this.mantraPlayers.set(res.items);
         this.total.set(res.total);
+        this.stimaAstaActive.set(res.stima_asta_attiva ?? false);
         this.loading.set(false);
       },
       error: (e) => {
@@ -360,5 +385,7 @@ export class PlayersComponent {
     this.priceMin.set(null);
     this.priceMax.set(null);
     this.activeQuickFilter.set(null);
+    this.stimaAstaEnabled.set(false);
+    this.numPartecipanti.set(null);
   };
 }
