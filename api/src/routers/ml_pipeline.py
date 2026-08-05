@@ -81,7 +81,7 @@ def _latest_run() -> Optional[dict]:
     return runs[0] if runs else None
 
 
-def _latest_persisted_run() -> Optional[dict]:
+async def _latest_persisted_run() -> Optional[dict]:
     """Return the most recent run that the ML pipeline actually wrote to the
     DB — the run proven to be functional (has metrics), not merely dispatched."""
     import sqlalchemy as sa
