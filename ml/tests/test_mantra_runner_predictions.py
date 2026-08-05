@@ -131,6 +131,7 @@ def _stub_df() -> pd.DataFrame:
             "num_ruoli": [1, 1],
             "is_neo_arrivo": [False, False],
             "is_starter": [True, False],
+            "stats_from_prior_season": [False, False],
         }
     )
     return df

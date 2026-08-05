@@ -3,6 +3,21 @@
 Reads data from the PostgreSQL database, runs the full MANTRA scoring
 pipeline, and produces a structured JSON result with all pillars,
 classifications, and metadata.
+
+MANTRA pre-season fallback
+--------------------------
+P1 (Solidita), P2 (Potenziale), and P3 (Peso Squadra) are built from
+``player_season_aggregates`` / ``team_strength_aggregates`` for the target
+season — real match data that, before the season kicks off (e.g. while
+prepping for the auction), simply does not exist yet. ``_PLAYER_DATA_SQL``
+therefore falls back to ``season_start - 1`` per player/team whenever the
+target season has no rows, so a pre-season run scores players on their most
+recent actual performance instead of collapsing every pillar to a
+league-wide median (or zero). Market data (Pz1/Pz2/Pz3, used by P4) always
+comes from the target season's own quotations, since that's the one input
+that *is* available pre-season. Each player record carries a
+``stats_from_prior_season`` flag so callers can tell which rows used the
+fallback.
 """
 
 from __future__ import annotations
@@ -56,26 +71,30 @@ _PLAYER_DATA_SQL = sa.text("""
         pmr.ruolo_primario,
         pmr.ruoli_mantra,
         pim.player_fotmob_id,
-        -- Stats from player_season_stats (aggregated)
-        pss.minutes_avg       AS "Min_annuo",
-        pss.vote_avg          AS "V",
-        pss.vote_std          AS "DV",
-        pss.presence_rate     AS "Pr",
-        pss.xg_per90          AS "xG90",
-        pss.xa_per90          AS "xA90",
-        pss.goals_per90       AS "G90",
-        pss.assists_per90     AS "A90",
-        pss.saves_per90,
-        pss.clean_sheet_per90,
-        pss.seasons_in_italy  AS "Stagioni_IT",
+        -- Stats from player_season_stats (aggregated), falling back to the
+        -- prior season when the target season has no played matches yet
+        -- (pre-season valuation, e.g. before the auction) — see the
+        -- "MANTRA pre-season fallback" note in this module's docstring.
+        COALESCE(pss.minutes_avg, pss_prev.minutes_avg)             AS "Min_annuo",
+        COALESCE(pss.vote_avg, pss_prev.vote_avg)                   AS "V",
+        COALESCE(pss.vote_std, pss_prev.vote_std)                   AS "DV",
+        COALESCE(pss.presence_rate, pss_prev.presence_rate)         AS "Pr",
+        COALESCE(pss.xg_per90, pss_prev.xg_per90)                   AS "xG90",
+        COALESCE(pss.xa_per90, pss_prev.xa_per90)                   AS "xA90",
+        COALESCE(pss.goals_per90, pss_prev.goals_per90)             AS "G90",
+        COALESCE(pss.assists_per90, pss_prev.assists_per90)         AS "A90",
+        COALESCE(pss.saves_per90, pss_prev.saves_per90)             AS saves_per90,
+        COALESCE(pss.clean_sheet_per90, pss_prev.clean_sheet_per90) AS clean_sheet_per90,
+        COALESCE(pss.seasons_in_italy, pss_prev.seasons_in_italy)   AS "Stagioni_IT",
+        (pss.fantacalcio_id IS NULL AND pss_prev.fantacalcio_id IS NOT NULL) AS stats_from_prior_season,
         -- Context (nullable when player_profiles match is missing)
         CAST(NULL AS FLOAT)   AS "Eta",
         FALSE                 AS "Cambio_Squadra",
-        -- Team strength (from team_season_stats)
-        ts.team_rank_norm,
-        ts.prev_season_points,
-        ts.goal_difference,
-        ts.avg_team_rating
+        -- Team strength (from team_season_stats), same prior-season fallback
+        COALESCE(ts.team_rank_norm, ts_prev.team_rank_norm)         AS team_rank_norm,
+        COALESCE(ts.prev_season_points, ts_prev.prev_season_points) AS prev_season_points,
+        COALESCE(ts.goal_difference, ts_prev.goal_difference)       AS goal_difference,
+        COALESCE(ts.avg_team_rating, ts_prev.avg_team_rating)       AS avg_team_rating
     FROM player_quotations pq
     JOIN player_mantra_roles pmr
         ON pmr.fantacalcio_id = pq.fantacalcio_id
@@ -87,11 +106,17 @@ _PLAYER_DATA_SQL = sa.text("""
     LEFT JOIN player_season_aggregates pss
         ON pss.fantacalcio_id = pim.player_fotmob_id::bigint
         AND pss.season_start = pq.season_start
+    LEFT JOIN player_season_aggregates pss_prev
+        ON pss_prev.fantacalcio_id = pim.player_fotmob_id::bigint
+        AND pss_prev.season_start = pq.season_start - 1
     LEFT JOIN player_profiles p
         ON p.player_fotmob_id = pim.player_fotmob_id::bigint
     LEFT JOIN team_strength_aggregates ts
         ON ts.team_name = pq.team
         AND ts.season_start = pq.season_start
+    LEFT JOIN team_strength_aggregates ts_prev
+        ON ts_prev.team_name = pq.team
+        AND ts_prev.season_start = pq.season_start - 1
     WHERE pq.season_start = :season_start
     ORDER BY pq.player_name
 """)
@@ -172,6 +197,7 @@ def load_data(
     for col in _NUMERIC_COLS:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
+    df["stats_from_prior_season"] = df["stats_from_prior_season"].fillna(False).astype(bool)
 
     if df.empty:
         raise ValueError(
@@ -335,6 +361,9 @@ def run_mantra(
             "Pz1": int(df.at[idx, "Pz1"]),
             "Pz2": int(df.at[idx, "Pz2"]),
             "Pz3": int(df.at[idx, "Pz3"]),
+            # True when P1/P2/P3 fell back to the prior season's performance
+            # data because the target season has no played matches yet.
+            "stats_from_prior_season": bool(df.at[idx, "stats_from_prior_season"]),
             # Computed pillars
             "P1": round(float(p1.iloc[idx]), 2),
             "P2": round(float(p2.iloc[idx]), 2),
@@ -369,6 +398,7 @@ def run_mantra(
                 "SOGLIA_MINUTI_MAX": cfg.SOGLIA_MINUTI_MAX,
             },
             "n_players": len(players_out),
+            "n_players_prior_season_fallback": int(df["stats_from_prior_season"].sum()),
         },
         "players": players_out,
         "classifications": {
