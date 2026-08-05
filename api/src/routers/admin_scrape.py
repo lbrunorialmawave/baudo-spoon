@@ -7,6 +7,7 @@ POST /admin/scrape/odds-api       — Trigger The Odds API winner-odds scraper (
 POST /admin/scrape/probabili      — Trigger probabili formazioni scraper
 POST /admin/scrape/esperti        — Trigger Gruppo Esperti ratings scraper
 POST /admin/scrape/quotazioni     — Re-import listoni XLSX
+POST /admin/scrape/foreign-stats  — Fetch career stats for players missing Serie A history
 GET  /admin/scrape/status         — Status of all scrapers
 GET  /admin/scrape/logs/{name}    — Last execution log
 GET  /admin/data-health           — Data coverage overview for all sources
@@ -20,6 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import ORJSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -153,6 +155,79 @@ async def trigger_quotazioni(
     except Exception:
         log.exception("Quotazioni import failed")
         raise HTTPException(status_code=500, detail="Quotazioni import failed. Check server logs.")
+
+
+_FOREIGN_STATS_CANDIDATES_SQL = sa.text("""
+    SELECT DISTINCT pim.player_fotmob_id, pq.player_name
+    FROM player_quotations pq
+    JOIN player_id_map pim
+        ON pim.fantacalcio_id = pq.fantacalcio_id
+        AND pim.season_start = pq.season_start
+    LEFT JOIN player_season_aggregates pss_cur
+        ON pss_cur.fantacalcio_id = pim.player_fotmob_id::bigint
+        AND pss_cur.season_start = pq.season_start
+    LEFT JOIN player_season_aggregates pss_prev
+        ON pss_prev.fantacalcio_id = pim.player_fotmob_id::bigint
+        AND pss_prev.season_start = pq.season_start - 1
+    LEFT JOIN player_latest_stats_any_league pss_any
+        ON pss_any.fantacalcio_id = pim.player_fotmob_id::bigint
+    WHERE pq.season_start = :season_start
+      AND pim.player_fotmob_id IS NOT NULL
+      AND pss_cur.fantacalcio_id IS NULL
+      AND pss_prev.fantacalcio_id IS NULL
+      AND (:force OR pss_any.fantacalcio_id IS NULL)
+""")
+
+
+@router.post(
+    "/scrape/foreign-stats",
+    summary="Fetch career stats for players missing Serie A history",
+)
+async def trigger_foreign_stats(
+    force: bool = Query(
+        False,
+        description="Re-fetch even for players who already have some foreign-league data",
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> ORJSONResponse:
+    """Targeted per-player fallback for MANTRA's neo-arrivo handling.
+
+    Finds players in the current Serie A listino who have no Serie A
+    performance history (current or prior season) and, unless already
+    covered, fetches their most recent season anywhere via a single
+    lightweight HTTP request per player (see
+    scraper/src/player_career_scraper.py) — no bulk league scraping.
+    """
+    latest = await db.scalar(sa.text("SELECT MAX(season_start) FROM player_quotations"))
+    if latest is None:
+        raise HTTPException(status_code=400, detail="No quotations imported yet.")
+
+    result = await db.execute(_FOREIGN_STATS_CANDIDATES_SQL, {"season_start": latest, "force": force})
+    candidates = {row.player_fotmob_id: row.player_name for row in result.all()}
+
+    if not candidates:
+        return ORJSONResponse({
+            "scraper": "foreign-stats", "status": "ok",
+            "candidates": 0, "fetched": 0, "persisted": 0,
+        })
+
+    try:
+        sync_url = _to_sync_url(settings.database_url)
+        log.info("[trigger_foreign_stats] %d candidate(s), force=%s", len(candidates), force)
+        from scraper.src.player_career_scraper import fetch_and_persist_players
+
+        fetched, persisted = fetch_and_persist_players(candidates, sync_url)
+        return ORJSONResponse({
+            "scraper": "foreign-stats",
+            "status": "ok",
+            "candidates": len(candidates),
+            "fetched": fetched,
+            "persisted": persisted,
+            "unresolved": len(candidates) - fetched,
+        })
+    except Exception:
+        log.exception("Foreign career-stats fetch failed")
+        raise HTTPException(status_code=500, detail="Foreign career-stats fetch failed. Check server logs.")
 
 
 # ── Data Health ──────────────────────────────────────────────────────────────

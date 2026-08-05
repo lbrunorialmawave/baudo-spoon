@@ -148,6 +148,12 @@ if (Test-Path $quotazioniDir) {
     } else { Log "⏭️  Nessun file .xlsx in ./quotazioni, salto..." }
 } else { Log "⏭️  Cartella ./quotazioni non trovata, salto..." }
 
+# Nota: dopo l'import, i giocatori nuovi in Serie A (senza storico) restano
+# senza dati fino a MANTRA a meno di lanciare anche il fetch mirato via
+# pannello Admin ("Storico Giocatori Esteri") o:
+#   curl -X POST -H "X-API-Key: $env:API_KEY" "http://localhost:8000/api/v1/admin/scrape/foreign-stats"
+# Vedi README.md sezione "Season onboarding" per i dettagli.
+
 # ── 7. Generate fantavoto CSV ────────────────────────────────────────────
 if (-not $SkipFantavoto) {
     Log "STEP 7/12 — Generazione fantavoto CSV"

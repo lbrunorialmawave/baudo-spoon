@@ -160,6 +160,18 @@ export class AdminComponent {
       result: signal<string | null>(null),
       error: signal<string | null>(null),
     },
+    {
+      name: 'foreign-stats',
+      label: 'Storico Giocatori Esteri',
+      description: 'Recupera lo storico (rating/presenze) per i giocatori del listino senza dati Serie A',
+      frequency: 'Dopo ogni import quotazioni',
+      params: [
+        { key: 'force', label: 'Forza tutti (true/false)', placeholder: 'false', value: signal('') },
+      ],
+      running: signal(false),
+      result: signal<string | null>(null),
+      error: signal<string | null>(null),
+    },
   ];
 
   readonly runScraper = (scraper: any): void => {
@@ -177,6 +189,8 @@ export class AdminComponent {
       obs = this.mantraService.runEspertiScraper(seasonOrMatchday);
     } else if (scraper.name === 'quotazioni') {
       obs = this.mantraService.runQuotazioniImport();
+    } else if (scraper.name === 'foreign-stats') {
+      obs = this.mantraService.runForeignStatsScraper(scraper.params[0].value() === 'true');
     } else {
       obs = this.mantraService.runProbabiliScraper(seasonOrMatchday);
     }
@@ -185,6 +199,10 @@ export class AdminComponent {
       next: (res: any) => {
         if (scraper.name === 'quotazioni') {
           scraper.result.set(res.status === 'ok' ? 'Import completato' : 'Import fallito: ' + (res.stderr || 'vedi log server'));
+        } else if (scraper.name === 'foreign-stats') {
+          scraper.result.set(
+            `Candidati: ${res.candidates}, recuperati: ${res.fetched}, salvati: ${res.persisted}`
+          );
         } else {
           scraper.result.set('Scraped ' + (res.records ?? '?') + ' records');
         }
