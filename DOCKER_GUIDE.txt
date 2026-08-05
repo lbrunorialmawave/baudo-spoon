@@ -255,11 +255,35 @@ Vanno lanciati come comandi one-shot dentro il container `api`
 
 6.1 Import quotazioni dai listoni Fantagazzetta (file .xlsx in ./quotazioni/):
 
+    Più semplice: dal pannello Admin, bottone "Import Quotazioni" — o via API
+    (il container `api` ha già `./quotazioni` copiato nell'immagine, vedi
+    `api/Dockerfile`; il volume mount qui sotto serve solo se stai iterando
+    in locale senza rebuildare l'immagine ad ogni file aggiunto):
+
+    curl -X POST -H "X-API-Key: $env:API_KEY_SECRET" http://localhost:8000/api/v1/admin/scrape/quotazioni
+
+    Equivalente via CLI/volume mount esplicito:
+
     docker compose run --rm -v ${PWD}\quotazioni:/app/quotazioni:ro api python -m ml.data.import_quotations --quotazioni-dir /app/quotazioni --source listone_fantagazzetta
+
+6.1B Fetch storico per giocatori nuovi in Serie A (senza dati stagionali):
+
+    Dopo l'import quotazioni, i nuovi arrivi dall'estero non hanno storico
+    Serie A — MANTRA li tratterebbe come neo-arrivi a mediana di pool.
+    Pannello Admin, bottone "Storico Giocatori Esteri" — o via API:
+
+    curl -X POST -H "X-API-Key: $env:API_KEY_SECRET" "http://localhost:8000/api/v1/admin/scrape/foreign-stats"
+
+    Aggiungi `?force=true` per ri-fare il fetch anche a chi ha già dati.
+    Vedi `scraper/src/player_career_scraper.py` e README.md §"Season
+    onboarding" per come funziona (fetch mirato per giocatore via FotMob,
+    non scraping bulk dell'intero campionato estero).
 
 6.2 Generazione del CSV fantavoti reali a partire dai JSON in ./voti/:
 
-    ⚠️  Il container `api` NON ha pandas. Usa il container `ml`:
+    Il container `api` ha pandas e openpyxl (vedi api/requirements.txt),
+    ma `ml.data.voti_loader` non è copiato nell'immagine api — usa il
+    container `ml`:
 
     docker compose --profile ml build --no-cache ml
     docker compose --profile ml run --rm --entrypoint python -v ${PWD}\voti:/app/voti:ro ml -m ml.data.voti_loader --voti-dir /app/voti --out /app/artifacts/fantavoto.csv
@@ -393,9 +417,73 @@ classificazioni (TOP, AFFARE, SCOMMESSA, ...).
     Senza `stima_asta`, il comportamento è invariato (solo quotazione reale).
 
 NOTA: la computazione MANTRA usa i dati di `player_season_aggregates`
-e `team_strength_aggregates` (viste create dalla migration 006).
+e `team_strength_aggregates` (viste create dalla migration 010, Serie-A-
+scopate e affiancate da `player_latest_stats_any_league` — fallback
+cross-lega, migration 018 — dalla migration 018 in poi).
 Se queste viste sono vuote, significa che i dati FotMob non sono
 stati ancora scaricati (vedi §4) o l'ID mapping non è stato eseguito.
+Per i giocatori senza storico Serie A (nuovi arrivi dall'estero), vedi
+§6.1B — altrimenti MANTRA li tratta come neo-arrivi a mediana di pool
+(`ml/mantra/pilastro1.py`).
+
+
+================================================================================
+6D. GRUPPO ESPERTI — RATING TERZE PARTI
+================================================================================
+
+Lo scraper `scraper/gruppo_esperti.py` legge i thread staff "[TOPIC UNICO]"
+di forum.gruppoesperti.it (uno per squadra di Serie A) e ne estrae, per
+ogni giocatore: Titolarità, Media voto, Salute, Bonus (o "No Gol"/"Porta
+inviolata" a seconda del ruolo/curatore), Consiglio Esperti, TOTALE su 50,
+anno di nascita e un commento libero — risolvendo anche i commenti che sono
+solo un rimando ad un'altra sezione del post (es. "Vedi possibili
+sorprese") contro il testo reale di quella sezione. Scrive tutto nella
+tabella `expert_ratings` (colonne aggiunte dalla migration 019). Non ha un
+profilo Docker dedicato: gira dentro il container `api`, che include già
+il package `scraper/` (vedi COPY nel suo Dockerfile), oppure via endpoint
+admin dell'API.
+
+6D.1 Lancio one-shot dentro il container `api` (scrive su DB):
+
+    docker compose exec api python -m scraper.gruppo_esperti --db-url "postgresql+psycopg2://fbref:DevPassword123@db:5432/fbref"
+
+    Opzioni utili:
+        --season-start 2025     (default: risolto dall'ultima stagione presente in player_quotations)
+        --team Inter             (solo una squadra, per test rapidi)
+        --dry-run                 (stampa i primi 30 record senza scrivere su DB)
+
+6D.2 Dry-run rapido (nessuna scrittura, utile per verificare il parsing):
+
+    docker compose exec api python -m scraper.gruppo_esperti --dry-run --team Inter
+
+6D.3 Trigger via endpoint admin (richiede header `X-API-Key`, stesso
+    `$API_KEY_SECRET` di `.env`):
+
+    curl -X POST "http://localhost:8000/api/v1/admin/scrape/esperti" -H "X-API-Key: $env:API_KEY_SECRET"
+
+    Con parametri opzionali (stagione/squadra):
+
+    curl -X POST "http://localhost:8000/api/v1/admin/scrape/esperti?season_start=2025&team=Inter" -H "X-API-Key: $env:API_KEY_SECRET"
+
+    Output atteso:
+      {"scraper":"esperti","season_start":2025,"scraped":480,"records":455,"unmatched":25,"status":"ok"}
+
+6D.4 Lettura dei rating (endpoint pubblici, nessuna auth):
+
+    curl "http://localhost:8000/api/v1/experts/ratings/for-season/2025"        (tutti i rating della stagione, in un colpo)
+    curl "http://localhost:8000/api/v1/experts/ratings/{player_id}"            (rating per un player_id, formato "fc-{fantacalcio_id}")
+    curl "http://localhost:8000/api/v1/experts/ratings/by-fotmob/{fotmob_id}"  (rating per FotMob ID, come usato dal frontend)
+
+    Ogni riga include, oltre a `rating` (1-5 stelle, compresso) e `comment`:
+    `titolarita`, `media_voto`, `salute`, `bonus_label`, `bonus_value`,
+    `totale` (su 50), `consiglio_esperti_raw` (1-10, non compresso),
+    `birth_year`, e — quando il commento originale era un rimando —
+    `cross_reference_section` / `cross_reference_text` col testo risolto.
+
+NOTA: il matching giocatore→fantacalcio_id richiede `player_quotations`
+già popolata per la stagione (vedi §6.1); senza quotazioni importate,
+`persist()` non trova nessun `player_id` e `unmatched` sarà pari a
+`scraped` (nessuna riga scritta, solo log di warning).
 
 
 ================================================================================
