@@ -213,6 +213,14 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
       { label: 'on, top-2, 3 alt', value: 'default sensato' },
     ],
   },
+  riskLambda: {
+    description: 'Solo in modalità mean_std: l’obiettivo diventa mean − λ·std. λ più alto penalizza di più la volatilità degli scenari Monte Carlo.',
+    examples: [
+      { label: '0.0', value: 'solo media (nessuna penalità)' },
+      { label: '0.5', value: 'default equilibrato' },
+      { label: '1.0–1.5', value: 'molto prudente' },
+    ],
+  },
   varBlend: {
     description: 'Peso in [0,1] del VAR nella funzione obiettivo: (1−varBlend)×base_metric + varBlend×var_score. 0 = solo projected_score/season_value; 1 = puro Value Above Replacement.',
     examples: [
@@ -331,977 +339,889 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
   template: `
     <div class="optimizer-page">
 
-      <header class="page-header">
-        <div>
-          <h1 class="page-title">Ottimizzatore Rosa</h1>
-          <p class="page-subtitle">ILP + robustezza opzionale Monte Carlo: score, vincoli, stability e alternative near-optimal</p>
+      <!-- Sticky top bar: identity + preset + primary CTA -->
+      <header class="opt-topbar">
+        <div class="opt-topbar__brand">
+          <h1 class="opt-topbar__title">Ottimizzatore rosa</h1>
+          <p class="opt-topbar__subtitle">Trova la rosa migliore entro budget, vincoli e rischio</p>
         </div>
-      </header>
 
-      <div class="optimizer-body">
-
-        <!-- ── Config panel ──────────────────────────────── -->
-        <aside class="config-panel card">
-
-          <!-- PRESETS -->
-          <p class="section-divider">Profilo strategico</p>
-
-          <div class="field-group">
-            <label class="field-label" for="opt-preset">Preset strategia (precompila leve obiettivo e vincoli)</label>
+        <div class="opt-topbar__actions">
+          <div class="opt-preset">
+            <label class="sr-only" for="opt-preset">Preset</label>
             <select
               id="opt-preset"
-              class="field-input"
+              class="field-input field-input--compact"
               [ngModel]="selectedPresetId()"
               (ngModelChange)="onPresetChange($event)"
               [attr.aria-describedby]="'legend-preset'"
             >
-              <option [ngValue]="OPTIMIZER_PRESET_NONE">Personalizzato (nessun preset)</option>
+              <option [ngValue]="OPTIMIZER_PRESET_NONE">Personalizzato</option>
               @for (p of presets; track p.id) {
-                <option [ngValue]="p.id">{{ p.labelIt }} — {{ p.name }}</option>
+                <option [ngValue]="p.id">{{ p.labelIt }}</option>
               }
             </select>
-            @if (activePreset(); as preset) {
-              <p class="preset-description" id="legend-preset">{{ preset.description }}</p>
-            } @else {
-              <p class="preset-description muted" id="legend-preset">
-                Scegli un profilo per precompilare vincoli, rischio, inflazione e strategie.
-                Stagione, include/exclude restano sotto il tuo controllo.
-              </p>
-            }
           </div>
-
-          <!-- BASIC -->
-          <p class="section-divider">Pool e budget</p>
-
-          <div class="field-group">
-            <label class="field-label" for="opt-seasonStart">Stagione del pool (listini + predizioni ML)</label>
-            @if (seasonsLoading()) {
-              <app-skeleton height="36px" />
-            } @else {
-              <select id="opt-seasonStart" class="field-input" [(ngModel)]="seasonStart"
-                      [attr.aria-describedby]="'legend-seasonStart'">
-                @for (s of seasons(); track s) {
-                  <option [value]="s">{{ s }}/{{ s + 1 }}</option>
-                }
-              </select>
-            }
-            <app-field-legend
-              fieldId="legend-seasonStart"
-              [description]="OPTIMIZER_LEGENDS['seasonStart'].description"
-              [examples]="OPTIMIZER_LEGENDS['seasonStart'].examples" />
-          </div>
-
-          <div class="field-row">
-            <div class="field-group">
-              <label class="field-label" for="opt-budget">Budget rosa (tetto costi effettivi) <span class="field-hint">cr.</span></label>
-              <input id="opt-budget" class="field-input" type="number" min="200" max="1000" step="25"
-                     [(ngModel)]="budget"
-                     [attr.aria-describedby]="'legend-budget'" />
-              <app-field-legend
-                fieldId="legend-budget"
-                [description]="OPTIMIZER_LEGENDS['budget'].description"
-                [examples]="OPTIMIZER_LEGENDS['budget'].examples" />
-            </div>
-            <div class="field-group">
-              <label class="field-label" for="opt-numParticipants">Partecipanti lega (spinge l'inflazione dei costi)</label>
-              <input id="opt-numParticipants" class="field-input" type="number" min="4" max="16" step="1"
-                     [(ngModel)]="numParticipants"
-                     [attr.aria-describedby]="'legend-numParticipants'" />
-              <app-field-legend
-                fieldId="legend-numParticipants"
-                [description]="OPTIMIZER_LEGENDS['numParticipants'].description"
-                [examples]="OPTIMIZER_LEGENDS['numParticipants'].examples" />
-            </div>
-          </div>
-
-          <div class="field-row">
-            <div class="field-group">
-              <label class="field-label" for="opt-minQtA">Listino minimo per entrare nel pool <span class="field-hint">qt_a ≥</span></label>
-              <input id="opt-minQtA" class="field-input" type="number" min="0" max="10" step="1"
-                     [(ngModel)]="minQtA"
-                     [attr.aria-describedby]="'legend-minQtA'" />
-              <app-field-legend
-                fieldId="legend-minQtA"
-                [description]="OPTIMIZER_LEGENDS['minQtA'].description"
-                [examples]="OPTIMIZER_LEGENDS['minQtA'].examples" />
-            </div>
-            <div class="field-group">
-              <label class="field-label" for="opt-solverTimeout">Timeout solver ILP <span class="field-hint">secondi, non cambia l'obiettivo</span></label>
-              <input id="opt-solverTimeout" class="field-input" type="number" min="5" max="300" step="5"
-                     [(ngModel)]="solverTimeoutSeconds"
-                     [attr.aria-describedby]="'legend-solverTimeoutSeconds'" />
-              <app-field-legend
-                fieldId="legend-solverTimeoutSeconds"
-                [description]="OPTIMIZER_LEGENDS['solverTimeoutSeconds'].description"
-                [examples]="OPTIMIZER_LEGENDS['solverTimeoutSeconds'].examples" />
-            </div>
-          </div>
-
-          <!-- SQUAD CONSTRAINTS -->
-          <p class="section-divider">Vincoli hard sulla rosa</p>
-
-          <div class="field-row">
-            <div class="field-group">
-              <label class="field-label" for="opt-minDistinctTeams">Min. club distinti in rosa <span class="field-hint">vincolo hard</span></label>
-              <input id="opt-minDistinctTeams" class="field-input" type="number" min="1" max="25" step="1"
-                     [(ngModel)]="minDistinctTeams"
-                     [attr.aria-describedby]="'legend-minDistinctTeams'" />
-              <app-field-legend
-                fieldId="legend-minDistinctTeams"
-                [description]="OPTIMIZER_LEGENDS['minDistinctTeams'].description"
-                [examples]="OPTIMIZER_LEGENDS['minDistinctTeams'].examples" />
-            </div>
-            <div class="field-group">
-              <label class="field-label" for="opt-maxPlayersPerTeam">Max giocatori dallo stesso club <span class="field-hint">vincolo hard</span></label>
-              <input id="opt-maxPlayersPerTeam" class="field-input" type="number" min="1" max="10" step="1"
-                     [(ngModel)]="maxPlayersPerTeam"
-                     [attr.aria-describedby]="'legend-maxPlayersPerTeam'" />
-              <app-field-legend
-                fieldId="legend-maxPlayersPerTeam"
-                [description]="OPTIMIZER_LEGENDS['maxPlayersPerTeam'].description"
-                [examples]="OPTIMIZER_LEGENDS['maxPlayersPerTeam'].examples" />
-            </div>
-          </div>
-
-          <div class="field-row">
-            <div class="field-group">
-              <label class="field-label" for="opt-bigTeamsCap">Tetto giocatori dalle big team <span class="field-hint">vincolo hard aggregato</span></label>
-              <input id="opt-bigTeamsCap" class="field-input" type="number" min="0" max="25" step="1"
-                     [(ngModel)]="bigTeamsCap"
-                     [attr.aria-describedby]="'legend-bigTeamsCap'" />
-              <app-field-legend
-                fieldId="legend-bigTeamsCap"
-                [description]="OPTIMIZER_LEGENDS['bigTeamsCap'].description"
-                [examples]="OPTIMIZER_LEGENDS['bigTeamsCap'].examples" />
-            </div>
-            <div class="field-group">
-              <label class="field-label" for="opt-maxShare">Max costo effettivo su un giocatore <span class="field-hint">frazione del budget</span></label>
-              <input id="opt-maxShare" class="field-input" type="number" min="0.05" max="1" step="0.05"
-                     [(ngModel)]="maxSinglePlayerBudgetShare"
-                     [attr.aria-describedby]="'legend-maxSinglePlayerBudgetShare'" />
-              <app-field-legend
-                fieldId="legend-maxSinglePlayerBudgetShare"
-                [description]="OPTIMIZER_LEGENDS['maxSinglePlayerBudgetShare'].description"
-                [examples]="OPTIMIZER_LEGENDS['maxSinglePlayerBudgetShare'].examples" />
-            </div>
-          </div>
-
-          <div class="field-group">
-            <label class="field-label" for="opt-bigTeamsRaw">Club conteggiati come big team <span class="field-hint">nomi real_team, separati da virgola</span></label>
-            <textarea id="opt-bigTeamsRaw" class="field-input field-textarea" rows="2"
-                      [(ngModel)]="bigTeamsRaw"
-                      placeholder="Inter, Milan, Juventus, Napoli"
-                      [attr.aria-describedby]="'legend-bigTeams'"></textarea>
-            <app-field-legend
-              fieldId="legend-bigTeams"
-              [description]="OPTIMIZER_LEGENDS['bigTeams'].description"
-              [examples]="OPTIMIZER_LEGENDS['bigTeams'].examples" />
-          </div>
-
-          <!-- PLAYER FILTERS -->
-          <p class="section-divider">Include / exclude (vincoli hard)</p>
-
-          <div class="field-group">
-            <label class="field-label" for="opt-mustInclude">Must-include <span class="field-hint">player_id obbligatori, vincolo hard</span></label>
-            <textarea id="opt-mustInclude" class="field-input field-textarea" rows="2"
-                      [(ngModel)]="mustIncludeRaw"
-                      placeholder="fm-12345, fm-67890"
-                      [attr.aria-describedby]="'legend-mustInclude'"></textarea>
-            <app-field-legend
-              fieldId="legend-mustInclude"
-              [description]="OPTIMIZER_LEGENDS['mustInclude'].description"
-              [examples]="OPTIMIZER_LEGENDS['mustInclude'].examples" />
-          </div>
-
-          <div class="field-group">
-            <label class="field-label" for="opt-exclude">Exclude <span class="field-hint">player_id fuori dal pool</span></label>
-            <textarea id="opt-exclude" class="field-input field-textarea" rows="2"
-                      [(ngModel)]="excludeRaw"
-                      placeholder="fm-12345, fm-67890"
-                      [attr.aria-describedby]="'legend-exclude'"></textarea>
-            <app-field-legend
-              fieldId="legend-exclude"
-              [description]="OPTIMIZER_LEGENDS['exclude'].description"
-              [examples]="OPTIMIZER_LEGENDS['exclude'].examples" />
-          </div>
-
-          <!-- RULESET & RISK -->
-          <p class="section-divider">Ruleset e funzione obiettivo</p>
-
-          <div class="field-row">
-            <div class="field-group">
-              <label class="field-label" for="opt-ruleset">Ruleset quote/ruoli <span class="field-hint">CLASSIC 4 ruoli · MANTRA 12</span></label>
-              <select id="opt-ruleset" class="field-input" [(ngModel)]="ruleset"
-                      [attr.aria-describedby]="'legend-ruleset'">
-                <option value="CLASSIC">CLASSIC — quote P3/D8/C8/A6</option>
-                <option value="MANTRA">MANTRA — 12 ruoli multi-slot</option>
-              </select>
-              <app-field-legend
-                fieldId="legend-ruleset"
-                [description]="OPTIMIZER_LEGENDS['ruleset'].description"
-                [examples]="OPTIMIZER_LEGENDS['ruleset'].examples" />
-            </div>
-            <div class="field-group">
-              <label class="field-label" for="opt-riskAversion">Risk aversion <span class="field-hint">penalità × prediction_std in obiettivo</span></label>
-              <input id="opt-riskAversion" class="field-input" type="number" min="0" max="5" step="0.1"
-                     [(ngModel)]="riskAversion"
-                     [attr.aria-describedby]="'legend-riskAversion'" />
-              <app-field-legend
-                fieldId="legend-riskAversion"
-                [description]="OPTIMIZER_LEGENDS['riskAversion'].description"
-                [examples]="OPTIMIZER_LEGENDS['riskAversion'].examples" />
-            </div>
-
-          <!-- MONTE CARLO ROBUSTNESS -->
-          <p class="section-divider">Robustezza Monte Carlo</p>
-
-          <div class="field-group field-group--toggle">
-            <label class="field-label" for="opt-mc-enabled">
-              <input id="opt-mc-enabled" type="checkbox"
-                     [ngModel]="monteCarloEnabled()"
-                     (ngModelChange)="monteCarloEnabled.set($event)"
-                     [attr.aria-describedby]="'legend-mc-enabled'" />
-              Abilita Monte Carlo <span class="field-hint">default off = ILP deterministico</span>
-            </label>
-            <app-field-legend
-              fieldId="legend-mc-enabled"
-              [description]="OPTIMIZER_LEGENDS['monteCarloEnabled'].description"
-              [examples]="OPTIMIZER_LEGENDS['monteCarloEnabled'].examples" />
-          </div>
-
-          @if (monteCarloEnabled()) {
-            <div class="field-row">
-              <div class="field-group">
-                <label class="field-label" for="opt-mc-mode">Mode</label>
-                <select id="opt-mc-mode" class="field-input"
-                        [ngModel]="monteCarloMode()"
-                        (ngModelChange)="monteCarloMode.set($event)"
-                        [attr.aria-describedby]="'legend-mc-mode'">
-                  <option value="saa_frequency">saa_frequency — frequenza scenari</option>
-                  <option value="mean_std">mean_std — mean − λ·std</option>
-                </select>
-                <app-field-legend
-                  fieldId="legend-mc-mode"
-                  [description]="OPTIMIZER_LEGENDS['monteCarloMode'].description"
-                  [examples]="OPTIMIZER_LEGENDS['monteCarloMode'].examples" />
-              </div>
-              <div class="field-group">
-                <label class="field-label" for="opt-mc-n">N simulazioni</label>
-                <input id="opt-mc-n" class="field-input" type="number" min="1" max="200" step="1"
-                       [ngModel]="nSimulations()"
-                       (ngModelChange)="nSimulations.set(+$event)"
-                       [attr.aria-describedby]="'legend-mc-n'" />
-                <app-field-legend
-                  fieldId="legend-mc-n"
-                  [description]="OPTIMIZER_LEGENDS['nSimulations'].description"
-                  [examples]="OPTIMIZER_LEGENDS['nSimulations'].examples" />
-              </div>
-            </div>
-            @if (monteCarloMode() === 'mean_std') {
-              <div class="field-group">
-                <label class="field-label" for="opt-mc-lambda">Risk λ (mean_std)</label>
-                <input id="opt-mc-lambda" class="field-input" type="number" min="0" max="3" step="0.1"
-                       [ngModel]="riskLambda()"
-                       (ngModelChange)="riskLambda.set(+$event)" />
-              </div>
-            }
-            @if (riskAversion() > 0 && monteCarloEnabled()) {
-              <p class="field-warning" role="status">
-                Attenzione: riskAversion={{ riskAversion() }} e Monte Carlo sono entrambi attivi.
-                Preferisci uno dei due o tieni riskAversion basso (≤0.3) per evitare doppia penalizzazione.
-              </p>
-            }
-          }
-
-          <div class="field-group field-group--toggle">
-            <label class="field-label" for="opt-near-opt">
-              <input id="opt-near-opt" type="checkbox"
-                     [ngModel]="nearOptimalEnabled()"
-                     (ngModelChange)="nearOptimalEnabled.set($event)"
-                     [attr.aria-describedby]="'legend-near-opt'" />
-              Alternative near-optimal <span class="field-hint">esclude top scorer e ri-ottimizza</span>
-            </label>
-            <app-field-legend
-              fieldId="legend-near-opt"
-              [description]="OPTIMIZER_LEGENDS['nearOptimal'].description"
-              [examples]="OPTIMIZER_LEGENDS['nearOptimal'].examples" />
-          </div>
-          </div>
-
-          <div class="field-row">
-            <div class="field-group">
-              <label class="field-label" for="opt-varBlend">VAR blend <span class="field-hint">(1−w)×metric + w×var_score</span></label>
-              <input id="opt-varBlend" class="field-input" type="number" min="0" max="1" step="0.1"
-                     [(ngModel)]="varBlend"
-                     [attr.aria-describedby]="'legend-varBlend'" />
-              <app-field-legend
-                fieldId="legend-varBlend"
-                [description]="OPTIMIZER_LEGENDS['varBlend'].description"
-                [examples]="OPTIMIZER_LEGENDS['varBlend'].examples" />
-            </div>
-            <div class="field-group">
-              <label class="field-label" for="opt-esvWeight">ESV weight <span class="field-hint">+ w×surplus value (affare)</span></label>
-              <input id="opt-esvWeight" class="field-input" type="number" min="0" max="5" step="0.1"
-                     [(ngModel)]="esvWeight"
-                     [attr.aria-describedby]="'legend-esvWeight'" />
-              <app-field-legend
-                fieldId="legend-esvWeight"
-                [description]="OPTIMIZER_LEGENDS['esvWeight'].description"
-                [examples]="OPTIMIZER_LEGENDS['esvWeight'].examples" />
-            </div>
-          </div>
-
-          <div class="field-group">
-            <label class="field-label" for="opt-hybridBlend">Hybrid blend <span class="field-hint">(1−w)×metric + w×fpIbrido MANTRA</span></label>
-            <input id="opt-hybridBlend" class="field-input" type="number" min="0" max="1" step="0.1"
-                   [(ngModel)]="hybridBlend"
-                   [attr.aria-describedby]="'legend-hybridBlend'" />
-            <app-field-legend
-              fieldId="legend-hybridBlend"
-              [description]="OPTIMIZER_LEGENDS['hybridBlend'].description"
-              [examples]="OPTIMIZER_LEGENDS['hybridBlend'].examples" />
-          </div>
-
-          <!-- VAR/ESV ADVANCED -->
-          <div class="field-row">
-            <div class="field-group">
-              <label class="field-label" for="opt-valuationMode">Metrica base in obiettivo</label>
-              <select id="opt-valuationMode" class="field-input" [(ngModel)]="valuationMode"
-                      [attr.aria-describedby]="'legend-valuationMode'">
-                <option value="PER_MATCH_RATING">projected_score / partita (default)</option>
-                <option value="SEASON_VALUE">season_value (rating × presenze)</option>
-              </select>
-              <app-field-legend
-                fieldId="legend-valuationMode"
-                [description]="OPTIMIZER_LEGENDS['valuationMode'].description"
-                [examples]="OPTIMIZER_LEGENDS['valuationMode'].examples" />
-            </div>
-            <div class="field-group">
-              <label class="field-label" for="opt-replacementMethod">Replacement level (per VAR/ESV)</label>
-              <select id="opt-replacementMethod" class="field-input" [(ngModel)]="replacementMethod"
-                      [attr.aria-describedby]="'legend-replacementMethod'">
-                <option value="percentile">Percentile basso per ruolo (default)</option>
-                <option value="roster_depth">Roster depth (quota × partecipanti)</option>
-              </select>
-              <app-field-legend
-                fieldId="legend-replacementMethod"
-                [description]="OPTIMIZER_LEGENDS['replacementMethod'].description"
-                [examples]="OPTIMIZER_LEGENDS['replacementMethod'].examples" />
-            </div>
-          </div>
-
-          <div class="field-group">
-            <label class="field-label" for="opt-minStartProb">Filtro start_probability minima <span class="field-hint">pre-ILP, vuoto = off</span></label>
-            <input id="opt-minStartProb" class="field-input" type="number" min="0" max="1" step="0.05"
-                   [ngModel]="minStartProbability()"
-                   (ngModelChange)="minStartProbability.set($event === '' ? null : +$event)"
-                   [attr.aria-describedby]="'legend-minStartProbability'" />
-            <app-field-legend
-              fieldId="legend-minStartProbability"
-              [description]="OPTIMIZER_LEGENDS['minStartProbability'].description"
-              [examples]="OPTIMIZER_LEGENDS['minStartProbability'].examples" />
-          </div>
-
-          <!-- FORMATIONS -->
-          <p class="section-divider">Moduli (check post-hoc e vincolo hard)</p>
-
-          <div class="check-grid" role="group" aria-label="Moduli tattici ammessi">
-            @for (f of allFormations; track f.label) {
-              <label class="check-chip" [class.active]="selectedFormations().has(f.label)">
-                <input type="checkbox" [checked]="selectedFormations().has(f.label)"
-                       (change)="toggleFormation(f.label)" />
-                {{ f.label }}
-              </label>
-            }
-          </div>
-          <app-field-legend
-            fieldId="legend-formations"
-            [description]="OPTIMIZER_LEGENDS['formations'].description"
-            [examples]="OPTIMIZER_LEGENDS['formations'].examples" />
-
-          <div class="field-group">
-            <label class="field-label" for="opt-preferredFormation">Modulo imposto al solver <span class="field-hint">vincolo hard; le altre solo check</span></label>
-            <select id="opt-preferredFormation" class="field-input" [(ngModel)]="preferredFormationLabel"
-                    [attr.aria-describedby]="'legend-preferredFormation'">
-              <option value="">Nessuna (nessun vincolo)</option>
-              @for (f of allFormations; track f.label) {
-                <option [value]="f.label">{{ f.label }}</option>
-              }
-            </select>
-            <app-field-legend
-              fieldId="legend-preferredFormation"
-              [description]="OPTIMIZER_LEGENDS['preferredFormation'].description"
-              [examples]="OPTIMIZER_LEGENDS['preferredFormation'].examples" />
-          </div>
-
-          <!-- INFLATION MODEL -->
-          <p class="section-divider">Costo effettivo (inflazione listino)</p>
-
-          <div class="field-row">
-            <div class="field-group">
-              <label class="field-label" for="opt-inflationPercentile">Soglia percentile: sotto = costo = listino</label>
-              <input id="opt-inflationPercentile" class="field-input" type="number" min="0" max="1" step="0.05"
-                     [(ngModel)]="inflationPercentileThreshold"
-                     [attr.aria-describedby]="'legend-inflationPercentileThreshold'" />
-              <app-field-legend
-                fieldId="legend-inflationPercentileThreshold"
-                [description]="OPTIMIZER_LEGENDS['inflationPercentileThreshold'].description"
-                [examples]="OPTIMIZER_LEGENDS['inflationPercentileThreshold'].examples" />
-            </div>
-            <div class="field-group">
-              <label class="field-label" for="opt-maxInflation">Cap moltiplicatore costo effettivo / listino</label>
-              <input id="opt-maxInflation" class="field-input" type="number" min="1" max="5" step="0.1"
-                     [(ngModel)]="maxInflationMultiplier"
-                     [attr.aria-describedby]="'legend-maxInflationMultiplier'" />
-              <app-field-legend
-                fieldId="legend-maxInflationMultiplier"
-                [description]="OPTIMIZER_LEGENDS['maxInflationMultiplier'].description"
-                [examples]="OPTIMIZER_LEGENDS['maxInflationMultiplier'].examples" />
-            </div>
-          </div>
-
-          <div class="field-row">
-            <div class="field-group">
-              <label class="field-label" for="opt-baseRate">Tasso base inflazione (partecipanti extra)</label>
-              <input id="opt-baseRate" class="field-input" type="number" min="0" max="1" step="0.01"
-                     [(ngModel)]="baseInflationRate"
-                     [attr.aria-describedby]="'legend-baseInflationRate'" />
-              <app-field-legend
-                fieldId="legend-baseInflationRate"
-                [description]="OPTIMIZER_LEGENDS['baseInflationRate'].description"
-                [examples]="OPTIMIZER_LEGENDS['baseInflationRate'].examples" />
-            </div>
-            <div class="field-group">
-              <label class="field-label" for="opt-baselinePart">Baseline partecipanti (oltre → extra inflazione)</label>
-              <input id="opt-baselinePart" class="field-input" type="number" min="2" max="20" step="1"
-                     [(ngModel)]="baselineParticipants"
-                     [attr.aria-describedby]="'legend-baselineParticipants'" />
-              <app-field-legend
-                fieldId="legend-baselineParticipants"
-                [description]="OPTIMIZER_LEGENDS['baselineParticipants'].description"
-                [examples]="OPTIMIZER_LEGENDS['baselineParticipants'].examples" />
-            </div>
-            <div class="field-group">
-              <label class="field-label" for="opt-teamStrengthMul">Peso Elo club sul costo effettivo <span class="field-hint">0 = off</span></label>
-              <input id="opt-teamStrengthMul" class="field-input" type="number" min="0" max="2" step="0.05"
-                     [(ngModel)]="teamStrengthMultiplier"
-                     [attr.aria-describedby]="'legend-teamStrengthMultiplier'" />
-              <app-field-legend
-                fieldId="legend-teamStrengthMultiplier"
-                [description]="OPTIMIZER_LEGENDS['teamStrengthMultiplier'].description"
-                [examples]="OPTIMIZER_LEGENDS['teamStrengthMultiplier'].examples" />
-            </div>
-          </div>
-
-          <!-- STRATEGIES -->
-          <p class="section-divider">StrategyProfile (pesi ruolo e vincoli soft)</p>
-
-          <div class="check-col" role="group" aria-label="Strategie da eseguire">
-            @for (s of availableStrategies(); track s) {
-              <label class="strategy-check" [class.active]="selectedStrategies().has(s)">
-                <input type="checkbox" [checked]="selectedStrategies().has(s)"
-                       (change)="toggleStrategy(s)" />
-                <span>{{ meta(s).icon }}</span>
-                <span>{{ meta(s).label }}</span>
-              </label>
-            }
-          </div>
-
-          @if (singleStrategySelected()) {
-            <button class="advanced-toggle" style="margin-top:4px"
-                    (click)="showCustomWeights.set(!showCustomWeights())">
-              Personalizza pesi per ruolo {{ showCustomWeights() ? '▲' : '▼' }}
-            </button>
-            @if (showCustomWeights()) {
-              <app-field-legend
-                fieldId="legend-customWeights"
-                [description]="OPTIMIZER_LEGENDS['customWeights'].description"
-                [examples]="OPTIMIZER_LEGENDS['customWeights'].examples" />
-              <div class="custom-weights-panel">
-                @for (role of ['P','D','C','A']; track role) {
-                  <div class="field-group">
-                    <label class="field-label" style="display:flex;justify-content:space-between">
-                      <span>Peso ruolo {{ roleLabel(role) }} ({{ role }})</span>
-                      <span class="field-hint">{{ customWeights()[role] | number:'1.2-2' }}</span>
-                    </label>
-                    <input type="range" min="0.1" max="3" step="0.05"
-                           [ngModel]="customWeights()[role]"
-                           (ngModelChange)="setCustomWeight(role, $event)"
-                           [attr.aria-label]="'Peso per il ruolo ' + roleLabel(role)" />
-                  </div>
-                }
-              </div>
-            }
-          }
-
-          <button class="run-btn" (click)="run()" [disabled]="running() || !canRun()">
+          <button
+            type="button"
+            class="btn btn--primary btn--run"
+            (click)="run(); mobilePane.set('results')"
+            [disabled]="running() || !canRun()"
+          >
             @if (running()) {
-              <span class="spinner"></span>
-              @if (jobStatus(); as js) {
-                Job {{ js }}{{ jobId() ? ' · ' + jobId()!.slice(0, 8) : '' }}…
-              } @else {
-                Ottimizzazione in corso…
-              }
+              <span class="spinner" aria-hidden="true"></span>
+              <span>
+                @if (jobStatus(); as js) {
+                  {{ js }}…
+                } @else {
+                  Calcolo…
+                }
+              </span>
             } @else {
-              Esegui ottimizzatore
-              @if (monteCarloEnabled() && nSimulations() > 25) {
-                <span class="field-hint"> (async N&gt;25)</span>
-              }
+              Ottimizza rosa
             }
           </button>
-          @if (usedAsyncJob() && jobStatus()) {
-            <p class="muted job-hint" role="status">
-              Esecuzione asincrona: il server elabora SAA in background e questa UI fa polling.
-            </p>
+        </div>
+      </header>
+
+      @if (activePreset(); as preset) {
+        <p class="opt-preset-banner" id="legend-preset">{{ preset.description }}</p>
+      } @else {
+        <p class="opt-preset-banner muted" id="legend-preset">
+          Scegli un preset per precompilare vincoli e leve, oppure configura a mano.
+        </p>
+      }
+
+      <!-- Mobile pane switcher -->
+      <nav class="opt-pane-nav" aria-label="Sezioni">
+        <button type="button" class="opt-pane-nav__btn"
+                [class.active]="mobilePane() === 'config'"
+                (click)="mobilePane.set('config')">1 · Configura</button>
+        <button type="button" class="opt-pane-nav__btn"
+                [class.active]="mobilePane() === 'results'"
+                (click)="mobilePane.set('results')">
+          2 · Risultati
+          @if (results()) {
+            <span class="opt-pane-nav__badge">{{ resultKeys().length }}</span>
           }
+        </button>
+        <button type="button" class="opt-pane-nav__btn"
+                [class.active]="mobilePane() === 'analysis'"
+                (click)="mobilePane.set('analysis')">3 · Analisi</button>
+      </nav>
+
+      <div class="opt-shell">
+
+        <!-- ════════ CONFIG ════════ -->
+        <aside class="opt-pane opt-config" [class.opt-pane--active]="mobilePane() === 'config'">
+
+          <!-- Essentials -->
+          <section class="opt-section" [class.open]="isSectionOpen('essentials')">
+            <button type="button" class="opt-section__head" (click)="toggleSection('essentials')"
+                    [attr.aria-expanded]="isSectionOpen('essentials')">
+              <span class="opt-section__title">Essenziali</span>
+              <span class="opt-section__hint">stagione, budget, regole</span>
+              <span class="opt-section__chev" aria-hidden="true"></span>
+            </button>
+            @if (isSectionOpen('essentials')) {
+              <div class="opt-section__body">
+                <div class="field-group">
+                  <label class="field-label" for="opt-seasonStart">Stagione</label>
+                  @if (seasonsLoading()) {
+                    <app-skeleton height="40px" />
+                  } @else {
+                    <select id="opt-seasonStart" class="field-input" [(ngModel)]="seasonStart"
+                            [attr.aria-describedby]="'legend-seasonStart'">
+                      @for (s of seasons(); track s) {
+                        <option [value]="s">{{ s }}/{{ s + 1 }}</option>
+                      }
+                    </select>
+                  }
+                  <app-field-legend fieldId="legend-seasonStart"
+                    [description]="OPTIMIZER_LEGENDS['seasonStart'].description"
+                    [examples]="OPTIMIZER_LEGENDS['seasonStart'].examples" />
+                </div>
+
+                <div class="field-row">
+                  <div class="field-group">
+                    <label class="field-label" for="opt-budget">Budget <span class="field-hint">crediti</span></label>
+                    <input id="opt-budget" class="field-input" type="number" min="200" max="1000" step="25"
+                           [(ngModel)]="budget" [attr.aria-describedby]="'legend-budget'" />
+                    <app-field-legend fieldId="legend-budget"
+                      [description]="OPTIMIZER_LEGENDS['budget'].description"
+                      [examples]="OPTIMIZER_LEGENDS['budget'].examples" />
+                  </div>
+                  <div class="field-group">
+                    <label class="field-label" for="opt-numParticipants">Partecipanti lega</label>
+                    <input id="opt-numParticipants" class="field-input" type="number" min="4" max="16" step="1"
+                           [(ngModel)]="numParticipants" [attr.aria-describedby]="'legend-numParticipants'" />
+                    <app-field-legend fieldId="legend-numParticipants"
+                      [description]="OPTIMIZER_LEGENDS['numParticipants'].description"
+                      [examples]="OPTIMIZER_LEGENDS['numParticipants'].examples" />
+                  </div>
+                </div>
+
+                <div class="field-row">
+                  <div class="field-group">
+                    <label class="field-label" for="opt-ruleset">Regolamento</label>
+                    <select id="opt-ruleset" class="field-input" [(ngModel)]="ruleset"
+                            [attr.aria-describedby]="'legend-ruleset'">
+                      <option value="CLASSIC">CLASSIC — P / D / C / A</option>
+                      <option value="MANTRA">MANTRA — 12 ruoli</option>
+                    </select>
+                    <app-field-legend fieldId="legend-ruleset"
+                      [description]="OPTIMIZER_LEGENDS['ruleset'].description"
+                      [examples]="OPTIMIZER_LEGENDS['ruleset'].examples" />
+                  </div>
+                  <div class="field-group">
+                    <label class="field-label" for="opt-minQtA">Listino minimo <span class="field-hint">qt_a</span></label>
+                    <input id="opt-minQtA" class="field-input" type="number" min="0" max="10" step="1"
+                           [(ngModel)]="minQtA" [attr.aria-describedby]="'legend-minQtA'" />
+                    <app-field-legend fieldId="legend-minQtA"
+                      [description]="OPTIMIZER_LEGENDS['minQtA'].description"
+                      [examples]="OPTIMIZER_LEGENDS['minQtA'].examples" />
+                  </div>
+                </div>
+
+                <div class="field-group">
+                  <span class="field-label">Strategie da confrontare</span>
+                  <div class="chip-grid" role="group" aria-label="Strategie">
+                    @for (name of availableStrategies(); track name) {
+                      <label class="chip" [class.active]="selectedStrategies().has(name)">
+                        <input type="checkbox" [checked]="selectedStrategies().has(name)"
+                               (change)="toggleStrategy(name)" />
+                        <span class="chip__icon" aria-hidden="true">{{ meta(name).icon }}</span>
+                        <span>{{ meta(name).label }}</span>
+                      </label>
+                    }
+                  </div>
+                  @if (singleStrategySelected()) {
+                    <button type="button" class="link-btn" (click)="showCustomWeights.set(!showCustomWeights())">
+                      {{ showCustomWeights() ? 'Nascondi pesi ruolo' : 'Personalizza pesi ruolo' }}
+                    </button>
+                    @if (showCustomWeights()) {
+                      <div class="weight-grid">
+                        @for (role of ['P','D','C','A']; track role) {
+                          <div class="field-group">
+                            <label class="field-label" style="display:flex;justify-content:space-between">
+                              <span>{{ roleLabel(role) }}</span>
+                              <span class="field-hint">{{ customWeights()[role] | number:'1.2-2' }}</span>
+                            </label>
+                            <input type="range" min="0.1" max="3" step="0.05"
+                                   [ngModel]="customWeights()[role]"
+                                   (ngModelChange)="setCustomWeight(role, $event)"
+                                   [attr.aria-label]="'Peso ' + roleLabel(role)" />
+                          </div>
+                        }
+                      </div>
+                    }
+                  }
+                </div>
+              </div>
+            }
+          </section>
+
+          <!-- Constraints -->
+          <section class="opt-section" [class.open]="isSectionOpen('constraints')">
+            <button type="button" class="opt-section__head" (click)="toggleSection('constraints')"
+                    [attr.aria-expanded]="isSectionOpen('constraints')">
+              <span class="opt-section__title">Vincoli rosa</span>
+              <span class="opt-section__hint">club, big, share</span>
+              <span class="opt-section__chev" aria-hidden="true"></span>
+            </button>
+            @if (isSectionOpen('constraints')) {
+              <div class="opt-section__body">
+                <div class="field-row">
+                  <div class="field-group">
+                    <label class="field-label" for="opt-minDistinctTeams">Min. club distinti</label>
+                    <input id="opt-minDistinctTeams" class="field-input" type="number" min="1" max="25" step="1"
+                           [(ngModel)]="minDistinctTeams" [attr.aria-describedby]="'legend-minDistinctTeams'" />
+                    <app-field-legend fieldId="legend-minDistinctTeams"
+                      [description]="OPTIMIZER_LEGENDS['minDistinctTeams'].description"
+                      [examples]="OPTIMIZER_LEGENDS['minDistinctTeams'].examples" />
+                  </div>
+                  <div class="field-group">
+                    <label class="field-label" for="opt-maxPlayersPerTeam">Max per club</label>
+                    <input id="opt-maxPlayersPerTeam" class="field-input" type="number" min="1" max="10" step="1"
+                           [(ngModel)]="maxPlayersPerTeam" [attr.aria-describedby]="'legend-maxPlayersPerTeam'" />
+                    <app-field-legend fieldId="legend-maxPlayersPerTeam"
+                      [description]="OPTIMIZER_LEGENDS['maxPlayersPerTeam'].description"
+                      [examples]="OPTIMIZER_LEGENDS['maxPlayersPerTeam'].examples" />
+                  </div>
+                </div>
+                <div class="field-row">
+                  <div class="field-group">
+                    <label class="field-label" for="opt-bigTeamsCap">Tetto big team</label>
+                    <input id="opt-bigTeamsCap" class="field-input" type="number" min="0" max="25" step="1"
+                           [(ngModel)]="bigTeamsCap" [attr.aria-describedby]="'legend-bigTeamsCap'" />
+                    <app-field-legend fieldId="legend-bigTeamsCap"
+                      [description]="OPTIMIZER_LEGENDS['bigTeamsCap'].description"
+                      [examples]="OPTIMIZER_LEGENDS['bigTeamsCap'].examples" />
+                  </div>
+                  <div class="field-group">
+                    <label class="field-label" for="opt-maxShare">Max quota su 1 giocatore</label>
+                    <input id="opt-maxShare" class="field-input" type="number" min="0.05" max="1" step="0.05"
+                           [(ngModel)]="maxSinglePlayerBudgetShare"
+                           [attr.aria-describedby]="'legend-maxSinglePlayerBudgetShare'" />
+                    <app-field-legend fieldId="legend-maxSinglePlayerBudgetShare"
+                      [description]="OPTIMIZER_LEGENDS['maxSinglePlayerBudgetShare'].description"
+                      [examples]="OPTIMIZER_LEGENDS['maxSinglePlayerBudgetShare'].examples" />
+                  </div>
+                </div>
+                <div class="field-group">
+                  <label class="field-label" for="opt-bigTeamsRaw">Club “big”</label>
+                  <textarea id="opt-bigTeamsRaw" class="field-input field-textarea" rows="2"
+                            [(ngModel)]="bigTeamsRaw" placeholder="Inter, Milan, Juventus, Napoli"
+                            [attr.aria-describedby]="'legend-bigTeams'"></textarea>
+                  <app-field-legend fieldId="legend-bigTeams"
+                    [description]="OPTIMIZER_LEGENDS['bigTeams'].description"
+                    [examples]="OPTIMIZER_LEGENDS['bigTeams'].examples" />
+                </div>
+              </div>
+            }
+          </section>
+
+          <!-- Objective -->
+          <section class="opt-section" [class.open]="isSectionOpen('objective')">
+            <button type="button" class="opt-section__head" (click)="toggleSection('objective')"
+                    [attr.aria-expanded]="isSectionOpen('objective')">
+              <span class="opt-section__title">Funzione obiettivo</span>
+              <span class="opt-section__hint">rischio, VAR, hybrid, ESV</span>
+              <span class="opt-section__chev" aria-hidden="true"></span>
+            </button>
+            @if (isSectionOpen('objective')) {
+              <div class="opt-section__body">
+                <div class="field-row">
+                  <div class="field-group">
+                    <label class="field-label" for="opt-riskAversion">Risk aversion</label>
+                    <input id="opt-riskAversion" class="field-input" type="number" min="0" max="5" step="0.1"
+                           [(ngModel)]="riskAversion" [attr.aria-describedby]="'legend-riskAversion'" />
+                    <app-field-legend fieldId="legend-riskAversion"
+                      [description]="OPTIMIZER_LEGENDS['riskAversion'].description"
+                      [examples]="OPTIMIZER_LEGENDS['riskAversion'].examples" />
+                  </div>
+                  <div class="field-group">
+                    <label class="field-label" for="opt-valuationMode">Metrica base</label>
+                    <select id="opt-valuationMode" class="field-input" [(ngModel)]="valuationMode"
+                            [attr.aria-describedby]="'legend-valuationMode'">
+                      <option value="PER_MATCH_RATING">Per partita</option>
+                      <option value="SEASON_VALUE">Valore stagione</option>
+                    </select>
+                    <app-field-legend fieldId="legend-valuationMode"
+                      [description]="OPTIMIZER_LEGENDS['valuationMode'].description"
+                      [examples]="OPTIMIZER_LEGENDS['valuationMode'].examples" />
+                  </div>
+                </div>
+                <div class="field-row">
+                  <div class="field-group">
+                    <label class="field-label" for="opt-varBlend">VAR blend</label>
+                    <input id="opt-varBlend" class="field-input" type="number" min="0" max="1" step="0.1"
+                           [(ngModel)]="varBlend" [attr.aria-describedby]="'legend-varBlend'" />
+                    <app-field-legend fieldId="legend-varBlend"
+                      [description]="OPTIMIZER_LEGENDS['varBlend'].description"
+                      [examples]="OPTIMIZER_LEGENDS['varBlend'].examples" />
+                  </div>
+                  <div class="field-group">
+                    <label class="field-label" for="opt-hybridBlend">Hybrid blend</label>
+                    <input id="opt-hybridBlend" class="field-input" type="number" min="0" max="1" step="0.1"
+                           [(ngModel)]="hybridBlend" [attr.aria-describedby]="'legend-hybridBlend'" />
+                    <app-field-legend fieldId="legend-hybridBlend"
+                      [description]="OPTIMIZER_LEGENDS['hybridBlend'].description"
+                      [examples]="OPTIMIZER_LEGENDS['hybridBlend'].examples" />
+                  </div>
+                </div>
+                <div class="field-row">
+                  <div class="field-group">
+                    <label class="field-label" for="opt-esvWeight">ESV weight</label>
+                    <input id="opt-esvWeight" class="field-input" type="number" min="0" max="5" step="0.1"
+                           [(ngModel)]="esvWeight" [attr.aria-describedby]="'legend-esvWeight'" />
+                    <app-field-legend fieldId="legend-esvWeight"
+                      [description]="OPTIMIZER_LEGENDS['esvWeight'].description"
+                      [examples]="OPTIMIZER_LEGENDS['esvWeight'].examples" />
+                  </div>
+                  <div class="field-group">
+                    <label class="field-label" for="opt-replacementMethod">Replacement level</label>
+                    <select id="opt-replacementMethod" class="field-input" [(ngModel)]="replacementMethod"
+                            [attr.aria-describedby]="'legend-replacementMethod'">
+                      <option value="percentile">Percentile per ruolo</option>
+                      <option value="roster_depth">Profondità roster</option>
+                    </select>
+                    <app-field-legend fieldId="legend-replacementMethod"
+                      [description]="OPTIMIZER_LEGENDS['replacementMethod'].description"
+                      [examples]="OPTIMIZER_LEGENDS['replacementMethod'].examples" />
+                  </div>
+                </div>
+                <div class="field-group">
+                  <label class="field-label" for="opt-minStartProb">Start probability minima <span class="field-hint">vuoto = off</span></label>
+                  <input id="opt-minStartProb" class="field-input" type="number" min="0" max="1" step="0.05"
+                         [ngModel]="minStartProbability() ?? ''"
+                         (ngModelChange)="minStartProbability.set($event === '' || $event === null ? null : +$event)"
+                         [attr.aria-describedby]="'legend-minStartProbability'" />
+                  <app-field-legend fieldId="legend-minStartProbability"
+                    [description]="OPTIMIZER_LEGENDS['minStartProbability'].description"
+                    [examples]="OPTIMIZER_LEGENDS['minStartProbability'].examples" />
+                </div>
+              </div>
+            }
+          </section>
+
+          <!-- Robustness -->
+          <section class="opt-section" [class.open]="isSectionOpen('robustness')">
+            <button type="button" class="opt-section__head" (click)="toggleSection('robustness')"
+                    [attr.aria-expanded]="isSectionOpen('robustness')">
+              <span class="opt-section__title">Robustezza</span>
+              <span class="opt-section__hint">Monte Carlo, near-optimal</span>
+              <span class="opt-section__chev" aria-hidden="true"></span>
+            </button>
+            @if (isSectionOpen('robustness')) {
+              <div class="opt-section__body">
+                <label class="toggle-row">
+                  <input type="checkbox"
+                         [ngModel]="monteCarloEnabled()"
+                         (ngModelChange)="monteCarloEnabled.set($event)"
+                         [attr.aria-describedby]="'legend-mc-enabled'" />
+                  <span>
+                    <strong>Monte Carlo</strong>
+                    <span class="field-hint">simula scenari per stabilizzare la rosa</span>
+                  </span>
+                </label>
+                <app-field-legend fieldId="legend-mc-enabled"
+                  [description]="OPTIMIZER_LEGENDS['monteCarloEnabled'].description"
+                  [examples]="OPTIMIZER_LEGENDS['monteCarloEnabled'].examples" />
+
+                @if (monteCarloEnabled()) {
+                  <div class="field-row">
+                    <div class="field-group">
+                      <label class="field-label" for="opt-mc-mode">Modalità</label>
+                      <select id="opt-mc-mode" class="field-input" [(ngModel)]="monteCarloMode"
+                              [attr.aria-describedby]="'legend-mc-mode'">
+                        <option value="saa_frequency">Frequenza scenari (SAA)</option>
+                        <option value="mean_std">Media − λ·deviazione</option>
+                      </select>
+                      <app-field-legend fieldId="legend-mc-mode"
+                        [description]="OPTIMIZER_LEGENDS['monteCarloMode'].description"
+                        [examples]="OPTIMIZER_LEGENDS['monteCarloMode'].examples" />
+                    </div>
+                    <div class="field-group">
+                      <label class="field-label" for="opt-mc-n">N simulazioni</label>
+                      <input id="opt-mc-n" class="field-input" type="number" min="5" max="200" step="5"
+                             [(ngModel)]="nSimulations" [attr.aria-describedby]="'legend-nSimulations'" />
+                      <app-field-legend fieldId="legend-nSimulations"
+                        [description]="OPTIMIZER_LEGENDS['nSimulations'].description"
+                        [examples]="OPTIMIZER_LEGENDS['nSimulations'].examples" />
+                    </div>
+                  </div>
+                  @if (monteCarloMode() === 'mean_std') {
+                    <div class="field-group">
+                      <label class="field-label" for="opt-mc-lambda">Risk λ (mean_std)</label>
+                      <input id="opt-mc-lambda" class="field-input" type="number" min="0" max="3" step="0.1"
+                             [(ngModel)]="riskLambda" [attr.aria-describedby]="'legend-riskLambda'" />
+                      <app-field-legend fieldId="legend-riskLambda"
+                        [description]="OPTIMIZER_LEGENDS['riskLambda'].description"
+                        [examples]="OPTIMIZER_LEGENDS['riskLambda'].examples" />
+                    </div>
+                  }
+                  @if (nSimulations() > 25) {
+                    <p class="inline-note">N &gt; 25: esecuzione asincrona con polling del job.</p>
+                  }
+                }
+
+                <label class="toggle-row">
+                  <input type="checkbox"
+                         [ngModel]="nearOptimalEnabled()"
+                         (ngModelChange)="nearOptimalEnabled.set($event)"
+                         [attr.aria-describedby]="'legend-near-opt'" />
+                  <span>
+                    <strong>Alternative near-optimal</strong>
+                    <span class="field-hint">esclude top scorer e ri-ottimizza</span>
+                  </span>
+                </label>
+                <app-field-legend fieldId="legend-near-opt"
+                  [description]="OPTIMIZER_LEGENDS['nearOptimal'].description"
+                  [examples]="OPTIMIZER_LEGENDS['nearOptimal'].examples" />
+              </div>
+            }
+          </section>
+
+          <!-- Formations & inflation -->
+          <section class="opt-section" [class.open]="isSectionOpen('formations')">
+            <button type="button" class="opt-section__head" (click)="toggleSection('formations')"
+                    [attr.aria-expanded]="isSectionOpen('formations')">
+              <span class="opt-section__title">Moduli e costi</span>
+              <span class="opt-section__hint">formazioni, inflazione</span>
+              <span class="opt-section__chev" aria-hidden="true"></span>
+            </button>
+            @if (isSectionOpen('formations')) {
+              <div class="opt-section__body">
+                <div class="field-group">
+                  <span class="field-label">Moduli ammessi</span>
+                  <div class="chip-grid" role="group" aria-label="Moduli">
+                    @for (f of allFormations; track f.label) {
+                      <label class="chip" [class.active]="selectedFormations().has(f.label)">
+                        <input type="checkbox" [checked]="selectedFormations().has(f.label)"
+                               (change)="toggleFormation(f.label)" />
+                        {{ f.label }}
+                      </label>
+                    }
+                  </div>
+                  <app-field-legend fieldId="legend-formations"
+                    [description]="OPTIMIZER_LEGENDS['formations'].description"
+                    [examples]="OPTIMIZER_LEGENDS['formations'].examples" />
+                </div>
+                <div class="field-group">
+                  <label class="field-label" for="opt-preferredFormation">Modulo imposto al solver</label>
+                  <select id="opt-preferredFormation" class="field-input" [(ngModel)]="preferredFormationLabel"
+                          [attr.aria-describedby]="'legend-preferredFormation'">
+                    <option value="">Nessuno (solo check)</option>
+                    @for (f of allFormations; track f.label) {
+                      <option [value]="f.label">{{ f.label }}</option>
+                    }
+                  </select>
+                  <app-field-legend fieldId="legend-preferredFormation"
+                    [description]="OPTIMIZER_LEGENDS['preferredFormation'].description"
+                    [examples]="OPTIMIZER_LEGENDS['preferredFormation'].examples" />
+                </div>
+
+                <div class="field-row">
+                  <div class="field-group">
+                    <label class="field-label" for="opt-inflationPercentile">Soglia percentile</label>
+                    <input id="opt-inflationPercentile" class="field-input" type="number" min="0" max="1" step="0.05"
+                           [(ngModel)]="inflationPercentileThreshold"
+                           [attr.aria-describedby]="'legend-inflationPercentileThreshold'" />
+                    <app-field-legend fieldId="legend-inflationPercentileThreshold"
+                      [description]="OPTIMIZER_LEGENDS['inflationPercentileThreshold'].description"
+                      [examples]="OPTIMIZER_LEGENDS['inflationPercentileThreshold'].examples" />
+                  </div>
+                  <div class="field-group">
+                    <label class="field-label" for="opt-maxInflation">Max moltiplicatore</label>
+                    <input id="opt-maxInflation" class="field-input" type="number" min="1" max="3" step="0.1"
+                           [(ngModel)]="maxInflationMultiplier"
+                           [attr.aria-describedby]="'legend-maxInflationMultiplier'" />
+                    <app-field-legend fieldId="legend-maxInflationMultiplier"
+                      [description]="OPTIMIZER_LEGENDS['maxInflationMultiplier'].description"
+                      [examples]="OPTIMIZER_LEGENDS['maxInflationMultiplier'].examples" />
+                  </div>
+                </div>
+                <div class="field-row">
+                  <div class="field-group">
+                    <label class="field-label" for="opt-baseInflation">Tasso base inflazione</label>
+                    <input id="opt-baseInflation" class="field-input" type="number" min="0" max="0.2" step="0.01"
+                           [(ngModel)]="baseInflationRate"
+                           [attr.aria-describedby]="'legend-baseInflationRate'" />
+                    <app-field-legend fieldId="legend-baseInflationRate"
+                      [description]="OPTIMIZER_LEGENDS['baseInflationRate'].description"
+                      [examples]="OPTIMIZER_LEGENDS['baseInflationRate'].examples" />
+                  </div>
+                  <div class="field-group">
+                    <label class="field-label" for="opt-baselineParticipants">Baseline partecipanti</label>
+                    <input id="opt-baselineParticipants" class="field-input" type="number" min="2" max="20" step="1"
+                           [(ngModel)]="baselineParticipants"
+                           [attr.aria-describedby]="'legend-baselineParticipants'" />
+                    <app-field-legend fieldId="legend-baselineParticipants"
+                      [description]="OPTIMIZER_LEGENDS['baselineParticipants'].description"
+                      [examples]="OPTIMIZER_LEGENDS['baselineParticipants'].examples" />
+                  </div>
+                </div>
+                <div class="field-row">
+                  <div class="field-group">
+                    <label class="field-label" for="opt-teamStrength">Peso Elo club</label>
+                    <input id="opt-teamStrength" class="field-input" type="number" min="0" max="1.5" step="0.05"
+                           [(ngModel)]="teamStrengthMultiplier"
+                           [attr.aria-describedby]="'legend-teamStrengthMultiplier'" />
+                    <app-field-legend fieldId="legend-teamStrengthMultiplier"
+                      [description]="OPTIMIZER_LEGENDS['teamStrengthMultiplier'].description"
+                      [examples]="OPTIMIZER_LEGENDS['teamStrengthMultiplier'].examples" />
+                  </div>
+                  <div class="field-group">
+                    <label class="field-label" for="opt-solverTimeout">Timeout solver (s)</label>
+                    <input id="opt-solverTimeout" class="field-input" type="number" min="5" max="300" step="5"
+                           [(ngModel)]="solverTimeoutSeconds"
+                           [attr.aria-describedby]="'legend-solverTimeoutSeconds'" />
+                    <app-field-legend fieldId="legend-solverTimeoutSeconds"
+                      [description]="OPTIMIZER_LEGENDS['solverTimeoutSeconds'].description"
+                      [examples]="OPTIMIZER_LEGENDS['solverTimeoutSeconds'].examples" />
+                  </div>
+                </div>
+              </div>
+            }
+          </section>
+
+          <!-- Filters -->
+          <section class="opt-section" [class.open]="isSectionOpen('filters')">
+            <button type="button" class="opt-section__head" (click)="toggleSection('filters')"
+                    [attr.aria-expanded]="isSectionOpen('filters')">
+              <span class="opt-section__title">Include / exclude</span>
+              <span class="opt-section__hint">player id forzati</span>
+              <span class="opt-section__chev" aria-hidden="true"></span>
+            </button>
+            @if (isSectionOpen('filters')) {
+              <div class="opt-section__body">
+                <div class="field-group">
+                  <label class="field-label" for="opt-mustInclude">Must-include</label>
+                  <textarea id="opt-mustInclude" class="field-input field-textarea" rows="2"
+                            [(ngModel)]="mustIncludeRaw" placeholder="fm-12345, fm-67890"
+                            [attr.aria-describedby]="'legend-mustInclude'"></textarea>
+                  <app-field-legend fieldId="legend-mustInclude"
+                    [description]="OPTIMIZER_LEGENDS['mustInclude'].description"
+                    [examples]="OPTIMIZER_LEGENDS['mustInclude'].examples" />
+                </div>
+                <div class="field-group">
+                  <label class="field-label" for="opt-exclude">Exclude</label>
+                  <textarea id="opt-exclude" class="field-input field-textarea" rows="2"
+                            [(ngModel)]="excludeRaw" placeholder="fm-12345, fm-67890"
+                            [attr.aria-describedby]="'legend-exclude'"></textarea>
+                  <app-field-legend fieldId="legend-exclude"
+                    [description]="OPTIMIZER_LEGENDS['exclude'].description"
+                    [examples]="OPTIMIZER_LEGENDS['exclude'].examples" />
+                </div>
+              </div>
+            }
+          </section>
 
           @if (error()) {
             <app-error-boundary title="Errore ottimizzatore" [message]="error()!" />
           }
+          @if (usedAsyncJob() && jobStatus()) {
+            <p class="inline-note" role="status">Job asincrono: {{ jobStatus() }}{{ jobId() ? ' · ' + jobId()!.slice(0, 8) : '' }}</p>
+          }
         </aside>
 
-        <!-- ── Results panel ─────────────────────────────── -->
-        <section class="results-panel">
+        <!-- ════════ RESULTS ════════ -->
+        <section class="opt-pane opt-results" [class.opt-pane--active]="mobilePane() === 'results'" aria-label="Risultati">
           @if (!results()) {
             @if (running()) {
-              <div class="results-placeholder">
-                <div style="width:100%;max-width:480px;display:flex;flex-direction:column;gap:12px">
-                  @for (_ of [1,2,3,4]; track $index) {
-                    <app-skeleton height="120px" />
+              <div class="empty-state">
+                <div class="empty-state__stack">
+                  @for (_ of [1,2,3]; track $index) {
+                    <app-skeleton height="96px" />
                   }
                 </div>
+                <p class="empty-state__text">Stiamo costruendo le rose…</p>
               </div>
             } @else {
-              <div class="results-placeholder">
-                <div class="placeholder-icon">🏗️</div>
-                <p class="placeholder-text">Configura i parametri e avvia l'ottimizzatore per vedere la rosa consigliata</p>
+              <div class="empty-state">
+                <div class="empty-state__icon" aria-hidden="true">🏗️</div>
+                <h2 class="empty-state__title">Nessuna rosa ancora</h2>
+                <p class="empty-state__text">
+                  Imposta budget e strategie, poi tocca <strong>Ottimizza rosa</strong>.
+                  Confrontiamo più profili e ti mostriamo score, costi e composizione.
+                </p>
+                <button type="button" class="btn btn--primary" (click)="mobilePane.set('config')">
+                  Vai alla configurazione
+                </button>
               </div>
             }
           } @else {
-            <div class="strategy-tabs" role="tablist" aria-label="Risultati per strategia">
+            <div class="strategy-tabs" role="tablist" aria-label="Strategia attiva">
               @for (name of resultKeys(); track name) {
-                <button class="strategy-tab"
+                <button type="button" role="tab" class="strategy-tab"
                         [class.active]="activeStrategy() === name"
-                        (click)="activeStrategy.set(name)"
-                        [attr.role]="'tab'"
-                        [attr.aria-selected]="activeStrategy() === name">
-                  <span>{{ meta(name).icon }}</span>
-                  <span>{{ meta(name).label }}</span>
-                  @if (resultFor(name); as r) {
-                    <span class="tab-score" title="Punteggio proiettato totale della rosa">Score {{ r.totalProjectedScore | number:'1.1-1' }}</span>
-                  }
+                        [attr.aria-selected]="activeStrategy() === name"
+                        (click)="activeStrategy.set(name)">
+                  <span aria-hidden="true">{{ meta(name).icon }}</span>
+                  {{ meta(name).label }}
                 </button>
               }
             </div>
 
-            
-            @if (results()?.diversity; as div) {
-              <div class="insight-banner" [class.insight-banner--warn]="div.lowDiversity" role="status">
-                <strong>Diversità strategie</strong>
-                · Jaccard medio {{ div.meanPairwiseJaccard | number:'1.2-2' }}
-                @if (div.lowDiversity) {
-                  <span class="badge badge--warn">bassa diversità — le rose sono quasi uguali</span>
-                } @else {
-                  <span class="badge badge--ok">ok</span>
-                }
-              </div>
-            }
-
-            @if (multiMcSummary(); as mc) {
-              <div class="mc-summary card" aria-label="Monte Carlo summary">
-                <div class="mc-summary__header">
-                  <h3 class="mc-summary__title">Monte Carlo</h3>
-                  <span class="badge">{{ mc.mode }} · N={{ mc.nSimulations }}</span>
-                  @if (mc.scenariosCompleted != null) {
-                    <span class="muted">scenari {{ mc.scenariosCompleted }}</span>
-                  }
-                  @if (mc.wallTimeSeconds != null) {
-                    <span class="muted">{{ mc.wallTimeSeconds | number:'1.2-2' }}s</span>
-                  }
+            @if (resultFor(activeStrategy()); as r) {
+              <div class="kpi-grid" aria-label="Indicatori chiave">
+                <div class="kpi">
+                  <span class="kpi__label">Score totale</span>
+                  <span class="kpi__value">{{ r.totalProjectedScore | number:'1.1-1' }}</span>
                 </div>
-                <div class="mc-summary__stats">
-                  <div class="stat-card">
-                    <p class="stat-label">Stability index</p>
-                    <p class="stat-value">{{ mc.stabilityIndex ?? 0 | number:'1.2-2' }}</p>
-                  </div>
-                  <div class="stat-card">
-                    <p class="stat-label">Jaccard scenari</p>
-                    <p class="stat-value">{{ mc.meanPairwiseJaccard ?? 0 | number:'1.2-2' }}</p>
-                  </div>
-                  @if (mc.yieldStability?.probAboveThreshold != null) {
-                    <div class="stat-card">
-                      <p class="stat-label">P(yield ≥ soglia)</p>
-                      <p class="stat-value">{{ mc.yieldStability!.probAboveThreshold | percent:'1.0-0' }}</p>
-                    </div>
-                  }
+                <div class="kpi">
+                  <span class="kpi__label">Costo effettivo</span>
+                  <span class="kpi__value">{{ r.totalEffectiveCost | number:'1.0-0' }}</span>
+                  <span class="kpi__sub">/ {{ budget() }} cr</span>
                 </div>
-                @if (topSelectionFrequency(); as freqRows) {
-                  <div class="freq-table-wrap">
-                    <p class="stat-label">Frequenza selezione (top)</p>
-                    <table class="freq-table">
-                      <thead><tr><th>Player</th><th>Freq</th></tr></thead>
-                      <tbody>
-                        @for (row of freqRows; track row.id) {
-                          <tr>
-                            <td [title]="row.id">{{ row.name }}</td>
-                            <td>
-                              <div class="freq-bar-track" aria-hidden="true">
-                                <div class="freq-bar-fill" [style.width.%]="row.freq * 100"></div>
-                              </div>
-                              {{ row.freq | percent:'1.0-0' }}
-                            </td>
-                          </tr>
-                        }
-                      </tbody>
-                    </table>
-                  </div>
-                }
-                @if (mc.warnings?.length) {
-                  <ul class="mc-warnings">
-                    @for (w of mc.warnings; track w) {
-                      <li>{{ w }}</li>
-                    }
-                  </ul>
-                }
-              </div>
-            }
-
-            @if (activeResult(); as r) {
-              <div class="summary-row">
-                <div class="stat-card">
-                  <p class="stat-label">Punteggio proiettato totale</p>
-                  <p class="stat-value">{{ r.totalProjectedScore | number:'1.2-2' }}</p>
-                </div>
-                <div class="stat-card">
-                  <p class="stat-label">Costo nominale (somma listini)</p>
-                  <p class="stat-value">{{ r.totalNominalCost }}</p>
-                </div>
-                <div class="stat-card">
-                  <p class="stat-label">Costo effettivo (post-inflazione)</p>
-                  <p class="stat-value">{{ r.totalEffectiveCost | number:'1.1-1' }}</p>
-                </div>
-                <div class="stat-card">
-                  <p class="stat-label">Residuo di budget</p>
-                  <p class="stat-value">{{ r.budgetResidual | number:'1.0-0' }}</p>
-                </div>
-                <div class="stat-card">
-                  <p class="stat-label">Squadre di Serie A in rosa</p>
-                  <p class="stat-value">{{ r.distinctTeamsCount }}</p>
-                </div>
-                <div class="stat-card">
-                  <p class="stat-label">Stato del risolutore</p>
-                  <p class="stat-value" [class.text-green]="r.status === 'Optimal'">{{ r.status === 'Optimal' ? 'Ottimale' : r.status }}</p>
+                <div class="kpi">
+                  <span class="kpi__label">Status</span>
+                  <span class="kpi__value kpi__value--sm">{{ r.status }}</span>
                 </div>
                 @if (r.winProbability != null) {
-                  <div class="stat-card" title="Stima Monte Carlo: probabilità che la rosa rimanga entro il budget dopo l'asta">
-                    <p class="stat-label">Probabilità successo budget</p>
-                    <p class="stat-value" [class.text-green]="r.winProbability >= 0.7"
-                       [style.color]="r.winProbability < 0.4 ? '#EF4444' : r.winProbability < 0.7 ? '#F59E0B' : ''">
-                      {{ r.winProbability | percent:'1.0-0' }}
-                    </p>
+                  <div class="kpi" title="Probabilità che la rosa resti entro budget in asta">
+                    <span class="kpi__label">P(asta ok)</span>
+                    <span class="kpi__value">{{ r.winProbability | percent:'1.0-0' }}</span>
                   </div>
                 }
               </div>
 
-              <div class="formation-row">
-                <p class="section-label">Fattibilità moduli tattici</p>
-                <div class="formation-chips">
+              <div class="role-strip-row" aria-label="Composizione per ruolo">
+                @for (role of ['P','D','C','A']; track role) {
+                  <div class="role-strip" [style.border-color]="roleColor(role)">
+                    <span class="role-strip__label" [style.color]="roleColor(role)">{{ roleLabel(role) }}</span>
+                    <span class="role-strip__count">{{ r.roleBreakdown[role] || 0 }}</span>
+                  </div>
+                }
+              </div>
+
+              @if (formationEntries(r).length) {
+                <div class="formation-row">
                   @for (entry of formationEntries(r); track entry[0]) {
-                    <span class="formation-chip" [class.ok]="entry[1]"
-                          [title]="(entry[1] ? 'Modulo giocabile' : 'Modulo NON giocabile con questa rosa')">
+                    <span class="formation-chip" [class.ok]="entry[1]" [class.ko]="!entry[1]">
                       {{ entry[0] }} {{ entry[1] ? '✓' : '✗' }}
                     </span>
                   }
                 </div>
-              </div>
+              }
 
+              @if (multiMcSummary(); as mc) {
+                <div class="insight-card" aria-label="Monte Carlo">
+                  <div class="insight-card__head">
+                    <h3>Monte Carlo</h3>
+                    <span class="muted">{{ mc.nSimulations }} scenari · {{ mc.mode }}</span>
+                  </div>
+                  <div class="kpi-grid kpi-grid--compact">
+                    <div class="kpi">
+                      <span class="kpi__label">Stability</span>
+                      <span class="kpi__value">{{ (mc.stabilityIndex ?? 0) | number:'1.2-2' }}</span>
+                    </div>
+                    <div class="kpi">
+                      <span class="kpi__label">Jaccard medio</span>
+                      <span class="kpi__value">{{ (mc.meanPairwiseJaccard ?? 0) | number:'1.2-2' }}</span>
+                    </div>
+                  </div>
+                  @if (mc.warnings?.length) {
+                    <ul class="warnings-list">
+                      @for (w of mc.warnings; track w) { <li>{{ w }}</li> }
+                    </ul>
+                  }
+                </div>
+              }
 
               @if (r.nearOptimal?.length) {
-                <div class="near-optimal card" aria-label="Alternative near-optimal">
-                  <h3 class="mc-summary__title">Alternative near-optimal</h3>
-                  <p class="muted">Rose ricalcolate escludendo i top scorer della soluzione primaria.</p>
-                  <div class="near-optimal__list">
-                    @for (alt of r.nearOptimal; track $index) {
-                      <details class="near-optimal__item">
-                        <summary>
-                          Δ score {{ alt.scoreDelta | number:'1.2-2' }}
-                          ({{ alt.scoreDeltaPct | percent:'1.1-1' }})
-                          · esclusi: {{ alt.excludedPlayerIds.join(', ') }}
-                        </summary>
-                        <ul class="near-optimal__squad">
-                          @for (pl of alt.squad; track pl.playerId) {
-                            <li>{{ pl.name }} <span class="muted">({{ pl.role }} · {{ pl.projectedScore | number:'1.1-1' }})</span></li>
-                          }
-                        </ul>
-                      </details>
-                    }
-                  </div>
-                </div>
-              }
-
-              <div class="role-breakdown">
-                @for (role of ['P','D','C','A']; track role) {
-                  <div class="role-strip" [style.border-color]="roleColor(role)"
-                       [title]="'Numero di giocatori nel ruolo ' + roleLabel(role)">
-                    <span class="role-label" [style.color]="roleColor(role)">{{ roleLabel(role) }}</span>
-                    <span class="role-count">{{ r.roleBreakdown[role] || 0 }}</span>
-                  </div>
-                }
-              </div>
-
-              <div class="squad-table-wrap">
-                <table class="squad-table">
-                  <thead>
-                    <tr>
-                      <th>Ruolo</th>
-                      <th>Giocatore</th>
-                      <th class="hide-sm">Squadra</th>
-                      <th class="num">Costo</th>
-                      <th class="num hide-sm">Eff.</th>
-                      <th class="num">Score</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (p of sortedSquad(r); track p.playerId) {
-                      <tr class="clickable-row"
-                          (click)="selectedPlayer.set(p)"
-                          (keydown.enter)="selectedPlayer.set(p)"
-                          (keydown.space)="$event.preventDefault(); selectedPlayer.set(p)"
-                          tabindex="0"
-                          role="button"
-                          [attr.aria-label]="'Dettaglio ' + p.name">
-                        <td>
-                          <span class="role-badge" [style.color]="roleColor(p.role)"
-                                [style.border-color]="roleColor(p.role)">
-                            {{ roleLabel(p.role) }}
-                          </span>
-                        </td>
-                        <td class="player-name">{{ p.name }}</td>
-                        <td class="team-name hide-sm">{{ p.realTeam }}</td>
-                        <td class="num" title="Costo nominale (listino base)">{{ p.cost }}</td>
-                        <td class="num faded hide-sm" title="Costo effettivo post-inflazione">{{ p.effectiveCost | number:'1.1-1' }}</td>
-                        <td class="num accent" title="Punteggio proiettato per il giocatore">{{ p.projectedScore | number:'1.2-2' }}</td>
-                      </tr>
-                    }
-                  </tbody>
-                </table>
-              </div>
-            }
-          }
-        </section>
-      </div>
-
-      <!-- ── Analysis tools (Sensitivity / Pareto) ─────────── -->
-      <section class="analysis-panel" aria-label="Analisi avanzata">
-        <div class="analysis-header">
-          <div>
-            <h2 class="analysis-title">Analisi avanzata</h2>
-            <p class="analysis-subtitle">
-              Sensitivity e Pareto usano la config corrente con una sola strategia (la prima selezionata).
-              Non sostituiscono l’ottimizzazione multi-strategia.
-            </p>
-          </div>
-          <div class="analysis-tabs" role="tablist" aria-label="Tipo di analisi">
-            <button type="button" role="tab"
-                    class="analysis-tab"
-                    [class.active]="analysisTab() === 'sensitivity'"
-                    [attr.aria-selected]="analysisTab() === 'sensitivity'"
-                    (click)="analysisTab.set('sensitivity')">
-              Sensitivity
-            </button>
-            <button type="button" role="tab"
-                    class="analysis-tab"
-                    [class.active]="analysisTab() === 'pareto'"
-                    [attr.aria-selected]="analysisTab() === 'pareto'"
-                    (click)="analysisTab.set('pareto')">
-              Pareto frontier
-            </button>
-          </div>
-        </div>
-
-        @if (analysisTab() === 'sensitivity') {
-          <div class="analysis-body" role="tabpanel">
-            <div class="analysis-actions">
-              <button type="button" class="run-btn run-btn--secondary"
-                      (click)="runSensitivity()"
-                      [disabled]="analysisRunning() || !canRun()">
-                @if (analysisRunning() && analysisTab() === 'sensitivity') {
-                  <span class="spinner"></span> Calcolo sensitivity…
-                } @else {
-                  Esegui sensitivity
-                }
-              </button>
-              <p class="muted analysis-hint">
-                Sweep one-at-a-time su risk aversion, VAR blend, hybrid blend e budget rispetto al baseline.
-              </p>
-            </div>
-            @if (analysisError() && analysisTab() === 'sensitivity') {
-              <app-error-boundary title="Errore sensitivity" [message]="analysisError()!" />
-            }
-            @if (sensitivityResult(); as sens) {
-              <div class="sens-baseline card">
-                <div class="stat-card">
-                  <span class="stat-label">Baseline status</span>
-                  <span class="stat-value">{{ sens.baselineStatus }}</span>
-                </div>
-                <div class="stat-card">
-                  <span class="stat-label">Score baseline</span>
-                  <span class="stat-value">{{ sens.baselineTotalScore | number:'1.2-2' }}</span>
-                </div>
-                <div class="stat-card">
-                  <span class="stat-label">Rosa size</span>
-                  <span class="stat-value">{{ sens.baselineSquadSize }}</span>
-                </div>
-              </div>
-              @if (sens.warnings?.length) {
-                <ul class="warnings-list" role="status">
-                  @for (w of sens.warnings; track w) {
-                    <li>{{ w }}</li>
+                <div class="insight-card">
+                  <h3>Alternative near-optimal</h3>
+                  @for (alt of r.nearOptimal; track $index) {
+                    <div class="near-item">
+                      <strong>Alt {{ $index + 1 }}</strong>
+                      <span class="muted">score {{ alt.totalProjectedScore | number:'1.1-1' }}</span>
+                    </div>
                   }
-                </ul>
-              }
-              @for (param of sens.parameters; track param.parameter) {
-                <div class="sens-param card">
-                  <h3 class="sens-param__title">{{ paramLabel(param.parameter) }}</h3>
-                  <div class="squad-table-wrap">
-                    <table class="squad-table sens-table">
-                      <thead>
-                        <tr>
-                          <th>Valore</th>
-                          <th>Status</th>
-                          <th class="num">Score</th>
-                          <th class="num">Δ score</th>
-                          <th class="num">Δ %</th>
-                          <th class="num hide-sm">Jaccard</th>
-                          <th class="num hide-sm">Changed</th>
-                          <th class="hide-sm">Δ bar</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        @for (pt of param.points; track pt.value) {
-                          <tr [class.sens-row--baseline]="pt.scoreDelta === 0">
-                            <td>{{ pt.value | number:'1.2-2' }}</td>
-                            <td><span class="status-chip">{{ pt.status }}</span></td>
-                            <td class="num">{{ pt.totalScore | number:'1.2-2' }}</td>
-                            <td class="num" [class.delta-pos]="pt.scoreDelta > 0" [class.delta-neg]="pt.scoreDelta < 0">
-                              {{ pt.scoreDelta | number:'1.2-2' }}
-                            </td>
-                            <td class="num" [class.delta-pos]="pt.scoreDeltaPct > 0" [class.delta-neg]="pt.scoreDeltaPct < 0">
-                              {{ pt.scoreDeltaPct | number:'1.1-1' }}%
-                            </td>
-                            <td class="num hide-sm">{{ pt.jaccardVsBaseline | number:'1.2-2' }}</td>
-                            <td class="num hide-sm">{{ pt.playersChanged }}</td>
-                            <td class="hide-sm">
-                              <div class="delta-bar" aria-hidden="true">
-                                <div class="delta-bar__fill"
-                                     [class.delta-bar__fill--pos]="pt.scoreDeltaPct >= 0"
-                                     [class.delta-bar__fill--neg]="pt.scoreDeltaPct < 0"
-                                     [style.width.%]="deltaBarWidth(pt.scoreDeltaPct)"></div>
-                              </div>
-                            </td>
-                          </tr>
-                        }
-                      </tbody>
-                    </table>
-                  </div>
                 </div>
               }
-            } @else if (!analysisRunning()) {
-              <div class="results-placeholder analysis-empty">
-                <p class="placeholder-text">Avvia lo sweep per vedere come score e composizione rosa reagiscono ai parametri.</p>
-              </div>
-            }
-          </div>
-        }
 
-        @if (analysisTab() === 'pareto') {
-          <div class="analysis-body" role="tabpanel">
-            <div class="analysis-actions">
-              <button type="button" class="run-btn run-btn--secondary"
-                      (click)="runPareto()"
-                      [disabled]="analysisRunning() || !canRun()">
-                @if (analysisRunning() && analysisTab() === 'pareto') {
-                  <span class="spinner"></span> Calcolo Pareto…
-                } @else {
-                  Esegui Pareto frontier
-                }
-              </button>
-              <p class="muted analysis-hint">
-                Frontiera score vs rischio (risk λ) e P(asta fattibile). I punti non dominati formano la frontier.
-              </p>
-            </div>
-            @if (analysisError() && analysisTab() === 'pareto') {
-              <app-error-boundary title="Errore Pareto" [message]="analysisError()!" />
-            }
-            @if (paretoResult(); as pr) {
-              @if (pr.warnings?.length) {
-                <ul class="warnings-list" role="status">
-                  @for (w of pr.warnings; track w) {
-                    <li>{{ w }}</li>
-                  }
-                </ul>
-              }
-              <div class="pareto-layout">
-                <div class="pareto-chart card" aria-label="Scatter score vs risk">
-                  <svg class="pareto-svg" viewBox="0 0 320 220" role="img" aria-label="Pareto scatter plot">
-                    <line x1="40" y1="10" x2="40" y2="190" class="pareto-axis" />
-                    <line x1="40" y1="190" x2="310" y2="190" class="pareto-axis" />
-                    <text x="8" y="20" class="pareto-axis-label">Score</text>
-                    <text x="280" y="208" class="pareto-axis-label">Risk</text>
-                    @for (pt of pr.points; track pt.riskLambda) {
-                      <circle
-                        [attr.cx]="paretoX(pt, pr.points)"
-                        [attr.cy]="paretoY(pt, pr.points)"
-                        [attr.r]="pt.dominated ? 4 : 6"
-                        [class.pareto-dot--frontier]="!pt.dominated"
-                        [class.pareto-dot--dominated]="pt.dominated"
-                        [attr.title]="'λ=' + pt.riskLambda + ' score=' + pt.score" />
-                    }
-                  </svg>
-                  <div class="pareto-legend">
-                    <span class="pareto-legend__item"><i class="pareto-dot--frontier-swatch"></i> Frontier</span>
-                    <span class="pareto-legend__item"><i class="pareto-dot--dominated-swatch"></i> Dominated</span>
-                  </div>
+              <div class="table-card">
+                <div class="table-card__head">
+                  <h3>Rosa</h3>
+                  <span class="muted">Tocca un giocatore per il dettaglio</span>
                 </div>
-                <div class="squad-table-wrap card">
-                  <table class="squad-table">
+                <div class="table-scroll">
+                  <table class="data-table">
                     <thead>
                       <tr>
-                        <th>λ risk</th>
-                        <th>Status</th>
+                        <th>Ruolo</th>
+                        <th>Giocatore</th>
+                        <th class="hide-sm">Squadra</th>
+                        <th class="num">Costo</th>
+                        <th class="num hide-sm">Eff.</th>
                         <th class="num">Score</th>
-                        <th class="num">Risk</th>
-                        <th class="num hide-sm">P(asta)</th>
-                        <th class="num hide-sm">Size</th>
-                        <th>Frontier</th>
                       </tr>
                     </thead>
                     <tbody>
-                      @for (pt of pr.points; track pt.riskLambda) {
-                        <tr [class.pareto-row--frontier]="!pt.dominated">
-                          <td>{{ pt.riskLambda | number:'1.2-2' }}</td>
-                          <td><span class="status-chip">{{ pt.status }}</span></td>
-                          <td class="num">{{ pt.score | number:'1.2-2' }}</td>
-                          <td class="num">{{ pt.risk | number:'1.2-2' }}</td>
-                          <td class="num hide-sm">
-                            {{ pt.winProbability != null ? (pt.winProbability | percent:'1.0-0') : '—' }}
+                      @for (p of sortedSquad(r); track p.playerId) {
+                        <tr class="row-click"
+                            (click)="selectedPlayer.set(p)"
+                            (keydown.enter)="selectedPlayer.set(p)"
+                            (keydown.space)="$event.preventDefault(); selectedPlayer.set(p)"
+                            tabindex="0"
+                            role="button"
+                            [attr.aria-label]="'Dettaglio ' + p.name">
+                          <td>
+                            <span class="role-badge" [style.color]="roleColor(p.role)"
+                                  [style.border-color]="roleColor(p.role)">{{ roleLabel(p.role) }}</span>
                           </td>
-                          <td class="num hide-sm">{{ pt.squadSize }}</td>
-                          <td>{{ pt.dominated ? '—' : '✓' }}</td>
+                          <td class="name-cell">{{ p.name }}</td>
+                          <td class="hide-sm muted">{{ p.realTeam }}</td>
+                          <td class="num">{{ p.cost }}</td>
+                          <td class="num hide-sm muted">{{ p.effectiveCost | number:'1.1-1' }}</td>
+                          <td class="num accent">{{ p.projectedScore | number:'1.2-2' }}</td>
                         </tr>
                       }
                     </tbody>
                   </table>
                 </div>
               </div>
-            } @else if (!analysisRunning()) {
-              <div class="results-placeholder analysis-empty">
-                <p class="placeholder-text">Calcola la frontiera per confrontare trade-off score / rischio / fattibilità d’asta.</p>
-              </div>
             }
+          }
+        </section>
+
+        <!-- ════════ ANALYSIS ════════ -->
+        <section class="opt-pane opt-analysis" [class.opt-pane--active]="mobilePane() === 'analysis'" aria-label="Analisi">
+          <div class="analysis-intro">
+            <h2>Analisi avanzata</h2>
+            <p class="muted">
+              Usa la config attuale e <strong>una sola strategia</strong> (la prima selezionata).
+              Non sostituisce il confronto multi-strategia.
+            </p>
           </div>
-        }
-      </section>
+
+          <div class="analysis-tabs" role="tablist">
+            <button type="button" role="tab" class="analysis-tab"
+                    [class.active]="analysisTab() === 'sensitivity'"
+                    [attr.aria-selected]="analysisTab() === 'sensitivity'"
+                    (click)="analysisTab.set('sensitivity')">Sensitivity</button>
+            <button type="button" role="tab" class="analysis-tab"
+                    [class.active]="analysisTab() === 'pareto'"
+                    [attr.aria-selected]="analysisTab() === 'pareto'"
+                    (click)="analysisTab.set('pareto')">Pareto</button>
+          </div>
+
+          @if (analysisTab() === 'sensitivity') {
+            <div class="analysis-body" role="tabpanel">
+              <div class="analysis-actions">
+                <button type="button" class="btn btn--secondary"
+                        (click)="runSensitivity()" [disabled]="analysisRunning() || !canRun()">
+                  @if (analysisRunning() && analysisTab() === 'sensitivity') {
+                    <span class="spinner spinner--dark"></span> Calcolo…
+                  } @else {
+                    Esegui sensitivity
+                  }
+                </button>
+                <p class="muted">Sweep su risk, VAR, hybrid e budget rispetto al baseline.</p>
+              </div>
+              @if (analysisError() && analysisTab() === 'sensitivity') {
+                <app-error-boundary title="Errore sensitivity" [message]="analysisError()!" />
+              }
+              @if (sensitivityResult(); as sens) {
+                <div class="kpi-grid kpi-grid--compact">
+                  <div class="kpi"><span class="kpi__label">Status</span><span class="kpi__value kpi__value--sm">{{ sens.baselineStatus }}</span></div>
+                  <div class="kpi"><span class="kpi__label">Score base</span><span class="kpi__value">{{ sens.baselineTotalScore | number:'1.2-2' }}</span></div>
+                  <div class="kpi"><span class="kpi__label">Rosa</span><span class="kpi__value">{{ sens.baselineSquadSize }}</span></div>
+                </div>
+                @if (sens.warnings?.length) {
+                  <ul class="warnings-list">@for (w of sens.warnings; track w) { <li>{{ w }}</li> }</ul>
+                }
+                @for (param of sens.parameters; track param.parameter) {
+                  <div class="table-card">
+                    <div class="table-card__head"><h3>{{ paramLabel(param.parameter) }}</h3></div>
+                    <div class="table-scroll">
+                      <table class="data-table">
+                        <thead>
+                          <tr>
+                            <th>Valore</th><th>Status</th>
+                            <th class="num">Score</th><th class="num">Δ</th><th class="num">Δ%</th>
+                            <th class="num hide-sm">Jaccard</th><th class="num hide-sm">Δ rosa</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          @for (pt of param.points; track pt.value) {
+                            <tr [class.row-baseline]="pt.scoreDelta === 0">
+                              <td>{{ pt.value | number:'1.2-2' }}</td>
+                              <td><span class="status-chip">{{ pt.status }}</span></td>
+                              <td class="num">{{ pt.totalScore | number:'1.2-2' }}</td>
+                              <td class="num" [class.delta-pos]="pt.scoreDelta > 0" [class.delta-neg]="pt.scoreDelta < 0">{{ pt.scoreDelta | number:'1.2-2' }}</td>
+                              <td class="num" [class.delta-pos]="pt.scoreDeltaPct > 0" [class.delta-neg]="pt.scoreDeltaPct < 0">{{ pt.scoreDeltaPct | number:'1.1-1' }}%</td>
+                              <td class="num hide-sm">{{ pt.jaccardVsBaseline | number:'1.2-2' }}</td>
+                              <td class="num hide-sm">{{ pt.playersChanged }}</td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                }
+              } @else if (!analysisRunning()) {
+                <div class="empty-state empty-state--compact">
+                  <p class="empty-state__text">Avvia lo sweep per vedere come reagiscono score e composizione.</p>
+                </div>
+              }
+            </div>
+          }
+
+          @if (analysisTab() === 'pareto') {
+            <div class="analysis-body" role="tabpanel">
+              <div class="analysis-actions">
+                <button type="button" class="btn btn--secondary"
+                        (click)="runPareto()" [disabled]="analysisRunning() || !canRun()">
+                  @if (analysisRunning() && analysisTab() === 'pareto') {
+                    <span class="spinner spinner--dark"></span> Calcolo…
+                  } @else {
+                    Esegui Pareto
+                  }
+                </button>
+                <p class="muted">Trade-off score vs rischio e probabilità d’asta.</p>
+              </div>
+              @if (analysisError() && analysisTab() === 'pareto') {
+                <app-error-boundary title="Errore Pareto" [message]="analysisError()!" />
+              }
+              @if (paretoResult(); as pr) {
+                @if (pr.warnings?.length) {
+                  <ul class="warnings-list">@for (w of pr.warnings; track w) { <li>{{ w }}</li> }</ul>
+                }
+                <div class="pareto-layout">
+                  <div class="insight-card pareto-chart">
+                    <svg class="pareto-svg" viewBox="0 0 320 220" role="img" aria-label="Scatter score vs risk">
+                      <line x1="40" y1="10" x2="40" y2="190" class="pareto-axis" />
+                      <line x1="40" y1="190" x2="310" y2="190" class="pareto-axis" />
+                      <text x="8" y="20" class="pareto-axis-label">Score</text>
+                      <text x="280" y="208" class="pareto-axis-label">Risk</text>
+                      @for (pt of pr.points; track pt.riskLambda) {
+                        <circle
+                          [attr.cx]="paretoX(pt, pr.points)"
+                          [attr.cy]="paretoY(pt, pr.points)"
+                          [attr.r]="pt.dominated ? 4 : 6"
+                          [class.pareto-dot--frontier]="!pt.dominated"
+                          [class.pareto-dot--dominated]="pt.dominated" />
+                      }
+                    </svg>
+                    <div class="pareto-legend">
+                      <span><i class="swatch swatch--frontier"></i> Frontier</span>
+                      <span><i class="swatch swatch--dom"></i> Dominated</span>
+                    </div>
+                  </div>
+                  <div class="table-card">
+                    <div class="table-scroll">
+                      <table class="data-table">
+                        <thead>
+                          <tr>
+                            <th>λ</th><th>Status</th>
+                            <th class="num">Score</th><th class="num">Risk</th>
+                            <th class="num hide-sm">P(asta)</th>
+                            <th class="num hide-sm">Size</th>
+                            <th>Front.</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          @for (pt of pr.points; track pt.riskLambda) {
+                            <tr [class.row-baseline]="!pt.dominated">
+                              <td>{{ pt.riskLambda | number:'1.2-2' }}</td>
+                              <td><span class="status-chip">{{ pt.status }}</span></td>
+                              <td class="num">{{ pt.score | number:'1.2-2' }}</td>
+                              <td class="num">{{ pt.risk | number:'1.2-2' }}</td>
+                              <td class="num hide-sm">{{ pt.winProbability != null ? (pt.winProbability | percent:'1.0-0') : '—' }}</td>
+                              <td class="num hide-sm">{{ pt.squadSize }}</td>
+                              <td>{{ pt.dominated ? '—' : '✓' }}</td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              } @else if (!analysisRunning()) {
+                <div class="empty-state empty-state--compact">
+                  <p class="empty-state__text">Calcola la frontiera per confrontare score, rischio e fattibilità d’asta.</p>
+                </div>
+              }
+            </div>
+          }
+        </section>
+      </div>
+
+      <!-- Mobile sticky CTA -->
+      <div class="opt-mobile-cta">
+        <button type="button" class="btn btn--primary btn--run"
+                (click)="run(); mobilePane.set('results')"
+                [disabled]="running() || !canRun()">
+          @if (running()) {
+            <span class="spinner"></span> Calcolo…
+          } @else {
+            Ottimizza rosa
+          }
+        </button>
+      </div>
     </div>
 
     @if (selectedPlayer(); as p) {
@@ -1309,501 +1229,693 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
     }
   `,
   styles: [`
-    .optimizer-page { display:flex; flex-direction:column; height:100%; overflow:hidden; }
-    .page-header { padding:16px; border-bottom:1px solid var(--color-border); flex-shrink:0; }
-    @media (min-width: 640px) { .page-header { padding:20px 24px 16px; } }
-    .page-title { font-size:16px; font-weight:700; color:var(--color-text-primary); margin:0; }
-    @media (min-width: 640px) { .page-title { font-size:18px; } }
-    .page-subtitle { font-size:11px; color:var(--color-text-secondary); margin:2px 0 0; }
-    @media (min-width: 640px) { .page-subtitle { font-size:12px; } }
+    :host { display: block; }
 
-    .optimizer-body {
-      display:flex; flex-direction:column;
-      flex:1; overflow:hidden; min-height:0;
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
     }
-    @media (min-width: 768px) {
-      .optimizer-body {
-        display:grid; grid-template-columns:300px 1fr;
+
+    .optimizer-page {
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+      background: var(--color-bg, #0b0c0f);
+      color: var(--color-text-primary, #f4f4f5);
+    }
+
+    /* ── Top bar ─────────────────────────────────────── */
+    .opt-topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--color-border, #27272a);
+      background: color-mix(in srgb, var(--color-bg, #0b0c0f) 88%, transparent);
+      backdrop-filter: blur(10px);
+    }
+    .opt-topbar__title {
+      margin: 0;
+      font-size: 1.125rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.25;
+    }
+    .opt-topbar__subtitle {
+      margin: 2px 0 0;
+      font-size: 0.75rem;
+      color: var(--color-text-secondary, #a1a1aa);
+      line-height: 1.35;
+      max-width: 36rem;
+    }
+    .opt-topbar__actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    .opt-preset { min-width: 140px; max-width: 220px; flex: 1 1 140px; }
+    .opt-preset-banner {
+      margin: 0;
+      padding: 8px 16px;
+      font-size: 0.75rem;
+      line-height: 1.4;
+      color: var(--color-text-secondary, #a1a1aa);
+      border-bottom: 1px solid var(--color-border, #27272a);
+      background: var(--color-surface, #14151a);
+    }
+    .opt-preset-banner.muted { opacity: 0.85; }
+
+    /* ── Mobile pane nav ─────────────────────────────── */
+    .opt-pane-nav {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--color-border, #27272a);
+      background: var(--color-surface, #14151a);
+      position: sticky;
+      top: 57px;
+      z-index: 15;
+    }
+    @media (min-width: 960px) {
+      .opt-pane-nav { display: none; }
+    }
+    .opt-pane-nav__btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 40px;
+      padding: 8px 6px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--color-text-secondary, #a1a1aa);
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .opt-pane-nav__btn.active {
+      background: var(--color-bg, #0b0c0f);
+      color: var(--color-text-primary, #f4f4f5);
+      border-color: var(--color-border, #27272a);
+    }
+    .opt-pane-nav__badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 999px;
+      background: var(--color-accent, #6366f1);
+      color: #fff;
+      font-size: 0.65rem;
+      font-weight: 700;
+    }
+
+    /* ── Shell layout ────────────────────────────────── */
+    .opt-shell {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0;
+      flex: 1;
+      min-height: 0;
+    }
+    @media (min-width: 960px) {
+      .opt-shell {
+        grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+        grid-template-rows: auto auto;
+        align-items: start;
+      }
+      .opt-config {
+        grid-row: 1 / span 2;
+        grid-column: 1;
+        position: sticky;
+        top: 72px;
+        max-height: calc(100dvh - 80px);
+        overflow-y: auto;
+        border-right: 1px solid var(--color-border, #27272a);
+      }
+      .opt-results { grid-column: 2; grid-row: 1; }
+      .opt-analysis { grid-column: 2; grid-row: 2; }
+    }
+    @media (min-width: 1280px) {
+      .opt-shell {
+        grid-template-columns: minmax(360px, 420px) minmax(0, 1.2fr) minmax(280px, 0.9fr);
+        grid-template-rows: 1fr;
+      }
+      .opt-config { grid-row: 1; grid-column: 1; }
+      .opt-results { grid-column: 2; grid-row: 1; }
+      .opt-analysis {
+        grid-column: 3; grid-row: 1;
+        position: sticky;
+        top: 72px;
+        max-height: calc(100dvh - 80px);
+        overflow-y: auto;
+        border-left: 1px solid var(--color-border, #27272a);
       }
     }
 
-    /* Config panel */
-    .config-panel {
-      border-radius:0; border-top:none; border-bottom:1px solid var(--color-border);
-      border-left:none; border-right:none;
-      padding:16px; overflow-y:auto; max-height:50vh;
-      display:flex; flex-direction:column; gap:10px;
+    .opt-pane {
+      padding: 12px 16px 88px;
+      min-width: 0;
     }
-    @media (min-width: 768px) {
-      .config-panel {
-        max-height:none; border-bottom:none;
-        border-right:1px solid var(--color-border);
-      }
+    @media (min-width: 960px) {
+      .opt-pane { padding: 16px; display: block !important; }
+      .opt-mobile-cta { display: none !important; }
     }
-    .section-divider {
-      font-size:10px; font-weight:700; text-transform:uppercase;
-      letter-spacing:0.08em; color:var(--color-text-secondary);
-      margin:6px 0 0; padding-bottom:6px;
-      border-bottom:1px solid var(--color-border);
-    }
-    .field-group { display:flex; flex-direction:column; gap:4px; min-width:0; }
-    .field-row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-    .field-label { font-size:11px; font-weight:500; color:var(--color-text-secondary); }
-    .preset-description {
-      margin: 6px 0 0;
-      font-size: 12px;
-      line-height: 1.45;
-      color: var(--color-text-secondary);
-    }
-    .preset-description.muted { opacity: 0.85; }
-
-    .field-hint { font-size:10px; opacity:0.6; }
-    .field-input {
-      background:var(--color-bg); border:1px solid var(--color-border);
-      border-radius:6px; padding:8px;
-      color:var(--color-text-primary); font-size:13px;
-      outline:none; width:100%; min-width:0;
-    }
-    @media (min-width: 640px) {
-      .field-input { padding:6px 8px; font-size:12px; }
-    }
-    .field-input:focus { border-color:var(--color-accent); }
-    .field-textarea { resize:vertical; font-family:var(--font-sans); }
-
-    /* Formations check grid */
-    .check-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
-    .check-chip {
-      display:flex; align-items:center; justify-content:center;
-      padding:8px; border-radius:6px;
-      border:1px solid var(--color-border); background:var(--color-bg);
-      cursor:pointer; font-size:12px; font-weight:500;
-      color:var(--color-text-secondary);
-      transition:border-color 100ms, color 100ms;
-      min-height:36px;
-    }
-    .check-chip.active {
-      border-color:var(--color-accent); color:var(--color-text-primary);
-      background:color-mix(in srgb, var(--color-accent) 8%, transparent);
-    }
-    .check-chip input { display:none; }
-
-    /* Strategies column */
-    .check-col { display:flex; flex-direction:column; gap:5px; }
-    .strategy-check {
-      display:flex; align-items:center; gap:8px;
-      padding:8px 10px; border-radius:6px;
-      border:1px solid var(--color-border); background:var(--color-bg);
-      cursor:pointer; font-size:12px; color:var(--color-text-secondary);
-      transition:border-color 100ms, color 100ms;
-      min-height:36px;
-    }
-    .strategy-check.active {
-      border-color:var(--color-accent); color:var(--color-text-primary);
-      background:color-mix(in srgb, var(--color-accent) 8%, transparent);
-    }
-    .strategy-check input { display:none; }
-
-    .run-btn {
-      margin-top:4px; width:100%; padding:10px;
-      border-radius:8px; background:var(--color-accent);
-      color:#fff; font-size:13px; font-weight:600;
-      border:none; cursor:pointer;
-      display:flex; align-items:center; justify-content:center; gap:6px;
-      transition:opacity 120ms;
-      min-height:40px;
-    }
-    .run-btn:disabled { opacity:0.5; cursor:not-allowed; }
-    .run-btn:not(:disabled):hover { opacity:0.9; }
-    .spinner {
-      width:14px; height:14px;
-      border:2px solid rgba(255,255,255,0.3);
-      border-top-color:#fff; border-radius:50%;
-      animation:spin 0.7s linear infinite;
-    }
-    @keyframes spin { to { transform:rotate(360deg); } }
-
-    /* Results panel */
-    .results-panel {
-      display:flex; flex-direction:column; overflow:hidden;
-      min-height:0;
-    }
-    @media (min-width: 768px) {
-      .results-panel { border-left:none; }
-    }
-    .results-placeholder {
-      flex:1; display:flex; flex-direction:column;
-      align-items:center; justify-content:center;
-      gap:12px; padding:24px 16px; overflow-y:auto;
-    }
-    @media (min-width: 640px) { .results-placeholder { padding:32px; } }
-    .placeholder-icon { font-size:40px; }
-    .placeholder-text {
-      font-size:13px; color:var(--color-text-secondary);
-      text-align:center; max-width:280px;
+    @media (max-width: 959px) {
+      .opt-pane { display: none; }
+      .opt-pane--active { display: block; }
     }
 
-    .strategy-tabs {
-      display:flex; border-bottom:1px solid var(--color-border);
-      flex-shrink:0; padding:0 12px; overflow-x:auto;
-      -webkit-overflow-scrolling:touch;
-    }
-    @media (min-width: 640px) { .strategy-tabs { padding:0 16px; } }
-    .strategy-tab {
-      display:flex; align-items:center; gap:6px;
-      padding:12px 10px; border:none; background:none;
-      color:var(--color-text-secondary); font-size:12px; font-weight:500;
-      border-bottom:2px solid transparent; cursor:pointer;
-      white-space:nowrap; transition:color 100ms, border-color 100ms;
-      min-height:44px;
-    }
-    @media (min-width: 640px) { .strategy-tab { padding:12px 14px; } }
-    .strategy-tab.active { color:var(--color-accent); border-bottom-color:var(--color-accent); }
-    .tab-score {
-      background:var(--color-surface-raised); border-radius:9999px;
-      padding:1px 7px; font-size:11px; color:var(--color-text-secondary);
-    }
-
-    .summary-row {
-      display:grid; grid-template-columns:repeat(2,1fr);
-      border-bottom:1px solid var(--color-border); flex-shrink:0;
-    }
-    @media (min-width: 640px) { .summary-row { grid-template-columns:repeat(3,1fr); } }
-    @media (min-width: 1024px) { .summary-row { grid-template-columns:repeat(6,1fr); } }
-    .stat-card {
-      padding:10px 12px;
-      border-right:1px solid var(--color-border);
-      border-bottom:1px solid var(--color-border);
-    }
-    @media (min-width: 640px) {
-      .stat-card:nth-child(2n) { border-right:none; }
-      .stat-card:nth-last-child(-n+2) { border-bottom:none; }
-    }
-    @media (min-width: 1024px) {
-      .stat-card { padding:12px 14px; border-bottom:none; }
-      .stat-card { border-right:1px solid var(--color-border); }
-      .stat-card:last-child { border-right:none; }
-    }
-    .stat-label {
-      font-size:10px; font-weight:500; text-transform:uppercase;
-      letter-spacing:0.06em; color:var(--color-text-secondary); margin:0 0 3px;
-    }
-    .stat-value {
-      font-size:14px; font-weight:700;
-      font-variant-numeric:tabular-nums; color:var(--color-text-primary); margin:0;
-    }
-    @media (min-width: 1024px) { .stat-value { font-size:16px; } }
-    .text-green { color:#22C55E !important; }
-
-    .formation-row {
-      display:flex; align-items:center; gap:10px; flex-wrap:wrap;
-      padding:8px 12px; border-bottom:1px solid var(--color-border); flex-shrink:0;
-    }
-    @media (min-width: 640px) { .formation-row { padding:8px 16px; } }
-    .section-label {
-      font-size:10px; font-weight:600; text-transform:uppercase;
-      letter-spacing:0.06em; color:var(--color-text-secondary); margin:0; white-space:nowrap;
-    }
-    .formation-chips { display:flex; flex-wrap:wrap; gap:4px; }
-    .formation-chip {
-      padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:500;
-      background:var(--color-surface-raised); color:var(--color-text-secondary);
-      border:1px solid var(--color-border);
-    }
-    .formation-chip.ok {
-      background:color-mix(in srgb,#22C55E 12%,transparent);
-      color:#22C55E; border-color:#22C55E;
-    }
-
-    .role-breakdown {
-      display:grid; grid-template-columns:repeat(2,1fr);
-      flex-shrink:0; border-bottom:1px solid var(--color-border);
-    }
-    @media (min-width: 640px) { .role-breakdown { grid-template-columns:repeat(4,1fr); } }
-    .role-strip {
-      display:flex; align-items:center; justify-content:space-between;
-      padding:6px 12px;
-      border-right:1px solid var(--color-border);
-      border-bottom:1px solid var(--color-border);
-      border-left:3px solid transparent;
-    }
-    @media (min-width: 640px) {
-      .role-strip { border-bottom:none; padding:6px 14px; }
-    }
-    .role-strip:nth-child(2n) { border-right:none; }
-    @media (min-width: 640px) { .role-strip:nth-child(2n) { border-right:1px solid var(--color-border); } }
-    .role-strip:last-child { border-right:none; }
-    .role-label { font-size:11px; font-weight:600; }
-    .role-count { font-size:14px; font-weight:700; color:var(--color-text-primary); }
-
-    .squad-table-wrap {
-      flex:1; overflow:auto; min-height:0;
-      margin:0 -12px;
-    }
-    @media (min-width: 640px) { .squad-table-wrap { margin:0 -16px; } }
-    .squad-table { width:100%; min-width:520px; border-collapse:collapse; font-size:13px; }
-    .hide-sm { display:none; }
-    @media (min-width: 640px) { .hide-sm { display:table-cell; } }
-    .squad-table thead th {
-      position:sticky; top:0; z-index:1;
-      background:var(--color-surface); padding:8px 10px; text-align:left;
-      font-size:10px; font-weight:600; text-transform:uppercase;
-      letter-spacing:0.05em; color:var(--color-text-secondary);
-      border-bottom:1px solid var(--color-border);
-    }
-    @media (min-width: 640px) { .squad-table thead th { padding:8px 14px; } }
-    .squad-table tbody tr {
-      border-bottom:1px solid var(--color-border); transition:background 100ms;
-    }
-    .squad-table tbody tr:hover { background:var(--color-surface-raised); }
-    .squad-table tbody td { padding:8px 10px; color:var(--color-text-primary); }
-    @media (min-width: 640px) { .squad-table tbody td { padding:8px 14px; } }
-    .squad-table .num { text-align:right; font-variant-numeric:tabular-nums; }
-    .role-badge {
-      display:inline-flex; align-items:center; justify-content:center;
-      width:36px; padding:1px 0; border-radius:4px;
-      border:1px solid; font-size:10px; font-weight:700;
-    }
-    .player-name { font-weight:500; }
-    .team-name { color:var(--color-text-secondary); font-size:12px; }
-    .faded { color:var(--color-text-secondary); }
-    .accent { color:var(--color-accent); font-weight:600; }
-
-    /* Mobile (< md): collapse the split-pane app-shell layout (fixed-height
-       page + independently-scrolling config/results panels) into one
-       normal flowing page instead of nested scroll boxes. Placed last so
-       it wins over the min-width overrides above below the md breakpoint. */
-    @media (max-width: 767px) {
-      .optimizer-page { height: auto; overflow: visible; }
-      .optimizer-body { overflow: visible; min-height: auto; }
-      .config-panel { max-height: none; overflow-y: visible; }
-      .results-panel { overflow: visible; min-height: auto; }
-      .results-placeholder { overflow-y: visible; }
-    }
-
-    .clickable-row { cursor: pointer; }
-    .clickable-row:hover { background: var(--color-surface-raised); }
-    .clickable-row:focus-visible { outline: 2px solid var(--color-brand-500, #6366f1); outline-offset: -2px; }
-
-    /* Monte Carlo / diversity insights */
-    .insight-banner {
-      display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
-      padding: 10px 14px; margin-bottom: 12px;
-      border-radius: var(--radius-md, 8px);
-      background: var(--color-surface-2, #1a1a22);
-      border: 1px solid var(--color-border, #2a2a35);
-      font-size: 0.875rem;
-    }
-    .insight-banner--warn {
-      border-color: #F59E0B55;
-      background: #F59E0B12;
-    }
-    .badge {
-      display: inline-flex; align-items: center;
-      padding: 2px 8px; border-radius: 999px;
-      font-size: 0.75rem; font-weight: 600;
-      background: var(--color-surface-3, #252530);
-    }
-    .badge--warn { background: #F59E0B33; color: #FBBF24; }
-    .badge--ok { background: #10B98133; color: #34D399; }
-    .field-warning {
-      margin: 0 0 12px; padding: 8px 12px;
-      border-radius: 6px; font-size: 0.8rem;
-      background: #F59E0B18; border: 1px solid #F59E0B44; color: #FBBF24;
-    }
-    .field-group--toggle .field-label {
-      display: flex; align-items: center; gap: 8px; cursor: pointer;
-    }
-    .mc-summary {
-      padding: 14px 16px; margin-bottom: 14px;
-    }
-    .mc-summary__header {
-      display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+    /* ── Accordion sections ──────────────────────────── */
+    .opt-section {
+      border: 1px solid var(--color-border, #27272a);
+      border-radius: 12px;
+      background: var(--color-surface, #14151a);
       margin-bottom: 10px;
-    }
-    .mc-summary__title {
-      margin: 0; font-size: 1rem; font-weight: 600;
-    }
-    .mc-summary__stats {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-      gap: 8px; margin-bottom: 12px;
-    }
-    .freq-table-wrap { margin-top: 8px; }
-    .freq-table {
-      width: 100%; border-collapse: collapse; font-size: 0.8125rem;
-    }
-    .freq-table th, .freq-table td {
-      padding: 6px 8px; text-align: left;
-      border-bottom: 1px solid var(--color-border, #2a2a35);
-    }
-    .freq-bar-track {
-      display: inline-block; width: 72px; height: 6px;
-      margin-right: 8px; vertical-align: middle;
-      background: var(--color-surface-3, #252530); border-radius: 3px;
       overflow: hidden;
     }
-    .freq-bar-fill {
-      height: 100%; background: var(--color-accent, #6366f1); border-radius: 3px;
+    .opt-section__head {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 14px;
+      min-height: 48px;
+      border: none;
+      background: transparent;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
     }
-    .mc-warnings {
-      margin: 8px 0 0; padding-left: 18px; font-size: 0.75rem;
+    .opt-section__head:hover { background: color-mix(in srgb, var(--color-accent, #6366f1) 6%, transparent); }
+    .opt-section__title { font-size: 0.875rem; font-weight: 650; }
+    .opt-section__hint {
+      font-size: 0.7rem;
       color: var(--color-text-secondary, #a1a1aa);
+      justify-self: end;
     }
-    .near-optimal { padding: 14px 16px; margin: 12px 0; }
-    .near-optimal__item { margin: 6px 0; }
-    .near-optimal__squad {
-      margin: 6px 0 0; padding-left: 18px; font-size: 0.8125rem;
+    .opt-section__chev {
+      width: 8px; height: 8px;
+      border-right: 2px solid var(--color-text-secondary, #a1a1aa);
+      border-bottom: 2px solid var(--color-text-secondary, #a1a1aa);
+      transform: rotate(45deg);
+      transition: transform 150ms ease;
+      margin-bottom: 4px;
     }
-    .muted { color: var(--color-text-secondary, #a1a1aa); font-size: 0.8125rem; }
-    .job-hint { margin: 8px 0 0; }
-
-    /* ── Analysis panel (Sensitivity / Pareto) ─────────────── */
-    .analysis-panel {
-      margin-top: 16px;
-      padding: 16px;
-      border-top: 1px solid var(--color-border);
+    .opt-section.open .opt-section__chev { transform: rotate(225deg); margin-bottom: 0; margin-top: 4px; }
+    .opt-section__body {
       display: flex;
       flex-direction: column;
       gap: 12px;
+      padding: 0 14px 14px;
+      border-top: 1px solid var(--color-border, #27272a);
+      padding-top: 12px;
     }
-    .analysis-header {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: flex-start;
-      justify-content: space-between;
+
+    /* ── Form controls ───────────────────────────────── */
+    .field-group { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .field-row {
+      display: grid;
+      grid-template-columns: 1fr;
       gap: 12px;
     }
-    .analysis-title {
-      margin: 0;
-      font-size: 15px;
+    @media (min-width: 480px) {
+      .field-row { grid-template-columns: 1fr 1fr; }
+    }
+    .field-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--color-text-primary, #f4f4f5);
+    }
+    .field-hint {
+      font-weight: 500;
+      color: var(--color-text-secondary, #a1a1aa);
+      font-size: 0.7rem;
+    }
+    .field-input {
+      width: 100%;
+      min-height: 40px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--color-border, #27272a);
+      background: var(--color-bg, #0b0c0f);
+      color: var(--color-text-primary, #f4f4f5);
+      font-size: 0.875rem;
+    }
+    .field-input--compact { min-height: 36px; font-size: 0.8125rem; }
+    .field-input:focus {
+      outline: 2px solid color-mix(in srgb, var(--color-accent, #6366f1) 55%, transparent);
+      outline-offset: 1px;
+      border-color: var(--color-accent, #6366f1);
+    }
+    .field-textarea { resize: vertical; min-height: 64px; font-family: inherit; }
+
+    .chip-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 36px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--color-border, #27272a);
+      background: var(--color-bg, #0b0c0f);
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--color-text-secondary, #a1a1aa);
+      cursor: pointer;
+      user-select: none;
+    }
+    .chip input { position: absolute; opacity: 0; pointer-events: none; }
+    .chip.active {
+      color: var(--color-text-primary, #f4f4f5);
+      border-color: var(--color-accent, #6366f1);
+      background: color-mix(in srgb, var(--color-accent, #6366f1) 12%, transparent);
+    }
+    .chip__icon { font-size: 0.85rem; }
+
+    .toggle-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--color-border, #27272a);
+      background: var(--color-bg, #0b0c0f);
+      cursor: pointer;
+      font-size: 0.8125rem;
+      line-height: 1.35;
+    }
+    .toggle-row input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--color-accent, #6366f1); }
+    .toggle-row strong { display: block; }
+    .toggle-row .field-hint { display: block; margin-top: 2px; }
+
+    .weight-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 8px;
+    }
+    .link-btn {
+      align-self: flex-start;
+      border: none;
+      background: none;
+      color: var(--color-accent, #6366f1);
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 4px 0;
+      min-height: 32px;
+    }
+
+    /* ── Buttons ─────────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 40px;
+      padding: 8px 14px;
+      border-radius: 10px;
+      border: 1px solid transparent;
+      font-size: 0.8125rem;
       font-weight: 650;
-      color: var(--color-text-primary);
+      cursor: pointer;
+      transition: opacity 120ms, border-color 120ms, background 120ms;
     }
-    .analysis-subtitle {
-      margin: 4px 0 0;
-      font-size: 12px;
-      color: var(--color-text-secondary);
-      max-width: 520px;
-      line-height: 1.4;
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn--primary {
+      background: var(--color-accent, #6366f1);
+      color: #fff;
     }
+    .btn--primary:not(:disabled):hover { opacity: 0.92; }
+    .btn--secondary {
+      background: transparent;
+      color: var(--color-text-primary, #f4f4f5);
+      border-color: var(--color-border, #27272a);
+    }
+    .btn--secondary:not(:disabled):hover { border-color: var(--color-accent, #6366f1); }
+    .btn--run { min-width: 140px; white-space: nowrap; }
+
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    .spinner--dark {
+      border-color: color-mix(in srgb, var(--color-text-primary, #fff) 25%, transparent);
+      border-top-color: var(--color-text-primary, #fff);
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .inline-note {
+      margin: 0;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--color-accent, #6366f1) 10%, transparent);
+      border: 1px solid color-mix(in srgb, var(--color-accent, #6366f1) 25%, transparent);
+      font-size: 0.75rem;
+      color: var(--color-text-secondary, #a1a1aa);
+    }
+
+    /* ── Empty states ────────────────────────────────── */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 12px;
+      padding: 32px 16px;
+      min-height: 240px;
+    }
+    .empty-state--compact { min-height: 120px; padding: 20px 12px; }
+    .empty-state__icon { font-size: 2rem; }
+    .empty-state__title { margin: 0; font-size: 1rem; font-weight: 700; }
+    .empty-state__text {
+      margin: 0;
+      max-width: 28rem;
+      font-size: 0.8125rem;
+      line-height: 1.45;
+      color: var(--color-text-secondary, #a1a1aa);
+    }
+    .empty-state__stack {
+      width: 100%;
+      max-width: 420px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* ── Results ─────────────────────────────────────── */
+    .strategy-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .strategy-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 36px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--color-border, #27272a);
+      background: var(--color-surface, #14151a);
+      color: var(--color-text-secondary, #a1a1aa);
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .strategy-tab.active {
+      color: var(--color-text-primary, #f4f4f5);
+      border-color: var(--color-accent, #6366f1);
+      background: color-mix(in srgb, var(--color-accent, #6366f1) 12%, transparent);
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    @media (min-width: 640px) {
+      .kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    }
+    .kpi-grid--compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .kpi {
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid var(--color-border, #27272a);
+      background: var(--color-surface, #14151a);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+    .kpi__label {
+      font-size: 0.65rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--color-text-secondary, #a1a1aa);
+    }
+    .kpi__value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.02em;
+    }
+    .kpi__value--sm { font-size: 0.9rem; }
+    .kpi__sub {
+      font-size: 0.7rem;
+      color: var(--color-text-secondary, #a1a1aa);
+    }
+
+    .role-strip-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .role-strip {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      padding: 8px 4px;
+      border-radius: 10px;
+      border: 1px solid var(--color-border, #27272a);
+      border-top-width: 3px;
+      background: var(--color-surface, #14151a);
+    }
+    .role-strip__label { font-size: 0.65rem; font-weight: 700; }
+    .role-strip__count { font-size: 1rem; font-weight: 700; }
+
+    .formation-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .formation-chip {
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 4px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--color-border, #27272a);
+      color: var(--color-text-secondary, #a1a1aa);
+    }
+    .formation-chip.ok { color: #16a34a; border-color: color-mix(in srgb, #16a34a 40%, transparent); }
+    .formation-chip.ko { color: #dc2626; border-color: color-mix(in srgb, #dc2626 40%, transparent); }
+
+    .insight-card {
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--color-border, #27272a);
+      background: var(--color-surface, #14151a);
+      margin-bottom: 12px;
+    }
+    .insight-card h3, .table-card__head h3, .analysis-intro h2 {
+      margin: 0;
+      font-size: 0.875rem;
+      font-weight: 650;
+    }
+    .insight-card__head {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .near-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 0.8125rem;
+      padding: 4px 0;
+    }
+
+    .table-card {
+      border: 1px solid var(--color-border, #27272a);
+      border-radius: 12px;
+      background: var(--color-surface, #14151a);
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+    .table-card__head {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 6px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--color-border, #27272a);
+    }
+    .table-scroll { overflow: auto; -webkit-overflow-scrolling: touch; }
+    .data-table {
+      width: 100%;
+      min-width: 480px;
+      border-collapse: collapse;
+      font-size: 0.8125rem;
+    }
+    .data-table thead th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: var(--color-surface, #14151a);
+      padding: 8px 10px;
+      text-align: left;
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--color-text-secondary, #a1a1aa);
+      border-bottom: 1px solid var(--color-border, #27272a);
+    }
+    .data-table tbody td {
+      padding: 10px;
+      border-bottom: 1px solid var(--color-border, #27272a);
+      vertical-align: middle;
+    }
+    .data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .name-cell { font-weight: 560; }
+    .row-click { cursor: pointer; }
+    .row-click:hover, .row-click:focus-visible {
+      background: color-mix(in srgb, var(--color-accent, #6366f1) 8%, transparent);
+      outline: none;
+    }
+    .row-baseline { background: color-mix(in srgb, var(--color-accent, #6366f1) 7%, transparent); }
+    .hide-sm { display: none; }
+    @media (min-width: 640px) {
+      .hide-sm { display: table-cell; }
+      .data-table { min-width: 0; }
+    }
+
+    .role-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 36px;
+      padding: 2px 6px;
+      border-radius: 6px;
+      border: 1px solid;
+      font-size: 0.65rem;
+      font-weight: 700;
+    }
+    .accent { color: var(--color-accent, #6366f1); font-weight: 650; }
+    .muted { color: var(--color-text-secondary, #a1a1aa); font-size: 0.75rem; }
+    .delta-pos { color: #16a34a; }
+    .delta-neg { color: #dc2626; }
+    .status-chip {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 6px;
+      border: 1px solid var(--color-border, #27272a);
+      font-size: 0.7rem;
+      color: var(--color-text-secondary, #a1a1aa);
+    }
+    .warnings-list {
+      margin: 8px 0 0;
+      padding-left: 18px;
+      font-size: 0.75rem;
+      color: var(--color-text-secondary, #a1a1aa);
+    }
+
+    /* ── Analysis ────────────────────────────────────── */
+    .analysis-intro { margin-bottom: 12px; }
+    .analysis-intro p { margin: 6px 0 0; line-height: 1.45; }
     .analysis-tabs {
       display: inline-flex;
       gap: 4px;
       padding: 3px;
-      border-radius: 8px;
-      background: var(--color-surface-raised, var(--color-bg));
-      border: 1px solid var(--color-border);
+      border-radius: 10px;
+      border: 1px solid var(--color-border, #27272a);
+      background: var(--color-surface, #14151a);
+      margin-bottom: 12px;
     }
     .analysis-tab {
+      min-height: 34px;
       padding: 6px 12px;
       border: none;
-      border-radius: 6px;
+      border-radius: 8px;
       background: transparent;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--color-text-secondary);
+      color: var(--color-text-secondary, #a1a1aa);
+      font-size: 0.75rem;
+      font-weight: 650;
       cursor: pointer;
-      min-height: 32px;
     }
     .analysis-tab.active {
-      background: var(--color-surface);
-      color: var(--color-text-primary);
-      box-shadow: 0 0 0 1px var(--color-border);
+      background: var(--color-bg, #0b0c0f);
+      color: var(--color-text-primary, #f4f4f5);
+      box-shadow: 0 0 0 1px var(--color-border, #27272a);
     }
     .analysis-body { display: flex; flex-direction: column; gap: 12px; }
     .analysis-actions {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
     }
-    .run-btn--secondary {
-      width: auto;
-      min-width: 160px;
-      background: transparent;
-      color: var(--color-text-primary);
-      border: 1px solid var(--color-border);
-    }
-    .run-btn--secondary:not(:disabled):hover {
-      border-color: var(--color-accent);
-      opacity: 1;
-    }
-    .analysis-hint { margin: 0; max-width: 420px; }
-    .analysis-empty { min-height: 120px; }
-    .sens-baseline {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 8px;
-      padding: 12px;
-    }
-    .sens-param { padding: 12px; }
-    .sens-param__title {
-      margin: 0 0 8px;
-      font-size: 13px;
-      font-weight: 600;
-    }
-    .sens-table { min-width: 640px; }
-    .sens-row--baseline { background: color-mix(in srgb, var(--color-accent) 6%, transparent); }
-    .delta-pos { color: #16a34a; }
-    .delta-neg { color: #dc2626; }
-    .delta-bar {
-      height: 6px;
-      width: 72px;
-      background: var(--color-border);
-      border-radius: 3px;
-      overflow: hidden;
-    }
-    .delta-bar__fill { height: 100%; border-radius: 3px; }
-    .delta-bar__fill--pos { background: #16a34a; }
-    .delta-bar__fill--neg { background: #dc2626; }
-    .status-chip {
-      display: inline-block;
-      padding: 1px 6px;
-      border-radius: 4px;
-      font-size: 11px;
-      border: 1px solid var(--color-border);
-      color: var(--color-text-secondary);
-    }
-    .warnings-list {
-      margin: 0;
-      padding-left: 18px;
-      font-size: 12px;
-      color: var(--color-text-secondary);
-    }
+    .analysis-actions p { margin: 0; max-width: 28rem; line-height: 1.4; }
+
     .pareto-layout {
       display: grid;
       grid-template-columns: 1fr;
       gap: 12px;
     }
-    @media (min-width: 900px) {
-      .pareto-layout { grid-template-columns: minmax(280px, 340px) 1fr; }
+    @media (min-width: 720px) {
+      .opt-analysis .pareto-layout { grid-template-columns: minmax(240px, 320px) 1fr; }
     }
-    .pareto-chart { padding: 12px; }
     .pareto-svg { width: 100%; height: auto; display: block; }
-    .pareto-axis { stroke: var(--color-border); stroke-width: 1; }
-    .pareto-axis-label {
-      fill: var(--color-text-secondary);
-      font-size: 10px;
-    }
+    .pareto-axis { stroke: var(--color-border, #27272a); stroke-width: 1; }
+    .pareto-axis-label { fill: var(--color-text-secondary, #a1a1aa); font-size: 10px; }
     .pareto-dot--frontier { fill: var(--color-accent, #6366f1); }
-    .pareto-dot--dominated { fill: var(--color-text-secondary); opacity: 0.45; }
+    .pareto-dot--dominated { fill: var(--color-text-secondary, #a1a1aa); opacity: 0.45; }
     .pareto-legend {
       display: flex;
       gap: 12px;
       margin-top: 8px;
-      font-size: 11px;
-      color: var(--color-text-secondary);
+      font-size: 0.7rem;
+      color: var(--color-text-secondary, #a1a1aa);
     }
-    .pareto-legend__item { display: inline-flex; align-items: center; gap: 6px; }
-    .pareto-dot--frontier-swatch,
-    .pareto-dot--dominated-swatch {
-      width: 8px; height: 8px; border-radius: 50%; display: inline-block;
-    }
-    .pareto-dot--frontier-swatch { background: var(--color-accent, #6366f1); }
-    .pareto-dot--dominated-swatch { background: var(--color-text-secondary); opacity: 0.45; }
-    .pareto-row--frontier { background: color-mix(in srgb, var(--color-accent) 6%, transparent); }
+    .pareto-legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .swatch { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .swatch--frontier { background: var(--color-accent, #6366f1); }
+    .swatch--dom { background: var(--color-text-secondary, #a1a1aa); opacity: 0.45; }
 
+    /* ── Mobile sticky CTA ───────────────────────────── */
+    .opt-mobile-cta {
+      position: sticky;
+      bottom: 0;
+      z-index: 20;
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+      border-top: 1px solid var(--color-border, #27272a);
+      background: color-mix(in srgb, var(--color-bg, #0b0c0f) 90%, transparent);
+      backdrop-filter: blur(10px);
+    }
+    .opt-mobile-cta .btn { width: 100%; min-height: 44px; }
   `],
 })
+
 export class OptimizerComponent {
   private readonly optimizerService = inject(OptimizerService);
   private readonly quotationService = inject(QuotationService);
@@ -1905,6 +2017,25 @@ export class OptimizerComponent {
   readonly analysisError = signal<string | null>(null);
   readonly sensitivityResult = signal<SensitivityResponse | null>(null);
   readonly paretoResult = signal<ParetoResponse | null>(null);
+
+  // ── UI chrome (responsive panes + config accordions) ──
+  /** Mobile-only primary pane. On ≥960px all panes are visible. */
+  readonly mobilePane = signal<'config' | 'results' | 'analysis'>('config');
+  /** Open accordion sections in the config column. */
+  readonly openSections = signal<ReadonlySet<string>>(new Set(['essentials', 'objective']));
+
+  isSectionOpen(id: string): boolean {
+    return this.openSections().has(id);
+  }
+
+  toggleSection(id: string): void {
+    this.openSections.update(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   readonly resultKeys = computed(() => Object.keys(this.results()?.results ?? {}));
   /** Top-level or per-strategy MC summary from last multi response. */
@@ -2140,6 +2271,7 @@ export class OptimizerComponent {
       next: res => {
         this.results.set(res);
         this.activeStrategy.set(Object.keys(res.results)[0] ?? '');
+        this.mobilePane.set('results');
         this.running.set(false);
       },
       error: err => {
@@ -2189,6 +2321,7 @@ export class OptimizerComponent {
             };
             this.results.set(multi);
             this.activeStrategy.set(name);
+            this.mobilePane.set('results');
             this.running.set(false);
           } else if (job.status === 'failed') {
             this.error.set(job.error || 'Job Monte Carlo fallito');
