@@ -20,7 +20,10 @@ from fastapi.responses import ORJSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 import sqlalchemy as sa
 
+from ml.storage.artifact_store import ArtifactStore
+
 from ..deps import get_db, require_admin, require_role
+from .intelligence import get_artifact_store
 
 log = logging.getLogger(__name__)
 
@@ -147,6 +150,7 @@ async def list_consigliati(
     matchday: Optional[int] = Query(None),
     min_probability: int = Query(70, ge=0, le=100),
     db: AsyncSession = Depends(get_db),
+    artifact_store: ArtifactStore = Depends(get_artifact_store),
 ) -> ORJSONResponse:
     """Return recommended players: probability >= min_probability, ordered by FP_Mantra.
 
@@ -174,14 +178,14 @@ async def list_consigliati(
     )
     rows = [dict(r._mapping) for r in result.all()]
 
-    # Try to enrich with MANTRA scores
-    import json as j
-    from pathlib import Path
-    mantra_path = Path("artifacts") / f"mantra_results_{2025}.json"
-    mantra_map = {}
-    if mantra_path.exists():
-        with mantra_path.open() as f:
-            mantra_data = j.load(f)
+    # Try to enrich with MANTRA scores — season resolved from the latest
+    # imported quotations, read via ArtifactStore (local disk → R2), same
+    # source-of-truth path used by every other MANTRA reader in this repo.
+    season_start = await db.scalar(sa.text("SELECT MAX(season_start) FROM player_quotations"))
+    mantra_map: dict = {}
+    if season_start is not None:
+        mantra_data = artifact_store.load_json(f"mantra_results_{season_start}.json")
+        if mantra_data is not None:
             for p in mantra_data.get("players", []):
                 mantra_map[p["fantacalcio_id"]] = p
 

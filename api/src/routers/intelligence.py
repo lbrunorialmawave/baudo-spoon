@@ -371,9 +371,15 @@ class HybridSortField(str, Enum):
     vr = "VR"
 
 
-async def _load_hybrid_results(artifact_store: ArtifactStore) -> tuple[int, dict[str, Any]]:
+async def _load_hybrid_results(
+    artifact_store: ArtifactStore, db: AsyncSession, repo: DataRepository
+) -> tuple[int, dict[str, Any]]:
     """Find the latest available hybrid artefact: local disk → R2 (season
     fallback), via ArtifactStore.
+
+    Season candidates are resolved from the latest imported quotations
+    (DB-driven, not a calendar guess) rather than a hardcoded list — see
+    DataRepository.resolve_season_candidates.
 
     Replaces the old ``_find_hybrid_path``, which every reader endpoint
     actually called and which used a bare ``Path.exists()`` with **no**
@@ -381,7 +387,7 @@ async def _load_hybrid_results(artifact_store: ArtifactStore) -> tuple[int, dict
     ``_load_hybrid_results`` sketch suggested. See design doc "R2 come
     source of truth per gli artefatti ML/MANTRA" (2026-08-02), Fase 4.
     """
-    for season in [2026, 2025, 2024]:
+    for season in await repo.resolve_season_candidates(db):
         data = await artifact_store.load_json_async(f"mantra_ibrido_results_{season}.json")
         if data is not None:
             return season, data
@@ -414,9 +420,11 @@ async def list_hybrid_predictions(
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=2000),
     artifact_store: ArtifactStore = Depends(get_artifact_store),
+    db: AsyncSession = Depends(get_db),
+    repo: DataRepository = Depends(get_repository),
 ) -> ORJSONResponse:
     try:
-        _, data = await _load_hybrid_results(artifact_store)
+        _, data = await _load_hybrid_results(artifact_store, db, repo)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
 
@@ -512,9 +520,11 @@ async def list_hybrid_predictions(
 )
 async def get_hybrid_stats(
     artifact_store: ArtifactStore = Depends(get_artifact_store),
+    db: AsyncSession = Depends(get_db),
+    repo: DataRepository = Depends(get_repository),
 ) -> ORJSONResponse:
     try:
-        _, data = await _load_hybrid_results(artifact_store)
+        _, data = await _load_hybrid_results(artifact_store, db, repo)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
 
@@ -553,6 +563,8 @@ async def get_hybrid_stats(
 )
 async def get_hybrid_status(
     artifact_store: ArtifactStore = Depends(get_artifact_store),
+    db: AsyncSession = Depends(get_db),
+    repo: DataRepository = Depends(get_repository),
 ) -> ORJSONResponse:
     """Readiness derives from the ArtifactStore (Redis-independent: local
     disk → R2), never from ``Path.exists()`` on this specific instance's
@@ -562,7 +574,7 @@ async def get_hybrid_status(
     of truth per gli artefatti ML/MANTRA" (2026-08-02), Fase 3.
     """
     artifacts_dir = Path(settings.artifacts_dir)
-    seasons = [2026, 2025, 2024]
+    seasons = await repo.resolve_season_candidates(db)
 
     ml_filename = "results_latest.json"
     mantra_filenames = [f"mantra_results_{season}.json" for season in seasons]
@@ -679,13 +691,20 @@ async def update_hybrid_config(
     dependencies=[Depends(require_role("member"))],
 )
 async def run_hybrid(
-    season_start: int = Query(2025, ge=2020, le=2030),
+    season_start: Optional[int] = Query(None, ge=2020, le=2030),
     persist: bool = Query(True, description="If false, writes to preview file only"),
     overrides: Optional[dict[str, Any]] = Body(None),
     artifact_store: ArtifactStore = Depends(get_artifact_store),
+    db: AsyncSession = Depends(get_db),
+    repo: DataRepository = Depends(get_repository),
 ) -> ORJSONResponse:
     from ml.mantra_ibrido.config_store import load_config, update_config
     from ml.mantra_ibrido.runner import run_hybrid_computation
+
+    if season_start is None:
+        season_start = await repo.get_current_season_start(db)
+        if season_start is None:
+            raise HTTPException(status_code=400, detail="No quotations imported yet; pass season_start explicitly.")
 
     artifacts_dir = Path(settings.artifacts_dir)
     mantra_filename = f"mantra_results_{season_start}.json"
@@ -750,8 +769,10 @@ async def run_hybrid(
 async def get_hybrid_preview(
     season_start: Optional[int] = Query(None, ge=2020, le=2030, alias="seasonStart"),
     artifact_store: ArtifactStore = Depends(get_artifact_store),
+    db: AsyncSession = Depends(get_db),
+    repo: DataRepository = Depends(get_repository),
 ) -> ORJSONResponse:
-    target_season = season_start or 2025
+    target_season = season_start or await repo.get_current_season_start(db) or 2025
     filename = f"mantra_ibrido_preview_{target_season}.json"
 
     data = await artifact_store.load_json_async(filename)

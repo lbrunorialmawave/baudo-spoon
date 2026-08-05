@@ -24,9 +24,9 @@
 .PARAMETER League
     League name(s) to scrape (default: "Serie A").
 .PARAMETER Seasons
-    Season(s) for match stats (default: "2025-2026").
+    Season(s) for match stats (default: "2026-2027").
 .PARAMETER StatsSeasons
-    Season(s) for per-season stats (default: "2023-2024,2024-2025,2025-2026").
+    Season(s) for per-season stats (default: "2023-2024,2024-2025,2025-2026,2026-2027").
 #>
 
 param(
@@ -39,8 +39,8 @@ param(
     [switch]$SkipMantra,
     [switch]$SkipFrontend,
     [string]$League = "Serie A",
-    [string]$Seasons = "2025-2026",
-    [string]$StatsSeasons = "2023-2024,2024-2025,2025-2026"
+    [string]$Seasons = "2026-2027",
+    [string]$StatsSeasons = "2023-2024,2024-2025,2025-2026,2026-2027"
 )
 
 $ErrorActionPreference = "Stop"

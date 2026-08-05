@@ -238,7 +238,7 @@ export class AdminComponent {
     const overrides = Object.keys(this.pendingOverrides).length > 0 ? this.pendingOverrides : undefined;
     this.hybridRunning.set(true);
     this.hybridMessage.set(null);
-    this.predService.runHybrid(this.currentSeason() ?? 2025, overrides as any, true)
+    this.predService.runHybrid(this.currentSeason() ?? new Date().getFullYear() - 1, overrides as any, true)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (res) => {
@@ -262,7 +262,7 @@ export class AdminComponent {
     const overrides = Object.keys(this.pendingOverrides).length > 0 ? this.pendingOverrides : undefined;
     this.hybridRunning.set(true);
     this.hybridMessage.set(null);
-    this.predService.runHybrid(this.currentSeason() ?? 2025, overrides as any, false)
+    this.predService.runHybrid(this.currentSeason() ?? new Date().getFullYear() - 1, overrides as any, false)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (res) => {

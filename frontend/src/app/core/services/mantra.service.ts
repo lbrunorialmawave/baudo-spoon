@@ -72,7 +72,7 @@ export class MantraService {
   }
 
   /** Run MANTRA computation. */
-  runComputation(seasonStart = 2025): Observable<{ status: string; season_start: number; n_players: number }> {
+  runComputation(seasonStart = 2026): Observable<{ status: string; season_start: number; n_players: number }> {
     const params = new HttpParams().set('season_start', seasonStart);
     return this.http.post<{ status: string; season_start: number; n_players: number }>(
       `${this.baseUrl}/mantra/run`, null, { params }

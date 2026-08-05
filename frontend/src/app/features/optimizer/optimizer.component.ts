@@ -9,6 +9,7 @@ import {
 } from 'rxjs';
 import { OptimizerService } from '../../core/services/optimizer.service';
 import { QuotationService } from '../../core/services/quotation.service';
+import { SEASON_FALLBACK_LIST } from '../../core/constants/season-fallback.constant';
 import {
   FormationConfig,
   MultiStrategyResult,
@@ -1831,7 +1832,7 @@ export class OptimizerComponent {
   // ── Basic ─────────────────────────────────────────────
   readonly seasons = signal<number[]>([]);
   readonly seasonsLoading = signal(true);
-  readonly seasonStart = signal<number>(2024);
+  readonly seasonStart = signal<number>(SEASON_FALLBACK_LIST[0]);
   readonly budget = signal(500);
   readonly numParticipants = signal(8);
   readonly minQtA = signal(1);
@@ -1964,7 +1965,7 @@ export class OptimizerComponent {
         this.seasonsLoading.set(false);
       },
       error: () => {
-        this.seasons.set([2024, 2023, 2022]);
+        this.seasons.set([...SEASON_FALLBACK_LIST]);
         this.seasonsLoading.set(false);
       },
     });

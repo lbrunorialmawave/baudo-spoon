@@ -128,7 +128,7 @@ def scrape(
         if m:
             season_start = int(m.group(1))
     if season_start is None:
-        season_start = 2025
+        season_start = 2026
 
     records: list[dict] = []
 

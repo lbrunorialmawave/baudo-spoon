@@ -209,12 +209,19 @@ class DataRepository:
 
     # ── Hybrid MANTRA+ML ─────────────────────────────────────────────────────
 
-    async def get_hybrid_predictions(self, season: int = 2025) -> dict:
+    async def get_hybrid_predictions(
+        self, season: Optional[int] = None, db: Optional[AsyncSession] = None
+    ) -> dict:
         """Load or lazy-init the hybrid MANTRA+ML artefact.
 
         Falls back to R2 if the file is missing locally; if still missing,
-        runs the merger + scoring on the fly.
+        runs the merger + scoring on the fly. When ``season`` is omitted and
+        ``db`` is provided, resolves to the latest season in
+        ``player_quotations``; otherwise falls back to 2025 as a last resort.
         """
+        if season is None:
+            season = (await self.get_current_season_start(db)) if db is not None else None
+            season = season or 2025
         filename = f"mantra_ibrido_results_{season}.json"
         data = await self._artifact_store.load_json_async(filename)
         if data is not None:
@@ -381,6 +388,30 @@ class DataRepository:
         )
         result = await db.execute(stmt)
         return [row[0] for row in result]
+
+    async def get_current_season_start(self, db: AsyncSession) -> Optional[int]:
+        """Most recent ``season_start`` present in ``player_quotations``.
+
+        Deliberately DB-driven rather than calendar-based: a "current year"
+        guess is unreliable right around the season boundary (see
+        ``scraper/gruppo_esperti.py`` for the same reasoning). Returns
+        ``None`` if no quotations have been imported yet.
+        """
+        stmt = select(func.max(PlayerQuotation.season_start))
+        return (await db.execute(stmt)).scalar_one_or_none()
+
+    async def resolve_season_candidates(self, db: AsyncSession, window: int = 3) -> list[int]:
+        """Ordered season candidates for artifact lookup: DB latest, then N-1 behind.
+
+        Used to walk backward through ``mantra_results_{season}.json`` /
+        ``mantra_ibrido_results_{season}.json`` until one with actual data is
+        found. Falls back to a literal list only when ``player_quotations``
+        is empty.
+        """
+        latest = await self.get_current_season_start(db)
+        if latest is None:
+            return [2025, 2024, 2023]
+        return [latest - i for i in range(window)]
 
     async def get_quotation_stats(self, db: AsyncSession) -> dict:
         """Aggregate counts, role+season means, and id-mapping coverage."""

@@ -6,6 +6,7 @@ import { debounceTime, distinctUntilChanged, switchMap } from 'rxjs/operators';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AuctionService } from '../../core/services/auction.service';
 import { QuotationService } from '../../core/services/quotation.service';
+import { SEASON_FALLBACK_LIST } from '../../core/constants/season-fallback.constant';
 import {
   AUCTION_ROLES,
   AssignmentRecord,
@@ -1564,7 +1565,7 @@ export class AuctionComponent {
   }
 
   // ── Setup form state (plain properties — bound via (change) events) ──
-  seasonStart = 2024;
+  seasonStart = SEASON_FALLBACK_LIST[0];
   numParticipants = 8;
   defaultBudget = 500;
   showAdvanced = false;
@@ -1736,7 +1737,7 @@ export class AuctionComponent {
         this.seasonsLoading.set(false);
       },
       error: () => {
-        this.seasons.set([2025, 2024, 2023]);
+        this.seasons.set([...SEASON_FALLBACK_LIST]);
         this.seasonsLoading.set(false);
       },
     });

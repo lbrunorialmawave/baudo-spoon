@@ -69,7 +69,7 @@ export class PredictionService {
     return this.http.put<HybridConfig>(`${this.baseUrl}/predictions/hybrid/config`, config);
   }
 
-  runHybrid(seasonStart: number = 2025, overrides?: Partial<HybridConfig>, persist: boolean = true): Observable<{
+  runHybrid(seasonStart: number = 2026, overrides?: Partial<HybridConfig>, persist: boolean = true): Observable<{
     status: string;
     season: number;
     nPlayers: number;

@@ -19,6 +19,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import ORJSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,10 +59,16 @@ def _get_artifact_store() -> ArtifactStore:
     return _artifact_store
 
 
-def _load_mantra_results() -> dict:
-    """Load the latest MANTRA results JSON: local disk → R2, via ArtifactStore."""
+async def _load_mantra_results(db: AsyncSession) -> dict:
+    """Load the latest MANTRA results JSON: local disk → R2, via ArtifactStore.
+
+    Season candidates are resolved from the latest imported quotations
+    (DB-driven, not a calendar guess — mirrors matchday.py / gruppo_esperti.py).
+    """
     store = _get_artifact_store()
-    for season in [2026, 2025, 2024]:
+    latest = await db.scalar(sa.text("SELECT MAX(season_start) FROM player_quotations"))
+    candidates = [latest - i for i in range(3)] if latest is not None else [2025, 2024, 2023]
+    for season in candidates:
         data = store.load_json(f"mantra_results_{season}.json")
         if data is not None:
             return data
@@ -91,9 +98,10 @@ async def list_mantra_players(
     sort_dir: Optional[str] = Query("asc", description="Sort direction: asc or desc"),
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
 ) -> ORJSONResponse:
     try:
-        data = _load_mantra_results()
+        data = await _load_mantra_results(db)
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
@@ -152,9 +160,12 @@ async def list_mantra_players(
     response_class=ORJSONResponse,
     summary="Single player detail with pillar breakdown",
 )
-async def get_mantra_player(fantacalcio_id: int) -> ORJSONResponse:
+async def get_mantra_player(
+    fantacalcio_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> ORJSONResponse:
     try:
-        data = _load_mantra_results()
+        data = await _load_mantra_results(db)
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
@@ -182,9 +193,10 @@ async def get_mantra_player(fantacalcio_id: int) -> ORJSONResponse:
 async def top_per_ruolo(
     ruolo: str,
     limit: int = Query(15, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
 ) -> ORJSONResponse:
     try:
-        data = _load_mantra_results()
+        data = await _load_mantra_results(db)
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
@@ -206,9 +218,9 @@ async def top_per_ruolo(
     response_class=ORJSONResponse,
     summary="All Fase 7/8 classifications",
 )
-async def get_classifications() -> ORJSONResponse:
+async def get_classifications(db: AsyncSession = Depends(get_db)) -> ORJSONResponse:
     try:
-        data = _load_mantra_results()
+        data = await _load_mantra_results(db)
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
@@ -222,9 +234,10 @@ async def get_classifications() -> ORJSONResponse:
 )
 async def get_low_cost(
     titolari_only: bool = Query(False, description="Only Low Cost Titolari"),
+    db: AsyncSession = Depends(get_db),
 ) -> ORJSONResponse:
     try:
-        data = _load_mantra_results()
+        data = await _load_mantra_results(db)
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
@@ -243,9 +256,9 @@ async def get_low_cost(
     response_class=ORJSONResponse,
     summary="Watchlist Giovani",
 )
-async def get_watchlist() -> ORJSONResponse:
+async def get_watchlist(db: AsyncSession = Depends(get_db)) -> ORJSONResponse:
     try:
-        data = _load_mantra_results()
+        data = await _load_mantra_results(db)
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
@@ -263,14 +276,22 @@ async def get_watchlist() -> ORJSONResponse:
     dependencies=[Depends(require_role("admin"))],
 )
 async def run_mantra(
-    season_start: int = Query(2025, ge=2020, le=2030),
+    season_start: Optional[int] = Query(None, ge=2020, le=2030),
     db: AsyncSession = Depends(get_db),
 ) -> ORJSONResponse:
     """Trigger the MANTRA scoring pipeline for a given season.
 
     Requires API key. Runs synchronously (may take several seconds).
     Results are saved to the artifacts directory and served by GET endpoints.
+    If ``season_start`` is omitted, resolves to the latest season present in
+    ``player_quotations`` (DB-driven, not a calendar guess).
     """
+    if season_start is None:
+        latest = await db.scalar(sa.text("SELECT MAX(season_start) FROM player_quotations"))
+        if latest is None:
+            raise HTTPException(status_code=400, detail="No quotations imported yet; pass season_start explicitly.")
+        season_start = latest
+
     try:
         from sqlalchemy import create_engine
         from ml.mantra.runner import run_mantra as compute
@@ -301,9 +322,9 @@ async def run_mantra(
     response_class=ORJSONResponse,
     summary="Budget overview",
 )
-async def get_budget_overview() -> ORJSONResponse:
+async def get_budget_overview(db: AsyncSession = Depends(get_db)) -> ORJSONResponse:
     try:
-        data = _load_mantra_results()
+        data = await _load_mantra_results(db)
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
@@ -341,9 +362,9 @@ async def get_budget_overview() -> ORJSONResponse:
     response_class=ORJSONResponse,
     summary="Summary statistics",
 )
-async def get_mantra_stats() -> ORJSONResponse:
+async def get_mantra_stats(db: AsyncSession = Depends(get_db)) -> ORJSONResponse:
     try:
-        data = _load_mantra_results()
+        data = await _load_mantra_results(db)
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
