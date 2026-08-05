@@ -144,4 +144,9 @@ export class MantraService {
     if (seasonStart) params = params.set('season_start', seasonStart);
     return this.http.post(`${this.baseUrl}/admin/scrape/odds-api`, null, { params });
   }
+
+  /** Re-import quotazioni XLSX listoni from the mounted ./quotazioni directory. */
+  runQuotazioniImport(): Observable<any> {
+    return this.http.post(`${this.baseUrl}/admin/scrape/quotazioni`, null);
+  }
 }

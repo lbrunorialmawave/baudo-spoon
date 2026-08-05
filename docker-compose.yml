@@ -52,6 +52,7 @@ services:
       - ml_artifacts:/app/artifacts
       - ./ml:/app/ml:ro
       - ./scraper:/app/scraper:ro
+      - ./quotazioni:/app/quotazioni:ro
     depends_on:
       db:
         condition: service_healthy

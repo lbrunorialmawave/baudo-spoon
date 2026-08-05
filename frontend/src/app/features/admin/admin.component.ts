@@ -150,6 +150,16 @@ export class AdminComponent {
       result: signal<string | null>(null),
       error: signal<string | null>(null),
     },
+    {
+      name: 'quotazioni',
+      label: 'Import Quotazioni',
+      description: 'Re-import listoni XLSX from the ./quotazioni directory',
+      frequency: 'Season start',
+      params: [],
+      running: signal(false),
+      result: signal<string | null>(null),
+      error: signal<string | null>(null),
+    },
   ];
 
   readonly runScraper = (scraper: any): void => {
@@ -157,7 +167,7 @@ export class AdminComponent {
     scraper.result.set(null);
     scraper.error.set(null);
 
-    const seasonOrMatchday = Number(scraper.params[0].value()) || undefined;
+    const seasonOrMatchday = scraper.params[0] ? Number(scraper.params[0].value()) || undefined : undefined;
     let obs;
     if (scraper.name === 'snai') {
       obs = this.mantraService.runSnaiScraper(seasonOrMatchday);
@@ -165,13 +175,19 @@ export class AdminComponent {
       obs = this.mantraService.runOddsApiScraper(seasonOrMatchday);
     } else if (scraper.name === 'esperti') {
       obs = this.mantraService.runEspertiScraper(seasonOrMatchday);
+    } else if (scraper.name === 'quotazioni') {
+      obs = this.mantraService.runQuotazioniImport();
     } else {
       obs = this.mantraService.runProbabiliScraper(seasonOrMatchday);
     }
 
     obs.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (res: any) => {
-        scraper.result.set('Scraped ' + (res.records ?? '?') + ' records');
+        if (scraper.name === 'quotazioni') {
+          scraper.result.set(res.status === 'ok' ? 'Import completato' : 'Import fallito: ' + (res.stderr || 'vedi log server'));
+        } else {
+          scraper.result.set('Scraped ' + (res.records ?? '?') + ' records');
+        }
         scraper.running.set(false);
         this.loadHealth();
       },
