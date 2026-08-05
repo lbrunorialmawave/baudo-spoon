@@ -68,10 +68,39 @@ def _dispatch_workflow() -> None:
 
 def _latest_run() -> Optional[dict]:
     url = f"{_GITHUB_API}/repos/{settings.github_repo}/actions/workflows/{_WORKFLOW_FILE}/runs"
-    resp = requests.get(url, headers=_headers(), params={"per_page": 1}, timeout=15)
+    # Only completed runs represent a finished training; a queued/in_progress
+    # run at the top of the list must not masquerade as the latest done one.
+    resp = requests.get(
+        url,
+        headers=_headers(),
+        params={"per_page": 1, "status": "completed"},
+        timeout=15,
+    )
     resp.raise_for_status()
     runs = resp.json().get("workflow_runs", [])
     return runs[0] if runs else None
+
+
+def _latest_persisted_run() -> Optional[dict]:
+    """Return the most recent run that the ML pipeline actually wrote to the
+    DB — the run proven to be functional (has metrics), not merely dispatched."""
+    import sqlalchemy as sa
+
+    from ..database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        row = (await db.execute(sa.text("""
+            SELECT r.run_id, r.model_name, r.trained_at, r.season_start,
+                   r.status, r.git_commit
+            FROM model_runs r
+            JOIN model_metrics m ON m.run_id = r.run_id
+            GROUP BY r.id
+            ORDER BY r.trained_at DESC
+            LIMIT 1
+        """))).fetchone()
+        if row is None:
+            return None
+        return dict(row._mapping)
 
 
 def _map_status(run: Optional[dict]) -> dict:
@@ -121,7 +150,24 @@ async def trigger_training() -> ORJSONResponse:
 @router.get("/train/status", summary="Status of the most recent ML training run")
 async def get_training_status() -> ORJSONResponse:
     try:
-        run = await asyncio.to_thread(_latest_run)
+        # The DB is authoritative for "which run actually counts": a run only
+        # shows as the functional latest one once the ML pipeline has written
+        # its metrics into model_runs. GitHub's run list can lead (queued,
+        # in_progress, or even failed dispatch), so we only consult it for the
+        # live "running" state and the log link.
+        persisted = await _latest_persisted_run()
+        gh_run = await asyncio.to_thread(_latest_run)
+
+        status = _map_status(gh_run)
+        if persisted is not None:
+            status["run_id"] = persisted.get("run_id")
+            status["model_name"] = persisted.get("model_name")
+            status["updated_at"] = persisted.get("trained_at") or status.get("updated_at")
+            status["season_start"] = persisted.get("season_start")
+            status["git_commit"] = persisted.get("git_commit")
+            # A persisted run is, by construction, the completed one.
+            if status["status"] in ("idle", "running"):
+                status["status"] = "completed"
     except HTTPException:
         raise
     except requests.HTTPError as e:
@@ -135,4 +181,4 @@ async def get_training_status() -> ORJSONResponse:
         log.exception("Failed to fetch ML Training workflow status")
         raise HTTPException(status_code=502, detail="Failed to fetch training status from GitHub.")
 
-    return ORJSONResponse(_map_status(run))
+    return ORJSONResponse(status)

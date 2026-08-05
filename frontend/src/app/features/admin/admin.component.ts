@@ -345,6 +345,10 @@ export class AdminComponent {
     updated_at?: string;
     conclusion?: string | null;
     html_url?: string;
+    run_id?: string;
+    model_name?: string;
+    season_start?: number;
+    git_commit?: string | null;
   } | null>(null);
   readonly trainingTriggering = signal(false);
   readonly trainingError = signal<string | null>(null);
@@ -371,7 +375,13 @@ export class AdminComponent {
       .pipe(switchMap(() => this.predService.getTrainingStatus()), takeUntilDestroyed(this.destroyRef))
       .subscribe((s) => {
         this.trainingStatus.set(s);
-        if (s.status !== 'running') {
+        // Once GitHub reports the newly-triggered run as in_progress, the
+        // pending phase is over and normal status-driven termination applies.
+        if (s.status === 'running') {
+          this.trainingPending.set(false);
+        }
+        const done = !this.trainingPending() && s.status !== 'running';
+        if (done) {
           this.stopTrainingPoll();
           this.loadPipelineRuns();
         }
@@ -383,9 +393,15 @@ export class AdminComponent {
     this.trainingPollSub = null;
   }
 
+  /** True between dispatch and the first GitHub "in_progress" sighting of the
+   *  newly-triggered run — prevents a stale persisted run from halting the
+   *  poll before the new run appears. */
+  readonly trainingPending = signal(true);
+
   readonly triggerTraining = (): void => {
     this.trainingTriggering.set(true);
     this.trainingError.set(null);
+    this.trainingPending.set(true);
     this.predService.trainModel().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.trainingTriggering.set(false);
@@ -396,6 +412,7 @@ export class AdminComponent {
       },
       error: (err) => {
         this.trainingTriggering.set(false);
+        this.trainingPending.set(false);
         this.trainingError.set(err?.error?.detail || err?.message || 'Avvio training fallito');
       },
     });

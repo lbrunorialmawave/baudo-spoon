@@ -4,7 +4,31 @@ from pathlib import Path
 
 import sqlalchemy as sa
 
-from scraper.probabili_formazioni import persist
+from scraper.probabili_formazioni import _extract_player_id, persist
+
+
+def test_extract_player_id_from_real_venezia_urls() -> None:
+    """The live page uses /serie-a/squadre/{team}/{slug}/{ID} URLs; the ID is
+    the final numeric path segment. The old regex expected a season tail and
+    returned None for these, so the scrape only kept players that happened to
+    match by name fallback (e.g. 'Basic'). Regression test for that root cause.
+    """
+    urls = [
+        "https://www.fantacalcio.it/serie-a/squadre/venezia/stankovic-f/6248",
+        "https://www.fantacalcio.it/serie-a/squadre/venezia/moreno-m/6890",
+        "https://www.fantacalcio.it/serie-a/squadre/venezia/bella-kotchap/7253",
+        "https://www.fantacalcio.it/serie-a/squadre/venezia/halhal/7538",
+        "https://www.fantacalcio.it/serie-a/squadre/venezia/correia-t/4845",
+        "https://www.fantacalcio.it/serie-a/squadre/venezia/sohm/5319",
+        "https://www.fantacalcio.it/serie-a/squadre/venezia/busio/5507",
+        "https://www.fantacalcio.it/serie-a/squadre/venezia/basic/5674",
+        "https://www.fantacalcio.it/serie-a/squadre/venezia/hainaut/6821",
+        "https://www.fantacalcio.it/serie-a/squadre/venezia/yeboah-j/6904",
+        "https://www.fantacalcio.it/serie-a/squadre/venezia/adams-a/7484",
+    ]
+    assert [_extract_player_id(url) for url in urls] == [
+        6248, 6890, 7253, 7538, 4845, 5319, 5507, 5674, 6821, 6904, 7484,
+    ]
 
 
 def _init_db(db_url: str) -> None:

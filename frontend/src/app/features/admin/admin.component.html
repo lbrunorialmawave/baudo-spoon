@@ -311,7 +311,8 @@
           } @else if (ts.status === 'completed') {
             <div class="mt-3 rounded border px-3 py-2 text-xs"
                  style="border-color:#22c55e44;background:#22c55e11;color:#16a34a">
-              ✅ Ultimo training completato {{ ts.updated_at | date:'d MMM y, HH:mm:ss' }}.
+              ✅ Ultimo training completato {{ ts.updated_at | date:'d MMM y, HH:mm:ss' }}
+              @if (ts.model_name) { — {{ ts.model_name }} }.
               @if (ts.html_url) {
                 <a [href]="ts.html_url" target="_blank" rel="noopener" class="underline ml-1">Log ↗</a>
               }

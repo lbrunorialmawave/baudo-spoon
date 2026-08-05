@@ -37,9 +37,11 @@ USER_AGENT = (
     "Chrome/125.0.0.0 Safari/537.36"
 )
 
-# Regex to extract fantacalcio_id from player URLs like
-# /fiorentina/christensen-o/6403/2025-26
-_PLAYER_URL_RE = re.compile(r"/(\d+)/(\d{4})-\d{2}")
+# Regex to extract the fantacalcio_id from a player detail URL. The live page
+# uses the permanent format:
+#   https://www.fantacalcio.it/serie-a/squadre/{team}/{slug}/{ID}
+# where the ID is the final numeric path segment (e.g. .../venezia/basic/5674).
+_PLAYER_URL_RE = re.compile(r"/(\d+)/?$")
 _FALLBACK_MATCH_THRESHOLD = 0.85
 
 
@@ -66,14 +68,6 @@ def _extract_player_id(url: str) -> Optional[int]:
     m = _PLAYER_URL_RE.search(url)
     if m:
         return int(m.group(1))
-    return None
-
-
-def _extract_season(url: str) -> Optional[int]:
-    """Extract season_start from a player detail URL."""
-    m = _PLAYER_URL_RE.search(url)
-    if m:
-        return int(m.group(2))
     return None
 
 

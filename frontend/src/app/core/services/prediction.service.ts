@@ -116,7 +116,8 @@ export class PredictionService {
   }
 
   /** Poll while a training run is in progress. Reflects the most recent
-   *  GitHub Actions run of the ML Training workflow. */
+   *  GitHub Actions run of the ML Training workflow that actually produced a
+   *  persisted, functional run (has metrics in model_runs). */
   getTrainingStatus(): Observable<{
     status: 'idle' | 'running' | 'completed' | 'failed';
     run_number?: number;
@@ -124,6 +125,10 @@ export class PredictionService {
     updated_at?: string;
     conclusion?: string | null;
     html_url?: string;
+    run_id?: string;
+    model_name?: string;
+    season_start?: number;
+    git_commit?: string | null;
   }> {
     return this.http.get<any>(`${this.baseUrl}/admin/ml/train/status`);
   }
