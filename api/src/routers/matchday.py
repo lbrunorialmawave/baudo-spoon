@@ -33,6 +33,22 @@ router = APIRouter(
 )
 
 
+def _matchday_placeholder_sql() -> str:
+    """Return SQL selecting the most recent matchday OF THE MOST RECENT SEASON.
+
+    ``player_matchday_status`` holds one row per (season_start, matchday); a
+    plain ``MAX(matchday)`` (the old behaviour) ignores the season and can
+    return a matchday from an older season once multiple seasons coexist
+    (e.g. 2025 md38 and 2026 md1 → wrong 38). Anchoring to the newest season
+    keeps every endpoint pointing at the live line-ups.
+    """
+    return (
+        "SELECT matchday FROM player_matchday_status "
+        "WHERE season_start = (SELECT MAX(season_start) FROM player_matchday_status) "
+        "ORDER BY matchday DESC LIMIT 1"
+    )
+
+
 @router.get("/status", summary="All players with matchday status")
 async def list_matchday_status(
     matchday: Optional[int] = Query(None, description="Filter by matchday"),
@@ -56,7 +72,7 @@ async def list_matchday_status(
     """)
     # Get latest matchday if not specified
     if matchday is None:
-        latest = await db.scalar(sa.text("SELECT MAX(matchday) FROM player_matchday_status"))
+        latest = await db.scalar(sa.text(_matchday_placeholder_sql()))
         matchday = latest or 1
 
     result = await db.execute(query, {
@@ -75,7 +91,7 @@ async def get_player_status(
     db: AsyncSession = Depends(get_db),
 ) -> ORJSONResponse:
     if matchday is None:
-        latest = await db.scalar(sa.text("SELECT MAX(matchday) FROM player_matchday_status"))
+        latest = await db.scalar(sa.text(_matchday_placeholder_sql()))
         matchday = latest or 1
 
     result = await db.execute(
@@ -101,7 +117,7 @@ async def list_injured(
     db: AsyncSession = Depends(get_db),
 ) -> ORJSONResponse:
     if matchday is None:
-        latest = await db.scalar(sa.text("SELECT MAX(matchday) FROM player_matchday_status"))
+        latest = await db.scalar(sa.text(_matchday_placeholder_sql()))
         matchday = latest or 1
 
     result = await db.execute(
@@ -126,7 +142,7 @@ async def list_suspended(
     db: AsyncSession = Depends(get_db),
 ) -> ORJSONResponse:
     if matchday is None:
-        latest = await db.scalar(sa.text("SELECT MAX(matchday) FROM player_matchday_status"))
+        latest = await db.scalar(sa.text(_matchday_placeholder_sql()))
         matchday = latest or 1
 
     result = await db.execute(
@@ -158,11 +174,11 @@ async def list_consigliati(
     Falls back to probability-only sorting if MANTRA data is absent.
     """
     if matchday is None:
-        latest = await db.scalar(sa.text("SELECT MAX(matchday) FROM player_matchday_status"))
+        latest = await db.scalar(sa.text(_matchday_placeholder_sql()))
         matchday = latest or 1
 
     result = await db.execute(
-        sa.text(f"""
+        sa.text("""
             SELECT pms.*, pq.player_name, pmr.ruolo_primario
             FROM player_matchday_status pms
             LEFT JOIN player_quotations pq

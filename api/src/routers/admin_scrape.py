@@ -270,8 +270,15 @@ async def get_data_health(
     md_count = await db.scalar(
         sa.text("SELECT COUNT(*) FROM player_matchday_status")
     )
+    # Anchor to the most recent season's matchday — a plain MAX(matchday)
+    # would return a matchday from an older season once multiple seasons
+    # coexist (see matchday.py's identical helper).
     md_latest = await db.scalar(
-        sa.text("SELECT MAX(matchday) FROM player_matchday_status")
+        sa.text(
+            "SELECT matchday FROM player_matchday_status "
+            "WHERE season_start = (SELECT MAX(season_start) FROM player_matchday_status) "
+            "ORDER BY matchday DESC LIMIT 1"
+        )
     )
     sources.append({
         "name": "matchday_status",
