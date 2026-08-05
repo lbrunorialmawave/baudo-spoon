@@ -73,26 +73,36 @@ ROLE_MARKERS: dict[str, str] = {
     "ATTACCANTI": "FWD",
 }
 
+#: Non-role sections whose content is prose worth resolving a player comment
+#: against (e.g. a comment that's just "Vedi possibili sorprese"). Excludes
+#: COPYRIGHT/GEPRESENTA, which are boilerplate, not content a comment would
+#: ever point to.
+_CROSS_REFERENCE_MARKERS = {
+    "ROSA", "RIGORISTI", "CALCI.PIAZZATI", "CONSIGLIATI", "SCONSIGLIATI",
+    "POSSIBILI.SORPRESE", "PROSPETTO.PRIMAVERA", "PROBABILE.FORMAZIONE",
+    "BALLOTTAGGI",
+}
+
 #: All section-marker filenames seen in the wild, used to know which
 #: <img class="postimage"> tags delimit a new section while walking the post.
-_ALL_MARKERS = set(ROLE_MARKERS) | {
-    "ROSA", "RIGORISTI", "CALCI.PIAZZATI", "CONSIGLIATI", "SCONSIGLIATI",
-    "POSSIBILI.SORPRESE", "PROSPETTO.PRIMAVERA", "COPYRIGHT", "GEPRESENTA",
-    "PROBABILE.FORMAZIONE", "BALLOTTAGGI",
-}
+_ALL_MARKERS = set(ROLE_MARKERS) | _CROSS_REFERENCE_MARKERS | {"COPYRIGHT", "GEPRESENTA"}
 
 #: Some curators write "Titolarità: 9/10" (colon after the label), others
 #: "Titolarità 9/10" (no colon) — sometimes both styles appear in the same
 #: post (e.g. Atalanta uses no-colon for Portieri/Difensori but colons for
 #: Centrocampisti/Attaccanti, apparently from a later partial edit). Every
 #: label is followed by an optional colon to tolerate both.
+#:
+#: The 4th stat's label varies by curator/role ("Bonus", "No Gol" for
+#: keepers, "Porta inviolata"), so it's captured as its own group instead of
+#: being consumed as an anonymous wildcard.
 _STATS_LINE_RE = re.compile(
-    r"Titolarit[àa’]\s*:?\s*(\d+)\s*/\s*10\s*-\s*"
-    r"Media voto\s*:?\s*(\d+)\s*/\s*10\s*-\s*"
-    r"Salute\s*:?\s*(\d+)\s*/\s*10\s*-\s*"
-    r"[^\d/\n]{2,30}?(\d+)\s*/\s*10\s*-\s*"
-    r"Consiglio Esperti\s*:?\s*(\d+)\s*/\s*10\s*-\s*"
-    r"TOTALE\s*:?\s*(\d+)\s*/\s*50",
+    r"Titolarit[àa’]\s*:?\s*(?P<titolarita>\d+)\s*/\s*10\s*-\s*"
+    r"Media voto\s*:?\s*(?P<media_voto>\d+)\s*/\s*10\s*-\s*"
+    r"Salute\s*:?\s*(?P<salute>\d+)\s*/\s*10\s*-\s*"
+    r"(?P<bonus_label>[^\d/\n]{2,30}?)\s*:?\s*(?P<bonus_value>\d+)\s*/\s*10\s*-\s*"
+    r"Consiglio Esperti\s*:?\s*(?P<consiglio_esperti>\d+)\s*/\s*10\s*-\s*"
+    r"TOTALE\s*:?\s*(?P<totale>\d+)\s*/\s*50",
     re.IGNORECASE,
 )
 
@@ -129,6 +139,17 @@ class ScrapedPlayer:
     consiglio_esperti: int  # 1-10
     comment: str
     url: str
+    titolarita: Optional[int] = None  # 1-10
+    media_voto: Optional[int] = None  # 1-10
+    salute: Optional[int] = None  # 1-10
+    bonus_label: Optional[str] = None  # "Bonus" / "No Gol" / "Porta inviolata"
+    bonus_value: Optional[int] = None  # 1-10
+    totale: Optional[int] = None  # 1-50
+    birth_year: Optional[int] = None
+    # Set when `comment` is just a pointer to another section of the post
+    # (e.g. "Vedi possibili sorprese"), resolved against that section's text.
+    cross_reference_section: Optional[str] = None
+    cross_reference_text: Optional[str] = None
 
 
 # ── HTTP helpers ─────────────────────────────────────────────────────────────
@@ -237,6 +258,7 @@ def _parse_role_section(text: str, role: str, team: str, url: str) -> list[Scrap
         surname = " ".join(uppercase_tail) if uppercase_tail else " ".join(surname_words)
         firstname = re.sub(r"\s+", " ", best_name_match.group("firstname")).strip()
         name = f"{surname} {firstname}".strip()
+        birth_year = int(best_name_match.group(3)) if best_name_match.group(3) else None
 
         next_start = stats_matches[i + 1].start() if i + 1 < len(stats_matches) else len(text)
         commentary_block = text[sm.end():next_start]
@@ -244,13 +266,43 @@ def _parse_role_section(text: str, role: str, team: str, url: str) -> list[Scrap
         commentary = commentary_block[: next_names[-1].start()] if next_names else commentary_block
         commentary = re.sub(r"\n{2,}", "\n\n", commentary).strip()
 
-        consiglio_esperti = int(sm.group(5))
         players.append(ScrapedPlayer(
             name=name, surname=surname, role=role, team=team,
-            consiglio_esperti=consiglio_esperti,
+            consiglio_esperti=int(sm.group("consiglio_esperti")),
             comment=commentary, url=url,
+            titolarita=int(sm.group("titolarita")),
+            media_voto=int(sm.group("media_voto")),
+            salute=int(sm.group("salute")),
+            bonus_label=re.sub(r"\s+", " ", sm.group("bonus_label")).strip(" -") or None,
+            bonus_value=int(sm.group("bonus_value")),
+            totale=int(sm.group("totale")),
+            birth_year=birth_year,
         ))
     return players
+
+
+#: Matches a comment that's purely a pointer to another section instead of
+#: repeating text already written elsewhere in the post, e.g. "Vedi
+#: possibili sorprese" or "Vedi ROSA".
+_CROSS_REFERENCE_RE = re.compile(r"\bVedi\s+([A-Za-zÀ-ÿ' ]+)", re.IGNORECASE)
+
+
+def _resolve_cross_reference(comment: str, sections: dict[str, str]) -> tuple[Optional[str], Optional[str]]:
+    """If `comment` points at another section (e.g. "Vedi possibili
+    sorprese"), resolve it against that section's text, already collected by
+    `_split_sections` but otherwise only used to delimit role-section
+    boundaries. Returns (section_marker, section_text), or (None, None) if
+    the comment isn't a recognized pointer.
+    """
+    m = _CROSS_REFERENCE_RE.search(comment)
+    if not m:
+        return None, None
+    normalized = re.sub(r"\s+", ".", m.group(1).strip().upper())
+    for marker in _CROSS_REFERENCE_MARKERS:
+        if normalized.startswith(marker):
+            section_text = sections.get(marker, "").strip()
+            return marker, (section_text or None)
+    return None, None
 
 
 def scrape_team(team: str, url: str, session: Optional[requests.Session] = None) -> list[ScrapedPlayer]:
@@ -274,6 +326,9 @@ def scrape_team(team: str, url: str, session: Optional[requests.Session] = None)
             log.warning("No %s section found for %s (%s)", marker, team, url)
             continue
         players.extend(_parse_role_section(section_text, role, team, url))
+
+    for p in players:
+        p.cross_reference_section, p.cross_reference_text = _resolve_cross_reference(p.comment, sections)
 
     log.info("Scraped %d players for %s", len(players), team)
     return players
@@ -374,14 +429,28 @@ def _match_fantacalcio_id(
 
 _UPSERT_SQL = """
     INSERT INTO expert_ratings
-        (player_id, source, expert_name, rating, comment, matchday, season_start, url, scraped_at)
+        (player_id, source, expert_name, rating, comment, matchday, season_start, url, scraped_at,
+         titolarita, media_voto, salute, bonus_label, bonus_value, totale, consiglio_esperti_raw,
+         birth_year, cross_reference_section, cross_reference_text)
     VALUES
-        (:player_id, :source, :expert_name, :rating, :comment, :matchday, :season_start, :url, :scraped_at)
+        (:player_id, :source, :expert_name, :rating, :comment, :matchday, :season_start, :url, :scraped_at,
+         :titolarita, :media_voto, :salute, :bonus_label, :bonus_value, :totale, :consiglio_esperti_raw,
+         :birth_year, :cross_reference_section, :cross_reference_text)
     ON CONFLICT (player_id, source, expert_name, matchday) DO UPDATE SET
         rating = EXCLUDED.rating,
         comment = EXCLUDED.comment,
         url = EXCLUDED.url,
-        scraped_at = EXCLUDED.scraped_at
+        scraped_at = EXCLUDED.scraped_at,
+        titolarita = EXCLUDED.titolarita,
+        media_voto = EXCLUDED.media_voto,
+        salute = EXCLUDED.salute,
+        bonus_label = EXCLUDED.bonus_label,
+        bonus_value = EXCLUDED.bonus_value,
+        totale = EXCLUDED.totale,
+        consiglio_esperti_raw = EXCLUDED.consiglio_esperti_raw,
+        birth_year = EXCLUDED.birth_year,
+        cross_reference_section = EXCLUDED.cross_reference_section,
+        cross_reference_text = EXCLUDED.cross_reference_text
 """
 
 
@@ -447,6 +516,16 @@ def persist(
                     "season_start": season_start,
                     "url": p.url,
                     "scraped_at": datetime.now(timezone.utc),
+                    "titolarita": p.titolarita,
+                    "media_voto": p.media_voto,
+                    "salute": p.salute,
+                    "bonus_label": p.bonus_label,
+                    "bonus_value": p.bonus_value,
+                    "totale": p.totale,
+                    "consiglio_esperti_raw": p.consiglio_esperti,
+                    "birth_year": p.birth_year,
+                    "cross_reference_section": p.cross_reference_section,
+                    "cross_reference_text": p.cross_reference_text,
                 },
             )
             count += 1
@@ -476,7 +555,15 @@ def main() -> None:
 
     if args.dry_run:
         for p in players[:30]:
-            log.info("  [%s] %s (%s) consiglio=%d/10", p.team, p.name, p.role, p.consiglio_esperti)
+            log.info(
+                "  [%s] %s (%s, %s) tit=%s/10 media=%s/10 salute=%s/10 %s=%s/10 "
+                "consiglio=%d/10 tot=%s/50%s",
+                p.team, p.name, p.role, p.birth_year or "?",
+                p.titolarita, p.media_voto, p.salute,
+                p.bonus_label or "bonus", p.bonus_value,
+                p.consiglio_esperti, p.totale,
+                f" [ref: {p.cross_reference_section}]" if p.cross_reference_section else "",
+            )
         log.info("Total: %d players scraped (dry-run, first 30 shown)", len(players))
         return
 

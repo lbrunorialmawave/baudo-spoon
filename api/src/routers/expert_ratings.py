@@ -39,6 +39,16 @@ class ExpertRatingCreate(BaseModel):
     matchday: Optional[int] = None
     season_start: int
     url: Optional[str] = None
+    titolarita: Optional[int] = None
+    media_voto: Optional[int] = None
+    salute: Optional[int] = None
+    bonus_label: Optional[str] = None
+    bonus_value: Optional[int] = None
+    totale: Optional[int] = None
+    consiglio_esperti_raw: Optional[int] = None
+    birth_year: Optional[int] = None
+    cross_reference_section: Optional[str] = None
+    cross_reference_text: Optional[str] = None
 
 
 @router.get("/ratings", summary="List expert ratings")
@@ -206,14 +216,28 @@ async def create_expert_rating(
     await db.execute(
         sa.text("""
             INSERT INTO expert_ratings
-                (player_id, source, expert_name, rating, comment, matchday, season_start, url, scraped_at)
+                (player_id, source, expert_name, rating, comment, matchday, season_start, url, scraped_at,
+                 titolarita, media_voto, salute, bonus_label, bonus_value, totale, consiglio_esperti_raw,
+                 birth_year, cross_reference_section, cross_reference_text)
             VALUES
-                (:player_id, :source, :expert_name, :rating, :comment, :matchday, :season_start, :url, :scraped_at)
+                (:player_id, :source, :expert_name, :rating, :comment, :matchday, :season_start, :url, :scraped_at,
+                 :titolarita, :media_voto, :salute, :bonus_label, :bonus_value, :totale, :consiglio_esperti_raw,
+                 :birth_year, :cross_reference_section, :cross_reference_text)
             ON CONFLICT (player_id, source, expert_name, matchday) DO UPDATE SET
                 rating = EXCLUDED.rating,
                 comment = EXCLUDED.comment,
                 url = EXCLUDED.url,
-                scraped_at = EXCLUDED.scraped_at
+                scraped_at = EXCLUDED.scraped_at,
+                titolarita = EXCLUDED.titolarita,
+                media_voto = EXCLUDED.media_voto,
+                salute = EXCLUDED.salute,
+                bonus_label = EXCLUDED.bonus_label,
+                bonus_value = EXCLUDED.bonus_value,
+                totale = EXCLUDED.totale,
+                consiglio_esperti_raw = EXCLUDED.consiglio_esperti_raw,
+                birth_year = EXCLUDED.birth_year,
+                cross_reference_section = EXCLUDED.cross_reference_section,
+                cross_reference_text = EXCLUDED.cross_reference_text
         """),
         {
             "player_id": body.player_id,
@@ -225,6 +249,16 @@ async def create_expert_rating(
             "season_start": body.season_start,
             "url": body.url,
             "scraped_at": datetime.utcnow(),
+            "titolarita": body.titolarita,
+            "media_voto": body.media_voto,
+            "salute": body.salute,
+            "bonus_label": body.bonus_label,
+            "bonus_value": body.bonus_value,
+            "totale": body.totale,
+            "consiglio_esperti_raw": body.consiglio_esperti_raw,
+            "birth_year": body.birth_year,
+            "cross_reference_section": body.cross_reference_section,
+            "cross_reference_text": body.cross_reference_text,
         },
     )
     await db.commit()

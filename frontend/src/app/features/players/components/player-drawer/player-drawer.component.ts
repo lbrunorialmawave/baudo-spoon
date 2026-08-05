@@ -135,9 +135,26 @@ import { ErrorBoundaryComponent } from '../../../../shared/components/error-boun
                       </span>
                     }
                   </div>
+                  @if (r.totale != null) {
+                    <div class="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5 text-xs"
+                         style="color:var(--color-text-secondary)">
+                      <span>Titolarità {{ r.titolarita }}/10</span>
+                      <span>Media voto {{ r.media_voto }}/10</span>
+                      <span>Salute {{ r.salute }}/10</span>
+                      <span>{{ r.bonus_label ?? 'Bonus' }} {{ r.bonus_value }}/10</span>
+                      <span style="color:var(--color-text-primary)" class="font-medium">
+                        TOTALE {{ r.totale }}/50
+                      </span>
+                    </div>
+                  }
                   @if (r.comment) {
                     <p class="text-xs mt-1.5 leading-snug" style="color:var(--color-text-primary)">
                       {{ r.comment }}
+                    </p>
+                  }
+                  @if (r.cross_reference_text) {
+                    <p class="text-xs mt-1.5 leading-snug italic" style="color:var(--color-text-secondary)">
+                      {{ r.cross_reference_text }}
                     </p>
                   }
                   @if (r.url) {

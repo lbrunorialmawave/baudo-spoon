@@ -12,6 +12,21 @@ export interface ExpertRating {
   season_start: number;
   url: string | null;
   scraped_at: string;
+  /** Gruppo Esperti breakdown (source: "gruppo_esperti" only) — null for other sources. */
+  titolarita: number | null;
+  media_voto: number | null;
+  salute: number | null;
+  /** Label of the 4th stat: "Bonus" / "No Gol" (keepers) / "Porta inviolata". */
+  bonus_label: string | null;
+  bonus_value: number | null;
+  /** Overall total, out of 50. */
+  totale: number | null;
+  /** Same value as `rating`, uncompressed (1-10 instead of 1-5 stars). */
+  consiglio_esperti_raw: number | null;
+  birth_year: number | null;
+  /** Set when `comment` is just a pointer (e.g. "Vedi possibili sorprese") — the referenced section. */
+  cross_reference_section: string | null;
+  cross_reference_text: string | null;
 }
 
 export interface PlayerExpertRatingsResponse {
