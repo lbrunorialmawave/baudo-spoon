@@ -435,7 +435,12 @@ export class PlayersComponent {
           .map((mds: any) => mds.fantacalcio_id)
       : undefined;
 
-    const stimaAsta = this.stimaAstaEnabled() && this.numPartecipanti() != null && this.budget() != null;
+    // Guard against sending invalid values to the API (e.g. an emptied/zeroed
+    // number input): both fields must be present AND > 0, matching the
+    // backend's own `ge=1` constraints, so we never trigger a 422.
+    const stimaAsta = this.stimaAstaEnabled()
+      && (this.numPartecipanti() ?? 0) > 0
+      && (this.budget() ?? 0) > 0;
 
     this.mantraService.listPlayers({
       ruolo: this.selectedRuolo() || undefined,
@@ -462,10 +467,25 @@ export class PlayersComponent {
         this.loading.set(false);
       },
       error: (e) => {
-        this.error.set(e?.message ?? 'Failed to load');
+        this.error.set(this.extractErrorMessage(e));
         this.loading.set(false);
       },
     });
+  }
+
+  /** FastAPI errors come in two shapes: a plain string `detail` (our own
+   * HTTPException calls) or a Pydantic validation array (query param
+   * constraint violations, e.g. `budget` below its `ge=1` floor) — surface
+   * a readable message for either instead of the raw HTTP failure text. */
+  private extractErrorMessage(e: unknown): string {
+    const detail = (e as { error?: { detail?: unknown } } | null)?.error?.detail;
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail)) {
+      return detail
+        .map((d: any) => d?.msg ? `${(d.loc ?? []).join('.')}: ${d.msg}` : JSON.stringify(d))
+        .join('; ');
+    }
+    return (e as { message?: string } | null)?.message ?? 'Failed to load';
   }
 
   private loadStats(): void {
