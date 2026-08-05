@@ -15,6 +15,7 @@ GET  /mantra/stats                      — Summary statistics
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Optional
@@ -35,6 +36,19 @@ router = APIRouter(
     prefix="/mantra",
     tags=["mantra"],
 )
+
+# Macro-gruppi di ruolo per la stima d'asta on-demand — stessa suddivisione
+# usata in get_budget_overview, ma con slug stabili (contratto API) invece
+# delle etichette leggibili usate solo per la UI di quell'endpoint.
+RUOLO_MACRO_GRUPPO: dict[str, str] = {
+    "Por": "portieri",
+    "Dc": "difesa", "B": "difesa", "Dd": "difesa", "Ds": "difesa",
+    "E": "ibridi", "M": "ibridi",
+    "C": "centro",
+    "T": "fantasia", "W": "fantasia",
+    "A": "attacco", "Pc": "attacco",
+}
+RUOLO_MACRO_GRUPPI_VALIDI = frozenset(RUOLO_MACRO_GRUPPO.values())
 
 # Unica porta d'ingresso R2/disco locale per questo router. Lazy-init:
 # costruita al primo utilizzo con le Settings correnti. Tutta la I/O R2
@@ -109,6 +123,15 @@ async def list_mantra_players(
     tasso_base: float = Query(0.05, ge=0.0),
     partecipanti_baseline: int = Query(8, ge=1),
     moltiplicatore_max: float = Query(1.6, ge=1.0),
+    override_ruolo_json: Optional[str] = Query(
+        None,
+        description=(
+            "JSON con override per macro-gruppo di ruolo, es. "
+            '{"attacco": {"moltiplicatore_max": 2.0, "tasso_base": 0.08, "percentile_soglia": 0.5}}. '
+            "Gruppi validi: portieri, difesa, ibridi, centro, fantasia, attacco. "
+            "partecipanti_baseline resta sempre globale."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> ORJSONResponse:
     if stima_asta and num_partecipanti is None:
@@ -116,6 +139,21 @@ async def list_mantra_players(
             status_code=400,
             detail="num_partecipanti è richiesto quando stima_asta=True",
         )
+
+    ruolo_overrides: dict[str, dict[str, float]] = {}
+    if override_ruolo_json:
+        try:
+            ruolo_overrides = json.loads(override_ruolo_json)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="override_ruolo_json non è un JSON valido")
+        if not isinstance(ruolo_overrides, dict):
+            raise HTTPException(status_code=400, detail="override_ruolo_json deve essere un oggetto JSON")
+        gruppi_sconosciuti = set(ruolo_overrides) - RUOLO_MACRO_GRUPPI_VALIDI
+        if gruppi_sconosciuti:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Gruppi di ruolo sconosciuti in override_ruolo_json: {sorted(gruppi_sconosciuti)}",
+            )
 
     try:
         data = await _load_mantra_results(db)
@@ -147,17 +185,32 @@ async def list_mantra_players(
     if stima_asta:
         from ml.optimizer.inflation import InflationConfig, inflation_multiplier
 
-        inflation_cfg = InflationConfig(
-            inflation_percentile_threshold=percentile_soglia,
-            base_inflation_rate=tasso_base,
-            baseline_participants=partecipanti_baseline,
-            max_inflation_multiplier=moltiplicatore_max,
-        )
+        # Una InflationConfig per gruppo di ruolo (al più 6), costruita pigramente
+        # e riusata per tutti i giocatori dello stesso gruppo. partecipanti_baseline
+        # non è overridabile per gruppo: la competizione dipende dalla lega intera,
+        # non dal singolo ruolo.
+        cfg_per_gruppo: dict[str | None, InflationConfig] = {}
+
+        def _cfg_per_ruolo(ruolo_primario: str | None) -> InflationConfig:
+            gruppo = RUOLO_MACRO_GRUPPO.get(ruolo_primario or "")
+            if gruppo not in cfg_per_gruppo:
+                ov = ruolo_overrides.get(gruppo, {}) if gruppo else {}
+                try:
+                    cfg_per_gruppo[gruppo] = InflationConfig(
+                        inflation_percentile_threshold=ov.get("percentile_soglia", percentile_soglia),
+                        base_inflation_rate=ov.get("tasso_base", tasso_base),
+                        baseline_participants=partecipanti_baseline,
+                        max_inflation_multiplier=ov.get("moltiplicatore_max", moltiplicatore_max),
+                    )
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=f"override_ruolo_json non valido per {gruppo!r}: {e}")
+            return cfg_per_gruppo[gruppo]
+
         stimati = []
         for p in players:
             pct = p.get("Percentile_Ruolo") or 0.0
             base = p.get("Prezzo_Massimo") or 1
-            mult = inflation_multiplier(pct, num_partecipanti, inflation_cfg)
+            mult = inflation_multiplier(pct, num_partecipanti, _cfg_per_ruolo(p.get("ruolo_primario")))
             p2 = dict(p)
             p2["Prezzo_Base_Listino"] = base
             p2["Prezzo_Massimo"] = round(max(base * mult, 1.0), 2)

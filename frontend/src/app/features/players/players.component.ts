@@ -33,27 +33,28 @@ import { PlayerDrawerComponent } from './components/player-drawer/player-drawer.
         }
       </div>
 
-      <div class="grid grid-cols-1 gap-2 border-b px-4 py-3 sm:grid-cols-2 sm:gap-3 md:flex md:flex-wrap md:items-center md:px-6"
+      <!-- Primary filters — always visible, tight grouping (the controls used on every visit). -->
+      <div class="flex flex-wrap items-center gap-2 border-b px-4 pt-3 pb-2.5 sm:px-6"
            style="border-color:var(--color-border);background:var(--color-surface)">
-        <input class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full md:w-50"
+        <input class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full sm:w-44 md:w-52"
                style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
                placeholder="Search player" [ngModel]="searchDraft()" (ngModelChange)="onSearchChange($event)" />
 
-        <select class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full md:w-auto"
+        <select class="rounded-lg border px-3 py-1.5 text-sm outline-none w-auto"
                 style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
                 [ngModel]="selectedRuolo()" (ngModelChange)="selectedRuolo.set($event)">
           <option value="">All roles</option>
           @for (r of MANTRA_ROLES; track r) { <option [value]="r">{{ r }}</option> }
         </select>
 
-        <select class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full md:w-auto"
+        <select class="rounded-lg border px-3 py-1.5 text-sm outline-none w-auto"
                 style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
                 [ngModel]="selectedTeam()" (ngModelChange)="selectedTeam.set($event)">
           <option value="">All teams</option>
           @for (t of teamsList(); track t) { <option [value]="t">{{ t }}</option> }
         </select>
 
-        <select class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full md:w-auto"
+        <select class="rounded-lg border px-3 py-1.5 text-sm outline-none w-auto"
                 style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
                 [ngModel]="selectedFase7()" (ngModelChange)="onFase7Change($event)">
           <option value="">All classifications</option>
@@ -62,7 +63,7 @@ import { PlayerDrawerComponent } from './components/player-drawer/player-drawer.
           }
         </select>
 
-        <select class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full md:w-auto"
+        <select class="rounded-lg border px-3 py-1.5 text-sm outline-none w-auto"
                 style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
                 [ngModel]="selectedStatus()" (ngModelChange)="selectedStatus.set($event)">
           <option value="">All statuses</option>
@@ -73,41 +74,118 @@ import { PlayerDrawerComponent } from './components/player-drawer/player-drawer.
           <option value="doubtful">🟡 In dubbio</option>
         </select>
 
-        <input class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full md:w-24"
-               style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
-               type="number" min="0" placeholder="Prezzo min"
-               [ngModel]="priceMin()" (ngModelChange)="priceMin.set($event)" />
-        <input class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full md:w-24"
-               style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
-               type="number" min="0" placeholder="Prezzo max"
-               [ngModel]="priceMax()" (ngModelChange)="priceMax.set($event)" />
-
-        <label class="flex items-center gap-1.5 text-sm w-full md:w-auto" style="color:var(--color-text-secondary)"
-               title="Stima il prezzo massimo d'asta in base al percentile del giocatore nel ruolo e al numero di partecipanti alla lega, invece di mostrare solo la quotazione ufficiale">
-          <input type="checkbox" [ngModel]="stimaAstaEnabled()" (ngModelChange)="stimaAstaEnabled.set($event)" />
-          Stima prezzo d'asta
-        </label>
-        @if (stimaAstaEnabled()) {
-          <input class="rounded-lg border px-3 py-1.5 text-sm outline-none w-full md:w-32"
-                 style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
-                 type="number" min="1" placeholder="N. partecipanti"
-                 [ngModel]="numPartecipanti()" (ngModelChange)="numPartecipanti.set($event)" />
-        }
-
-        <div class="flex flex-wrap gap-1.5 md:ml-auto">
-          @for (qf of quickFilters; track qf.key) {
-            <button class="rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors"
-                    [style.border-color]="activeQuickFilter() === qf.key ? (FASE7_LABELS[qf.key]?.color ?? 'var(--color-accent)') : 'var(--color-border)'"
-                    [style.color]="activeQuickFilter() === qf.key ? (FASE7_LABELS[qf.key]?.color ?? 'var(--color-accent)') : 'var(--color-text-secondary)'"
-                    [title]="FASE7_TOOLTIPS[qf.key]"
-                    (click)="toggleQuickFilter(qf.key)">
-              {{ qf.icon }} {{ qf.label }}
-            </button>
-          }
-          <button class="rounded-lg border px-2.5 py-1 text-xs font-medium"
-                  style="border-color:var(--color-border);color:var(--color-text-secondary)"
-                  (click)="clearFilters()">Clear</button>
+        <!-- Price range grouped as one compound control, not two loose inputs. -->
+        <div class="flex items-center gap-1 rounded-lg border px-2 py-1"
+             style="background:var(--color-surface-raised);border-color:var(--color-border)">
+          <span class="pl-0.5 text-xs" style="color:var(--color-text-secondary)">Prezzo</span>
+          <input class="w-14 bg-transparent px-1 py-0.5 text-sm outline-none" style="color:var(--color-text-primary)"
+                 type="number" min="0" placeholder="min"
+                 [ngModel]="priceMin()" (ngModelChange)="priceMin.set($event)" />
+          <span style="color:var(--color-text-secondary)">–</span>
+          <input class="w-14 bg-transparent px-1 py-0.5 text-sm outline-none" style="color:var(--color-text-primary)"
+                 type="number" min="0" placeholder="max"
+                 [ngModel]="priceMax()" (ngModelChange)="priceMax.set($event)" />
         </div>
+      </div>
+
+      <!-- Quick filters + reset — secondary row, visually lighter than the primary filters above. -->
+      <div class="flex flex-wrap items-center gap-1.5 border-b px-4 py-2 sm:px-6"
+           style="border-color:var(--color-border);background:var(--color-surface)">
+        @for (qf of quickFilters; track qf.key) {
+          <button class="rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors"
+                  [style.border-color]="activeQuickFilter() === qf.key ? (FASE7_LABELS[qf.key]?.color ?? 'var(--color-accent)') : 'var(--color-border)'"
+                  [style.color]="activeQuickFilter() === qf.key ? (FASE7_LABELS[qf.key]?.color ?? 'var(--color-accent)') : 'var(--color-text-secondary)'"
+                  [title]="FASE7_TOOLTIPS[qf.key]"
+                  (click)="toggleQuickFilter(qf.key)">
+            {{ qf.icon }} {{ qf.label }}
+          </button>
+        }
+        <button class="rounded-lg border px-2.5 py-1 text-xs font-medium"
+                style="border-color:var(--color-border);color:var(--color-text-secondary)"
+                (click)="clearFilters()">Clear</button>
+      </div>
+
+      <!-- Stima d'asta — optional/advanced tool, demoted to its own panel so it doesn't
+           compete visually with the always-used filters above. -->
+      <div class="border-b px-4 py-2.5 sm:px-6" style="border-color:var(--color-border);background:var(--color-bg)">
+        <div class="flex flex-wrap items-center gap-3">
+          <label class="inline-flex cursor-pointer items-center gap-2 text-xs font-medium select-none"
+                 style="color:var(--color-text-primary)"
+                 title="Stima il prezzo massimo d'asta in base al percentile del giocatore nel ruolo e al numero di partecipanti alla lega, invece di mostrare solo la quotazione ufficiale">
+            <input type="checkbox" class="sr-only" [ngModel]="stimaAstaEnabled()" (ngModelChange)="stimaAstaEnabled.set($event)" />
+            <span class="inline-block h-5 w-9 shrink-0 rounded-full transition-colors"
+                  [style.background]="stimaAstaEnabled() ? 'var(--color-accent)' : 'var(--color-border)'">
+              <span class="block h-4 w-4 rounded-full transition-transform" style="background:#fff;margin-top:2px"
+                    [style.transform]="stimaAstaEnabled() ? 'translateX(18px)' : 'translateX(2px)'"></span>
+            </span>
+            Stima prezzo d'asta
+          </label>
+
+          @if (stimaAstaEnabled()) {
+            <input class="rounded-lg border px-3 py-1.5 text-sm outline-none w-36"
+                   style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
+                   type="number" min="1" placeholder="N. partecipanti"
+                   [ngModel]="numPartecipanti()" (ngModelChange)="numPartecipanti.set($event)" />
+            <button class="rounded-lg border px-2.5 py-1 text-xs font-medium"
+                    style="border-color:var(--color-border);color:var(--color-text-secondary)"
+                    (click)="showRoleOverrides.set(!showRoleOverrides())">
+              {{ showRoleOverrides() ? 'Nascondi impostazioni' : 'Impostazioni per ruolo' }} ⚙
+            </button>
+          } @else {
+            <span class="text-xs" style="color:var(--color-text-secondary)">Mostra solo la quotazione ufficiale di listone</span>
+          }
+        </div>
+
+        @if (stimaAstaEnabled() && showRoleOverrides()) {
+          <div class="mt-3 overflow-x-auto rounded-lg border" style="border-color:var(--color-border);background:var(--color-surface)">
+            <div class="flex items-center justify-between border-b px-3 py-2" style="border-color:var(--color-border)">
+              <span class="text-xs font-medium" style="color:var(--color-text-primary)">Parametri di inflazione per gruppo di ruolo</span>
+              <button class="text-xs underline-offset-2 hover:underline" style="color:var(--color-text-secondary)"
+                      (click)="resetRoleOverrides()">Reimposta predefiniti</button>
+            </div>
+            <table class="w-full text-xs" style="border-collapse:collapse;min-width:480px">
+              <thead>
+                <tr style="color:var(--color-text-secondary);background:var(--color-surface-raised)">
+                  <th class="px-3 py-2 text-left font-medium">Gruppo di ruolo</th>
+                  <th class="px-3 py-2 text-left font-medium" title="Percentile minimo nel ruolo da cui parte l'inflazione">
+                    Soglia percentile <span class="opacity-60">(0–1)</span>
+                  </th>
+                  <th class="px-3 py-2 text-left font-medium" title="Velocità di crescita del prezzo per partecipante oltre la baseline">
+                    Tasso base
+                  </th>
+                  <th class="px-3 py-2 text-left font-medium" title="Moltiplicatore massimo applicabile al prezzo di listino">
+                    Moltiplicatore max <span class="opacity-60">(×)</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (g of ROLE_GROUPS; track g.slug; let i = $index) {
+                  <tr [style.background]="i % 2 === 1 ? 'var(--color-surface-raised)' : 'transparent'">
+                    <td class="px-3 py-1.5 font-medium" style="color:var(--color-text-primary)">{{ g.label }}</td>
+                    <td class="px-3 py-1.5">
+                      <input class="w-20 rounded border px-2 py-1 outline-none" style="background:var(--color-bg);border-color:var(--color-border);color:var(--color-text-primary)"
+                             type="number" min="0" max="1" step="0.05"
+                             [ngModel]="roleOverrides()[g.slug].percentileSoglia"
+                             (ngModelChange)="updateRoleOverride(g.slug, 'percentileSoglia', $event)" />
+                    </td>
+                    <td class="px-3 py-1.5">
+                      <input class="w-20 rounded border px-2 py-1 outline-none" style="background:var(--color-bg);border-color:var(--color-border);color:var(--color-text-primary)"
+                             type="number" min="0" step="0.01"
+                             [ngModel]="roleOverrides()[g.slug].tassoBase"
+                             (ngModelChange)="updateRoleOverride(g.slug, 'tassoBase', $event)" />
+                    </td>
+                    <td class="px-3 py-1.5">
+                      <input class="w-20 rounded border px-2 py-1 outline-none" style="background:var(--color-bg);border-color:var(--color-border);color:var(--color-text-primary)"
+                             type="number" min="1" step="0.1"
+                             [ngModel]="roleOverrides()[g.slug].moltiplicatoreMax"
+                             (ngModelChange)="updateRoleOverride(g.slug, 'moltiplicatoreMax', $event)" />
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
       </div>
 
       @if (stats(); as s) {
@@ -183,6 +261,17 @@ export class PlayersComponent {
     { key: 'SCOMMESSA', label: 'Scommesse', icon: '\u{1F504}' },
   ];
 
+  /** Macro-gruppi di ruolo per la stima d'asta — stessi slug/gruppi del backend (RUOLO_MACRO_GRUPPO). */
+  readonly ROLE_GROUPS: { slug: string; label: string }[] = [
+    { slug: 'portieri', label: 'Portieri' },
+    { slug: 'difesa', label: 'Difesa' },
+    { slug: 'ibridi', label: 'Ibridi (E, M)' },
+    { slug: 'centro', label: 'Centrocampo (C)' },
+    { slug: 'fantasia', label: 'Fantasia (T, W)' },
+    { slug: 'attacco', label: 'Attacco' },
+  ];
+  private static readonly DEFAULT_ROLE_OVERRIDE = { percentileSoglia: 0.7, tassoBase: 0.05, moltiplicatoreMax: 1.6 };
+
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
   readonly mantraPlayers = signal<MantraPlayer[]>([]);
@@ -205,6 +294,33 @@ export class PlayersComponent {
   /** Riflette se l'ultima risposta del backend ha applicato la stima (può
    * essere false anche con stimaAstaEnabled=true finché numPartecipanti è vuoto). */
   readonly stimaAstaActive = signal(false);
+  /** Mostra il pannello con le impostazioni avanzate per gruppo di ruolo. */
+  readonly showRoleOverrides = signal(false);
+  readonly roleOverrides = signal<Record<string, { percentileSoglia: number; tassoBase: number; moltiplicatoreMax: number }>>(
+    PlayersComponent.defaultRoleOverrides()
+  );
+
+  private static defaultRoleOverrides(): Record<string, { percentileSoglia: number; tassoBase: number; moltiplicatoreMax: number }> {
+    return {
+      portieri: { ...PlayersComponent.DEFAULT_ROLE_OVERRIDE },
+      difesa: { ...PlayersComponent.DEFAULT_ROLE_OVERRIDE },
+      ibridi: { ...PlayersComponent.DEFAULT_ROLE_OVERRIDE },
+      centro: { ...PlayersComponent.DEFAULT_ROLE_OVERRIDE },
+      fantasia: { ...PlayersComponent.DEFAULT_ROLE_OVERRIDE },
+      attacco: { ...PlayersComponent.DEFAULT_ROLE_OVERRIDE },
+    };
+  }
+
+  readonly updateRoleOverride = (slug: string, field: 'percentileSoglia' | 'tassoBase' | 'moltiplicatoreMax', value: number) => {
+    this.roleOverrides.update(current => ({
+      ...current,
+      [slug]: { ...current[slug], [field]: value },
+    }));
+  };
+
+  readonly resetRoleOverrides = () => {
+    this.roleOverrides.set(PlayersComponent.defaultRoleOverrides());
+  };
   readonly activeQuickFilter = signal<string | null>(null);
   readonly selectedPlayer = signal<any | null>(null);
   readonly matchdayStatusMap = signal<Record<number, any>>({});
@@ -251,6 +367,7 @@ export class PlayersComponent {
         this.matchdayStatusMap(),
         this.stimaAstaEnabled(),
         this.numPartecipanti(),
+        this.roleOverrides(),
       ]);
       const filtersChanged = signature !== this.lastFilterSignature;
       this.lastFilterSignature = signature;
@@ -313,6 +430,7 @@ export class PlayersComponent {
       size: this.pageSize,
       stimaAsta,
       numPartecipanti: stimaAsta ? this.numPartecipanti()! : undefined,
+      overrideRuolo: stimaAsta ? this.roleOverrides() : undefined,
     }).subscribe({
       next: (res) => {
         this.mantraPlayers.set(res.items);
@@ -387,5 +505,7 @@ export class PlayersComponent {
     this.activeQuickFilter.set(null);
     this.stimaAstaEnabled.set(false);
     this.numPartecipanti.set(null);
+    this.showRoleOverrides.set(false);
+    this.roleOverrides.set(PlayersComponent.defaultRoleOverrides());
   };
 }

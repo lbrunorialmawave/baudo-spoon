@@ -12,6 +12,7 @@ fully decoupled from the DB and the MANTRA compute pipeline.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import patch
 
@@ -198,3 +199,54 @@ def test_mantra_players_endpoint_stima_asta_inflates_top_percentile(mantra_clien
 
     beta = items["Beta"]
     assert beta["Prezzo_Massimo"] == pytest.approx(7.0)
+
+
+def test_mantra_players_endpoint_role_group_override_diverges_from_global(mantra_client):
+    """Two players at the same top percentile, in different macro role
+    groups, must get different inflation when only one group is overridden
+    with a higher max multiplier."""
+    payload = _mantra_payload()
+    payload["players"][0]["ruolo_primario"] = "A"    # Alpha -> gruppo "attacco"
+    payload["players"][1]["ruolo_primario"] = "Dc"   # Beta  -> gruppo "difesa"
+    payload["players"][0]["Percentile_Ruolo"] = 1.0
+    payload["players"][1]["Percentile_Ruolo"] = 1.0
+    override = json.dumps({"attacco": {"moltiplicatore_max": 3.0, "tasso_base": 0.5}})
+    with patch("api.routers.mantra._load_mantra_results", return_value=payload):
+        response = mantra_client.get(
+            "/mantra/players",
+            params={
+                "stima_asta": True,
+                "num_partecipanti": 20,
+                "override_ruolo_json": override,
+            },
+        )
+
+    assert response.status_code == 200
+    items = {p["player_name"]: p for p in response.json()["items"]}
+
+    # Alpha (attacco, overridden) must inflate far more than Beta (difesa,
+    # default global params) despite identical percentile/participants.
+    assert items["Alpha"]["Prezzo_Massimo"] > items["Beta"]["Prezzo_Massimo"] * 1.5
+
+
+def test_mantra_players_endpoint_rejects_unknown_role_group_in_override(mantra_client):
+    payload = _mantra_payload()
+    override = json.dumps({"non_esiste": {"moltiplicatore_max": 2.0}})
+    with patch("api.routers.mantra._load_mantra_results", return_value=payload):
+        response = mantra_client.get(
+            "/mantra/players",
+            params={"stima_asta": True, "num_partecipanti": 12, "override_ruolo_json": override},
+        )
+
+    assert response.status_code == 400
+
+
+def test_mantra_players_endpoint_rejects_invalid_override_json(mantra_client):
+    payload = _mantra_payload()
+    with patch("api.routers.mantra._load_mantra_results", return_value=payload):
+        response = mantra_client.get(
+            "/mantra/players",
+            params={"stima_asta": True, "num_partecipanti": 12, "override_ruolo_json": "{not json"},
+        )
+
+    assert response.status_code == 400

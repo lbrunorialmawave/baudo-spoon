@@ -39,6 +39,8 @@ export class MantraService {
     tassoBase?: number;
     partecipantiBaseline?: number;
     moltiplicatoreMax?: number;
+    /** Override per macro-gruppo di ruolo (portieri/difesa/ibridi/centro/fantasia/attacco). */
+    overrideRuolo?: Record<string, { percentileSoglia?: number; tassoBase?: number; moltiplicatoreMax?: number }>;
   } = {}): Observable<MantraPlayersResponse> {
     let params = new HttpParams()
       .set('page', opts.page ?? 1)
@@ -61,6 +63,19 @@ export class MantraService {
       if (opts.tassoBase != null)             params = params.set('tasso_base', opts.tassoBase);
       if (opts.partecipantiBaseline != null)  params = params.set('partecipanti_baseline', opts.partecipantiBaseline);
       if (opts.moltiplicatoreMax != null)     params = params.set('moltiplicatore_max', opts.moltiplicatoreMax);
+      if (opts.overrideRuolo && Object.keys(opts.overrideRuolo).length) {
+        const payload: Record<string, Record<string, number>> = {};
+        for (const [gruppo, ov] of Object.entries(opts.overrideRuolo)) {
+          const entry: Record<string, number> = {};
+          if (ov.percentileSoglia != null)   entry['percentile_soglia'] = ov.percentileSoglia;
+          if (ov.tassoBase != null)          entry['tasso_base'] = ov.tassoBase;
+          if (ov.moltiplicatoreMax != null)  entry['moltiplicatore_max'] = ov.moltiplicatoreMax;
+          if (Object.keys(entry).length) payload[gruppo] = entry;
+        }
+        if (Object.keys(payload).length) {
+          params = params.set('override_ruolo_json', JSON.stringify(payload));
+        }
+      }
     }
     return this.http.get<MantraPlayersResponse>(
       `${this.baseUrl}/mantra/players`, { params }
@@ -164,5 +179,11 @@ export class MantraService {
   /** Re-import quotazioni XLSX listoni from the mounted ./quotazioni directory. */
   runQuotazioniImport(): Observable<any> {
     return this.http.post(`${this.baseUrl}/admin/scrape/quotazioni`, null);
+  }
+
+  /** Fetch career stats for listino players with no Serie A history. */
+  runForeignStatsScraper(force = false): Observable<any> {
+    const params = new HttpParams().set('force', force);
+    return this.http.post(`${this.baseUrl}/admin/scrape/foreign-stats`, null, { params });
   }
 }
