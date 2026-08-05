@@ -59,4 +59,16 @@ LEAGUE_CATALOG: dict[str, LeagueMeta] = {
         stats_slug="ligue-1",
         country_code="FRA",
     ),
+    # Serie B — lower tier than the top-5 leagues. Persisted so the
+    # player-career fallback can give promoted sides a baseline, but the
+    # MANTRA runner discounts its per-90 output (see runner.load_data) since
+    # performance in the cadetteria does not translate 1:1 to Serie A.
+    "Serie B": LeagueMeta(
+        display_name="Serie B",
+        comp_id="157",
+        slug="serie-b",
+        file_stem="serie_b",
+        stats_slug="serie-b",
+        country_code="ITA",
+    ),
 }

@@ -105,6 +105,7 @@ _PLAYER_DATA_SQL = sa.text("""
         (pss.fantacalcio_id IS NULL AND pss_prev.fantacalcio_id IS NOT NULL) AS stats_from_prior_season,
         (pss.fantacalcio_id IS NULL AND pss_prev.fantacalcio_id IS NULL
          AND pss_foreign.fantacalcio_id IS NOT NULL)                AS stats_from_foreign_league,
+        pss_foreign.league_name                                     AS foreign_league_name,
         -- Context (nullable when player_profiles match is missing)
         CAST(NULL AS FLOAT)   AS "Eta",
         FALSE                 AS "Cambio_Squadra",
@@ -153,6 +154,13 @@ _PLAYER_DATA_SQL = sa.text("""
 # ``DataRepository._load_predictions`` in the API layer). The mantra
 # runner reads the same file, keyed by ``player_fotmob_id``.
 _PREDICTIONS_FILENAME: str = "results_latest.json"
+
+# Performance from Serie B (the cross-league foreign fallback tier) does not
+# carry over 1:1 to Serie A — a weaker league — so its rendimiento metrics are
+# scaled down. Per-90 output only; minutes/presence are facts that hold
+# regardless of tier and are left as-is.
+_SERIE_B_DISCOUNT: float = 0.85
+_SERIE_B_DISCOUNT_COLS: tuple[str, ...] = ("V", "G90", "A90")
 
 
 def _load_predictions_by_id(
@@ -223,6 +231,24 @@ def load_data(
             df[col] = pd.to_numeric(df[col], errors="coerce")
     df["stats_from_prior_season"] = df["stats_from_prior_season"].fillna(False).astype(bool)
     df["stats_from_foreign_league"] = df["stats_from_foreign_league"].fillna(False).astype(bool)
+
+    # Discount per-90 output sourced from Serie B (foreign fallback).
+    # Performance in the cadetteria does not carry over 1:1 to Serie A — a
+    # weaker league — so its rendimiento metrics (vote, goals, assists) are
+    # scaled down. Minutes/presence are facts that hold regardless of tier and
+    # are left untouched.
+    if df["stats_from_foreign_league"].any():
+        in_serie_b = df["stats_from_foreign_league"] & (
+            df.get("foreign_league_name") == "Serie B"
+        )
+        if in_serie_b.any():
+            for col in _SERIE_B_DISCOUNT_COLS:
+                if col in df.columns:
+                    df.loc[in_serie_b, col] = df.loc[in_serie_b, col] * _SERIE_B_DISCOUNT
+            log.info(
+                "Discounted Serie B foreign stats (x%.2f) for %d player(s)",
+                _SERIE_B_DISCOUNT, int(in_serie_b.sum()),
+            )
 
     if df.empty:
         raise ValueError(

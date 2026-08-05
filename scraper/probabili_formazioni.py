@@ -226,6 +226,35 @@ def _extract_matchday(soup: BeautifulSoup) -> Optional[int]:
     return None
 
 
+def _log_scrape_summary(records: list[dict]) -> None:
+    """Log descriptive per-team / per-status / ID-extraction breakdown.
+
+    Keeps ``scrape`` focused on parsing; this diagnostic summary makes it easy
+    to spot a whole squad missing or a chunk of players whose URL yielded no
+    fantacalcio_id.
+    """
+    if not records:
+        return
+    per_team: dict[str, int] = {}
+    for rec in records:
+        team = rec.get("team") or "?"
+        per_team[team] = per_team.get(team, 0) + 1
+    log.info(
+        "Team breakdown: %s",
+        ", ".join(f"{t}={n}" for t, n in sorted(per_team.items(), key=lambda kv: kv[1], reverse=True)),
+    )
+    with_id = sum(1 for r in records if r.get("fantacalcio_id") is not None)
+    log.info(
+        "ID extraction: %d/%d records have a fantacalcio_id from the URL, %d need the name fallback.",
+        with_id, len(records), len(records) - with_id,
+    )
+    per_status: dict[str, int] = {}
+    for rec in records:
+        status = rec.get("status") or "?"
+        per_status[status] = per_status.get(status, 0) + 1
+    log.info("Status breakdown: %s", ", ".join(f"{s}={n}" for s, n in sorted(per_status.items())))
+
+
 def scrape(
     url: str = URL,
     matchday: Optional[int] = None,
@@ -278,6 +307,7 @@ def scrape(
         "Scraped %d player records from probabili formazioni (matchday %d, season %d).",
         len(records), matchday, season_start,
     )
+    _log_scrape_summary(records)
     return records
 
 
@@ -296,17 +326,21 @@ def persist(records: list[dict], db_url: str) -> int:
 
     engine = sa.create_engine(db_url)
     count = 0
+    skipped: list[dict] = []
+    resolved_by_name: list[dict] = []
     with engine.begin() as conn:
         season_start = next((rec["season_start"] for rec in records if rec.get("season_start") is not None), None)
         quotations = _load_quotations(conn, season_start) if season_start is not None else []
         for rec in records:
             fantacalcio_id = rec.get("fantacalcio_id")
+            used_name_fallback = False
             if fantacalcio_id is None:
                 fantacalcio_id = _match_fantacalcio_id(
                     rec.get("player_name", ""),
                     rec.get("team", ""),
                     quotations,
                 )
+                used_name_fallback = True
 
             if fantacalcio_id is None:
                 log.warning(
@@ -316,7 +350,11 @@ def persist(records: list[dict], db_url: str) -> int:
                     rec.get("matchday"),
                     rec.get("season_start"),
                 )
+                skipped.append(rec)
                 continue
+
+            if used_name_fallback:
+                resolved_by_name.append({"player": rec.get("player_name"), "team": rec.get("team"), "id": fantacalcio_id})
 
             conn.execute(
                 sa.text(_LINEUP_PLAYERS_SQL),
@@ -332,6 +370,26 @@ def persist(records: list[dict], db_url: str) -> int:
                 },
             )
             count += 1
+
+    # Descriptive summary so an operator can tell at a glance whether every
+    # scraped row made it into the DB, and which ones were recovered by the
+    # name fallback versus dropped entirely.
+    log.info(
+        "Persist summary: %d salvati, %d saltati (di %d totali nell'input).",
+        count, len(skipped), len(records),
+    )
+    if resolved_by_name:
+        log.info(
+            "Risolti via fallback per nome (%d): %s",
+            len(resolved_by_name),
+            ", ".join(f"{r['player']} -> {r['id']}" for r in resolved_by_name),
+        )
+    if skipped:
+        log.warning(
+            "Skip non risolti (%d): %s",
+            len(skipped),
+            ", ".join(f"{r.get('player_name')} ({r.get('team')})" for r in skipped),
+        )
     return count
 
 
