@@ -185,7 +185,7 @@ def test_mantra_players_endpoint_stima_asta_inflates_top_percentile(mantra_clien
     with patch("api.routers.mantra._load_mantra_results", return_value=payload):
         response = mantra_client.get(
             "/mantra/players",
-            params={"stima_asta": True, "num_partecipanti": 12},
+            params={"stima_asta": True, "num_partecipanti": 12, "budget": 500},
         )
 
     assert response.status_code == 200
@@ -217,6 +217,7 @@ def test_mantra_players_endpoint_role_group_override_diverges_from_global(mantra
             params={
                 "stima_asta": True,
                 "num_partecipanti": 20,
+                "budget": 500,
                 "override_ruolo_json": override,
             },
         )
@@ -235,7 +236,7 @@ def test_mantra_players_endpoint_rejects_unknown_role_group_in_override(mantra_c
     with patch("api.routers.mantra._load_mantra_results", return_value=payload):
         response = mantra_client.get(
             "/mantra/players",
-            params={"stima_asta": True, "num_partecipanti": 12, "override_ruolo_json": override},
+            params={"stima_asta": True, "num_partecipanti": 12, "budget": 500, "override_ruolo_json": override},
         )
 
     assert response.status_code == 400
@@ -246,7 +247,75 @@ def test_mantra_players_endpoint_rejects_invalid_override_json(mantra_client):
     with patch("api.routers.mantra._load_mantra_results", return_value=payload):
         response = mantra_client.get(
             "/mantra/players",
-            params={"stima_asta": True, "num_partecipanti": 12, "override_ruolo_json": "{not json"},
+            params={"stima_asta": True, "num_partecipanti": 12, "budget": 500, "override_ruolo_json": "{not json"},
         )
 
     assert response.status_code == 400
+
+
+def test_mantra_players_endpoint_requires_budget_for_stima(mantra_client):
+    payload = _mantra_payload()
+    with patch("api.routers.mantra._load_mantra_results", return_value=payload):
+        response = mantra_client.get(
+            "/mantra/players", params={"stima_asta": True, "num_partecipanti": 10}
+        )
+
+    assert response.status_code == 400
+
+
+def test_mantra_players_endpoint_exposes_cr_totali_and_budget_per_gruppo(mantra_client):
+    """cr_totali = budget * num_partecipanti; budget_per_gruppo splits it by
+    the COEFF_BASE-derived macro-role shares (same source as get_budget_overview)."""
+    from ml.mantra.config import MantraConfig
+
+    # Recompute the expected "attacco" share the same way the router does
+    # (COEFF_BASE for A/Pc, normalised over all 6 macro-group sums), without
+    # importing the router module a second time under a path pytest doesn't
+    # resolve the same way as the mantra_client fixture's own import.
+    coeff = MantraConfig().COEFF_BASE
+    gruppi = {
+        "portieri": ["Por"], "difesa": ["Dc", "B", "Dd", "Ds"], "ibridi": ["E", "M"],
+        "centro": ["C"], "fantasia": ["T", "W"], "attacco": ["A", "Pc"],
+    }
+    per_gruppo = {g: sum(coeff[r] for r in ruoli) for g, ruoli in gruppi.items()}
+    attacco_share = per_gruppo["attacco"] / sum(per_gruppo.values())
+
+    payload = _mantra_payload()
+    with patch("api.routers.mantra._load_mantra_results", return_value=payload):
+        response = mantra_client.get(
+            "/mantra/players",
+            params={"stima_asta": True, "num_partecipanti": 10, "budget": 500},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["cr_totali"] == 5000
+    assert body["budget_per_gruppo"]["attacco"] == pytest.approx(round(5000 * attacco_share, 2))
+
+
+def test_mantra_players_endpoint_role_group_budget_capacity_scales_ceiling(mantra_client):
+    """A role group whose listino value dwarfs its share of a tiny league
+    budget must have its inflation ceiling clamped down to the point of no
+    inflation at all; the same group with an ample league budget can exceed
+    the configured max_inflation_multiplier."""
+    payload = _mantra_payload()
+    payload["players"][0]["ruolo_primario"] = "A"
+    payload["players"][0]["Percentile_Ruolo"] = 1.0
+    payload["players"][0]["Prezzo_Massimo"] = 100.0
+
+    with patch("api.routers.mantra._load_mantra_results", return_value=payload):
+        low = mantra_client.get(
+            "/mantra/players",
+            params={"stima_asta": True, "num_partecipanti": 48, "budget": 1},
+        )
+        high = mantra_client.get(
+            "/mantra/players",
+            params={"stima_asta": True, "num_partecipanti": 48, "budget": 100000},
+        )
+
+    assert low.status_code == 200 and high.status_code == 200
+    low_alpha = next(p for p in low.json()["items"] if p["player_name"] == "Alpha")
+    high_alpha = next(p for p in high.json()["items"] if p["player_name"] == "Alpha")
+
+    assert low_alpha["Prezzo_Massimo"] == pytest.approx(100.0)
+    assert high_alpha["Prezzo_Massimo"] > 100.0 * 1.6

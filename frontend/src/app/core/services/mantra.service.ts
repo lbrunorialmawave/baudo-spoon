@@ -32,9 +32,11 @@ export class MantraService {
     sortDir?: string;
     page?: number;
     size?: number;
-    /** Applica la stima del prezzo d'asta invece della sola quotazione. Richiede numPartecipanti. */
+    /** Applica la stima del prezzo d'asta invece della sola quotazione. Richiede numPartecipanti e budget. */
     stimaAsta?: boolean;
     numPartecipanti?: number;
+    /** Crediti per manager — cr_totali di lega = budget * numPartecipanti. */
+    budget?: number;
     percentileSoglia?: number;
     tassoBase?: number;
     partecipantiBaseline?: number;
@@ -55,10 +57,11 @@ export class MantraService {
     if (opts.fantacalcioIds)    params = params.set('fantacalcio_ids', opts.fantacalcioIds.join(','));
     if (opts.sortBy)            params = params.set('sort_by', opts.sortBy);
     if (opts.sortDir)           params = params.set('sort_dir', opts.sortDir);
-    if (opts.stimaAsta && opts.numPartecipanti != null) {
+    if (opts.stimaAsta && opts.numPartecipanti != null && opts.budget != null) {
       params = params
         .set('stima_asta', true)
-        .set('num_partecipanti', opts.numPartecipanti);
+        .set('num_partecipanti', opts.numPartecipanti)
+        .set('budget', opts.budget);
       if (opts.percentileSoglia != null)      params = params.set('percentile_soglia', opts.percentileSoglia);
       if (opts.tassoBase != null)             params = params.set('tasso_base', opts.tassoBase);
       if (opts.partecipantiBaseline != null)  params = params.set('partecipanti_baseline', opts.partecipantiBaseline);

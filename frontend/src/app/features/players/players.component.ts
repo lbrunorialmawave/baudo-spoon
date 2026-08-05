@@ -126,6 +126,16 @@ import { PlayerDrawerComponent } from './components/player-drawer/player-drawer.
                    style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
                    type="number" min="1" placeholder="N. partecipanti"
                    [ngModel]="numPartecipanti()" (ngModelChange)="numPartecipanti.set($event)" />
+            <input class="rounded-lg border px-3 py-1.5 text-sm outline-none w-36"
+                   style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
+                   type="number" min="1" placeholder="Budget a manager"
+                   [ngModel]="budget()" (ngModelChange)="budget.set($event)" />
+            @if (numPartecipanti() != null && budget() != null) {
+              <span class="text-xs" style="color:var(--color-text-secondary)"
+                    title="Crediti totali di lega = budget a manager × numero partecipanti">
+                Crediti totali lega: <strong style="color:var(--color-text-primary)">{{ numPartecipanti()! * budget()! }}</strong>
+              </span>
+            }
             <button class="rounded-lg border px-2.5 py-1 text-xs font-medium"
                     style="border-color:var(--color-border);color:var(--color-text-secondary)"
                     (click)="showRoleOverrides.set(!showRoleOverrides())">
@@ -156,6 +166,9 @@ import { PlayerDrawerComponent } from './components/player-drawer/player-drawer.
                   <th class="px-3 py-2 text-left font-medium" title="Moltiplicatore massimo applicabile al prezzo di listino">
                     Moltiplicatore max <span class="opacity-60">(×)</span>
                   </th>
+                  <th class="px-3 py-2 text-left font-medium" title="Quota dei crediti totali di lega assegnata a questo gruppo, in base ai coefficienti di ruolo MANTRA">
+                    Budget gruppo
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -179,6 +192,9 @@ import { PlayerDrawerComponent } from './components/player-drawer/player-drawer.
                              type="number" min="1" step="0.1"
                              [ngModel]="roleOverrides()[g.slug].moltiplicatoreMax"
                              (ngModelChange)="updateRoleOverride(g.slug, 'moltiplicatoreMax', $event)" />
+                    </td>
+                    <td class="px-3 py-1.5" style="color:var(--color-text-secondary)">
+                      {{ budgetPerGruppo()?.[g.slug] != null ? (budgetPerGruppo()![g.slug] | number:'1.0-0') + ' cr' : '—' }}
                     </td>
                   </tr>
                 }
@@ -291,9 +307,13 @@ export class PlayersComponent {
   readonly priceMax = signal<number | null>(null);
   readonly stimaAstaEnabled = signal(false);
   readonly numPartecipanti = signal<number | null>(null);
+  /** Crediti per manager — cr_totali di lega = budget * numPartecipanti. */
+  readonly budget = signal<number | null>(500);
   /** Riflette se l'ultima risposta del backend ha applicato la stima (può
    * essere false anche con stimaAstaEnabled=true finché numPartecipanti è vuoto). */
   readonly stimaAstaActive = signal(false);
+  /** Quota di cr_totali per macro-gruppo di ruolo, dall'ultima risposta del backend. */
+  readonly budgetPerGruppo = signal<Record<string, number> | null>(null);
   /** Mostra il pannello con le impostazioni avanzate per gruppo di ruolo. */
   readonly showRoleOverrides = signal(false);
   readonly roleOverrides = signal<Record<string, { percentileSoglia: number; tassoBase: number; moltiplicatoreMax: number }>>(
@@ -367,6 +387,7 @@ export class PlayersComponent {
         this.matchdayStatusMap(),
         this.stimaAstaEnabled(),
         this.numPartecipanti(),
+        this.budget(),
         this.roleOverrides(),
       ]);
       const filtersChanged = signature !== this.lastFilterSignature;
@@ -414,7 +435,7 @@ export class PlayersComponent {
           .map((mds: any) => mds.fantacalcio_id)
       : undefined;
 
-    const stimaAsta = this.stimaAstaEnabled() && this.numPartecipanti() != null;
+    const stimaAsta = this.stimaAstaEnabled() && this.numPartecipanti() != null && this.budget() != null;
 
     this.mantraService.listPlayers({
       ruolo: this.selectedRuolo() || undefined,
@@ -430,12 +451,14 @@ export class PlayersComponent {
       size: this.pageSize,
       stimaAsta,
       numPartecipanti: stimaAsta ? this.numPartecipanti()! : undefined,
+      budget: stimaAsta ? this.budget()! : undefined,
       overrideRuolo: stimaAsta ? this.roleOverrides() : undefined,
     }).subscribe({
       next: (res) => {
         this.mantraPlayers.set(res.items);
         this.total.set(res.total);
         this.stimaAstaActive.set(res.stima_asta_attiva ?? false);
+        this.budgetPerGruppo.set(res.budget_per_gruppo ?? null);
         this.loading.set(false);
       },
       error: (e) => {
@@ -505,6 +528,8 @@ export class PlayersComponent {
     this.activeQuickFilter.set(null);
     this.stimaAstaEnabled.set(false);
     this.numPartecipanti.set(null);
+    this.budget.set(500);
+    this.budgetPerGruppo.set(null);
     this.showRoleOverrides.set(false);
     this.roleOverrides.set(PlayersComponent.defaultRoleOverrides());
   };

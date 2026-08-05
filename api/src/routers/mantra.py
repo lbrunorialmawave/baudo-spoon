@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import ORJSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ml.mantra.config import MantraConfig
 from ml.storage.artifact_store import ArtifactStore, R2Config
 
 from ..config import settings
@@ -49,6 +50,24 @@ RUOLO_MACRO_GRUPPO: dict[str, str] = {
     "A": "attacco", "Pc": "attacco",
 }
 RUOLO_MACRO_GRUPPI_VALIDI = frozenset(RUOLO_MACRO_GRUPPO.values())
+
+
+def _compute_role_group_budget_share() -> dict[str, float]:
+    """Quota di budget di lega per macro-gruppo di ruolo, derivata da
+    ``MantraConfig.COEFF_BASE`` (già usato altrove per pesare P3 per ruolo),
+    normalizzata a somma 1 sui 6 gruppi. Riusa un coefficiente esistente nel
+    progetto invece di inventare percentuali nuove."""
+    cfg = MantraConfig()
+    per_gruppo: dict[str, float] = {}
+    for ruolo, coeff in cfg.COEFF_BASE.items():
+        gruppo = RUOLO_MACRO_GRUPPO.get(ruolo)
+        if gruppo:
+            per_gruppo[gruppo] = per_gruppo.get(gruppo, 0.0) + coeff
+    totale = sum(per_gruppo.values())
+    return {g: c / totale for g, c in per_gruppo.items()} if totale > 0 else {}
+
+
+RUOLO_MACRO_GRUPPO_BUDGET_SHARE: dict[str, float] = _compute_role_group_budget_share()
 
 # Unica porta d'ingresso R2/disco locale per questo router. Lazy-init:
 # costruita al primo utilizzo con le Settings correnti. Tutta la I/O R2
@@ -176,6 +195,9 @@ async def list_mantra_players(
     num_partecipanti: Optional[int] = Query(
         None, ge=1, description="Numero partecipanti alla lega (richiesto se stima_asta=True)"
     ),
+    budget: Optional[int] = Query(
+        None, ge=1, description="Budget crediti per manager (richiesto se stima_asta=True; cr_totali = budget * num_partecipanti)"
+    ),
     percentile_soglia: float = Query(0.7, ge=0.0, le=1.0),
     tasso_base: float = Query(0.05, ge=0.0),
     partecipanti_baseline: int = Query(8, ge=1),
@@ -195,6 +217,11 @@ async def list_mantra_players(
         raise HTTPException(
             status_code=400,
             detail="num_partecipanti è richiesto quando stima_asta=True",
+        )
+    if stima_asta and budget is None:
+        raise HTTPException(
+            status_code=400,
+            detail="budget è richiesto quando stima_asta=True",
         )
 
     ruolo_overrides: dict[str, dict[str, float]] = {}
@@ -250,25 +277,55 @@ async def list_mantra_players(
     # `_load_mantra_results`) usando lo stesso modello percentile +
     # partecipanti già usato da ml.optimizer/ml.auction. Applicata prima del
     # filtro min_price/max_price così quest'ultimo lavora sul valore stimato.
+    cr_totali: int | None = None
+    budget_per_gruppo: dict[str, float] = {}
+    fattore_capienza_per_gruppo: dict[str, float] = {}
     if stima_asta:
         from ml.optimizer.inflation import InflationConfig, inflation_multiplier
+
+        cr_totali = budget * num_partecipanti  # type: ignore[operator]
+
+        # Capienza di budget per gruppo di ruolo: quanto budget di lega è
+        # assegnato al gruppo (cr_totali * quota COEFF_BASE) rispetto a
+        # quanto costerebbero a listino i giocatori di quel gruppo. Calcolato
+        # sull'INTERO pool (non filtrato/paginato) così non dipende da ruolo/
+        # team/search applicati alla richiesta corrente. Non ripartiamo il
+        # budget per-giocatore (diluirebbe troppo i top player: vedi es.
+        # Calhanoglu, prezzo reale 27 contro media di ruolo ~5) — usiamo
+        # invece questo rapporto per scalare il tetto (moltiplicatore max)
+        # applicato dal modello percentile+partecipanti già esistente.
+        somma_listino_per_gruppo: dict[str, float] = {}
+        for p in data.get("players", []):
+            gruppo = RUOLO_MACRO_GRUPPO.get(p.get("ruolo_primario") or "")
+            if gruppo:
+                somma_listino_per_gruppo[gruppo] = (
+                    somma_listino_per_gruppo.get(gruppo, 0.0) + (p.get("Prezzo_Massimo") or 0.0)
+                )
+        for gruppo, quota in RUOLO_MACRO_GRUPPO_BUDGET_SHARE.items():
+            budget_per_gruppo[gruppo] = round(cr_totali * quota, 2)
+            somma_listino = somma_listino_per_gruppo.get(gruppo, 0.0)
+            capienza = budget_per_gruppo[gruppo] / max(somma_listino, 1.0)
+            fattore_capienza_per_gruppo[gruppo] = min(2.0, max(0.5, capienza))
 
         # Una InflationConfig per gruppo di ruolo (al più 6), costruita pigramente
         # e riusata per tutti i giocatori dello stesso gruppo. partecipanti_baseline
         # non è overridabile per gruppo: la competizione dipende dalla lega intera,
-        # non dal singolo ruolo.
+        # non dal singolo ruolo. Il moltiplicatore massimo è scalato dalla
+        # capienza di budget del gruppo (sopra) prima di essere applicato.
         cfg_per_gruppo: dict[str | None, InflationConfig] = {}
 
         def _cfg_per_ruolo(ruolo_primario: str | None) -> InflationConfig:
             gruppo = RUOLO_MACRO_GRUPPO.get(ruolo_primario or "")
             if gruppo not in cfg_per_gruppo:
                 ov = ruolo_overrides.get(gruppo, {}) if gruppo else {}
+                capienza = fattore_capienza_per_gruppo.get(gruppo, 1.0) if gruppo else 1.0
+                max_mult_base = ov.get("moltiplicatore_max", moltiplicatore_max)
                 try:
                     cfg_per_gruppo[gruppo] = InflationConfig(
                         inflation_percentile_threshold=ov.get("percentile_soglia", percentile_soglia),
                         base_inflation_rate=ov.get("tasso_base", tasso_base),
                         baseline_participants=partecipanti_baseline,
-                        max_inflation_multiplier=ov.get("moltiplicatore_max", moltiplicatore_max),
+                        max_inflation_multiplier=max(1.0, max_mult_base * capienza),
                     )
                 except ValueError as e:
                     raise HTTPException(status_code=400, detail=f"override_ruolo_json non valido per {gruppo!r}: {e}")
@@ -316,6 +373,8 @@ async def list_mantra_players(
         "size": size,
         "items": items,
         "stima_asta_attiva": stima_asta,
+        "cr_totali": cr_totali,
+        "budget_per_gruppo": budget_per_gruppo or None,
         "meta": data.get("meta"),
     })
 

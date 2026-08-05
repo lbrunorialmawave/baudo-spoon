@@ -40,6 +40,10 @@ export interface MantraPlayersResponse {
   items: MantraPlayer[];
   /** True quando Prezzo_Massimo riflette la stima d'asta invece della sola quotazione. */
   stima_asta_attiva?: boolean;
+  /** Crediti totali di lega (budget * numPartecipanti), presente solo con stima_asta attiva. */
+  cr_totali?: number | null;
+  /** Quota di cr_totali per macro-gruppo di ruolo (portieri/difesa/ibridi/centro/fantasia/attacco). */
+  budget_per_gruppo?: Record<string, number> | null;
   meta?: {
     season_start: number;
     generated_at: string;
