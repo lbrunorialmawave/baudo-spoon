@@ -14,6 +14,9 @@ import {
   MultiStrategyResult,
   OptimizationRequest,
   OptimizationResult,
+  ParetoPoint,
+  ParetoResponse,
+  SensitivityResponse,
   SquadPlayer,
   StrategyProfile,
 } from '../../core/models/api.models';
@@ -215,6 +218,14 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
       { label: '0.0', value: 'VAR disattivato (default)' },
       { label: '0.25–0.35', value: 'blend moderato' },
       { label: '1.0', value: 'obiettivo interamente VAR' },
+    ],
+  },
+  hybridBlend: {
+    description: 'Peso in [0,1] del segnale MANTRA-ibrido (fpIbrido) nella funzione obiettivo CLASSIC, stessa forma di varBlend. 0 = disattivato (default). Richiede artefatto mantra_ibrido; i giocatori senza match mantengono lo score base.',
+    examples: [
+      { label: '0.0', value: 'off — comportamento legacy (default)' },
+      { label: '0.3–0.5', value: 'blend moderato con pilastri MANTRA' },
+      { label: '0.8–1.0', value: 'forte peso su fpIbrido' },
     ],
   },
   esvWeight: {
@@ -637,6 +648,17 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                 [description]="OPTIMIZER_LEGENDS['esvWeight'].description"
                 [examples]="OPTIMIZER_LEGENDS['esvWeight'].examples" />
             </div>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label" for="opt-hybridBlend">Hybrid blend <span class="field-hint">(1−w)×metric + w×fpIbrido MANTRA</span></label>
+            <input id="opt-hybridBlend" class="field-input" type="number" min="0" max="1" step="0.1"
+                   [(ngModel)]="hybridBlend"
+                   [attr.aria-describedby]="'legend-hybridBlend'" />
+            <app-field-legend
+              fieldId="legend-hybridBlend"
+              [description]="OPTIMIZER_LEGENDS['hybridBlend'].description"
+              [examples]="OPTIMIZER_LEGENDS['hybridBlend'].examples" />
           </div>
 
           <!-- VAR/ESV ADVANCED -->
@@ -1066,8 +1088,219 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
             }
           }
         </section>
-
       </div>
+
+      <!-- ── Analysis tools (Sensitivity / Pareto) ─────────── -->
+      <section class="analysis-panel" aria-label="Analisi avanzata">
+        <div class="analysis-header">
+          <div>
+            <h2 class="analysis-title">Analisi avanzata</h2>
+            <p class="analysis-subtitle">
+              Sensitivity e Pareto usano la config corrente con una sola strategia (la prima selezionata).
+              Non sostituiscono l’ottimizzazione multi-strategia.
+            </p>
+          </div>
+          <div class="analysis-tabs" role="tablist" aria-label="Tipo di analisi">
+            <button type="button" role="tab"
+                    class="analysis-tab"
+                    [class.active]="analysisTab() === 'sensitivity'"
+                    [attr.aria-selected]="analysisTab() === 'sensitivity'"
+                    (click)="analysisTab.set('sensitivity')">
+              Sensitivity
+            </button>
+            <button type="button" role="tab"
+                    class="analysis-tab"
+                    [class.active]="analysisTab() === 'pareto'"
+                    [attr.aria-selected]="analysisTab() === 'pareto'"
+                    (click)="analysisTab.set('pareto')">
+              Pareto frontier
+            </button>
+          </div>
+        </div>
+
+        @if (analysisTab() === 'sensitivity') {
+          <div class="analysis-body" role="tabpanel">
+            <div class="analysis-actions">
+              <button type="button" class="run-btn run-btn--secondary"
+                      (click)="runSensitivity()"
+                      [disabled]="analysisRunning() || !canRun()">
+                @if (analysisRunning() && analysisTab() === 'sensitivity') {
+                  <span class="spinner"></span> Calcolo sensitivity…
+                } @else {
+                  Esegui sensitivity
+                }
+              </button>
+              <p class="muted analysis-hint">
+                Sweep one-at-a-time su risk aversion, VAR blend, hybrid blend e budget rispetto al baseline.
+              </p>
+            </div>
+            @if (analysisError() && analysisTab() === 'sensitivity') {
+              <app-error-boundary title="Errore sensitivity" [message]="analysisError()!" />
+            }
+            @if (sensitivityResult(); as sens) {
+              <div class="sens-baseline card">
+                <div class="stat-card">
+                  <span class="stat-label">Baseline status</span>
+                  <span class="stat-value">{{ sens.baselineStatus }}</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-label">Score baseline</span>
+                  <span class="stat-value">{{ sens.baselineTotalScore | number:'1.2-2' }}</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-label">Rosa size</span>
+                  <span class="stat-value">{{ sens.baselineSquadSize }}</span>
+                </div>
+              </div>
+              @if (sens.warnings?.length) {
+                <ul class="warnings-list" role="status">
+                  @for (w of sens.warnings; track w) {
+                    <li>{{ w }}</li>
+                  }
+                </ul>
+              }
+              @for (param of sens.parameters; track param.parameter) {
+                <div class="sens-param card">
+                  <h3 class="sens-param__title">{{ paramLabel(param.parameter) }}</h3>
+                  <div class="squad-table-wrap">
+                    <table class="squad-table sens-table">
+                      <thead>
+                        <tr>
+                          <th>Valore</th>
+                          <th>Status</th>
+                          <th class="num">Score</th>
+                          <th class="num">Δ score</th>
+                          <th class="num">Δ %</th>
+                          <th class="num hide-sm">Jaccard</th>
+                          <th class="num hide-sm">Changed</th>
+                          <th class="hide-sm">Δ bar</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (pt of param.points; track pt.value) {
+                          <tr [class.sens-row--baseline]="pt.scoreDelta === 0">
+                            <td>{{ pt.value | number:'1.2-2' }}</td>
+                            <td><span class="status-chip">{{ pt.status }}</span></td>
+                            <td class="num">{{ pt.totalScore | number:'1.2-2' }}</td>
+                            <td class="num" [class.delta-pos]="pt.scoreDelta > 0" [class.delta-neg]="pt.scoreDelta < 0">
+                              {{ pt.scoreDelta | number:'1.2-2' }}
+                            </td>
+                            <td class="num" [class.delta-pos]="pt.scoreDeltaPct > 0" [class.delta-neg]="pt.scoreDeltaPct < 0">
+                              {{ pt.scoreDeltaPct | number:'1.1-1' }}%
+                            </td>
+                            <td class="num hide-sm">{{ pt.jaccardVsBaseline | number:'1.2-2' }}</td>
+                            <td class="num hide-sm">{{ pt.playersChanged }}</td>
+                            <td class="hide-sm">
+                              <div class="delta-bar" aria-hidden="true">
+                                <div class="delta-bar__fill"
+                                     [class.delta-bar__fill--pos]="pt.scoreDeltaPct >= 0"
+                                     [class.delta-bar__fill--neg]="pt.scoreDeltaPct < 0"
+                                     [style.width.%]="deltaBarWidth(pt.scoreDeltaPct)"></div>
+                              </div>
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              }
+            } @else if (!analysisRunning()) {
+              <div class="results-placeholder analysis-empty">
+                <p class="placeholder-text">Avvia lo sweep per vedere come score e composizione rosa reagiscono ai parametri.</p>
+              </div>
+            }
+          </div>
+        }
+
+        @if (analysisTab() === 'pareto') {
+          <div class="analysis-body" role="tabpanel">
+            <div class="analysis-actions">
+              <button type="button" class="run-btn run-btn--secondary"
+                      (click)="runPareto()"
+                      [disabled]="analysisRunning() || !canRun()">
+                @if (analysisRunning() && analysisTab() === 'pareto') {
+                  <span class="spinner"></span> Calcolo Pareto…
+                } @else {
+                  Esegui Pareto frontier
+                }
+              </button>
+              <p class="muted analysis-hint">
+                Frontiera score vs rischio (risk λ) e P(asta fattibile). I punti non dominati formano la frontier.
+              </p>
+            </div>
+            @if (analysisError() && analysisTab() === 'pareto') {
+              <app-error-boundary title="Errore Pareto" [message]="analysisError()!" />
+            }
+            @if (paretoResult(); as pr) {
+              @if (pr.warnings?.length) {
+                <ul class="warnings-list" role="status">
+                  @for (w of pr.warnings; track w) {
+                    <li>{{ w }}</li>
+                  }
+                </ul>
+              }
+              <div class="pareto-layout">
+                <div class="pareto-chart card" aria-label="Scatter score vs risk">
+                  <svg class="pareto-svg" viewBox="0 0 320 220" role="img" aria-label="Pareto scatter plot">
+                    <line x1="40" y1="10" x2="40" y2="190" class="pareto-axis" />
+                    <line x1="40" y1="190" x2="310" y2="190" class="pareto-axis" />
+                    <text x="8" y="20" class="pareto-axis-label">Score</text>
+                    <text x="280" y="208" class="pareto-axis-label">Risk</text>
+                    @for (pt of pr.points; track pt.riskLambda) {
+                      <circle
+                        [attr.cx]="paretoX(pt, pr.points)"
+                        [attr.cy]="paretoY(pt, pr.points)"
+                        [attr.r]="pt.dominated ? 4 : 6"
+                        [class.pareto-dot--frontier]="!pt.dominated"
+                        [class.pareto-dot--dominated]="pt.dominated"
+                        [attr.title]="'λ=' + pt.riskLambda + ' score=' + pt.score" />
+                    }
+                  </svg>
+                  <div class="pareto-legend">
+                    <span class="pareto-legend__item"><i class="pareto-dot--frontier-swatch"></i> Frontier</span>
+                    <span class="pareto-legend__item"><i class="pareto-dot--dominated-swatch"></i> Dominated</span>
+                  </div>
+                </div>
+                <div class="squad-table-wrap card">
+                  <table class="squad-table">
+                    <thead>
+                      <tr>
+                        <th>λ risk</th>
+                        <th>Status</th>
+                        <th class="num">Score</th>
+                        <th class="num">Risk</th>
+                        <th class="num hide-sm">P(asta)</th>
+                        <th class="num hide-sm">Size</th>
+                        <th>Frontier</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (pt of pr.points; track pt.riskLambda) {
+                        <tr [class.pareto-row--frontier]="!pt.dominated">
+                          <td>{{ pt.riskLambda | number:'1.2-2' }}</td>
+                          <td><span class="status-chip">{{ pt.status }}</span></td>
+                          <td class="num">{{ pt.score | number:'1.2-2' }}</td>
+                          <td class="num">{{ pt.risk | number:'1.2-2' }}</td>
+                          <td class="num hide-sm">
+                            {{ pt.winProbability != null ? (pt.winProbability | percent:'1.0-0') : '—' }}
+                          </td>
+                          <td class="num hide-sm">{{ pt.squadSize }}</td>
+                          <td>{{ pt.dominated ? '—' : '✓' }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            } @else if (!analysisRunning()) {
+              <div class="results-placeholder analysis-empty">
+                <p class="placeholder-text">Calcola la frontiera per confrontare trade-off score / rischio / fattibilità d’asta.</p>
+              </div>
+            }
+          </div>
+        }
+      </section>
     </div>
 
     @if (selectedPlayer(); as p) {
@@ -1422,6 +1655,152 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
     .muted { color: var(--color-text-secondary, #a1a1aa); font-size: 0.8125rem; }
     .job-hint { margin: 8px 0 0; }
 
+    /* ── Analysis panel (Sensitivity / Pareto) ─────────────── */
+    .analysis-panel {
+      margin-top: 16px;
+      padding: 16px;
+      border-top: 1px solid var(--color-border);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .analysis-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .analysis-title {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 650;
+      color: var(--color-text-primary);
+    }
+    .analysis-subtitle {
+      margin: 4px 0 0;
+      font-size: 12px;
+      color: var(--color-text-secondary);
+      max-width: 520px;
+      line-height: 1.4;
+    }
+    .analysis-tabs {
+      display: inline-flex;
+      gap: 4px;
+      padding: 3px;
+      border-radius: 8px;
+      background: var(--color-surface-raised, var(--color-bg));
+      border: 1px solid var(--color-border);
+    }
+    .analysis-tab {
+      padding: 6px 12px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--color-text-secondary);
+      cursor: pointer;
+      min-height: 32px;
+    }
+    .analysis-tab.active {
+      background: var(--color-surface);
+      color: var(--color-text-primary);
+      box-shadow: 0 0 0 1px var(--color-border);
+    }
+    .analysis-body { display: flex; flex-direction: column; gap: 12px; }
+    .analysis-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+    }
+    .run-btn--secondary {
+      width: auto;
+      min-width: 160px;
+      background: transparent;
+      color: var(--color-text-primary);
+      border: 1px solid var(--color-border);
+    }
+    .run-btn--secondary:not(:disabled):hover {
+      border-color: var(--color-accent);
+      opacity: 1;
+    }
+    .analysis-hint { margin: 0; max-width: 420px; }
+    .analysis-empty { min-height: 120px; }
+    .sens-baseline {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px;
+      padding: 12px;
+    }
+    .sens-param { padding: 12px; }
+    .sens-param__title {
+      margin: 0 0 8px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .sens-table { min-width: 640px; }
+    .sens-row--baseline { background: color-mix(in srgb, var(--color-accent) 6%, transparent); }
+    .delta-pos { color: #16a34a; }
+    .delta-neg { color: #dc2626; }
+    .delta-bar {
+      height: 6px;
+      width: 72px;
+      background: var(--color-border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .delta-bar__fill { height: 100%; border-radius: 3px; }
+    .delta-bar__fill--pos { background: #16a34a; }
+    .delta-bar__fill--neg { background: #dc2626; }
+    .status-chip {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      border: 1px solid var(--color-border);
+      color: var(--color-text-secondary);
+    }
+    .warnings-list {
+      margin: 0;
+      padding-left: 18px;
+      font-size: 12px;
+      color: var(--color-text-secondary);
+    }
+    .pareto-layout {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+    @media (min-width: 900px) {
+      .pareto-layout { grid-template-columns: minmax(280px, 340px) 1fr; }
+    }
+    .pareto-chart { padding: 12px; }
+    .pareto-svg { width: 100%; height: auto; display: block; }
+    .pareto-axis { stroke: var(--color-border); stroke-width: 1; }
+    .pareto-axis-label {
+      fill: var(--color-text-secondary);
+      font-size: 10px;
+    }
+    .pareto-dot--frontier { fill: var(--color-accent, #6366f1); }
+    .pareto-dot--dominated { fill: var(--color-text-secondary); opacity: 0.45; }
+    .pareto-legend {
+      display: flex;
+      gap: 12px;
+      margin-top: 8px;
+      font-size: 11px;
+      color: var(--color-text-secondary);
+    }
+    .pareto-legend__item { display: inline-flex; align-items: center; gap: 6px; }
+    .pareto-dot--frontier-swatch,
+    .pareto-dot--dominated-swatch {
+      width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+    }
+    .pareto-dot--frontier-swatch { background: var(--color-accent, #6366f1); }
+    .pareto-dot--dominated-swatch { background: var(--color-text-secondary); opacity: 0.45; }
+    .pareto-row--frontier { background: color-mix(in srgb, var(--color-accent) 6%, transparent); }
+
   `],
 })
 export class OptimizerComponent {
@@ -1494,6 +1873,7 @@ export class OptimizerComponent {
   readonly nearOptimalEnabled = signal(false);
 
   readonly varBlend = signal(0.0);
+  readonly hybridBlend = signal(0.0);
   readonly esvWeight = signal(0.0);
   readonly valuationMode = signal<'PER_MATCH_RATING' | 'SEASON_VALUE'>('PER_MATCH_RATING');
   readonly minStartProbability = signal<number | null>(null);
@@ -1517,6 +1897,13 @@ export class OptimizerComponent {
   readonly error = signal<string | null>(null);
   readonly results = signal<MultiStrategyResult | null>(null);
   readonly activeStrategy = signal<string>('');
+
+  // ── Analysis tools (Sensitivity / Pareto) ─────────────
+  readonly analysisTab = signal<'sensitivity' | 'pareto'>('sensitivity');
+  readonly analysisRunning = signal(false);
+  readonly analysisError = signal<string | null>(null);
+  readonly sensitivityResult = signal<SensitivityResponse | null>(null);
+  readonly paretoResult = signal<ParetoResponse | null>(null);
 
   readonly resultKeys = computed(() => Object.keys(this.results()?.results ?? {}));
   /** Top-level or per-strategy MC summary from last multi response. */
@@ -1644,6 +2031,7 @@ export class OptimizerComponent {
     }
 
     if (req.varBlend != null) this.varBlend.set(req.varBlend);
+    if (req.hybridBlend != null) this.hybridBlend.set(req.hybridBlend);
     if (req.esvWeight != null) this.esvWeight.set(req.esvWeight);
     if (req.valuationMode === 'PER_MATCH_RATING' || req.valuationMode === 'SEASON_VALUE') {
       this.valuationMode.set(req.valuationMode);
@@ -1875,6 +2263,7 @@ export class OptimizerComponent {
         ? { enabled: true, nAlternatives: 3, excludeTopM: 2, maxScoreDropPct: 0.15 }
         : undefined,
       varBlend: this.varBlend(),
+      hybridBlend: this.hybridBlend(),
       esvWeight: this.esvWeight(),
       valuationMode: this.valuationMode(),
       minStartProbability: this.minStartProbability(),
@@ -1884,7 +2273,109 @@ export class OptimizerComponent {
     };
   }
 
-    setCustomWeight(role: string, value: number): void {
+  /**
+   * Analysis endpoints require exactly one strategy. Prefer the single selected
+   * strategy, otherwise fall back to BALANCED (or the first selected).
+   */
+  private _buildAnalysisRequest(): OptimizationRequest {
+    const base = this._buildRequest();
+    const name = this._resolveStrategyName(base);
+    if (this.showCustomWeights()) {
+      const customs = this._buildCustomStrategies();
+      return {
+        ...base,
+        strategyNames: null,
+        customStrategies: customs.length ? [customs[0]] : [{
+          name,
+          roleWeight: { ...this.customWeights() },
+          minBudgetShareByRoles: null,
+          maxTopTierPlayers: null,
+          topTierCostThreshold: null,
+        }],
+        // Sensitivity/Pareto are deterministic sweeps — drop MC noise.
+        monteCarlo: undefined,
+        nearOptimal: undefined,
+      };
+    }
+    return {
+      ...base,
+      strategyNames: [name],
+      customStrategies: null,
+      monteCarlo: undefined,
+      nearOptimal: undefined,
+    };
+  }
+
+  runSensitivity(): void {
+    if (!this.canRun() || this.analysisRunning()) return;
+    this.analysisRunning.set(true);
+    this.analysisError.set(null);
+    const req = this._buildAnalysisRequest();
+    this.optimizerService.runSensitivity(req).pipe(
+      takeUntilDestroyed(this.destroyRef),
+      catchError(err => {
+        const detail = err?.error?.detail ?? err?.message ?? 'Sensitivity request failed';
+        this.analysisError.set(typeof detail === 'string' ? detail : JSON.stringify(detail));
+        return of(null);
+      }),
+      finalize(() => this.analysisRunning.set(false)),
+    ).subscribe(res => {
+      if (res) this.sensitivityResult.set(res);
+    });
+  }
+
+  runPareto(): void {
+    if (!this.canRun() || this.analysisRunning()) return;
+    this.analysisRunning.set(true);
+    this.analysisError.set(null);
+    const req = this._buildAnalysisRequest();
+    this.optimizerService.runPareto(req).pipe(
+      takeUntilDestroyed(this.destroyRef),
+      catchError(err => {
+        const detail = err?.error?.detail ?? err?.message ?? 'Pareto request failed';
+        this.analysisError.set(typeof detail === 'string' ? detail : JSON.stringify(detail));
+        return of(null);
+      }),
+      finalize(() => this.analysisRunning.set(false)),
+    ).subscribe(res => {
+      if (res) this.paretoResult.set(res);
+    });
+  }
+
+  paramLabel(parameter: string): string {
+    const map: Record<string, string> = {
+      risk_aversion: 'Risk aversion',
+      var_blend: 'VAR blend',
+      hybrid_blend: 'Hybrid blend',
+      budget: 'Budget',
+    };
+    return map[parameter] ?? parameter;
+  }
+
+  /** Map Δ% into a 0–100 bar width (capped). */
+  deltaBarWidth(pct: number): number {
+    const abs = Math.min(Math.abs(pct), 25);
+    return (abs / 25) * 100;
+  }
+
+  paretoX(pt: ParetoPoint, points: ParetoPoint[]): number {
+    const risks = points.map(p => p.risk);
+    const min = Math.min(...risks);
+    const max = Math.max(...risks);
+    const span = max - min || 1;
+    return 40 + ((pt.risk - min) / span) * 260;
+  }
+
+  paretoY(pt: ParetoPoint, points: ParetoPoint[]): number {
+    const scores = points.map(p => p.score);
+    const min = Math.min(...scores);
+    const max = Math.max(...scores);
+    const span = max - min || 1;
+    // SVG y grows downward
+    return 190 - ((pt.score - min) / span) * 170;
+  }
+
+  setCustomWeight(role: string, value: number): void {
     this.customWeights.update(w => ({ ...w, [role]: +value }));
   }
 

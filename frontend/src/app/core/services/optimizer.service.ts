@@ -9,6 +9,8 @@ import {
   OptimizationResult,
   OptimizeJobCreateResponse,
   OptimizeJobStatus,
+  ParetoResponse,
+  SensitivityResponse,
 } from '../models/api.models';
 
 /**
@@ -17,6 +19,8 @@ import {
  * Contract notes (FAANG-style):
  * - Deterministic path is the default (omit monteCarlo / enabled=false).
  * - SAA with large N should prefer createJob + pollJobStatus over runMulti.
+ * - Sensitivity / Pareto are opt-in analysis endpoints: same OptimizationRequest
+ *   body, but require exactly one strategy (strategyNames or customStrategies).
  * - All request/response field names are camelCase (backend _CamelModel).
  */
 @Injectable({ providedIn: 'root' })
@@ -57,5 +61,21 @@ export class OptimizerService {
 
   pollJobStatus(jobId: string): Observable<OptimizeJobStatus> {
     return this.http.get<OptimizeJobStatus>(`${this.baseUrl}/optimize/jobs/${jobId}`);
+  }
+
+  /**
+   * One-at-a-time sensitivity sweep (risk_aversion, var_blend, hybrid_blend, budget)
+   * around the request baseline. Backend requires exactly one strategy entry.
+   */
+  runSensitivity(req: OptimizationRequest): Observable<SensitivityResponse> {
+    return this.http.post<SensitivityResponse>(`${this.baseUrl}/optimize/sensitivity`, req);
+  }
+
+  /**
+   * Score vs risk Pareto frontier for the baseline strategy.
+   * Backend requires exactly one strategy entry.
+   */
+  runPareto(req: OptimizationRequest): Observable<ParetoResponse> {
+    return this.http.post<ParetoResponse>(`${this.baseUrl}/optimize/pareto`, req);
   }
 }

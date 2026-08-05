@@ -133,6 +133,11 @@ export interface OptimizationRequest {
   riskAversion?: number;
   varBlend?: number;
   esvWeight?: number;
+  /**
+   * 0 (default) = disabled. >0 blends MANTRA-ibrido fpIbrido into the CLASSIC
+   * objective with the same shape as varBlend. Requires mantra_ibrido artifact.
+   */
+  hybridBlend?: number;
   valuationMode?: 'PER_MATCH_RATING' | 'SEASON_VALUE';
   minStartProbability?: number | null;
   replacementMethod?: 'percentile' | 'roster_depth';
@@ -271,6 +276,47 @@ export interface StrategyProfile {
 
 export interface DefaultStrategiesResponse {
   strategies: StrategyProfile[];
+}
+
+// ── Sensitivity analysis (POST /optimize/sensitivity) ───────
+export interface SensitivityPoint {
+  value: number;
+  status: string;
+  totalScore: number;
+  scoreDelta: number;
+  scoreDeltaPct: number;
+  jaccardVsBaseline: number;
+  playersChanged: number;
+}
+
+export interface ParameterSensitivity {
+  parameter: string;
+  points: SensitivityPoint[];
+}
+
+export interface SensitivityResponse {
+  baselineStatus: string;
+  baselineTotalScore: number;
+  baselineSquadSize: number;
+  parameters: ParameterSensitivity[];
+  warnings: string[];
+}
+
+// ── Pareto frontier (POST /optimize/pareto) ────────────────
+export interface ParetoPoint {
+  riskLambda: number;
+  status: string;
+  score: number;
+  risk: number;
+  winProbability: number | null;
+  squadSize: number;
+  dominated: boolean;
+}
+
+export interface ParetoResponse {
+  points: ParetoPoint[];
+  frontierRiskLambdas: number[];
+  warnings: string[];
 }
 
 // ── API Error (RFC 7807 Problem Details) ───────────────────
