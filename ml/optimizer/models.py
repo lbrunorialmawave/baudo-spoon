@@ -117,6 +117,10 @@ class Player:
     var_score: float | None = None
     # Expected Surplus Value (bargain signal). Negative = overpriced.
     esv: float | None = None
+    # FP_Ibrido from ml/mantra_ibrido (MANTRA pillars + ML blend), rescaled to the
+    # same 4-10 "voto" units as projected_score. Populated only when the caller
+    # requests hybrid_blend > 0 (Fase 4.6); None otherwise. CLASSIC-ruleset only.
+    fp_ibrido: float | None = None
 
     def __post_init__(self) -> None:
         if not self.player_id:
@@ -333,6 +337,12 @@ class OptimizationConfig:
     var_blend: float = 0.0
     # Additive ESV weight in objective. 0.0 = disabled (backward compat).
     esv_weight: float = 0.0
+    # Blend factor: 0.0 = pure projected_score/season_value, 1.0 = pure
+    # Player.fp_ibrido (MANTRA-ibrido hybrid signal) in objective. 0.0 = disabled
+    # (backward compat). Meaningful only when the pool has fp_ibrido populated
+    # (see ml/optimizer/hybrid_loader.py); rows without it fall back to the
+    # existing base score untouched. CLASSIC-ruleset only (Fase 4.6).
+    hybrid_blend: float = 0.0
 
     def __post_init__(self) -> None:
         if self.budget <= 0:
@@ -387,6 +397,10 @@ class OptimizationConfig:
         if self.esv_weight < 0:
             raise ValueError(
                 f"esv_weight must be >= 0, got {self.esv_weight}"
+            )
+        if not (0.0 <= self.hybrid_blend <= 1.0):
+            raise ValueError(
+                f"hybrid_blend must be in [0, 1], got {self.hybrid_blend}"
             )
         # Default strategies are injected lazily to avoid circular import
         # between strategies.py and this module.

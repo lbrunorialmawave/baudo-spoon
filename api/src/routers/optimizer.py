@@ -36,15 +36,23 @@ from ..schemas import (
     OptimizeJobStatusSchema,
     OptimizationRequest,
     OptimizationResultSchema,
+    ParameterSensitivitySchema,
+    ParetoPointSchema,
+    ParetoResponseSchema,
+    SensitivityPointSchema,
+    SensitivityResponseSchema,
     SquadPlayerSchema,
     StrategyProfileSchema,
 )
 from ml.optimizer.diagnostics import build_pool_diagnostics, merge_result_diagnostics
 from ml.optimizer.diversity import diversify_secondary_strategies, NearOptimalConfig, compute_diversity_metrics, generate_near_optimal_alternatives
+from ml.optimizer.hybrid_loader import load_fp_ibrido_map_preferring_r2
 from ml.optimizer.inflation import compute_role_percentile_map, estimate_effective_cost
 from ml.optimizer.job_store import job_store
 from ml.optimizer.monte_carlo_opt import MonteCarloOptConfig, build_simulator_from_pool, run_monte_carlo_opt
 from ml.optimizer.residual_integration import build_simulator_preferring_residuals
+from ml.optimizer.pareto import compute_pareto_frontier
+from ml.optimizer.sensitivity import compute_sensitivity_matrix
 from ml.optimizer.team_strength import load_team_strength_scores
 from ml.optimizer.win_probability import WinProbabilityConfig, estimate_completion_probability
 from ml.optimizer.models import (
@@ -115,6 +123,7 @@ def _build_config(req: OptimizationRequest) -> OptimizationConfig:
         risk_aversion=req.risk_aversion,
         var_blend=req.var_blend,
         esv_weight=req.esv_weight,
+        hybrid_blend=req.hybrid_blend,
         valuation_mode=req.valuation_mode,
     )
 
@@ -145,6 +154,55 @@ def _players_from_pool_rows(rows: list[dict]) -> list[Player]:
         )
         for r in rows
     ]
+
+
+def _enrich_pool_with_blends(pool: list[Player], config: OptimizationConfig, req: OptimizationRequest) -> list[Player]:
+    """Populate var_score/esv (existing) and fp_ibrido (Fase 4.6) on pool players
+    when the config's blend factors ask for them. No-op (and cheap) otherwise —
+    shared by /single and /multi so both paths honour the same request fields.
+    """
+    from dataclasses import replace
+
+    if config.var_blend > 0 or config.esv_weight > 0:
+        engine = VarEngine(
+            total_budget=config.budget,
+            num_participants=config.num_participants,
+            min_start_probability=req.min_start_probability,
+            replacement_method=req.replacement_method,
+        )
+        players_input = [
+            {"player_id": p.player_id, "role": p.role,
+             "projected_score": p.projected_score, "cost": p.cost,
+             "season_value": p.season_value, "start_probability": p.start_probability}
+            for p in pool
+        ]
+        esv_results = engine.evaluate(players_input)
+        var_map: dict[str, tuple[float, float]] = {
+            e.player_id: (e.var_score, e.esv) for e in esv_results
+        }
+        pool = [
+            replace(p, var_score=var_map[p.player_id][0], esv=var_map[p.player_id][1])
+            if p.player_id in var_map else p
+            for p in pool
+        ]
+
+    if config.hybrid_blend > 0 and config.ruleset != "MANTRA":
+        report = load_fp_ibrido_map_preferring_r2(
+            settings.artifacts_dir,
+            r2_endpoint_url=settings.r2_endpoint_url,
+            r2_access_key_id=settings.r2_access_key_id,
+            r2_secret_access_key=settings.r2_secret_access_key,
+            r2_bucket_name=settings.r2_bucket_name,
+        )
+        if report.scores:
+            pool = [
+                replace(p, fp_ibrido=report.scores[p.player_id]) if p.player_id in report.scores else p
+                for p in pool
+            ]
+        else:
+            logger.warning("hybrid_blend requested but no fp_ibrido data found: %s", report.warnings)
+
+    return pool
 
 
 def _mc_config_from_request(req: OptimizationRequest) -> MonteCarloOptConfig | None:
@@ -405,30 +463,7 @@ async def run_multi_strategy(
             ),
         )
 
-    # Enrich pool with VAR/ESV when the config asks for it.
-    if config.var_blend > 0 or config.esv_weight > 0:
-        engine = VarEngine(
-            total_budget=config.budget,
-            num_participants=config.num_participants,
-            min_start_probability=req.min_start_probability,
-            replacement_method=req.replacement_method,
-        )
-        players_input = [
-            {"player_id": p.player_id, "role": p.role,
-             "projected_score": p.projected_score, "cost": p.cost,
-             "season_value": p.season_value, "start_probability": p.start_probability}
-            for p in pool
-        ]
-        esv_results = engine.evaluate(players_input)
-        var_map: dict[str, tuple[float, float]] = {
-            e.player_id: (e.var_score, e.esv) for e in esv_results
-        }
-        from dataclasses import replace
-        pool = [
-            replace(p, var_score=var_map[p.player_id][0], esv=var_map[p.player_id][1])
-            if p.player_id in var_map else p
-            for p in pool
-        ]
+    pool = _enrich_pool_with_blends(pool, config, req)
 
     strategies = (
         _custom_strategies(req.custom_strategies)
@@ -573,6 +608,8 @@ async def run_single_strategy(
             ),
         )
 
+    pool = _enrich_pool_with_blends(pool, config, req)
+
     mc_cfg = _mc_config_from_request(req)
     near_cfg = _near_cfg_from_request(req)
     mc_summary_schema = None
@@ -609,6 +646,138 @@ async def run_single_strategy(
         estimate_completion_probability, result.squad, config.budget, WinProbabilityConfig(), config.inflation_config, config.num_participants,
     ) if result.squad else None
     return _serialize_result(result, effective_lookup, win_probability=wp, monte_carlo_summary=mc_summary_schema, near_optimal=near_schemas)
+
+
+@router.post(
+    "/sensitivity",
+    response_model=SensitivityResponseSchema,
+    summary="Sensitivity matrix (Fase 4.5) — how the squad reacts to risk_aversion / var_blend / hybrid_blend / budget",
+)
+async def run_sensitivity(
+    req: OptimizationRequest,
+    strategy_name: str = "",
+    db: AsyncSession = Depends(get_db),
+) -> SensitivityResponseSchema:
+    """One-at-a-time sensitivity sweep around the request's baseline config.
+
+    Solves the baseline once, then perturbs each of ``risk_aversion``,
+    ``var_blend``, ``hybrid_blend`` and ``budget`` independently over a small
+    default grid, reporting squad overlap (Jaccard) and score delta vs the
+    baseline for each point. Parameters with no signal in the pool (e.g.
+    ``var_blend`` when no player carries ``var_score``) are skipped with a
+    warning rather than solved needlessly.
+    """
+    if req.custom_strategies:
+        if len(req.custom_strategies) != 1:
+            raise HTTPException(status_code=422, detail="custom_strategies must have exactly 1 entry for /sensitivity")
+        strategy = _custom_strategies(req.custom_strategies)[0]
+    elif strategy_name:
+        strategy = _strategy_by_name(strategy_name)
+    else:
+        raise HTTPException(status_code=422, detail="Provide strategy_name or custom_strategies")
+
+    repo = DataRepository(
+        artifacts_dir=settings.artifacts_dir,
+        r2_endpoint_url=settings.r2_endpoint_url,
+        r2_access_key_id=settings.r2_access_key_id,
+        r2_secret_access_key=settings.r2_secret_access_key,
+        r2_bucket_name=settings.r2_bucket_name,
+    )
+    config = _build_config(req)
+
+    if req.pool_override is not None:
+        pool = _pool_from_override(req)
+    else:
+        rows = await repo.get_player_pool(db, season_start=req.season_start, min_qt_a=req.min_qt_a, ruleset=req.ruleset)
+        pool = _players_from_pool_rows(rows)
+
+    pool = deduplicate_players(pool)
+    pool = _apply_min_start_probability(pool, req.min_start_probability)
+    if not pool:
+        raise HTTPException(status_code=400, detail=f"Empty player pool for season_start={req.season_start}")
+
+    from dataclasses import replace as dc_replace_cfg
+
+    # Enrich with var/esv/fp_ibrido unconditionally: the sweep needs var_score
+    # and fp_ibrido populated even if the baseline request itself has
+    # var_blend=hybrid_blend=0, otherwise those rows would always be skipped.
+    enrich_cfg = dc_replace_cfg(config, var_blend=max(config.var_blend, 0.5), hybrid_blend=max(config.hybrid_blend, 0.5))
+    pool = _enrich_pool_with_blends(pool, enrich_cfg, req)
+
+    try:
+        result = await asyncio.to_thread(compute_sensitivity_matrix, pool, config, strategy)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PreFlightError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return SensitivityResponseSchema(
+        baseline_status=result.baseline_status,
+        baseline_total_score=result.baseline_total_score,
+        baseline_squad_size=len(result.baseline_squad_ids),
+        parameters=[
+            ParameterSensitivitySchema(
+                parameter=p.parameter,
+                points=[SensitivityPointSchema(**pt.to_dict()) for pt in p.points],
+            )
+            for p in result.parameters
+        ],
+        warnings=result.warnings,
+    )
+
+
+@router.post(
+    "/pareto",
+    response_model=ParetoResponseSchema,
+    summary="Pareto frontier (Fase 4.2) — score vs risk vs P(asta fattibile), vista aggiuntiva alle 4 strategie",
+)
+async def run_pareto(
+    req: OptimizationRequest,
+    strategy_name: str = "",
+    db: AsyncSession = Depends(get_db),
+) -> ParetoResponseSchema:
+    """Sweep di ``risk_aversion`` sul solver ILP esistente, con frontier non-dominata
+    su (score, risk di portafoglio, P(spesa asta <= budget)). Vista aggiuntiva
+    opt-in, non sostituisce le 4 strategie discrete (vedi piano §7)."""
+    if req.custom_strategies:
+        if len(req.custom_strategies) != 1:
+            raise HTTPException(status_code=422, detail="custom_strategies must have exactly 1 entry for /pareto")
+        strategy = _custom_strategies(req.custom_strategies)[0]
+    elif strategy_name:
+        strategy = _strategy_by_name(strategy_name)
+    else:
+        raise HTTPException(status_code=422, detail="Provide strategy_name or custom_strategies")
+
+    repo = DataRepository(
+        artifacts_dir=settings.artifacts_dir,
+        r2_endpoint_url=settings.r2_endpoint_url,
+        r2_access_key_id=settings.r2_access_key_id,
+        r2_secret_access_key=settings.r2_secret_access_key,
+        r2_bucket_name=settings.r2_bucket_name,
+    )
+    config = _build_config(req)
+
+    if req.pool_override is not None:
+        pool = _pool_from_override(req)
+    else:
+        rows = await repo.get_player_pool(db, season_start=req.season_start, min_qt_a=req.min_qt_a, ruleset=req.ruleset)
+        pool = _players_from_pool_rows(rows)
+
+    pool = deduplicate_players(pool)
+    pool = _apply_min_start_probability(pool, req.min_start_probability)
+    if not pool:
+        raise HTTPException(status_code=400, detail=f"Empty player pool for season_start={req.season_start}")
+
+    try:
+        result = await asyncio.to_thread(compute_pareto_frontier, pool, config, strategy)
+    except PreFlightError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return ParetoResponseSchema(
+        points=[ParetoPointSchema(**p.to_dict()) for p in result.points],
+        frontier_risk_lambdas=[p.risk_lambda for p in result.frontier],
+        warnings=result.warnings,
+    )
 
 
 @router.get(

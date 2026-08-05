@@ -206,8 +206,21 @@ def solve_strategy(
     strategy: StrategyProfile,
     *,
     precomputed_percentiles: dict[str, float] | None = None,
+    warm_start: dict[str, bool] | None = None,
 ) -> OptimizationResult:
     """Solve the 0/1 selection problem for a single strategy.
+
+    ``warm_start`` (Fase 4.4): optional ``{player_id: selected}`` mapping — typically
+    a previously-solved squad from a nearby scenario/config — used to seed CBC's
+    initial incumbent via ``LpVariable.setInitialValue`` + ``warmStart=True``. This
+    is a lightweight substitute for full column generation: it does not change the
+    model, only how CBC starts searching, so it is safe to pass a stale or partial
+    mapping (unknown/missing player_ids are simply left at CBC's default start).
+    Meant for hot loops that resolve near-identical models repeatedly — SAA scenario
+    sweeps and near-optimal alternative generation — where consecutive solves are
+    close to each other and a good incumbent cuts wall time materially on larger
+    pools/MANTRA formulations without touching correctness (CBC still proves
+    optimality/gap normally; this only affects search order and time-to-solution).
 
     Raises :class:`PreFlightError` if the pool is structurally insufficient
     (handled by the orchestrator to produce a per-strategy ``INFEASIBLE``
@@ -292,6 +305,8 @@ def solve_strategy(
             raw = p.projected_score
         if config.var_blend > 0 and p.var_score is not None:
             raw = (1.0 - config.var_blend) * raw + config.var_blend * p.var_score
+        if config.hybrid_blend > 0 and p.fp_ibrido is not None:
+            raw = (1.0 - config.hybrid_blend) * raw + config.hybrid_blend * p.fp_ibrido
         return raw
 
     prob += pulp.lpSum(
@@ -435,11 +450,22 @@ def solve_strategy(
         )
 
     # -----------------------------------------------------------------
+    # Warm start (Fase 4.4): seed CBC's incumbent from a prior nearby solve.
+    # -----------------------------------------------------------------
+    use_warm_start = False
+    if warm_start:
+        for pid, selected in warm_start.items():
+            if pid in x:
+                x[pid].setInitialValue(bool(selected))
+                use_warm_start = True
+
+    # -----------------------------------------------------------------
     # Solve
     # -----------------------------------------------------------------
     solver = pulp.PULP_CBC_CMD(
         msg=False,
         timeLimit=int(config.solver_timeout_seconds),
+        warmStart=use_warm_start,
     )
     try:
         prob.solve(solver)

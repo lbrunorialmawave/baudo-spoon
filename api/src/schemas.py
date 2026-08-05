@@ -447,9 +447,28 @@ class OptimizationRequest(_CamelModel):
     # All formations in `formations` are still evaluated post-hoc and reported
     # in formation_feasibility, but only this one is a hard solver constraint.
     preferred_formation: Optional[FormationSchema] = None
-    risk_aversion: float = Field(default=0.0, ge=0.0)
+    risk_aversion: float = Field(
+        default=0.0, ge=0.0,
+        description=(
+            "Coefficient applied to prediction_std as a penalty on projected_score "
+            "(score_eff = projected_score - risk_aversion * prediction_std). "
+            "0.0 (default) = risk-neutral / legacy behaviour, no uncertainty penalty. "
+            "Suggested presets: 'conservative' ~0.5-1.0 (favours low-variance players), "
+            "'aggressive' = 0.0 (ranks purely on point estimate). Independent of the "
+            "monte_carlo block — see MonteCarloConfigSchema for guidance on combining the two."
+        ),
+    )
     var_blend: float = Field(default=0.0, ge=0.0, le=1.0)
     esv_weight: float = Field(default=0.0, ge=0.0)
+    hybrid_blend: float = Field(
+        default=0.0, ge=0.0, le=1.0,
+        description=(
+            "0.0 (default) = disabled, legacy behaviour. >0 blends the MANTRA-ibrido "
+            "fpIbrido signal (ml/mantra_ibrido) into the CLASSIC objective, same shape "
+            "as var_blend. Requires a mantra_ibrido_results_*.json artifact to be "
+            "available (local or R2); players without a match keep their base score."
+        ),
+    )
     # Pool pre-filter: esclude i giocatori con start_probability inferiore
     # alla soglia PRIMA della costruzione della pool passata al solver ILP.
     # `None` (default) ⇒ nessun filtro (compatibilità con richieste legacy).
@@ -483,7 +502,12 @@ class OptimizationRequest(_CamelModel):
     )
     valuation_mode: str = Field(
         default="PER_MATCH_RATING",
-        description="PER_MATCH_RATING (default) or SEASON_VALUE (needs season_value on pool).",
+        description=(
+            "PER_MATCH_RATING (default, legacy) = objective uses per-match projected_score. "
+            "SEASON_VALUE = objective uses season_value (expected_minutes-weighted total), "
+            "which requires an ML-populated pool (season_value is null for players without "
+            "an ML prediction match and falls back to PER_MATCH_RATING ranking for those rows)."
+        ),
     )
     strategy_names: Optional[list[str]] = None
     custom_strategies: Optional[list["StrategyProfileSchema"]] = None
@@ -525,6 +549,45 @@ class MonteCarloConfigSchema(_CamelModel):
         default=0.0, ge=0.0,
         description="Soft SAA wall budget; 0 → API_OPTIMIZER_SAA_TIMEOUT_SECONDS default.",
     )
+
+
+class SensitivityPointSchema(_CamelModel):
+    value: float
+    status: str
+    total_score: float
+    score_delta: float
+    score_delta_pct: float
+    jaccard_vs_baseline: float
+    players_changed: int
+
+
+class ParameterSensitivitySchema(_CamelModel):
+    parameter: str
+    points: list[SensitivityPointSchema] = Field(default_factory=list)
+
+
+class SensitivityResponseSchema(_CamelModel):
+    baseline_status: str
+    baseline_total_score: float
+    baseline_squad_size: int
+    parameters: list[ParameterSensitivitySchema] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ParetoPointSchema(_CamelModel):
+    risk_lambda: float
+    status: str
+    score: float
+    risk: float
+    win_probability: Optional[float] = None
+    squad_size: int
+    dominated: bool = False
+
+
+class ParetoResponseSchema(_CamelModel):
+    points: list[ParetoPointSchema] = Field(default_factory=list)
+    frontier_risk_lambdas: list[float] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class MonteCarloSummarySchema(_CamelModel):

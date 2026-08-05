@@ -81,8 +81,12 @@ def generate_near_optimal_alternatives(pool, config, strategy, reference, near_c
             break
         exclude_ids = {p.player_id for p in excluded}
         new_ex = (set(config.exclude) | exclude_ids) - set(config.must_include)
+        # Fase 4.4: warm-start from the reference squad minus the just-excluded
+        # players — each alternative differs from the reference by only a handful
+        # of players, so this is a close incumbent for CBC.
+        warm_start = {p.player_id: (p.player_id not in exclude_ids) for p in reference.squad}
         try:
-            alt = optimize_squad(list(pool), replace(config, exclude=frozenset(new_ex)), strategy)
+            alt = optimize_squad(list(pool), replace(config, exclude=frozenset(new_ex)), strategy, warm_start=warm_start)
         except Exception as exc:
             log.warning("near_optimal failed: %s", exc); continue
         if not alt.squad:

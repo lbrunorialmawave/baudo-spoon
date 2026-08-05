@@ -126,17 +126,23 @@ def run_saa_frequency(pool, config, strategy, mc_config, simulator=None):
     scenario_scores: list[float] = []
     completed = 0
     pool_by_id = {p.player_id: p for p in pool}
+    # Fase 4.4: warm-start each scenario from the previous one's squad — consecutive
+    # scenarios share the same model shape and differ only in score, so the prior
+    # incumbent is usually still close to optimal and speeds up CBC materially over
+    # a cold start across hundreds of near-identical scenario solves.
+    prev_warm_start: dict[str, bool] | None = None
     for k in range(mc_config.n_simulations):
         if mc_config.timeout_seconds > 0 and (time.perf_counter() - t0) > mc_config.timeout_seconds:
             warnings.append(f"SAA stopped early at {k}/{mc_config.n_simulations}"); break
         scenario_pool = [replace(p, projected_score=max(0.0, float(sim_map[p.player_id].simulated_scores[k]))) for p in pool]
         try:
-            res = optimize_squad(scenario_pool, config, strategy)
+            res = optimize_squad(scenario_pool, config, strategy, warm_start=prev_warm_start)
         except Exception as exc:
             warnings.append(f"scenario {k} failed: {exc}"); continue
         completed += 1
         if res.squad:
             ids = {sp.player_id for sp in res.squad}
+            prev_warm_start = {pid: (pid in ids) for pid in pool_by_id}
             scenario_squads.append(ids)
             for pid in ids:
                 selection_counts[pid] += 1
@@ -162,6 +168,22 @@ def run_saa_frequency(pool, config, strategy, mc_config, simulator=None):
     if scenario_scores:
         arr = np.asarray(scenario_scores, dtype=float)
         percentiles = {"p10": float(np.percentile(arr, 10)), "p50": float(np.percentile(arr, 50)), "p90": float(np.percentile(arr, 90))}
+    if mc_config.min_selection_frequency > 0.0 and representative and representative.squad and completed:
+        fragile = sorted(
+            (
+                (sp.player_id, freq.get(sp.player_id, 0.0))
+                for sp in representative.squad
+                if freq.get(sp.player_id, 0.0) < mc_config.min_selection_frequency
+            ),
+            key=lambda x: x[1],
+        )
+        if fragile:
+            names = ", ".join(f"{pid} ({f:.2f})" for pid, f in fragile[:8])
+            more = f" (+{len(fragile) - 8} more)" if len(fragile) > 8 else ""
+            warnings.append(
+                f"{len(fragile)} representative-squad player(s) below "
+                f"min_selection_frequency={mc_config.min_selection_frequency}: {names}{more}"
+            )
     return SAAResult(
         mode="saa_frequency", n_simulations=mc_config.n_simulations, random_seed=mc_config.random_seed,
         selection_frequency=freq, stability_index=stability, mean_pairwise_jaccard=mean_jaccard,

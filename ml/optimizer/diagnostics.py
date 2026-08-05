@@ -24,6 +24,7 @@ class PoolDiagnostics:
     roles: dict[str, int] = field(default_factory=dict)
     pct_with_var_score: float = 0.0
     pct_with_esv: float = 0.0
+    pct_with_fp_ibrido: float = 0.0
     mean_prediction_std: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -34,6 +35,7 @@ class PoolDiagnostics:
             "pct_with_start_probability": round(self.pct_with_start_probability, 4),
             "pct_with_var_score": round(self.pct_with_var_score, 4),
             "pct_with_esv": round(self.pct_with_esv, 4),
+            "pct_with_fp_ibrido": round(self.pct_with_fp_ibrido, 4),
             "mean_prediction_std": (
                 round(self.mean_prediction_std, 4) if self.mean_prediction_std is not None else None
             ),
@@ -75,6 +77,7 @@ def build_pool_diagnostics(pool: Sequence[Player]) -> PoolDiagnostics:
         roles=roles,
         pct_with_var_score=sum(1 for p in pool if getattr(p, "var_score", None) is not None) / n,
         pct_with_esv=sum(1 for p in pool if getattr(p, "esv", None) is not None) / n,
+        pct_with_fp_ibrido=sum(1 for p in pool if getattr(p, "fp_ibrido", None) is not None) / n,
         mean_prediction_std=float(np.mean(stds)) if stds else None,
     )
 

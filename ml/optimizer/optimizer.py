@@ -91,6 +91,8 @@ def optimize_squad(
     pool: Sequence[Player],
     config: OptimizationConfig,
     strategy: StrategyProfile,
+    *,
+    warm_start: dict[str, bool] | None = None,
 ) -> OptimizationResult:
     """Run a single strategy on the given pool.
 
@@ -124,6 +126,7 @@ def optimize_squad(
         config=config,
         strategy=strategy,
         precomputed_percentiles=percentiles,
+        warm_start=warm_start,
     )
 
 
