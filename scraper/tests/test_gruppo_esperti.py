@@ -13,7 +13,14 @@ sorprese"), che è esattamente il caso che prima veniva perso.
 
 from __future__ import annotations
 
-from scraper.gruppo_esperti import _parse_role_section, _resolve_cross_reference
+from bs4 import BeautifulSoup
+
+import scraper.gruppo_esperti as gruppo_esperti
+from scraper.gruppo_esperti import (
+    _discover_from_forum_listing,
+    _parse_role_section,
+    _resolve_cross_reference,
+)
 
 _SECTION_TEXT = (
     "ZAPPACOSTA Davide (1992) Esterno, in bagarre per un posto da titolare.\n"
@@ -75,3 +82,47 @@ def test_resolve_cross_reference_returns_none_for_plain_comment() -> None:
 
     assert marker is None
     assert text is None
+
+
+# ── _discover_from_forum_listing ────────────────────────────────────────────
+
+# Structure verified against the live 2026/27 forum section listing
+# (viewforum.php?f=199): team links use class="topictitle" and a relative
+# href, alongside unrelated links (a sticky summary thread, a "mark read"
+# control) that must NOT be mistaken for a team thread.
+_FORUM_LISTING_HTML = """
+<html><body>
+<a href="./viewtopic.php?t=232729&sid=abc" class="topictitle">TOPIC RIASSUNTIVO SCHEDE SQUADRA 2026/27</a>
+<a href="./viewtopic.php?t=232668&sid=abc" class="topictitle max-md:py-1">ATALANTA [TOPIC UNICO]</a>
+<a href="./viewtopic.php?t=232676&sid=abc" class="topictitle max-md:py-1">INTER [TOPIC UNICO]</a>
+<a href="./markread.php?f=199" class="something-else">Segna tutti come letti</a>
+</body></html>
+"""
+
+
+def test_discover_from_forum_listing_extracts_team_urls(monkeypatch) -> None:
+    monkeypatch.setattr(
+        gruppo_esperti, "_get_soup",
+        lambda url, session: BeautifulSoup(_FORUM_LISTING_HTML, "html.parser"),
+    )
+
+    teams = _discover_from_forum_listing("https://forum.gruppoesperti.it/viewforum.php?f=199", session=None)
+
+    assert teams == {
+        "ATALANTA": "https://forum.gruppoesperti.it/viewtopic.php?t=232668",
+        "INTER": "https://forum.gruppoesperti.it/viewtopic.php?t=232676",
+    }
+
+
+def test_discover_team_topics_dispatches_to_forum_listing(monkeypatch) -> None:
+    """A viewforum.php URL must go through the listing path, not the
+    viewtopic.php first-post-links path (which would find no `div.post`
+    on a listing page and raise)."""
+    monkeypatch.setattr(
+        gruppo_esperti, "_get_soup",
+        lambda url, session: BeautifulSoup(_FORUM_LISTING_HTML, "html.parser"),
+    )
+
+    teams = gruppo_esperti.discover_team_topics("https://forum.gruppoesperti.it/viewforum.php?f=199")
+
+    assert set(teams) == {"ATALANTA", "INTER"}

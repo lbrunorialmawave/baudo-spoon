@@ -42,7 +42,7 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                 title="Quotazione ufficiale corrente del listone">
               Prezzo @if (sortColumn() === 'Pz1') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
             </th>
-            <th class="px-3 py-2 text-left hidden lg:table-cell" title="Valutazione Gruppo Esperti (forum.gruppoesperti.it), 1-5 stelle">Esperti</th>
+            <th class="px-3 py-2 text-left hidden lg:table-cell" title="Valutazione Gruppo Esperti (forum.gruppoesperti.it): stelle 1-5 + punteggio totale su 50">Esperti</th>
           </tr>
         </thead>
         <tbody>
@@ -135,7 +135,12 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                 <td class="px-3 py-2.5 text-xs hidden lg:table-cell whitespace-nowrap">
                   @let er = expertRatings()[item.fantacalcio_id];
                   @if (er && er.rating != null) {
-                    <span style="color:var(--color-accent)" [title]="er.comment ?? ''">{{ stars(er.rating) }}</span>
+                    <span style="color:var(--color-accent)" [title]="expertTooltip(er)">
+                      {{ stars(er.rating) }}
+                      @if (er.totale != null) {
+                        <span class="opacity-60">{{ er.totale }}/50</span>
+                      }
+                    </span>
                   } @else {
                     <span class="opacity-30">—</span>
                   }
@@ -173,6 +178,21 @@ export class PlayerTableComponent {
 
   readonly stars = (rating: number): string =>
     '★'.repeat(rating) + '☆'.repeat(Math.max(0, 5 - rating));
+
+  readonly expertTooltip = (er: ExpertRatingWithFantacalcioId): string => {
+    const parts: string[] = [];
+    if (er.totale != null) {
+      parts.push(
+        `Titolarità ${er.titolarita}/10 · Media voto ${er.media_voto}/10 · ` +
+        `Salute ${er.salute}/10 · ${er.bonus_label ?? 'Bonus'} ${er.bonus_value}/10 · ` +
+        `TOTALE ${er.totale}/50`
+      );
+    }
+    if (er.comment) {
+      parts.push(er.comment);
+    }
+    return parts.join('\n');
+  };
 
   // Expose constants for template
   readonly FASE7_LABELS = FASE7_LABELS;

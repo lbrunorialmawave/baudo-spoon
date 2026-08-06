@@ -1,11 +1,28 @@
 """Scraper for forum.gruppoesperti.it team analysis threads.
 
 The forum publishes one staff-curated "[TOPIC UNICO]" thread per Serie A
-team, linked from a per-season index topic. Each thread's *first post*
-(edited by the team's staff account throughout the season — no login
-required to read it) contains the starting XI, ballottaggi, and a full
-per-player breakdown: a 1-10 "Consiglio Esperti" score plus a free-text
-comment, grouped by role.
+team. Each thread's *first post* (edited by the team's staff account
+throughout the season — no login required to read it) contains the
+starting XI, ballottaggi, and a full per-player breakdown: a 1-10
+"Consiglio Esperti" score plus a free-text comment, grouped by role.
+
+Team threads are discovered from an "index" page, whose exact shape has
+changed across seasons — the discovery step therefore supports two forms,
+picked by ``INDEX_URL``'s own URL shape (see ``discover_team_topics``):
+
+  1. ``viewtopic.php`` — a single curated topic whose first post links to
+     each team's thread with anchor text containing "topic unico" (used
+     through the 2025/26 season).
+  2. ``viewforum.php`` — a forum *section* listing every team's thread
+     directly as its own row (2026/27: the forum stopped curating a
+     separate index topic and team threads live directly under the
+     "Schede squadra e schede partita" section instead).
+
+Whichever form is used, ``INDEX_URL`` needs re-checking every season —
+open forum.gruppoesperti.it, find the current "Schede squadra e schede
+partita" section under "AREA FANTACALCIO", and update the constant (or
+pass ``--index-url`` / the admin endpoint's ``index_url`` param) if the
+section id or index-topic id has changed.
 
 There is no API and the content is prose, not structured data, so parsing
 relies on two anchors the site happens to use consistently across teams:
@@ -50,7 +67,11 @@ log = logging.getLogger(__name__)
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
-INDEX_URL = "https://forum.gruppoesperti.it/viewtopic.php?f=234&t=228046"
+#: 2026/27: the forum section "Schede squadra e schede partita" (f=199)
+#: lists every team's [TOPIC UNICO] thread directly — no curated index
+#: topic exists this season (unlike 2025/26's viewtopic.php-based index).
+#: Re-verify every season; see the module docstring for where to look.
+INDEX_URL = "https://forum.gruppoesperti.it/viewforum.php?f=199"
 SOURCE = "gruppo_esperti"
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -161,15 +182,48 @@ def _get_soup(url: str, session: requests.Session) -> BeautifulSoup:
     return BeautifulSoup(resp.text, "html.parser")
 
 
-def discover_team_topics(index_url: str = INDEX_URL, session: Optional[requests.Session] = None) -> dict[str, str]:
-    """Parse the season index topic and return {team_name: topic_url}.
+def _discover_from_forum_listing(listing_url: str, session: requests.Session) -> dict[str, str]:
+    """Parse a forum *section* listing page and return {team_name: topic_url}.
 
-    Team names are read from each topic's own <title> tag ("INTER [TOPIC
-    UNICO] - ...") rather than from the index page markup, since the index
-    page's own team labels are only reliably present as image-filename
-    hints and are missing for a few teams.
+    Used when the forum has no curated index topic (2026/27): every team's
+    [TOPIC UNICO] thread is listed directly as its own row. The team name
+    is read straight from the link's own text (via ``_TITLE_TEAM_RE``),
+    unlike ``discover_team_topics``'s viewtopic.php path, which has to
+    fetch each thread separately to read its <title> tag — the listing
+    page already shows "TEAM [TOPIC UNICO]" as the link text itself.
+    """
+    soup = _get_soup(listing_url, session)
+    teams: dict[str, str] = {}
+    for a in soup.select("a"):
+        m = _TITLE_TEAM_RE.match(a.get_text(strip=True))
+        if not m:
+            continue
+        team = m.group(1).strip()
+        href = a.get("href", "")
+        url = requests.compat.urljoin(listing_url, href).split("&sid=")[0]
+        teams.setdefault(team, url)
+    return teams
+
+
+def discover_team_topics(index_url: str = INDEX_URL, session: Optional[requests.Session] = None) -> dict[str, str]:
+    """Return {team_name: topic_url}, discovered from ``index_url``.
+
+    Dispatches on the URL's own shape: a ``viewforum.php`` section listing
+    is parsed directly (see ``_discover_from_forum_listing``); anything
+    else is treated as a curated ``viewtopic.php`` index topic whose first
+    post links to each team's thread with anchor text containing "topic
+    unico" (2025/26 and earlier).
+
+    For the viewtopic.php path, team names are read from each topic's own
+    <title> tag ("INTER [TOPIC UNICO] - ...") rather than from the index
+    page markup, since the index page's own team labels are only reliably
+    present as image-filename hints and are missing for a few teams.
     """
     session = session or requests.Session()
+
+    if "viewforum.php" in index_url:
+        return _discover_from_forum_listing(index_url, session)
+
     soup = _get_soup(index_url, session)
     first_post = soup.select_one("div.post")
     if first_post is None:

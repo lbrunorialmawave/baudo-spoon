@@ -425,9 +425,12 @@ admin dell'API.
     docker compose exec api python -m scraper.gruppo_esperti --db-url "postgresql+psycopg2://fbref:DevPassword123@db:5432/fbref"
 
     Opzioni utili:
-        --season-start 2025     (default: risolto dall'ultima stagione presente in player_quotations)
+        --season-start 2026     (default: risolto dall'ultima stagione presente in player_quotations)
         --team Inter             (solo una squadra, per test rapidi)
         --dry-run                 (stampa i primi 30 record senza scrivere su DB)
+        --index-url ...          (override dell'URL di discovery — vedi INDEX_URL
+                                   in scraper/gruppo_esperti.py, va ri-verificato
+                                   ogni stagione)
 
 6D.2 Dry-run rapido (nessuna scrittura, utile per verificare il parsing):
 
@@ -440,14 +443,14 @@ admin dell'API.
 
     Con parametri opzionali (stagione/squadra):
 
-    curl -X POST "http://localhost:8000/api/v1/admin/scrape/esperti?season_start=2025&team=Inter" -H "X-API-Key: $env:API_KEY_SECRET"
+    curl -X POST "http://localhost:8000/api/v1/admin/scrape/esperti?season_start=2026&team=Inter" -H "X-API-Key: $env:API_KEY_SECRET"
 
     Output atteso:
-      {"scraper":"esperti","season_start":2025,"scraped":480,"records":455,"unmatched":25,"status":"ok"}
+      {"scraper":"esperti","season_start":2026,"scraped":480,"records":455,"unmatched":25,"status":"ok"}
 
 6D.4 Lettura dei rating (endpoint pubblici, nessuna auth):
 
-    curl "http://localhost:8000/api/v1/experts/ratings/for-season/2025"        (tutti i rating della stagione, in un colpo)
+    curl "http://localhost:8000/api/v1/experts/ratings/for-season/2026"        (tutti i rating della stagione, in un colpo)
     curl "http://localhost:8000/api/v1/experts/ratings/{player_id}"            (rating per un player_id, formato "fc-{fantacalcio_id}")
     curl "http://localhost:8000/api/v1/experts/ratings/by-fotmob/{fotmob_id}"  (rating per FotMob ID, come usato dal frontend)
 

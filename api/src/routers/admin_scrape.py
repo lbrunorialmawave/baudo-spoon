@@ -15,9 +15,6 @@ GET  /admin/data-health/{source}  — Detailed coverage for a specific source
 from __future__ import annotations
 
 import logging
-from datetime import datetime
-from pathlib import Path
-from typing import Optional
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -51,13 +48,13 @@ def _to_sync_url(url: str) -> str:
 
 @router.post("/scrape/probabili", summary="Trigger probabili formazioni scraper")
 async def trigger_probabili(
-    matchday: Optional[int] = Query(None, description="Current matchday"),
+    matchday: int | None = Query(None, description="Current matchday"),
 ) -> ORJSONResponse:
     try:
         # Don't use get_db dependency — create sync connection directly for scraper compatibility
         sync_url = _to_sync_url(settings.database_url)
         log.info("[trigger_probabili] Starting scrape")
-        from scraper.probabili_formazioni import scrape, persist
+        from scraper.probabili_formazioni import persist, scrape
         records = scrape(matchday=matchday)
         n = persist(records, sync_url)
         return ORJSONResponse({"scraper": "probabili", "records": n, "status": "ok"})
@@ -68,14 +65,22 @@ async def trigger_probabili(
 
 @router.post("/scrape/esperti", summary="Trigger Gruppo Esperti ratings scraper")
 async def trigger_esperti(
-    season_start: Optional[int] = Query(None, description="Season start year"),
-    team: Optional[str] = Query(None, description="Only scrape one team (e.g. 'Inter')"),
+    season_start: int | None = Query(None, description="Season start year"),
+    team: str | None = Query(None, description="Only scrape one team (e.g. 'Inter')"),
+    index_url: str | None = Query(
+        None,
+        description=(
+            "Override the season index/listing URL (viewtopic.php or "
+            "viewforum.php) without a redeploy, e.g. if the forum "
+            "reorganizes again. Defaults to gruppo_esperti.INDEX_URL."
+        ),
+    ),
 ) -> ORJSONResponse:
     try:
         sync_url = _to_sync_url(settings.database_url)
         log.info("[trigger_esperti] Starting scrape")
-        from scraper.gruppo_esperti import scrape, persist
-        players = scrape(team_filter=team)
+        from scraper.gruppo_esperti import INDEX_URL, persist, scrape
+        players = scrape(index_url=index_url or INDEX_URL, team_filter=team)
         # season_start=None resolves internally to the latest season present
         # in player_quotations, rather than guessing from the calendar date.
         n, resolved_season = persist(players, sync_url, season_start)
