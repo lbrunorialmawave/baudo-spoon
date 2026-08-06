@@ -162,11 +162,14 @@ async def trigger_training() -> ORJSONResponse:
     except HTTPException:
         raise
     except requests.HTTPError as e:
-        log.exception("Failed to dispatch ML Training workflow")
         detail = (
             f"GitHub API error {e.response.status_code}: {e.response.text[:300]}"
             if e.response is not None else str(e)
         )
+        # log.exception's traceback doesn't include the response body — log
+        # `detail` explicitly so it's visible in server logs, not only in the
+        # HTTP response the admin UI receives.
+        log.error("Failed to dispatch ML Training workflow: %s", detail)
         raise HTTPException(status_code=502, detail=detail)
     except Exception:
         log.exception("Failed to dispatch ML Training workflow")
@@ -199,11 +202,11 @@ async def get_training_status() -> ORJSONResponse:
     except HTTPException:
         raise
     except requests.HTTPError as e:
-        log.exception("Failed to fetch ML Training workflow status")
         detail = (
             f"GitHub API error {e.response.status_code}: {e.response.text[:300]}"
             if e.response is not None else str(e)
         )
+        log.error("Failed to fetch ML Training workflow status: %s", detail)
         raise HTTPException(status_code=502, detail=detail)
     except Exception:
         log.exception("Failed to fetch ML Training workflow status")
