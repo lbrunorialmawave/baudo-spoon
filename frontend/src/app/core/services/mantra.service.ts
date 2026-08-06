@@ -32,17 +32,6 @@ export class MantraService {
     sortDir?: string;
     page?: number;
     size?: number;
-    /** Applica la stima del prezzo d'asta invece della sola quotazione. Richiede numPartecipanti e budget. */
-    stimaAsta?: boolean;
-    numPartecipanti?: number;
-    /** Crediti per manager — cr_totali di lega = budget * numPartecipanti. */
-    budget?: number;
-    percentileSoglia?: number;
-    tassoBase?: number;
-    partecipantiBaseline?: number;
-    moltiplicatoreMax?: number;
-    /** Override per macro-gruppo di ruolo (portieri/difesa/ibridi/centro/fantasia/attacco). */
-    overrideRuolo?: Record<string, { percentileSoglia?: number; tassoBase?: number; moltiplicatoreMax?: number }>;
   } = {}): Observable<MantraPlayersResponse> {
     let params = new HttpParams()
       .set('page', opts.page ?? 1)
@@ -57,29 +46,6 @@ export class MantraService {
     if (opts.fantacalcioIds)    params = params.set('fantacalcio_ids', opts.fantacalcioIds.join(','));
     if (opts.sortBy)            params = params.set('sort_by', opts.sortBy);
     if (opts.sortDir)           params = params.set('sort_dir', opts.sortDir);
-    if (opts.stimaAsta && opts.numPartecipanti != null && opts.budget != null) {
-      params = params
-        .set('stima_asta', true)
-        .set('num_partecipanti', opts.numPartecipanti)
-        .set('budget', opts.budget);
-      if (opts.percentileSoglia != null)      params = params.set('percentile_soglia', opts.percentileSoglia);
-      if (opts.tassoBase != null)             params = params.set('tasso_base', opts.tassoBase);
-      if (opts.partecipantiBaseline != null)  params = params.set('partecipanti_baseline', opts.partecipantiBaseline);
-      if (opts.moltiplicatoreMax != null)     params = params.set('moltiplicatore_max', opts.moltiplicatoreMax);
-      if (opts.overrideRuolo && Object.keys(opts.overrideRuolo).length) {
-        const payload: Record<string, Record<string, number>> = {};
-        for (const [gruppo, ov] of Object.entries(opts.overrideRuolo)) {
-          const entry: Record<string, number> = {};
-          if (ov.percentileSoglia != null)   entry['percentile_soglia'] = ov.percentileSoglia;
-          if (ov.tassoBase != null)          entry['tasso_base'] = ov.tassoBase;
-          if (ov.moltiplicatoreMax != null)  entry['moltiplicatore_max'] = ov.moltiplicatoreMax;
-          if (Object.keys(entry).length) payload[gruppo] = entry;
-        }
-        if (Object.keys(payload).length) {
-          params = params.set('override_ruolo_json', JSON.stringify(payload));
-        }
-      }
-    }
     return this.http.get<MantraPlayersResponse>(
       `${this.baseUrl}/mantra/players`, { params }
     );

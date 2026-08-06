@@ -39,9 +39,7 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
               Profilo <span class="opacity-60 cursor-help" [title]="PROFILO_LEGEND">ⓘ</span>
             </th>
             <th class="px-3 py-2 text-right sortable" (click)="sortChanged.emit('Prezzo_Massimo')"
-                [title]="stimaAstaActive()
-                  ? 'Prezzo massimo stimato = quotazione ufficiale del listone, aumentata in base al percentile del giocatore nel ruolo e al numero di partecipanti alla lega (modello asta). Sotto, tra parentesi, la quotazione ufficiale di listone.'
-                  : 'Prezzo massimo = quotazione ufficiale corrente del listone. Attiva la stima prezzo d\\'asta per una proiezione basata su percentile di ruolo e numero di partecipanti.'">
+                title="Quotazione ufficiale corrente del listone">
               Prezzo @if (sortColumn() === 'Prezzo_Massimo') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
             </th>
             <th class="px-3 py-2 text-left hidden lg:table-cell" title="Valutazione Gruppo Esperti (forum.gruppoesperti.it), 1-5 stelle">Esperti</th>
@@ -122,12 +120,17 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                       <span class="hidden sm:inline">{{ f7?.icon ?? '' }} {{ f7?.label ?? mp.Fase7 }}</span>
                     </span>
                   } @else {
-                    <span class="text-xs opacity-30" [title]="mp?.Fase7_Motivo ?? 'Nessuna categoria: il giocatore non rientra in nessuno dei 6 profili'">—</span>
+                    <span class="rounded-full border px-2 py-0.5 text-xs font-medium"
+                          style="border-color:var(--color-border);color:var(--color-text-secondary)"
+                          [title]="mp?.Fase7_Motivo ?? 'Nessuna delle 6 categorie si applica a questo giocatore'">
+                      <span class="sm:hidden">➖</span>
+                      <span class="hidden sm:inline">➖ Non profilato</span>
+                    </span>
                   }
                 </td>
                 <td class="px-3 py-2.5 text-right font-mono text-xs whitespace-nowrap"
                     style="color:var(--color-text-secondary)">
-                  {{ mp?.Prezzo_Massimo != null ? (stimaAstaActive() ? '~' : '') + (mp.Prezzo_Massimo | number:'1.0-0') + ' cr' : '—' }}
+                  {{ mp?.Prezzo_Massimo != null ? (mp.Prezzo_Massimo | number:'1.0-0') + ' cr' : '—' }}
                   @if (mp?.Pz1 != null) {
                     <div class="opacity-60" style="font-size:10px" title="Quotazione ufficiale corrente (listone)">list. {{ mp.Pz1 | number:'1.0-0' }}</div>
                   }
@@ -165,8 +168,6 @@ export class PlayerTableComponent {
   readonly expertRatings = input<Record<number, ExpertRatingWithFantacalcioId>>({});
   readonly sortColumn = input<string>('');
   readonly sortDirection = input<'asc' | 'desc'>('asc');
-  /** True quando "Prezzo" riflette la stima d'asta invece della sola quotazione ufficiale. */
-  readonly stimaAstaActive = input<boolean>(false);
   readonly sortChanged = output<string>();
   readonly playerSelected = output<any>();
 

@@ -105,105 +105,6 @@ import { PlayerDrawerComponent } from './components/player-drawer/player-drawer.
                 (click)="clearFilters()">Clear</button>
       </div>
 
-      <!-- Stima d'asta — optional/advanced tool, demoted to its own panel so it doesn't
-           compete visually with the always-used filters above. -->
-      <div class="border-b px-4 py-2.5 sm:px-6" style="border-color:var(--color-border);background:var(--color-bg)">
-        <div class="flex flex-wrap items-center gap-3">
-          <label class="inline-flex cursor-pointer items-center gap-2 text-xs font-medium select-none"
-                 style="color:var(--color-text-primary)"
-                 title="Stima il prezzo massimo d'asta in base al percentile del giocatore nel ruolo e al numero di partecipanti alla lega, invece di mostrare solo la quotazione ufficiale">
-            <input type="checkbox" class="sr-only" [ngModel]="stimaAstaEnabled()" (ngModelChange)="stimaAstaEnabled.set($event)" />
-            <span class="inline-block h-5 w-9 shrink-0 rounded-full transition-colors"
-                  [style.background]="stimaAstaEnabled() ? 'var(--color-accent)' : 'var(--color-border)'">
-              <span class="block h-4 w-4 rounded-full transition-transform" style="background:#fff;margin-top:2px"
-                    [style.transform]="stimaAstaEnabled() ? 'translateX(18px)' : 'translateX(2px)'"></span>
-            </span>
-            Stima prezzo d'asta
-          </label>
-
-          @if (stimaAstaEnabled()) {
-            <input class="rounded-lg border px-3 py-1.5 text-sm outline-none w-36"
-                   style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
-                   type="number" min="1" placeholder="N. partecipanti"
-                   [ngModel]="numPartecipanti()" (ngModelChange)="numPartecipanti.set($event)" />
-            <input class="rounded-lg border px-3 py-1.5 text-sm outline-none w-36"
-                   style="background:var(--color-surface-raised);border-color:var(--color-border);color:var(--color-text-primary)"
-                   type="number" min="1" placeholder="Budget a manager"
-                   [ngModel]="budget()" (ngModelChange)="budget.set($event)" />
-            @if (numPartecipanti() != null && budget() != null) {
-              <span class="text-xs" style="color:var(--color-text-secondary)"
-                    title="Crediti totali di lega = budget a manager × numero partecipanti">
-                Crediti totali lega: <strong style="color:var(--color-text-primary)">{{ numPartecipanti()! * budget()! }}</strong>
-              </span>
-            }
-            <button class="rounded-lg border px-2.5 py-1 text-xs font-medium"
-                    style="border-color:var(--color-border);color:var(--color-text-secondary)"
-                    (click)="showRoleOverrides.set(!showRoleOverrides())">
-              {{ showRoleOverrides() ? 'Nascondi impostazioni' : 'Impostazioni per ruolo' }} ⚙
-            </button>
-          } @else {
-            <span class="text-xs" style="color:var(--color-text-secondary)">Mostra solo la quotazione ufficiale di listone</span>
-          }
-        </div>
-
-        @if (stimaAstaEnabled() && showRoleOverrides()) {
-          <div class="mt-3 overflow-x-auto rounded-lg border" style="border-color:var(--color-border);background:var(--color-surface)">
-            <div class="flex items-center justify-between border-b px-3 py-2" style="border-color:var(--color-border)">
-              <span class="text-xs font-medium" style="color:var(--color-text-primary)">Parametri di inflazione per gruppo di ruolo</span>
-              <button class="text-xs underline-offset-2 hover:underline" style="color:var(--color-text-secondary)"
-                      (click)="resetRoleOverrides()">Reimposta predefiniti</button>
-            </div>
-            <table class="w-full text-xs" style="border-collapse:collapse;min-width:480px">
-              <thead>
-                <tr style="color:var(--color-text-secondary);background:var(--color-surface-raised)">
-                  <th class="px-3 py-2 text-left font-medium">Gruppo di ruolo</th>
-                  <th class="px-3 py-2 text-left font-medium" title="Percentile minimo nel ruolo da cui parte l'inflazione">
-                    Soglia percentile <span class="opacity-60">(0–1)</span>
-                  </th>
-                  <th class="px-3 py-2 text-left font-medium" title="Velocità di crescita del prezzo per partecipante oltre la baseline">
-                    Tasso base
-                  </th>
-                  <th class="px-3 py-2 text-left font-medium" title="Moltiplicatore massimo applicabile al prezzo di listino">
-                    Moltiplicatore max <span class="opacity-60">(×)</span>
-                  </th>
-                  <th class="px-3 py-2 text-left font-medium" title="Quota dei crediti totali di lega assegnata a questo gruppo, in base ai coefficienti di ruolo MANTRA">
-                    Budget gruppo
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (g of ROLE_GROUPS; track g.slug; let i = $index) {
-                  <tr [style.background]="i % 2 === 1 ? 'var(--color-surface-raised)' : 'transparent'">
-                    <td class="px-3 py-1.5 font-medium" style="color:var(--color-text-primary)">{{ g.label }}</td>
-                    <td class="px-3 py-1.5">
-                      <input class="w-20 rounded border px-2 py-1 outline-none" style="background:var(--color-bg);border-color:var(--color-border);color:var(--color-text-primary)"
-                             type="number" min="0" max="1" step="0.05"
-                             [ngModel]="roleOverrides()[g.slug].percentileSoglia"
-                             (ngModelChange)="updateRoleOverride(g.slug, 'percentileSoglia', $event)" />
-                    </td>
-                    <td class="px-3 py-1.5">
-                      <input class="w-20 rounded border px-2 py-1 outline-none" style="background:var(--color-bg);border-color:var(--color-border);color:var(--color-text-primary)"
-                             type="number" min="0" step="0.01"
-                             [ngModel]="roleOverrides()[g.slug].tassoBase"
-                             (ngModelChange)="updateRoleOverride(g.slug, 'tassoBase', $event)" />
-                    </td>
-                    <td class="px-3 py-1.5">
-                      <input class="w-20 rounded border px-2 py-1 outline-none" style="background:var(--color-bg);border-color:var(--color-border);color:var(--color-text-primary)"
-                             type="number" min="1" step="0.1"
-                             [ngModel]="roleOverrides()[g.slug].moltiplicatoreMax"
-                             (ngModelChange)="updateRoleOverride(g.slug, 'moltiplicatoreMax', $event)" />
-                    </td>
-                    <td class="px-3 py-1.5" style="color:var(--color-text-secondary)">
-                      {{ budgetPerGruppo()?.[g.slug] != null ? (budgetPerGruppo()![g.slug] | number:'1.0-0') + ' cr' : '—' }}
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-        }
-      </div>
-
       @if (stats(); as s) {
         <div class="flex flex-wrap gap-3 border-b px-4 py-2 text-xs sm:px-6"
              style="border-color:var(--color-border);color:var(--color-text-secondary);background:var(--color-surface)">
@@ -223,7 +124,6 @@ import { PlayerDrawerComponent } from './components/player-drawer/player-drawer.
               [loading]="loading()"
               [page]="currentPage()"
               [pageSize]="pageSize"
-              [stimaAstaActive]="stimaAstaActive()"
               [mantraMap]="mantraMap()"
               [matchdayStatus]="matchdayStatusMap()"
               [teamStrength]="teamStrengthScores()"
@@ -277,17 +177,6 @@ export class PlayersComponent {
     { key: 'SCOMMESSA', label: 'Scommesse', icon: '\u{1F504}' },
   ];
 
-  /** Macro-gruppi di ruolo per la stima d'asta — stessi slug/gruppi del backend (RUOLO_MACRO_GRUPPO). */
-  readonly ROLE_GROUPS: { slug: string; label: string }[] = [
-    { slug: 'portieri', label: 'Portieri' },
-    { slug: 'difesa', label: 'Difesa' },
-    { slug: 'ibridi', label: 'Ibridi (E, M)' },
-    { slug: 'centro', label: 'Centrocampo (C)' },
-    { slug: 'fantasia', label: 'Fantasia (T, W)' },
-    { slug: 'attacco', label: 'Attacco' },
-  ];
-  private static readonly DEFAULT_ROLE_OVERRIDE = { percentileSoglia: 0.7, tassoBase: 0.05, moltiplicatoreMax: 1.6 };
-
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
   readonly mantraPlayers = signal<MantraPlayer[]>([]);
@@ -305,42 +194,6 @@ export class PlayersComponent {
   readonly searchInput = signal('');
   readonly priceMin = signal<number | null>(null);
   readonly priceMax = signal<number | null>(null);
-  readonly stimaAstaEnabled = signal(false);
-  readonly numPartecipanti = signal<number | null>(null);
-  /** Crediti per manager — cr_totali di lega = budget * numPartecipanti. */
-  readonly budget = signal<number | null>(500);
-  /** Riflette se l'ultima risposta del backend ha applicato la stima (può
-   * essere false anche con stimaAstaEnabled=true finché numPartecipanti è vuoto). */
-  readonly stimaAstaActive = signal(false);
-  /** Quota di cr_totali per macro-gruppo di ruolo, dall'ultima risposta del backend. */
-  readonly budgetPerGruppo = signal<Record<string, number> | null>(null);
-  /** Mostra il pannello con le impostazioni avanzate per gruppo di ruolo. */
-  readonly showRoleOverrides = signal(false);
-  readonly roleOverrides = signal<Record<string, { percentileSoglia: number; tassoBase: number; moltiplicatoreMax: number }>>(
-    PlayersComponent.defaultRoleOverrides()
-  );
-
-  private static defaultRoleOverrides(): Record<string, { percentileSoglia: number; tassoBase: number; moltiplicatoreMax: number }> {
-    return {
-      portieri: { ...PlayersComponent.DEFAULT_ROLE_OVERRIDE },
-      difesa: { ...PlayersComponent.DEFAULT_ROLE_OVERRIDE },
-      ibridi: { ...PlayersComponent.DEFAULT_ROLE_OVERRIDE },
-      centro: { ...PlayersComponent.DEFAULT_ROLE_OVERRIDE },
-      fantasia: { ...PlayersComponent.DEFAULT_ROLE_OVERRIDE },
-      attacco: { ...PlayersComponent.DEFAULT_ROLE_OVERRIDE },
-    };
-  }
-
-  readonly updateRoleOverride = (slug: string, field: 'percentileSoglia' | 'tassoBase' | 'moltiplicatoreMax', value: number) => {
-    this.roleOverrides.update(current => ({
-      ...current,
-      [slug]: { ...current[slug], [field]: value },
-    }));
-  };
-
-  readonly resetRoleOverrides = () => {
-    this.roleOverrides.set(PlayersComponent.defaultRoleOverrides());
-  };
   readonly activeQuickFilter = signal<string | null>(null);
   readonly selectedPlayer = signal<any | null>(null);
   readonly matchdayStatusMap = signal<Record<number, any>>({});
@@ -385,10 +238,6 @@ export class PlayersComponent {
         this.priceMin(),
         this.priceMax(),
         this.matchdayStatusMap(),
-        this.stimaAstaEnabled(),
-        this.numPartecipanti(),
-        this.budget(),
-        this.roleOverrides(),
       ]);
       const filtersChanged = signature !== this.lastFilterSignature;
       this.lastFilterSignature = signature;
@@ -435,13 +284,6 @@ export class PlayersComponent {
           .map((mds: any) => mds.fantacalcio_id)
       : undefined;
 
-    // Guard against sending invalid values to the API (e.g. an emptied/zeroed
-    // number input): both fields must be present AND > 0, matching the
-    // backend's own `ge=1` constraints, so we never trigger a 422.
-    const stimaAsta = this.stimaAstaEnabled()
-      && (this.numPartecipanti() ?? 0) > 0
-      && (this.budget() ?? 0) > 0;
-
     this.mantraService.listPlayers({
       ruolo: this.selectedRuolo() || undefined,
       team: this.selectedTeam() || undefined,
@@ -454,16 +296,10 @@ export class PlayersComponent {
       sortDir: this.sortDirection() || undefined,
       page: this.currentPage(),
       size: this.pageSize,
-      stimaAsta,
-      numPartecipanti: stimaAsta ? this.numPartecipanti()! : undefined,
-      budget: stimaAsta ? this.budget()! : undefined,
-      overrideRuolo: stimaAsta ? this.roleOverrides() : undefined,
     }).subscribe({
       next: (res) => {
         this.mantraPlayers.set(res.items);
         this.total.set(res.total);
-        this.stimaAstaActive.set(res.stima_asta_attiva ?? false);
-        this.budgetPerGruppo.set(res.budget_per_gruppo ?? null);
         this.loading.set(false);
       },
       error: (e) => {
@@ -475,8 +311,8 @@ export class PlayersComponent {
 
   /** FastAPI errors come in two shapes: a plain string `detail` (our own
    * HTTPException calls) or a Pydantic validation array (query param
-   * constraint violations, e.g. `budget` below its `ge=1` floor) — surface
-   * a readable message for either instead of the raw HTTP failure text. */
+   * constraint violations) — surface a readable message for either instead
+   * of the raw HTTP failure text. */
   private extractErrorMessage(e: unknown): string {
     const detail = (e as { error?: { detail?: unknown } } | null)?.error?.detail;
     if (typeof detail === 'string') return detail;
@@ -546,11 +382,5 @@ export class PlayersComponent {
     this.priceMin.set(null);
     this.priceMax.set(null);
     this.activeQuickFilter.set(null);
-    this.stimaAstaEnabled.set(false);
-    this.numPartecipanti.set(null);
-    this.budget.set(500);
-    this.budgetPerGruppo.set(null);
-    this.showRoleOverrides.set(false);
-    this.roleOverrides.set(PlayersComponent.defaultRoleOverrides());
   };
 }

@@ -390,31 +390,8 @@ classificazioni (TOP, AFFARE, SCOMMESSA, ...).
 
     curl -X POST http://localhost:8000/api/v1/mantra/run -H "Content-Type: application/json" -d '{"season_start": 2025}'
 
-6C.4 Stima prezzo d'asta (on-demand, non richiede ricalcolo MANTRA):
-
-    Di default `Prezzo_Massimo` è la quotazione ufficiale di listone. Passando
-    `stima_asta=true` + `num_partecipanti`, l'API la sovrascrive al volo con una
-    proiezione che sale sopra al listino in base al percentile del giocatore nel
-    proprio ruolo e al numero di partecipanti alla lega (stesso modello usato da
-    ml.optimizer/ml.auction — vedi ml/optimizer/inflation.py).
-
-    curl "http://localhost:8000/api/v1/mantra/players?stima_asta=true&num_partecipanti=10"
-
-    Parametri opzionali per calibrare la curva (default: soglia 0.7, tasso 0.05,
-    partecipanti baseline 8, moltiplicatore max 1.6):
-
-    curl "http://localhost:8000/api/v1/mantra/players?stima_asta=true&num_partecipanti=10&percentile_soglia=0.7&tasso_base=0.05&partecipanti_baseline=8&moltiplicatore_max=1.6"
-
-    Override per macro-gruppo di ruolo (portieri/difesa/ibridi/centro/fantasia/
-    attacco) — utile perché in un'asta reale gli attaccanti si gonfiano molto
-    più dei portieri a parità di partecipanti:
-
-    curl -G "http://localhost:8000/api/v1/mantra/players" \
-        --data-urlencode "stima_asta=true" \
-        --data-urlencode "num_partecipanti=10" \
-        --data-urlencode 'override_ruolo_json={"attacco":{"moltiplicatore_max":2.0,"tasso_base":0.08}}'
-
-    Senza `stima_asta`, il comportamento è invariato (solo quotazione reale).
+6C.4 `Prezzo_Massimo` è sempre la quotazione ufficiale di listone — nessuna
+    stima/proiezione d'asta viene applicata da questa API.
 
 NOTA: la computazione MANTRA usa i dati di `player_season_aggregates`
 e `team_strength_aggregates` (viste create dalla migration 010, Serie-A-

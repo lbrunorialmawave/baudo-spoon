@@ -115,14 +115,10 @@ di ruolo resta solo un fallback per i giocatori mai quotati (Pz1≤0, neo
 arrivi). `Percentile_Ruolo` (rank di `FP_Mantra` nel pool esteso) è esposto
 per uso downstream ma non modifica `Prezzo_Massimo` in pipeline.
 
-**Stima d'asta (opzionale, calcolata a runtime, non in pipeline)**: l'API
-`GET /mantra/players` accetta i parametri opzionali `stima_asta` e
-`num_partecipanti` per sovrascrivere `Prezzo_Massimo` con una proiezione
-che aumenta il prezzo sopra al listino in base al `Percentile_Ruolo` del
-giocatore e al numero di partecipanti alla lega, riusando
-`ml.optimizer.inflation.inflation_multiplier` — lo stesso modello già usato
-dall'ottimizzatore rose e dal tracker d'asta live (`ml/auction/`). Senza
-questi parametri, `Prezzo_Massimo` resta la quotazione reale.
+`GET /mantra/players` espone sempre `Prezzo_Massimo` come la quotazione
+ufficiale di listone (nessuna proiezione/inflazione applicata lato API). Il
+modello di inflazione `ml.optimizer.inflation.inflation_multiplier` resta in
+uso solo dall'ottimizzatore rose e dal tracker d'asta live (`ml/auction/`).
 
 ---
 
