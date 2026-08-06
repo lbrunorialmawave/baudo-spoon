@@ -64,10 +64,13 @@ on:
         required: false
         default: ""
 
-  # Schedulazione: ogni lunedì alle 06:00 UTC (~08:00 CEST)
+  # Schedulazione: ogni lunedì alle 06:00 UTC (~08:00 CEST), il giorno dopo
+  # il turno infrasettimanale/domenicale. Il cron di GitHub Actions è
+  # sempre in UTC — aggiusta l'ora se cambia il fuso del campionato.
   # schedule:
   #   - cron: "0 6 * * 1"
 
+# Evita run sovrapposte se ne parte una manuale mentre gira quella schedulata.
 concurrency:
   group: ml-training
   cancel-in-progress: false
@@ -81,8 +84,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Build dell'immagine Docker con le stesse dipendenze usate
-      # in locale e su Render.
+      # Build dal Dockerfile esistente: garantisce le stesse dipendenze/versioni
+      # usate in locale (docker compose --profile ml) e su Render Cron Job.
+      # Contesto = root del repo perché ml/Dockerfile fa `COPY ml/requirements.txt .`
       - name: Build ML image
         run: docker build -f ml/Dockerfile -t ml-runner:latest .
 
@@ -115,7 +119,9 @@ jobs:
             ${{ github.event.inputs.output_dir != '' && format('--output-dir "{0}"', github.event.inputs.output_dir) || '' }} \
             --json-logs
 
+      # Fallisce esplicitamente il job (oltre al normale exit code non-zero
+      # di run_pipeline.py) così il tab Actions e le notifiche email di
+      # GitHub sui watcher del repo segnalano il training fallito.
       - name: Notify on failure
         if: failure()
-        run: |
-          echo "::error::Training ML fallito — controlla i log sopra. Nessun nuovo run_id è stato promosso."
+        run: echo "::error::Training ML fallito — controlla i log sopra. Nessun nuovo run_id è stato promosso."
