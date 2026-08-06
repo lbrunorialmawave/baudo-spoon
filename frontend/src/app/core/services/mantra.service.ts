@@ -117,13 +117,6 @@ export class MantraService {
     return this.http.get<DataHealthResponse>(`${this.baseUrl}/admin/data-health`);
   }
 
-  /** Trigger Snai scraper. */
-  runSnaiScraper(seasonStart?: number): Observable<any> {
-    let params = new HttpParams();
-    if (seasonStart) params = params.set('season_start', seasonStart);
-    return this.http.post(`${this.baseUrl}/admin/scrape/snai`, null, { params });
-  }
-
   /** Trigger Probabili Formazioni scraper. */
   runProbabiliScraper(matchday?: number): Observable<any> {
     let params = new HttpParams();
@@ -136,13 +129,6 @@ export class MantraService {
     let params = new HttpParams();
     if (seasonStart) params = params.set('season_start', seasonStart);
     return this.http.post(`${this.baseUrl}/admin/scrape/esperti`, null, { params });
-  }
-
-  /** Trigger The Odds API winner-odds scraper (snai replacement). */
-  runOddsApiScraper(seasonStart?: number): Observable<any> {
-    let params = new HttpParams();
-    if (seasonStart) params = params.set('season_start', seasonStart);
-    return this.http.post(`${this.baseUrl}/admin/scrape/odds-api`, null, { params });
   }
 
   /** Re-import quotazioni XLSX listoni from the mounted ./quotazioni directory. */

@@ -38,10 +38,6 @@ export class AdminComponent {
         const latest = seasons.length ? Math.max(...seasons) : null;
         this.currentSeason.set(latest);
         // Pre-populate the season-scoped scraper params with the current season.
-        const snai = this.scrapers.find(s => s.name === 'snai');
-        if (snai && latest) snai.params[0].value.set(String(latest));
-        const oddsApi = this.scrapers.find(s => s.name === 'odds-api');
-        if (oddsApi && latest) oddsApi.params[0].value.set(String(latest));
         const esperti = this.scrapers.find(s => s.name === 'esperti');
         if (esperti && latest) esperti.params[0].value.set(String(latest));
       },
@@ -74,7 +70,6 @@ export class AdminComponent {
       id_mapping: 'ID Mapping',
       mantra_roles: 'MANTRA Roles',
       matchday_status: 'Probabili Formazioni',
-      snai_odds: 'Snai Pre-season Odds',
       expert_ratings: 'Expert Ratings',
       quotations: 'Player Quotations',
     };
@@ -102,30 +97,6 @@ export class AdminComponent {
   };
 
   readonly scrapers = [
-    {
-      name: 'snai',
-      label: 'Snai Odds',
-      description: 'Scrape Serie A winner odds from snai.it (blocked from datacenter IPs)',
-      frequency: 'Pre-season + January',
-      params: [
-        { key: 'season_start', label: 'Season', placeholder: 'current', value: signal('') },
-      ],
-      running: signal(false),
-      result: signal<string | null>(null),
-      error: signal<string | null>(null),
-    },
-    {
-      name: 'odds-api',
-      label: 'Odds API (Snai replacement)',
-      description: 'Scrape Serie A winner odds via the-odds-api.com',
-      frequency: 'Pre-season + January',
-      params: [
-        { key: 'season_start', label: 'Season', placeholder: 'current', value: signal('') },
-      ],
-      running: signal(false),
-      result: signal<string | null>(null),
-      error: signal<string | null>(null),
-    },
     {
       name: 'probabili',
       label: 'Probabili Formazioni',
@@ -181,11 +152,7 @@ export class AdminComponent {
 
     const seasonOrMatchday = scraper.params[0] ? Number(scraper.params[0].value()) || undefined : undefined;
     let obs;
-    if (scraper.name === 'snai') {
-      obs = this.mantraService.runSnaiScraper(seasonOrMatchday);
-    } else if (scraper.name === 'odds-api') {
-      obs = this.mantraService.runOddsApiScraper(seasonOrMatchday);
-    } else if (scraper.name === 'esperti') {
+    if (scraper.name === 'esperti') {
       obs = this.mantraService.runEspertiScraper(seasonOrMatchday);
     } else if (scraper.name === 'quotazioni') {
       obs = this.mantraService.runQuotazioniImport();

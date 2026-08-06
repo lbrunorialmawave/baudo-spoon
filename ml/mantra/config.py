@@ -91,12 +91,11 @@ class MantraConfig:
     BUDGET_TOTALE: int = 500
 
     # ── PS_corretto weights ──────────────────────────────────────────────────
-    PS_TEAM_RANK_WEIGHT: float = 0.25
-    PS_PREV_POINTS_WEIGHT: float = 0.20
-    PS_GOAL_DIFF_WEIGHT: float = 0.15
-    PS_AVG_RATING_WEIGHT: float = 0.15
-    PS_SQUAD_VALUE_WEIGHT: float = 0.15
-    PS_SNAI_ODDS_WEIGHT: float = 0.10
+    PS_TEAM_RANK_WEIGHT: float = 0.27
+    PS_PREV_POINTS_WEIGHT: float = 0.22
+    PS_GOAL_DIFF_WEIGHT: float = 0.17
+    PS_AVG_RATING_WEIGHT: float = 0.17
+    PS_SQUAD_VALUE_WEIGHT: float = 0.17
 
     def __post_init__(self) -> None:
         total = self.PESO_P1 + self.PESO_P2 + self.PESO_P3 + self.PESO_P4
@@ -110,7 +109,6 @@ class MantraConfig:
             + self.PS_GOAL_DIFF_WEIGHT
             + self.PS_AVG_RATING_WEIGHT
             + self.PS_SQUAD_VALUE_WEIGHT
-            + self.PS_SNAI_ODDS_WEIGHT
         )
         if abs(ps_total - 1.0) > 1e-6:
             raise ValueError(

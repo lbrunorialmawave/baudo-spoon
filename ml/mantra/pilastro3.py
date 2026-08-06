@@ -1,13 +1,12 @@
 """P3 — Peso Squadra (team strength context pillar).
 
-PS_corretto is computed as a weighted average of 6 normalised parameters:
+PS_corretto is computed as a weighted average of 5 normalised parameters:
 
-    PS_corretto = team_rank_norm_pct × 0.25
-                + prev_season_points_pct × 0.20
-                + goal_difference_pct × 0.15
-                + avg_team_rating_pct × 0.15
-                + squad_value_market_pct × 0.15
-                + snai_winner_odds_pct × 0.10
+    PS_corretto = team_rank_norm_pct × 0.27
+                + prev_season_points_pct × 0.22
+                + goal_difference_pct × 0.17
+                + avg_team_rating_pct × 0.17
+                + squad_value_market_pct × 0.17
 
 Then:
 
@@ -49,7 +48,6 @@ def compute_ps_corretto(df: pd.DataFrame, cfg: MantraConfig) -> pd.Series:
         - ``goal_difference``      — season goal difference
         - ``avg_team_rating``      — mean FotMob rating of players in team
         - ``squad_value_market``   — SUM(qt_a) for the team's players
-        - ``snai_winner_odds``     — pre-season implied probability (optional)
         - ``season_start``         — season identifier
     cfg:
         Calibrated coefficients with PS weight parameters.
@@ -67,7 +65,6 @@ def compute_ps_corretto(df: pd.DataFrame, cfg: MantraConfig) -> pd.Series:
         ("goal_difference", "goal_diff"),
         ("avg_team_rating", "avg_rating"),
         ("squad_value_market", "squad_value"),
-        ("snai_winner_odds", "snai_odds"),
     ]:
         if col in df.columns and df[col].notna().any():
             # Normalise within each season
@@ -88,7 +85,6 @@ def compute_ps_corretto(df: pd.DataFrame, cfg: MantraConfig) -> pd.Series:
         + components["goal_diff"]   * cfg.PS_GOAL_DIFF_WEIGHT
         + components["avg_rating"]  * cfg.PS_AVG_RATING_WEIGHT
         + components["squad_value"] * cfg.PS_SQUAD_VALUE_WEIGHT
-        + components["snai_odds"]   * cfg.PS_SNAI_ODDS_WEIGHT
     )
     return ps.clip(lower=0, upper=100)
 

@@ -43,11 +43,6 @@ class APISettings(BaseSettings):
         description="TTL for Redis-cached ML results (seconds)",
     )
 
-    # The Odds API (the-odds-api.com) — used for Serie A winner outright odds,
-    # replacing the snai.it scraper which is blocked at the TLS level from
-    # datacenter IPs. Set via API_ODDS_API_KEY.
-    odds_api_key: str | None = Field(default=None, description="API key for the-odds-api.com")
-
     # GitHub Actions trigger for ML training (see .github/workflows/ml-training.yml).
     # The ml pipeline needs dependencies (xgboost, shap, matplotlib, ...) the API's
     # own image deliberately doesn't install, so training can't run as a local

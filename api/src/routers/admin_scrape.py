@@ -2,8 +2,6 @@
 
 Endpoints
 ---------
-POST /admin/scrape/snai           — Trigger Snai odds scraper (blocked from datacenter IPs — see odds-api)
-POST /admin/scrape/odds-api       — Trigger The Odds API winner-odds scraper (snai replacement)
 POST /admin/scrape/probabili      — Trigger probabili formazioni scraper
 POST /admin/scrape/esperti        — Trigger Gruppo Esperti ratings scraper
 POST /admin/scrape/quotazioni     — Re-import listoni XLSX
@@ -49,44 +47,6 @@ def _to_sync_url(url: str) -> str:
 
 
 # ── Scraper triggers ─────────────────────────────────────────────────────────
-
-
-@router.post("/scrape/snai", summary="Trigger Snai odds scraper")
-async def trigger_snai(
-    season_start: Optional[int] = Query(None, description="Season start year"),
-) -> ORJSONResponse:
-    try:
-        # Don't use get_db dependency — create sync connection directly for scraper compatibility
-        sync_url = _to_sync_url(settings.database_url)
-        log.info("[trigger_snai] Starting scrape")
-        from scraper.snai_odds import scrape, persist
-        records = scrape(season_start=season_start)
-        n = persist(records, sync_url)
-        return ORJSONResponse({"scraper": "snai", "records": n, "status": "ok"})
-    except Exception:
-        log.exception("Snai scraper failed")
-        raise HTTPException(status_code=500, detail="Snai scraper failed. Check server logs.")
-
-
-@router.post("/scrape/odds-api", summary="Trigger The Odds API winner-odds scraper")
-async def trigger_odds_api(
-    season_start: Optional[int] = Query(None, description="Season start year"),
-) -> ORJSONResponse:
-    if not settings.odds_api_key:
-        raise HTTPException(
-            status_code=400,
-            detail="ODDS_API_KEY not configured. Set API_ODDS_API_KEY on the server.",
-        )
-    try:
-        sync_url = _to_sync_url(settings.database_url)
-        log.info("[trigger_odds_api] Starting scrape")
-        from scraper.odds_api import scrape, persist
-        records = scrape(api_key=settings.odds_api_key, season_start=season_start)
-        n = persist(records, sync_url)
-        return ORJSONResponse({"scraper": "odds-api", "records": n, "status": "ok"})
-    except Exception:
-        log.exception("The Odds API scraper failed")
-        raise HTTPException(status_code=500, detail="The Odds API scraper failed. Check server logs.")
 
 
 @router.post("/scrape/probabili", summary="Trigger probabili formazioni scraper")
@@ -287,18 +247,7 @@ async def get_data_health(
         "status": "ok" if int(md_count or 0) > 0 else "missing",
     })
 
-    # 4. Team winner odds (either source — snai is blocked from datacenter IPs,
-    # odds_api is the intended replacement, but both write the same table/shape).
-    snai_count = await db.scalar(
-        sa.text("SELECT COUNT(*) FROM team_season_odds WHERE source IN ('snai', 'odds_api')")
-    )
-    sources.append({
-        "name": "snai_odds",
-        "total_rows": int(snai_count or 0),
-        "status": "ok" if int(snai_count or 0) > 0 else "missing",
-    })
-
-    # 5. Expert ratings
+    # 4. Expert ratings
     exp_count = await db.scalar(sa.text("SELECT COUNT(*) FROM expert_ratings"))
     sources.append({
         "name": "expert_ratings",
@@ -306,7 +255,7 @@ async def get_data_health(
         "status": "ok" if int(exp_count or 0) > 0 else "missing",
     })
 
-    # 6. Quotations
+    # 5. Quotations
     q_count = await db.scalar(
         sa.text("SELECT COUNT(*) FROM player_quotations")
     )
@@ -380,18 +329,6 @@ async def get_source_health(
 async def get_scraper_status() -> ORJSONResponse:
     """Return static status information about available scrapers."""
     scrapers = [
-        {
-            "name": "snai",
-            "description": "Snai Serie A winner odds (blocked from datacenter IPs — see odds-api)",
-            "frequency": "Pre-season + January",
-            "configurable_params": ["season_start"],
-        },
-        {
-            "name": "odds-api",
-            "description": "Serie A winner odds via The Odds API (the-odds-api.com)",
-            "frequency": "Pre-season + January",
-            "configurable_params": ["season_start"],
-        },
         {
             "name": "probabili",
             "description": "Probabili formazioni Serie A",
