@@ -162,7 +162,8 @@ export class PlayersComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   readonly teamStrengthScores = signal<Record<string, number>>({});
-  readonly teamsList = computed(() => Object.keys(this.teamStrengthScores()).sort());
+  /** Teams for the filter dropdown — from the same resolved MANTRA season as the player list, not the static Serie A club list. */
+  readonly teamsList = signal<string[]>([]);
 
   readonly MANTRA_ROLES = MANTRA_ROLES;
   readonly FASE7_LABELS = FASE7_LABELS;
@@ -255,6 +256,10 @@ export class PlayersComponent {
     this.loadStats();
     this.loadMatchdayStatus();
     this.teamStrengthService.getScores().subscribe(s => this.teamStrengthScores.set(s));
+    this.mantraService.getTeams().subscribe({
+      next: (res) => this.teamsList.set(res.teams),
+      error: () => {},
+    });
 
     this.quotationService.getSeasons().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (seasons) => {

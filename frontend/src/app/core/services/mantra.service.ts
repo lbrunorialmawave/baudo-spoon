@@ -51,6 +51,11 @@ export class MantraService {
     );
   }
 
+  /** Distinct teams present in the current MANTRA season (matches /mantra/players' data). */
+  getTeams(): Observable<{ teams: string[] }> {
+    return this.http.get<{ teams: string[] }>(`${this.baseUrl}/mantra/teams`);
+  }
+
   /** Single player detail. */
   getPlayer(fantacalcioId: number): Observable<{ player: MantraPlayer; classifications: any }> {
     return this.http.get<{ player: MantraPlayer; classifications: any }>(

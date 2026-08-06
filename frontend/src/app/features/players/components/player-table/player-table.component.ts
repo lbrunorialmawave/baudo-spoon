@@ -38,9 +38,9 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
             <th class="px-3 py-2 text-left">
               Profilo <span class="opacity-60 cursor-help" [title]="PROFILO_LEGEND">ⓘ</span>
             </th>
-            <th class="px-3 py-2 text-right sortable" (click)="sortChanged.emit('Prezzo_Massimo')"
+            <th class="px-3 py-2 text-right sortable" (click)="sortChanged.emit('Pz1')"
                 title="Quotazione ufficiale corrente del listone">
-              Prezzo @if (sortColumn() === 'Prezzo_Massimo') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
+              Prezzo @if (sortColumn() === 'Pz1') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
             </th>
             <th class="px-3 py-2 text-left hidden lg:table-cell" title="Valutazione Gruppo Esperti (forum.gruppoesperti.it), 1-5 stelle">Esperti</th>
           </tr>
@@ -130,10 +130,7 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                 </td>
                 <td class="px-3 py-2.5 text-right font-mono text-xs whitespace-nowrap"
                     style="color:var(--color-text-secondary)">
-                  {{ mp?.Prezzo_Massimo != null ? (mp.Prezzo_Massimo | number:'1.0-0') + ' cr' : '—' }}
-                  @if (mp?.Pz1 != null) {
-                    <div class="opacity-60" style="font-size:10px" title="Quotazione ufficiale corrente (listone)">list. {{ mp.Pz1 | number:'1.0-0' }}</div>
-                  }
+                  {{ mp?.Pz1 != null ? (mp.Pz1 | number:'1.0-0') + ' cr' : '—' }}
                 </td>
                 <td class="px-3 py-2.5 text-xs hidden lg:table-cell whitespace-nowrap">
                   @let er = expertRatings()[item.fantacalcio_id];

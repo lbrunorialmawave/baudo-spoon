@@ -226,7 +226,7 @@ const NAV_ITEMS: readonly NavItem[] = [
         display: grid;
         grid-template-columns: 1fr;
         grid-template-rows: 1fr auto;
-        min-height: 100dvh;
+        height: 100dvh;
         overflow: hidden;
         background: var(--color-bg);
       }

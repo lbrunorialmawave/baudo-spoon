@@ -3,6 +3,7 @@
 Endpoints
 ---------
 GET  /mantra/players                    — List all players with MANTRA scores
+GET  /mantra/teams                      — Distinct teams in the current MANTRA season
 GET  /mantra/players/{fantacalcio_id}   — Single player detail with pillar breakdown
 GET  /mantra/top/{ruolo}                — Top N by FP_Mantra in a role
 GET  /mantra/classifications            — All Fase 7/8 classifications
@@ -222,6 +223,23 @@ async def list_mantra_players(
         "items": items,
         "meta": data.get("meta"),
     })
+
+
+@router.get(
+    "/teams",
+    response_class=ORJSONResponse,
+    summary="Distinct teams present in the current MANTRA season",
+    description="Teams derived from the same resolved season as GET /mantra/players, "
+                "so the list never includes a team with zero players (or omits one that has some).",
+)
+async def list_mantra_teams(db: AsyncSession = Depends(get_db)) -> ORJSONResponse:
+    try:
+        data = await _load_mantra_results(db)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    teams = sorted({p["team"] for p in data.get("players", []) if p.get("team")})
+    return ORJSONResponse({"teams": teams})
 
 
 @router.get(
