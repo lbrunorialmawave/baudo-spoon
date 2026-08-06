@@ -25,12 +25,6 @@ export const routes: Routes = [
           import('./features/quotations/quotations.component').then((m) => m.QuotationsComponent),
       },
       {
-        path: 'matches',
-        canActivate: [adminGuard],
-        loadComponent: () =>
-          import('./features/matches/matches.component').then((m) => m.MatchesComponent),
-      },
-      {
         path: 'predictions',
         loadComponent: () =>
           import('./features/predictions/predictions.component').then(

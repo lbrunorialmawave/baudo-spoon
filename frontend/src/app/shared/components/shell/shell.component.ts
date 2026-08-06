@@ -24,12 +24,6 @@ const NAV_ITEMS: readonly NavItem[] = [
     icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M7 7h10M7 12h6m-6 5h4"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`,
   },
   {
-    path: '/matches',
-    label: 'Matches',
-    shortLabel: 'Matches',
-    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="17" rx="2"/><path stroke-linecap="round" d="M3 9h18M8 2v4M16 2v4"/></svg>`,
-  },
-  {
     path: '/predictions',
     label: 'Previsioni',
     shortLabel: 'Prev.',
