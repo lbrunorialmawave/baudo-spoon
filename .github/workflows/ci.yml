@@ -127,13 +127,24 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [api, ml, scraper]
+        include:
+          # api/Dockerfile and ml/Dockerfile COPY paths (api/, ml/, scraper/,
+          # quotazioni/) relative to the repo root, so context must be root.
+          - service: api
+            context: .
+            dockerfile: api/Dockerfile
+          - service: ml
+            context: .
+            dockerfile: ml/Dockerfile
+          - service: scraper
+            context: scraper
+            dockerfile: scraper/Dockerfile
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Build ${{ matrix.service }} image
-        run: docker build ./${{ matrix.service }} --tag baudo-spoon/${{ matrix.service }}:ci
+        run: docker build -f ${{ matrix.dockerfile }} --tag baudo-spoon/${{ matrix.service }}:ci ${{ matrix.context }}
 
   # ── Lint ──────────────────────────────────────────────────────────────────
   lint:
