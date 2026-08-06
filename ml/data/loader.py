@@ -85,6 +85,32 @@ SELECT player_fotmob_id, season_start, canonical_role
 FROM player_season_roles
 """
 
+# Cross-league fallback candidates: players in the current listino with a
+# most-recent-season stat line in ANY league (player_latest_stats_any_league,
+# migration 018 — same view MANTRA's neo-arrivo COALESCE reads), joined down
+# to the player_fotmob_id the rest of this loader keys on. Both joins are
+# 1:1 by construction (uq_player_quotation / uq_id_map UNIQUE(fantacalcio_id,
+# season_start)), so no dedup is needed here.
+_FOREIGN_FALLBACK_SQL = """
+SELECT
+    a.fantacalcio_id      AS player_fotmob_id,
+    pq.player_name,
+    pq.team                AS team_name,
+    a.league_name,
+    a.minutes_avg,
+    a.goals_per90,
+    a.assists_per90,
+    a.saves_per90,
+    a.clean_sheet_per90
+FROM player_latest_stats_any_league a
+JOIN player_id_map pim
+    ON pim.player_fotmob_id = a.fantacalcio_id
+    AND pim.season_start = :season_start
+JOIN player_quotations pq
+    ON pq.fantacalcio_id = pim.fantacalcio_id
+    AND pq.season_start = :season_start
+"""
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _build_where(league_name: Optional[str]) -> str:
@@ -268,6 +294,80 @@ def _attach_role(
     return df_player
 
 
+def _append_foreign_fallback_rows(
+    df_player: pd.DataFrame,
+    engine: sa.Engine,
+    log: logging.Logger,
+) -> pd.DataFrame:
+    """Append one inference-only row per neo-arrivo with zero Serie A history.
+
+    Reads ``player_latest_stats_any_league`` (migration 018 — the same view
+    MANTRA's cross-league COALESCE fallback uses, populated today by the
+    targeted ``POST /admin/scrape/foreign-stats`` scraper) for players
+    already in the current listino but absent from ``df_player`` entirely.
+
+    The returned rows are tagged ``is_foreign_fallback=True`` and their
+    ``season_start`` is overridden to the domestic pipeline's latest season
+    (not the player's real foreign season) so they land in the same
+    "latest season" slice used for prediction everywhere downstream. The
+    caller (``ml.pipeline.trainer``) is responsible for excluding these rows
+    from model training/fitting — this function only adds them.
+
+    Missing view/table (migration not applied) degrades to a no-op with a
+    warning, matching the other optional-feature try/except blocks in
+    :func:`load_raw_data`.
+    """
+    if df_player.empty:
+        return df_player
+
+    target_season = int(df_player["season_start"].max())
+    try:
+        df_foreign = pd.read_sql(
+            sa.text(_FOREIGN_FALLBACK_SQL), engine,
+            params={"season_start": target_season},
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "Could not load cross-league neo-arrivo fallback (%s). "
+            "Apply migration 018 and run POST /admin/scrape/foreign-stats.",
+            exc,
+        )
+        return df_player
+
+    if df_foreign.empty:
+        return df_player
+
+    existing_ids = set(df_player["player_fotmob_id"].unique())
+    df_foreign = df_foreign[~df_foreign["player_fotmob_id"].isin(existing_ids)].copy()
+    if df_foreign.empty:
+        return df_player
+
+    # Back-derive raw counts from the view's pre-computed per-90 rates so the
+    # existing add_per90_features() (ml/preprocessing/features.py) reproduces
+    # them unchanged — no changes needed there.
+    df_foreign["mins_played"] = df_foreign["minutes_avg"]
+    denom = (df_foreign["mins_played"] / 90.0).clip(lower=1)
+    df_foreign["goals"] = df_foreign["goals_per90"] * denom
+    df_foreign["goal_assist"] = df_foreign["assists_per90"] * denom
+    df_foreign["saves"] = df_foreign["saves_per90"] * denom
+    df_foreign["clean_sheet"] = df_foreign["clean_sheet_per90"] * denom
+    df_foreign["appearances"] = (df_foreign["mins_played"] / 90.0).round()
+    df_foreign = df_foreign.drop(
+        columns=["minutes_avg", "goals_per90", "assists_per90", "saves_per90", "clean_sheet_per90"]
+    )
+
+    df_foreign["season_start"] = target_season
+    df_foreign["season_label"] = f"{target_season}-foreign-fallback"
+    df_foreign["team_fotmob_id"] = pd.NA
+    df_foreign["is_foreign_fallback"] = True
+
+    log.info(
+        "Appended %d cross-league fallback row(s) for neo-arrivi with zero Serie A history",
+        len(df_foreign),
+    )
+    return pd.concat([df_player, df_foreign], ignore_index=True, sort=False)
+
+
 def load_raw_data(engine: sa.Engine, cfg: MLConfig) -> pd.DataFrame:
     """Load and merge player + team stats. Returns the feature DataFrame.
 
@@ -329,6 +429,14 @@ def load_raw_data(engine: sa.Engine, cfg: MLConfig) -> pd.DataFrame:
     df_player = _pivot_stats(df_player_long, index_cols)
     df_player = canonicalize_columns(df_player)
     df_player = _deduplicate_multi_team_players(df_player)
+
+    # ── Cross-league neo-arrivo fallback (inference-only) ────────────────────
+    # Players with zero Serie A history get one extra row from their most
+    # recent season in ANY league, so they can still receive a prediction —
+    # the trainer must exclude is_foreign_fallback rows from fitting/backtest.
+    df_player["is_foreign_fallback"] = False
+    if cfg.league_name and cfg.include_foreign_fallback:
+        df_player = _append_foreign_fallback_rows(df_player, engine, log)
 
     # ── Attach player role (season-scoped) ────────────────────────────────────
     # We prefer `player_season_roles` so that each (player, season) row

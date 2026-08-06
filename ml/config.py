@@ -56,6 +56,12 @@ class MLConfig(BaseSettings):
     # multi-league training deliberately.
     league_name: str | None = "Serie A"
 
+    # Cross-league fallback for neo-arrivi (players with zero Serie A history):
+    # append their most recent season from ANY league (player_latest_stats_any_league,
+    # migration 018) at inference time only — never used for model training/fitting.
+    # Mirrors MANTRA's stats_from_foreign_league fallback (ml/mantra/runner.py).
+    include_foreign_fallback: bool = True
+
     # ── Clustering ────────────────────────────────────────────────────────────
     n_clusters: int = 6
     # Fraction of variance retained by PCA before KMeans.

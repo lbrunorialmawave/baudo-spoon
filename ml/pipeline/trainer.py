@@ -516,9 +516,22 @@ class Trainer:
         log.info("Step 3/12 — Engineering features")
         df = engineer_features(df, trend_window=2)
 
+        # ── 3b. Quarantine cross-league fallback rows ─────────────────────────
+        # Neo-arrivi with zero Serie A history (ml/data/loader.py) are
+        # inference-only: they must never influence feature selection,
+        # training, backtest, or evaluation — only get a prediction (step 8b).
+        _foreign_mask = df.get("is_foreign_fallback", pd.Series(False, index=df.index)).fillna(False)
+        df_core = df[~_foreign_mask].copy()
+        df_foreign = df[_foreign_mask].copy()
+        if len(df_foreign):
+            log.info(
+                "  %d cross-league fallback row(s) quarantined from training/eval",
+                len(df_foreign),
+            )
+
         # ── 4. Feature selection ──────────────────────────────────────────────
         log.info("Step 4/12 — Selecting features")
-        numeric_features, categorical_features = select_features(df)
+        numeric_features, categorical_features = select_features(df_core)
 
         if not numeric_features:
             raise ValueError(
@@ -528,7 +541,7 @@ class Trainer:
 
         # ── 5. Temporal train/test split ──────────────────────────────────────
         log.info("Step 5/12 — Temporal train/test split")
-        df_train, df_test = _temporal_split(df, cfg.test_seasons)
+        df_train, df_test = _temporal_split(df_core, cfg.test_seasons)
         log.info("  Train: %d rows | Test: %d rows", len(df_train), len(df_test))
 
         # ── 6. Role partition ─────────────────────────────────────────────────
@@ -644,12 +657,38 @@ class Trainer:
                 best_pipe.predict(df_test[feature_cols]), index=df_test.index
             )
 
+        # ── 8b. Predict for cross-league fallback rows (inference-only) ────────
+        # These neo-arrivi were quarantined out of df_core in step 3b — this is
+        # the only place they get a prediction, feeding into predictions_df
+        # below so season_value/start_probability populate for them too.
+        pred_foreign = pd.Series(np.nan, index=df_foreign.index, dtype=float)
+        if len(df_foreign):
+            if role_partitioned:
+                gk_mask_foreign = (
+                    df_foreign.get("canonical_role", pd.Series("MID", index=df_foreign.index)) == "GK"
+                )
+                gk_idx_f = df_foreign.index[gk_mask_foreign]
+                out_idx_f = df_foreign.index[~gk_mask_foreign]
+                if len(gk_idx_f):
+                    pred_foreign.loc[gk_idx_f] = best_gk_pipe.predict(
+                        df_foreign.loc[gk_idx_f, gk_feature_cols]
+                    )
+                if len(out_idx_f):
+                    pred_foreign.loc[out_idx_f] = best_out_pipe.predict(
+                        df_foreign.loc[out_idx_f, out_feature_cols]
+                    )
+            else:
+                pred_foreign = pd.Series(
+                    best_pipe.predict(df_foreign[feature_cols]), index=df_foreign.index
+                )
+            log.info("  Predicted fantavoto for %d cross-league fallback row(s)", len(df_foreign))
+
         # ── 9. Backtest ───────────────────────────────────────────────────────
         log.info("Step 9/12 — Walk-forward backtesting")
         from sklearn.base import clone
         bt_result = backtest(
             pipeline=clone(best_pipe),
-            df=df,
+            df=df_core,
             feature_cols=feature_cols,
             target_col="fantavoto_medio",
             model_name=best_name,
@@ -855,11 +894,11 @@ class Trainer:
         if cfg.predict_next:
             log.info(
                 "Predict-next mode: re-fitting %s on all %d rows …",
-                best_name, len(df),
+                best_name, len(df_core),
             )
             from sklearn.base import clone as _clone
             full_pipe = _clone(best_pipe)
-            full_pipe.fit(df[feature_cols], df["fantavoto_medio"])
+            full_pipe.fit(df_core[feature_cols], df_core["fantavoto_medio"])
 
             df_next = df[df["season_start"] == latest_season].copy()
             df_next["predicted_next_fantavoto"] = full_pipe.predict(
@@ -890,6 +929,7 @@ class Trainer:
         predictions_df = df_test[cols].copy()
         predictions_df["fantavoto_medio"] = y_test_vals.values
         predictions_df["predicted_fantavoto"] = pred_test.values
+        predictions_df["is_foreign_fallback"] = False
 
         # Attach expected_minutes from train data (mins_played in test season)
         # as a simple estimate — the last known minutes for each player.
@@ -922,6 +962,28 @@ class Trainer:
         except Exception as _std_exc2:
             log.warning("prediction_std (test set) failed (non-critical): %s", _std_exc2)
             predictions_df["prediction_std"] = 0.0
+
+        # Fold in cross-league fallback predictions (step 8b) so neo-arrivi
+        # with zero Serie A history get season_value/start_probability too —
+        # built the same way as predictions_df, minus cross-model ensemble
+        # disagreement (prediction_std=0.0: no ensemble computed for this
+        # small, low-priority population; a deliberate simplification).
+        if len(df_foreign):
+            foreign_cols = ["player_fotmob_id", "player_name", "team_name", "season_start"]
+            if "canonical_role" in df_foreign.columns:
+                foreign_cols.append("canonical_role")
+            foreign_predictions_df = df_foreign[foreign_cols].copy()
+            foreign_predictions_df["fantavoto_medio"] = df_foreign["fantavoto_medio"].values
+            foreign_predictions_df["predicted_fantavoto"] = pred_foreign.values
+            foreign_predictions_df["expected_minutes"] = (
+                pd.to_numeric(df_foreign.get("mins_played"), errors="coerce").fillna(0).values
+                if "mins_played" in df_foreign.columns else 0
+            )
+            foreign_predictions_df["prediction_std"] = 0.0
+            foreign_predictions_df["is_foreign_fallback"] = True
+            predictions_df = pd.concat(
+                [predictions_df, foreign_predictions_df], ignore_index=True, sort=False
+            )
 
         # Derive season-value targets from predicted rating × predicted appearances.
         # The derivation lives in ``ml.domain.predictions`` so the MANTRA runner

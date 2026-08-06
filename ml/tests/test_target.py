@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 import pandas as pd
 
-from ml.data.target import WEIGHTS_BY_ROLE, _BASE_RATING, compute_approx_fantavoto
+from ml.data.target import WEIGHTS_BY_ROLE, _BASE_RATING, attach_target, compute_approx_fantavoto
 
 
 def _make_df(**kwargs) -> pd.DataFrame:
@@ -109,6 +109,42 @@ def test_missing_role_column_falls_back_to_fwd(
     )
     assert result.iloc[0] == pytest.approx(expected.iloc[0])
     assert any("canonical_role" in r.message for r in caplog.records)
+
+
+# ── min_minutes exemption for cross-league fallback rows ─────────────────────
+# (ml/data/loader.py::_append_foreign_fallback_rows — inference-only neo-arrivi
+# rows must survive the noisy-target floor that real low-sample Serie A rows
+# are still correctly dropped by.)
+
+def _make_season_df(**overrides) -> pd.DataFrame:
+    base = {
+        "player_fotmob_id": [1],
+        "canonical_role": ["FWD"],
+        "mins_played": [200],  # well below the 800 min_minutes default
+        "goals": [1],
+    }
+    base.update({k: [v] for k, v in overrides.items()})
+    return pd.DataFrame(base)
+
+
+def test_foreign_fallback_row_survives_min_minutes_floor() -> None:
+    df = _make_season_df(is_foreign_fallback=True)
+    result = attach_target(df)
+    assert len(result) == 1
+
+
+def test_non_foreign_low_minutes_row_still_dropped() -> None:
+    df = _make_season_df(is_foreign_fallback=False)
+    result = attach_target(df)
+    assert len(result) == 0
+
+
+def test_row_without_flag_column_still_dropped() -> None:
+    """Backward compatibility: callers that never set is_foreign_fallback
+    (the column is absent) must keep the original min_minutes behaviour."""
+    df = _make_season_df()
+    result = attach_target(df)
+    assert len(result) == 0
 
 
 # ── WEIGHTS_BY_ROLE completeness ──────────────────────────────────────────────

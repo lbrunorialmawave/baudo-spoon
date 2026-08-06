@@ -282,6 +282,12 @@ def attach_target(
         mins_col = _safe_col(df, "minutesPlayed")
     if mins_col is not None:
         low_sample = pd.to_numeric(mins_col, errors="coerce").fillna(0) < min_minutes
+        # Cross-league neo-arrivo fallback rows (ml/data/loader.py) are
+        # inference-only and never used as training examples — the
+        # "noisy target" rationale for this floor doesn't apply to them,
+        # and dropping them here would defeat their entire purpose.
+        if "is_foreign_fallback" in df.columns:
+            low_sample = low_sample & ~df["is_foreign_fallback"].fillna(False).astype(bool)
         dropped = int(low_sample.sum())
         if dropped:
             log.info(
