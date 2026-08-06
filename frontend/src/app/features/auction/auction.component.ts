@@ -2009,7 +2009,16 @@ export class AuctionComponent {
       this.referenceBudget = cfg.referenceBudget;
     }
     if (cfg.roleQuotas) {
-      this.roleQuotas = { ...this.roleQuotas, ...cfg.roleQuotas };
+      // Presets always ship CLASSIC-shaped quotas (P/D/C/A). If the operator
+      // is currently in MANTRA mode, only merge the keys that are actually
+      // valid MANTRA roles (e.g. 'C' and 'A') and drop the rest (e.g. 'P',
+      // 'D') instead of sending them straight to the backend, which rejects
+      // any role not in the active ruleset's role set.
+      const validRoles = new Set(this.quotaRoles);
+      const filteredQuotas = Object.fromEntries(
+        Object.entries(cfg.roleQuotas).filter(([role]) => validRoles.has(role)),
+      );
+      this.roleQuotas = { ...this.roleQuotas, ...filteredQuotas };
     }
     if (cfg.valuationMode === 'PER_MATCH_RATING' || cfg.valuationMode === 'SEASON_VALUE') {
       this.valuationMode = cfg.valuationMode;
