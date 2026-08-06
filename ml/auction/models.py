@@ -23,7 +23,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Final, Literal
 
-from ml.optimizer.models import Player, Role
+from ml.mantra.roles import ALL_ROLES as _MANTRA_ALL_ROLES
+from ml.optimizer.models import MANTRA_DEFAULT_QUOTAS, Player, Role, RulesetType
+
+_MANTRA_ROLE_SET: Final[frozenset[str]] = frozenset(_MANTRA_ALL_ROLES)
+_CLASSIC_ROLE_SET: Final[frozenset[str]] = frozenset({"P", "D", "C", "A"})
 
 
 class ValuationMode(str, Enum):
@@ -41,6 +45,7 @@ __all__ = [
     "ALL_TIERS",
     "Tier",
     "Role",
+    "RulesetType",
     "ValuationMode",
     "MarketDriftConfig",
     "AlternativesConfig",
@@ -184,9 +189,22 @@ class AuctionConfig:
     """Configurazione completa di un'asta."""
 
     num_participants: int
-    role_quotas: dict[Role, int] = field(
+    role_quotas: dict[str, int] = field(
         default_factory=lambda: {"P": 3, "D": 8, "C": 8, "A": 6}
     )
+    """Quote per ruolo. Per ``ruleset="CLASSIC"`` deve contenere esattamente
+    le chiavi P/D/C/A. Per ``ruleset="MANTRA"`` deve contenere chiavi valide
+    tra i 12 ruoli Mantra (vedi :data:`ml.mantra.roles.ALL_ROLES`); se non
+    esplicitamente passato insieme a ``ruleset="MANTRA"``, va valorizzato dal
+    chiamante (es. con :data:`ml.optimizer.models.MANTRA_DEFAULT_QUOTAS`) —
+    il default di questo campo resta le quote CLASSIC per non alterare il
+    comportamento dei chiamanti esistenti."""
+
+    ruleset: RulesetType = "CLASSIC"
+    """Ruleset dell'asta: ``"CLASSIC"`` (4 ruoli, default) o ``"MANTRA"``
+    (12 ruoli, multi-slot). Riusa :data:`ml.optimizer.models.RulesetType`
+    per restare coerente con il modulo Optimizer, nessuna duplicazione."""
+
     market_drift_config: MarketDriftConfig = field(default_factory=MarketDriftConfig)
     alternatives_config: AlternativesConfig = field(default_factory=AlternativesConfig)
     use_inflation_baseline: bool = False
@@ -198,6 +216,11 @@ class AuctionConfig:
     :class:`InflationConfig`; viene validato a runtime."""
     valuation_mode: str = "PER_MATCH_RATING"
     """Score metric for VAR ranking: PER_MATCH_RATING or SEASON_VALUE."""
+
+    hybrid_blend: float = 0.0
+    """WS3 #2: weight in [0, 1] of the fpIbrido (MANTRA-ibrido) signal in
+    VarEngine scoring. 0 = disabled (default). Same shape as
+    OptimizationConfig.hybrid_blend."""
 
     reference_budget: int = 300
     """Budget per squadra su cui il listino (``player.cost``) è tarato.
@@ -225,11 +248,33 @@ class AuctionConfig:
                 "AuctionConfig.num_participants must be >= 1, got "
                 f"{self.num_participants}"
             )
-        expected = {"P": 3, "D": 8, "C": 8, "A": 6}
-        if set(self.role_quotas.keys()) != set(expected.keys()):
+        if self.ruleset == "MANTRA" and set(self.role_quotas.keys()) == _CLASSIC_ROLE_SET:
+            # Caller opted into MANTRA but left role_quotas at its CLASSIC
+            # default (didn't pass one explicitly) — fall back to the shared
+            # MANTRA default quotas, same convenience already provided by
+            # OptimizationConfig.mantra_role_quotas in ml.optimizer.models.
+            object.__setattr__(self, "role_quotas", dict(MANTRA_DEFAULT_QUOTAS))
+        if self.ruleset == "CLASSIC":
+            if set(self.role_quotas.keys()) != _CLASSIC_ROLE_SET:
+                raise ValueError(
+                    "AuctionConfig.role_quotas must include exactly P/D/C/A, got "
+                    f"{sorted(self.role_quotas.keys())}"
+                )
+        elif self.ruleset == "MANTRA":
+            unknown = set(self.role_quotas.keys()) - _MANTRA_ROLE_SET
+            if unknown:
+                raise ValueError(
+                    "AuctionConfig.role_quotas contains roles not valid for "
+                    f"ruleset=MANTRA: {sorted(unknown)}. Valid roles: "
+                    f"{sorted(_MANTRA_ROLE_SET)}"
+                )
+            if not self.role_quotas:
+                raise ValueError(
+                    "AuctionConfig.role_quotas must be non-empty for ruleset=MANTRA"
+                )
+        else:
             raise ValueError(
-                "AuctionConfig.role_quotas must include exactly P/D/C/A, got "
-                f"{sorted(self.role_quotas.keys())}"
+                f"AuctionConfig.ruleset must be CLASSIC or MANTRA, got {self.ruleset!r}"
             )
         for role, q in self.role_quotas.items():
             if q <= 0:
@@ -250,6 +295,10 @@ class AuctionConfig:
             raise ValueError(
                 "AuctionConfig.budget_initial must be > 0, got "
                 f"{self.budget_initial}"
+            )
+        if not 0.0 <= self.hybrid_blend <= 1.0:
+            raise ValueError(
+                f"AuctionConfig.hybrid_blend must be in [0, 1], got {self.hybrid_blend}"
             )
 
 
@@ -277,6 +326,14 @@ class AssignmentRecord:
     immediatamente prima dell'aggiornamento EWMA: serve a
     :func:`undo_last_assignment` per ripristinare l'indice in modo
     deterministico senza dover invertire l'operazione.
+
+    ``assigned_slot`` è lo slot di ruolo effettivamente occupato nella rosa
+    del vincitore. In modalità CLASSIC coincide sempre con ``role``
+    (``player.role``). In modalità MANTRA è uno dei codici in
+    ``player.eligible_roles`` (es. ``"Dd"``, ``"E"``) e può differire dal
+    ``player.role`` classico — analogo alla variabile ``x_ir`` del solver ILP
+    ("questo giocatore occupa lo slot Trq/Dc/Br/... anche se eleggibile per
+    più ruoli"). Usato da ``role_breakdown``, undo e serializzazione.
     """
 
     sequence_number: int
@@ -290,6 +347,10 @@ class AssignmentRecord:
     price_index_snapshot_before: dict[Role, dict[Tier, float]] = field(
         default_factory=dict
     )
+    assigned_slot: str | None = None
+    """Slot di ruolo effettivamente riempito. ``None`` solo per record
+    legacy deserializzati pre-Fase-3; in quel caso i consumer devono
+    trattarlo come ``role``. I nuovi record lo popolano sempre."""
 
 
 @dataclass
@@ -329,12 +390,27 @@ class RecordResult:
 
 @dataclass(frozen=True)
 class AlternativeSuggestion:
-    """Suggerimento di alternative per un giocatore target."""
+    """Suggerimento di alternative per un giocatore target.
+
+    ``low_cost_alternative`` / ``closest_alternative`` restano le due
+    euristiche classiche (G2 parity).  WS3 estende con:
+
+    * ``diversified_alternatives`` — mini-fronte Pareto su (score, -price,
+      value ratio), deduplicato rispetto alle due euristiche fisse.
+    * ``max_affordable_bid`` — prezzo massimo pagabile dal partecipante
+      indicato rispettando la riserva crediti (WS3 #4 sensitivity).
+    * ``strategy_price_cap`` — soglia strategia-aware (WS3 #5), se una
+      ``StrategyProfile`` è stata fornita al chiamante.
+    """
 
     target_player_id: str
     low_cost_alternative: Player | None
     closest_alternative: Player | None
     reason_if_none: str | None = None
+    diversified_alternatives: tuple = ()
+    """Up to N non-dominated candidates (Player instances)."""
+    max_affordable_bid: int | None = None
+    strategy_price_cap: int | None = None
 
 
 @dataclass(frozen=True)
@@ -344,3 +420,5 @@ class AuctionSummary:
     participants: list[ParticipantState]
     assignments: list[AssignmentRecord]
     price_index: dict[Role, dict[Tier, float]]
+    completion_probability: dict[str, float] | None = None
+    """WS3 #1: map participant_id → P(complete roster | residual budget)."""

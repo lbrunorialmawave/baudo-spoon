@@ -745,6 +745,12 @@ class AuctionConfigSchema(_CamelModel):
 
     num_participants: int
     role_quotas: dict[str, int] = {"P": 3, "D": 8, "C": 8, "A": 6}
+    ruleset: str = "CLASSIC"
+    """Ruleset dell'asta: ``"CLASSIC"`` (4 ruoli, default) o ``"MANTRA"``
+    (12 ruoli multi-slot). Stesso pattern di :class:`OptimizationRequest`.
+    Quando ``ruleset="MANTRA"`` e ``role_quotas`` resta al default CLASSIC,
+    il dominio applica automaticamente ``MANTRA_DEFAULT_QUOTAS``.
+    """
     market_drift_config: MarketDriftConfigSchema = MarketDriftConfigSchema()
     alternatives_config: AlternativesConfigSchema = AlternativesConfigSchema()
     use_inflation_baseline: bool = False
@@ -791,11 +797,21 @@ class AuctionConfigSchema(_CamelModel):
     default) or 'roster_depth' (score at num_participants × role_quota rank).
     """
 
+    hybrid_blend: float = 0.0
+    """WS3 #2: weight in [0, 1] of fpIbrido signal in VarEngine. 0 = off."""
+
     @field_validator("reference_budget", "budget_initial")
     @classmethod
     def _validate_positive_budget(cls, v: int) -> int:
         if v <= 0:
             raise ValueError(f"must be > 0, got {v}")
+        return v
+
+    @field_validator("ruleset")
+    @classmethod
+    def _validate_ruleset(cls, v: str) -> str:
+        if v not in ("CLASSIC", "MANTRA"):
+            raise ValueError(f"ruleset must be CLASSIC or MANTRA, got {v!r}")
         return v
 
 
@@ -804,12 +820,15 @@ class AuctionPlayerSchema(_CamelModel):
 
     player_id: str
     name: str
-    role: str  # P | D | C | A
+    role: str  # P | D | C | A (classic); MANTRA uses eligible_roles
     real_team: str
     cost: int
     projected_score: float
     season_value: float | None = None
     start_probability: float | None = None
+    eligible_roles: list[str] | None = None
+    """MANTRA only: list of Mantra role codes this player can fill
+    (e.g. ``["Dd", "E"]``). Ignored under CLASSIC."""
 
 
 class InitializeAuctionRequest(_CamelModel):
@@ -847,6 +866,10 @@ class RecordAssignmentRequest(_CamelModel):
     player_id: str
     winner_participant_id: str
     final_price: int
+    assigned_slot: str | None = None
+    """MANTRA only: explicit role slot filled by this assignment
+    (e.g. ``"Dd"``). If omitted the orchestrator auto-picks among the
+    player's eligible roles with residual quota. Ignored under CLASSIC."""
 
 
 class RecordAssignmentResponse(_CamelModel):
@@ -889,6 +912,7 @@ class AuctionPlayerSummarySchema(_CamelModel):
     projected_score: float
     season_value: Optional[float] = None
     start_probability: Optional[float] = None
+    eligible_roles: list[str] | None = None
 
 
 class AuctionParticipantStateSchema(_CamelModel):
@@ -912,6 +936,8 @@ class AssignmentRecordSchema(_CamelModel):
     tier: str
     price_index_before: float
     price_index_after: float
+    assigned_slot: str | None = None
+    """Slot MANTRA effettivamente occupato (coincide con ``role`` in CLASSIC)."""
 
 
 class AuctionSummarySchema(_CamelModel):
@@ -920,6 +946,8 @@ class AuctionSummarySchema(_CamelModel):
     participants: list[AuctionParticipantStateSchema]
     assignments: list[AssignmentRecordSchema]
     price_index: dict[str, dict[str, float]]
+    completion_probability: Optional[dict[str, float]] = None
+    """WS3 #1: participant_id → P(complete roster | residual budget)."""
 
 
 class AlternativesResponse(_CamelModel):
@@ -929,6 +957,12 @@ class AlternativesResponse(_CamelModel):
     low_cost_alternative: Optional[AuctionPlayerSummarySchema] = None
     closest_alternative: Optional[AuctionPlayerSummarySchema] = None
     reason_if_none: Optional[str] = None
+    diversified_alternatives: list[AuctionPlayerSummarySchema] = []
+    """WS3 #3: mini-Pareto diversified candidates."""
+    max_affordable_bid: Optional[int] = None
+    """WS3 #4: credit-reserve max bid for the requested participant."""
+    strategy_price_cap: Optional[int] = None
+    """WS3 #5: strategy-weighted price threshold."""
 
 
 class SerializedAuctionStateResponse(_CamelModel):

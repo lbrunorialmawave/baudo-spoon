@@ -13,6 +13,12 @@ moving average of the ratio between the actual price paid and the expected
 price prior to the update.  A small, multiplicative spillover is then
 propagated to adjacent tiers of the same role, and an optional
 (disabled-by-default) cross-role spillover is also available as a hook.
+
+Role keys are plain ``str`` throughout this module (not the CLASSIC-only
+``Role`` literal) so that ``price_index``/``role_quotas`` can hold either
+CLASSIC (P/D/C/A) or MANTRA (Por/Dc/B/...) role codes — see
+:func:`resolve_pricing_role` for how a MANTRA multi-role player resolves
+to the single role key used to look up/update its price index entry.
 """
 
 from __future__ import annotations
@@ -26,7 +32,6 @@ from ml.auction.models import (
     AuctionConfig,
     AuctionState,
     MarketDriftConfig,
-    Role,
     Tier,
 )
 from ml.optimizer.inflation import estimate_effective_cost
@@ -44,6 +49,7 @@ __all__ = [
     "apply_cross_role_spillover",
     "clamp_index",
     "get_current_projection",
+    "resolve_pricing_role",
     "project_price_for_player",
 ]
 
@@ -75,9 +81,9 @@ def classify_tier(percentile: float, config: MarketDriftConfig) -> Tier:
 
 def build_initial_price_index(
     config: AuctionConfig,
-) -> dict[Role, dict[Tier, float]]:
+) -> dict[str, dict[Tier, float]]:
     """Inizializza ``price_index`` a 1.0 per ogni combinazione (ruolo, tier)."""
-    out: dict[Role, dict[Tier, float]] = {}
+    out: dict[str, dict[Tier, float]] = {}
     for role in config.role_quotas:
         out[role] = {tier: 1.0 for tier in ALL_TIERS}
     return out
@@ -135,9 +141,9 @@ def compute_baseline_cost(
 def compute_expected_price(
     player: Player,
     role_percentile: float,
-    role: Role,
+    role: str,
     tier: Tier,
-    price_index: dict[Role, dict[Tier, float]],
+    price_index: dict[str, dict[Tier, float]],
     config: AuctionConfig,
     team_strength_scores: dict[str, float] | None = None,
 ) -> float:
@@ -153,13 +159,13 @@ def compute_expected_price(
 
 
 def update_price_index(
-    role: Role,
+    role: str,
     tier: Tier,
     actual_price: float,
     expected_price: float,
-    price_index: dict[Role, dict[Tier, float]],
+    price_index: dict[str, dict[Tier, float]],
     config: MarketDriftConfig,
-) -> tuple[float, float, dict[Role, dict[Tier, float]]]:
+) -> tuple[float, float, dict[str, dict[Tier, float]]]:
     """Aggiorna ``price_index`` in-place e ritorna ``(before, after, snapshot)``.
 
     Parameters
@@ -208,7 +214,7 @@ def update_price_index(
         raise ValueError(f"tier {tier!r} not present in price_index[{role!r}]")
 
     # Snapshot dell'intero price_index per consentire l'undo deterministico.
-    snapshot_before: dict[Role, dict[Tier, float]] = {
+    snapshot_before: dict[str, dict[Tier, float]] = {
         r: dict(tiers) for r, tiers in price_index.items()
     }
 
@@ -252,10 +258,10 @@ def update_price_index(
 
 
 def apply_cross_role_spillover(
-    source_role: Role,
+    source_role: str,
     source_tier: Tier,
     ratio: float,
-    price_index: dict[Role, dict[Tier, float]],
+    price_index: dict[str, dict[Tier, float]],
     config: MarketDriftConfig,
 ) -> None:
     """Applica spillover allo stesso tier degli *altri* ruoli.
@@ -286,6 +292,40 @@ def apply_cross_role_spillover(
 # ---------------------------------------------------------------------------
 
 
+def resolve_pricing_role(
+    player: Player,
+    config: AuctionConfig,
+    price_index: dict[str, dict[Tier, float]],
+) -> str:
+    """Ruolo usato per interrogare/aggiornare il ``price_index`` di un giocatore.
+
+    CLASSIC (o giocatore MANTRA senza ``eligible_roles``): ``player.role``,
+    invariato.
+
+    MANTRA con più ``eligible_roles``: nessuno slot è ancora stato assegnato
+    a questo punto (l'assegnazione effettiva è competenza dell'orchestratore
+    — Fase 3, che registrerà lo slot occupato in ``AssignmentRecord``), quindi
+    la proiezione di prezzo qui è per forza speculativa. Si applica la stessa
+    policy "ruolo più scarso" già usata in :mod:`ml.auction.var` per il
+    replacement level, operazionalizzata però con il segnale disponibile in
+    questo modulo: il ruolo eleggibile che nel ``price_index`` corrente
+    scambia al premio più alto (indice più alto) — cioè il ruolo di mercato
+    più conteso tra quelli che il giocatore potrebbe occupare. È la scelta
+    prudente per una proiezione pre-assegnazione: sovrastimare leggermente il
+    prezzo atteso di un flex player è preferibile a sottostimarlo.
+
+    Quando l'assegnazione effettiva viene registrata (Fase 3), l'orchestratore
+    userà lo slot realmente occupato invece di questa risoluzione speculativa.
+    """
+    eligible = player.eligible_roles if config.ruleset == "MANTRA" else frozenset()
+    if not eligible or len(eligible) == 1:
+        return player.role if not eligible else next(iter(eligible))
+    candidates = [r for r in eligible if r in price_index]
+    if not candidates:
+        return player.role
+    return max(candidates, key=lambda r: (max(price_index[r].values()), r))
+
+
 def project_price_for_player(
     state: AuctionState,
     player: Player,
@@ -295,7 +335,7 @@ def project_price_for_player(
     Funzione di supporto richiamata da :func:`get_current_projection` ed
     esposta anche come utility di test.
     """
-    role = player.role
+    role = resolve_pricing_role(player, state.config, state.price_index)
     percentile = state.role_percentile_map.get(player.player_id, 0.0)
     tier = classify_tier(percentile, state.config.market_drift_config)
     return compute_expected_price(

@@ -59,7 +59,7 @@ from ml.auction.price_drift import classify_tier, get_current_projection
 from ml.auction.models import ValuationMode
 from ml.auction.var import VarEngine
 from ml.optimizer.inflation import InflationConfig
-from ml.optimizer.models import Player
+from ml.optimizer.models import Player, RulesetType
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +72,7 @@ router = APIRouter(prefix="/auction", tags=["auction"])
 
 
 def _player_from_schema(p: AuctionPlayerSchema) -> Player:
+    eligible = frozenset(p.eligible_roles) if p.eligible_roles else frozenset()
     return Player(
         player_id=p.player_id,
         name=p.name,
@@ -81,6 +82,7 @@ def _player_from_schema(p: AuctionPlayerSchema) -> Player:
         projected_score=p.projected_score,
         season_value=p.season_value,
         start_probability=p.start_probability,
+        eligible_roles=eligible,
     )
 
 
@@ -94,6 +96,7 @@ def _player_to_summary(p: Player) -> AuctionPlayerSummarySchema:
         projected_score=p.projected_score,
         season_value=p.season_value,
         start_probability=p.start_probability,
+        eligible_roles=sorted(p.eligible_roles) if p.eligible_roles else None,
     )
 
 
@@ -131,11 +134,13 @@ def _auction_config_from_schema(
     return AuctionConfig(
         num_participants=cfg.num_participants,
         role_quotas=dict(cfg.role_quotas),
+        ruleset=cast(RulesetType, cfg.ruleset),
         market_drift_config=_market_drift_from_schema(cfg.market_drift_config),
         alternatives_config=_alternatives_config_from_schema(cfg.alternatives_config),
         use_inflation_baseline=cfg.use_inflation_baseline,
         inflation_config=inflation,
         valuation_mode=cfg.valuation_mode,
+        hybrid_blend=getattr(cfg, "hybrid_blend", 0.0) or 0.0,
         reference_budget=cfg.reference_budget,
         budget_initial=cfg.budget_initial,
     )
@@ -169,6 +174,7 @@ def _assignment_to_schema(a: object) -> AssignmentRecordSchema:
         tier=rec.tier,
         price_index_before=rec.price_index_before,
         price_index_after=rec.price_index_after,
+        assigned_slot=rec.assigned_slot if rec.assigned_slot is not None else rec.role,
     )
 
 
@@ -260,6 +266,7 @@ async def init_auction(
             db,
             season_start=payload.season_start,
             min_qt_a=1,
+            ruleset=payload.config.ruleset,
         )
         pool = [
             Player(
@@ -271,6 +278,7 @@ async def init_auction(
                 projected_score=float(r["projected_score"]),
                 season_value=r.get("season_value"),
                 start_probability=r.get("start_probability"),
+                eligible_roles=frozenset(r.get("eligible_roles") or []),
             )
             for r in rows
         ]
@@ -317,6 +325,7 @@ def record_assignment_endpoint(
         player_id=payload.player_id,
         winner_participant_id=payload.winner_participant_id,
         final_price=payload.final_price,
+        assigned_slot=payload.assigned_slot,
     )
 
     if not result.success:
@@ -357,6 +366,7 @@ def undo_last_assignment_endpoint(
         participants=[_participant_to_schema(p) for p in summary.participants],
         assignments=[_assignment_to_schema(a) for a in summary.assignments],
         price_index=_price_index_to_dict(summary.price_index),
+        completion_probability=summary.completion_probability,
     )
 
 
@@ -405,11 +415,17 @@ def get_alternatives_endpoint(
     session_id: str,
     player_id: str,
     request: Request,
+    participant_id: str | None = None,
+    strategy_name: str | None = None,
 ) -> AlternativesResponse:
-    """Suggerisce low-cost e closest match per il giocatore target."""
+    """Suggerisce low-cost, closest e (WS3) fronte Pareto + bid caps."""
     session = _get_session(request, session_id)
     try:
-        suggestion = session.alternatives(target_player_id=player_id)
+        suggestion = session.alternatives(
+            target_player_id=player_id,
+            participant_id=participant_id,
+            strategy_name=strategy_name,
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -429,6 +445,11 @@ def get_alternatives_endpoint(
             else None
         ),
         reason_if_none=suggestion.reason_if_none,
+        diversified_alternatives=[
+            _player_to_summary(p) for p in (suggestion.diversified_alternatives or ())
+        ],
+        max_affordable_bid=suggestion.max_affordable_bid,
+        strategy_price_cap=suggestion.strategy_price_cap,
     )
 
 
@@ -448,6 +469,7 @@ def get_summary_endpoint(
         participants=[_participant_to_schema(p) for p in summary.participants],
         assignments=[_assignment_to_schema(a) for a in summary.assignments],
         price_index=_price_index_to_dict(summary.price_index),
+        completion_probability=summary.completion_probability,
     )
 
 
@@ -593,6 +615,8 @@ def get_var_ranking(
             "projected_score": p.projected_score,
             "season_value": p.season_value,
             "start_probability": p.start_probability,
+            "eligible_roles": sorted(p.eligible_roles) if p.eligible_roles else None,
+            "fp_ibrido": p.fp_ibrido,
         }
         for p in pool
     ]
@@ -607,6 +631,7 @@ def get_var_ranking(
         num_participants=state.config.num_participants,
         replacement_method=getattr(state.config, "replacement_method", "percentile"),
         min_start_probability=getattr(state.config, "min_start_probability", None),
+        hybrid_blend=float(getattr(state.config, "hybrid_blend", 0.0) or 0.0),
     )
     results = engine.evaluate(players_input, price_overrides=price_overrides)
 

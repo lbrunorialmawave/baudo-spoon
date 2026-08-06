@@ -2,14 +2,28 @@
 
 import { InflationConfig } from "./api.models";
 
-/** Fantacalcio role code. */
+/** Fantacalcio role code (CLASSIC). MANTRA uses string role codes. */
 export type AuctionRole = 'P' | 'D' | 'C' | 'A';
+
+/** Ruleset: CLASSIC (4 roles) or MANTRA (12 multi-slot roles). */
+export type AuctionRuleset = 'CLASSIC' | 'MANTRA';
 
 /** Price-drift tier classification. */
 export type AuctionTier = 'LOW' | 'MID' | 'TOP';
 
-/** All roles in display order. */
+/** All CLASSIC roles in display order. */
 export const AUCTION_ROLES: readonly AuctionRole[] = ['P', 'D', 'C', 'A'] as const;
+
+/** Default MANTRA role quotas (mirrors ml.optimizer.models.MANTRA_DEFAULT_QUOTAS). */
+export const MANTRA_DEFAULT_QUOTAS: Readonly<Record<string, number>> = {
+  Por: 3,
+  Dc: 3, B: 2, Dd: 2, Ds: 1,
+  E: 1, M: 2, C: 5,
+  T: 1, W: 1, A: 2, Pc: 2,
+} as const;
+
+/** MANTRA role codes in stable display order. */
+export const MANTRA_ROLES: readonly string[] = Object.keys(MANTRA_DEFAULT_QUOTAS);
 
 /** All tiers from low to top. */
 export const AUCTION_TIERS: readonly AuctionTier[] = ['LOW', 'MID', 'TOP'] as const;
@@ -41,11 +55,18 @@ export type ReplacementMethod = 'percentile' | 'roster_depth';
 /** Auction market + roster quotas. */
 export interface AuctionConfig {
   numParticipants: number;
-  /** Map of role -> quota (3P/8D/8C/6A by default). */
-  roleQuotas: Partial<Record<AuctionRole, number>>;
+  /** Map of role -> quota (3P/8D/8C/6A by default for CLASSIC). */
+  roleQuotas: Partial<Record<string, number>>;
+  /** Ruleset: CLASSIC (default) or MANTRA. */
+  ruleset?: AuctionRuleset;
   marketDriftConfig: MarketDriftConfig;
   alternativesConfig: AlternativesConfig;
   useInflationBaseline: boolean;
+  /**
+   * Weight in [0, 1] of the fpIbrido (MANTRA-ibrido) signal in VarEngine.
+   * 0 = disabled (default). Same shape as optimizer hybridBlend.
+   */
+  hybridBlend?: number;
   /**
    * Full inflation config (percentile threshold, max multiplier, base
    * rate, baseline participants, Club Elo weight). When `useInflationBaseline`
@@ -88,10 +109,12 @@ export interface AuctionParticipantSetup {
 export interface AuctionPlayer {
   playerId: string;
   name: string;
-  role: AuctionRole;
+  role: AuctionRole | string;
   realTeam: string;
   cost: number;
   projectedScore: number;
+  /** MANTRA only: role codes this player can fill. */
+  eligibleRoles?: string[];
 }
 
 // ── Init / lifecycle ──────────────────────────────────────────────────────
@@ -123,6 +146,8 @@ export interface RecordAssignmentRequest {
   playerId: string;
   winnerParticipantId: string;
   finalPrice: number;
+  /** MANTRA only: explicit slot filled (auto-picked if omitted). */
+  assignedSlot?: string | null;
 }
 
 /**
@@ -148,9 +173,10 @@ export interface AuctionPlayerSummary {
   playerId: string;
   name: string;
   realTeam: string;
-  role: AuctionRole;
+  role: AuctionRole | string;
   cost: number;
   projectedScore: number;
+  eligibleRoles?: string[] | null;
 }
 
 export interface AuctionParticipantState {
@@ -158,7 +184,7 @@ export interface AuctionParticipantState {
   displayName: string;
   budgetResidual: number;
   squad: AuctionPlayerSummary[];
-  roleBreakdown: Partial<Record<AuctionRole, number>>;
+  roleBreakdown: Partial<Record<string, number>>;
 }
 
 export interface AssignmentRecord {
@@ -166,17 +192,24 @@ export interface AssignmentRecord {
   player: AuctionPlayerSummary;
   winnerParticipantId: string;
   finalPrice: number;
-  role: AuctionRole;
+  role: AuctionRole | string;
   tier: AuctionTier;
   priceIndexBefore: number;
   priceIndexAfter: number;
+  /** MANTRA slot filled; equals role under CLASSIC. */
+  assignedSlot?: string | null;
 }
 
 export interface AuctionSummary {
   participants: AuctionParticipantState[];
   assignments: AssignmentRecord[];
   /** Nested map: role -> tier -> price index. */
-  priceIndex: Partial<Record<AuctionRole, Partial<Record<AuctionTier, number>>>>;
+  priceIndex: Partial<Record<string, Partial<Record<AuctionTier, number>>>>;
+  /**
+   * WS3 #1: participantId → P(complete roster | residual budget + slots).
+   * Absent on older backends / pre-WS3 sessions.
+   */
+  completionProbability?: Record<string, number> | null;
 }
 
 // ── Live projection ───────────────────────────────────────────────────────
@@ -189,6 +222,10 @@ export interface ProjectionResponse {
 
 export interface AlternativesRequest {
   config?: AlternativesConfig | null;
+  /** When set, backend computes maxAffordableBid for this manager. */
+  participantId?: string | null;
+  /** BALANCED | SUPER_DEFENSIVE | SUPER_OFFENSIVE | MIXED → strategyPriceCap. */
+  strategyName?: string | null;
 }
 
 export interface AlternativesResponse {
@@ -196,6 +233,12 @@ export interface AlternativesResponse {
   lowCostAlternative: AuctionPlayerSummary | null;
   closestAlternative: AuctionPlayerSummary | null;
   reasonIfNone: string | null;
+  /** WS3 #3: mini-Pareto diversified candidates. */
+  diversifiedAlternatives?: AuctionPlayerSummary[];
+  /** WS3 #4: credit-reserve max bid for the requested participant. */
+  maxAffordableBid?: number | null;
+  /** WS3 #5: strategy-weighted price threshold. */
+  strategyPriceCap?: number | null;
 }
 
 // ── Persistence (save / resume an auction) ────────────────────────────────
@@ -214,7 +257,7 @@ export interface DeserializeAuctionRequest {
 export interface VarRankingItem {
   playerId: string;
   name: string;
-  role: AuctionRole;
+  role: AuctionRole | string;
   projectedScore: number;
   varScore: number;
   expectedPrice: number;

@@ -75,9 +75,9 @@ export class AuctionService {
 
   /**
    * GET /auction/{sessionId}/alternatives/{playerId} — low-cost + closest
-   * matches for the given target player.
+   * matches for the given target player, plus WS3 diversified list and bid caps.
    *
-   * Optional query params mirror the JSON body's `config` field.
+   * Optional query params: low_cost_percentile, participant_id, strategy_name.
    */
   alternatives(
     sessionId: string,
@@ -85,10 +85,14 @@ export class AuctionService {
     req: AlternativesRequest = {},
   ): Observable<AlternativesResponse> {
     let params = new HttpParams();
-    // Wire the (optional) config via query string for GET semantics: the
-    // backend reads the request body *or* the same query params.
     if (req.config?.lowCostPercentile != null) {
       params = params.set('low_cost_percentile', String(req.config.lowCostPercentile));
+    }
+    if (req.participantId) {
+      params = params.set('participant_id', req.participantId);
+    }
+    if (req.strategyName) {
+      params = params.set('strategy_name', req.strategyName);
     }
     return this.http.get<AlternativesResponse>(
       `${this.baseUrl}/auction/${sessionId}/alternatives/${playerId}`,

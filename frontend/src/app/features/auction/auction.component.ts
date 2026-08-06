@@ -9,11 +9,14 @@ import { QuotationService } from '../../core/services/quotation.service';
 import { SEASON_FALLBACK_LIST } from '../../core/constants/season-fallback.constant';
 import {
   AUCTION_ROLES,
+  MANTRA_DEFAULT_QUOTAS,
+  MANTRA_ROLES,
   AssignmentRecord,
   AuctionParticipantSetup,
   AuctionParticipantState,
   AuctionPlayerSummary,
   AuctionRole,
+  AuctionRuleset,
   AuctionSummary,
   AuctionTier,
   ProjectionResponse,
@@ -42,6 +45,17 @@ const ROLE_COLOR: Record<string, string> = {
   D: 'var(--color-role-def)',
   C: 'var(--color-role-mid)',
   A: 'var(--color-role-fwd)',
+  // MANTRA 12-role palette (grouped by classic line)
+  Por: 'var(--color-role-gk)',
+  Dc: 'var(--color-role-def)',
+  B: 'var(--color-role-def)',
+  Dd: 'var(--color-role-def)',
+  Ds: 'var(--color-role-def)',
+  E: 'var(--color-role-mid)',
+  M: 'var(--color-role-mid)',
+  T: 'var(--color-role-fwd)',
+  W: 'var(--color-role-fwd)',
+  Pc: 'var(--color-role-fwd)',
 };
 
 const TIER_COLOR: Record<AuctionTier, string> = {
@@ -298,27 +312,30 @@ function makeParticipants(
     @if (sessionId()) {
       <!-- ═══════════════════════ LIVE VIEW ═══════════════════════ -->
       <div class="auction-page">
-        <header class="page-header">
-          <div>
-            <h1 class="page-title">Tracker Asta</h1>
-            <p class="page-subtitle">
-              Sessione attiva: <code class="session-id">{{ sessionId()!.slice(0, 12) }}…</code>
+        <header class="auc-topbar">
+          <div class="auc-topbar__brand">
+            <h1 class="auc-topbar__title">Tracker Asta</h1>
+            <p class="auc-topbar__subtitle">
+              Sessione <code class="session-id">{{ sessionId()!.slice(0, 12) }}…</code>
+              · registrazione turni, EWMA e alternative in tempo reale
             </p>
           </div>
-          <div class="header-actions">
+          <div class="auc-topbar__actions">
             <button
+              type="button"
               class="secondary-btn"
               (click)="saveToFile()"
-              title="Esporta l'intera sessione (assegnazioni, budget, indici EWMA) in un file JSON che potrai ricaricare in seguito."
+              title="Esporta sessione (assegnazioni, budget, indici EWMA) in JSON."
             >
-              Salva sessione
+              Salva
             </button>
             <button
+              type="button"
               class="danger-btn"
               (click)="endSession()"
-              title="Termina e cancella definitivamente la sessione dal backend. Operazione irreversibile."
+              title="Termina e cancella la sessione dal backend."
             >
-              Termina sessione
+              Termina
             </button>
           </div>
         </header>
@@ -327,9 +344,10 @@ function makeParticipants(
         @if (summary(); as s) {
           <div
             class="price-strip"
-            title="Indice di prezzo EWMA corrente per ogni combinazione ruolo × tier. Più alto = più caro del listino base."
+            title="Indice EWMA per ruolo × tier. Valori > 1 = mercato più caro del listino."
           >
-            @for (role of allRoles; track role) {
+            <span class="price-strip__title">Mercato</span>
+            @for (role of displayRoles(); track role) {
               <div class="price-role-group">
                 <span class="price-role-label" [style.color]="roleColor(role)">{{ role }}</span>
                 @for (tier of allTiers; track tier) {
@@ -351,7 +369,10 @@ function makeParticipants(
         <div class="auction-body">
           <!-- ── Left: Participants ──────────────────────── -->
           <aside class="participants-panel">
-            <p class="panel-heading">Classifica e budget residuo</p>
+            <div class="panel-head">
+              <p class="panel-heading">Manager</p>
+              <p class="panel-subheading">Budget residuo e probabilità di completamento</p>
+            </div>
 
             @if (summaryLoading() && !summary()) {
               @for (_ of [1, 2, 3, 4, 5, 6, 7, 8]; track $index) {
@@ -376,21 +397,28 @@ function makeParticipants(
                     ></div>
                   </div>
                   <div class="role-chips">
-                    @for (role of allRoles; track role) {
-                      @if (p.roleBreakdown[role]) {
-                        <span
-                          class="role-chip"
-                          [style.color]="roleColor(role)"
-                          [style.border-color]="roleColor(role)"
-                        >
-                          {{ role }}&thinsp;{{ p.roleBreakdown[role] }}
-                        </span>
-                      }
+                    @for (role of rolesInBreakdown(p); track role) {
+                      <span
+                        class="role-chip"
+                        [style.color]="roleColor(role)"
+                        [style.border-color]="roleColor(role)"
+                      >
+                        {{ role }}&thinsp;{{ p.roleBreakdown[role] }}
+                      </span>
                     }
                     @if (p.squad.length === 0) {
                       <span class="empty-squad" title="Nessun giocatore ancora acquistato">—</span>
                     }
                   </div>
+                  @if (completionPct(p.participantId); as cp) {
+                    <div class="completion-row" [title]="'Probabilità stimata di completare la rosa con il budget residuo'">
+                      <span class="completion-label">Completamento rosa</span>
+                      <span class="completion-value" [style.color]="completionColor(cp)">{{ cp | number: '1.0-0' }}%</span>
+                      <div class="completion-bar">
+                        <div class="completion-bar-fill" [style.width]="cp + '%'" [style.background]="completionColor(cp)"></div>
+                      </div>
+                    </div>
+                  }
                 </div>
               }
             }
@@ -400,8 +428,28 @@ function makeParticipants(
           <main class="auction-main">
             <div class="action-row">
               <!-- Lookup card -->
-              <div class="card">
-                <p class="card-section-label">Lookup pool (nome → playerId, projection, alternatives)</p>
+              <div class="card card--action">
+                <div class="card-head">
+                  <p class="card-section-label">Cerca giocatore</p>
+                  <p class="card-section-hint">projection + alternative + max bid</p>
+                </div>
+                <div class="field-row field-row--compact">
+                  <div class="field-group" style="flex:1">
+                    <label class="field-label" for="altStrategy">Strategia (cap prezzo)</label>
+                    <select
+                      id="altStrategy"
+                      class="field-input"
+                      [ngModel]="altStrategyName"
+                      (ngModelChange)="onStrategyChange($event)"
+                    >
+                      <option [ngValue]="null">Nessuna</option>
+                      <option value="BALANCED">BALANCED</option>
+                      <option value="SUPER_DEFENSIVE">SUPER_DEFENSIVE</option>
+                      <option value="SUPER_OFFENSIVE">SUPER_OFFENSIVE</option>
+                      <option value="MIXED">MIXED</option>
+                    </select>
+                  </div>
+                </div>
                 <div class="pool-autocomplete">
                   <div class="lookup-row">
                     <input
@@ -438,7 +486,7 @@ function makeParticipants(
                               class="role-badge"
                               [style.color]="roleColor(p.role)"
                               [style.border-color]="roleColor(p.role)"
-                              >{{ p.role }}</span
+                              >{{ roleLabel(p) }}</span
                             >
                             {{ p.realTeam }} · quotazione {{ p.cost }} cr.
                           </span>
@@ -475,7 +523,7 @@ function makeParticipants(
                         <p class="alt-label">Alternativa economica</p>
                         <p class="alt-name">{{ lc.name }}</p>
                         <p class="alt-meta">
-                          {{ lc.realTeam }} · {{ lc.role }} · {{ lc.cost }} cr.
+                          {{ lc.realTeam }} · {{ roleLabel(lc) }} · {{ lc.cost }} cr.
                         </p>
                       </div>
                     }
@@ -484,24 +532,53 @@ function makeParticipants(
                         <p class="alt-label">Alternativa più simile</p>
                         <p class="alt-name">{{ cl.name }}</p>
                         <p class="alt-meta">
-                          {{ cl.realTeam }} · {{ cl.role }} · {{ cl.cost }} cr.
+                          {{ cl.realTeam }} · {{ roleLabel(cl) }} · {{ cl.cost }} cr.
                         </p>
                       </div>
+                    }
+                    @if (alt.diversifiedAlternatives?.length) {
+                      @for (d of alt.diversifiedAlternatives!; track d.playerId) {
+                        <div class="alt-card alt-card--pareto">
+                          <p class="alt-label">Pareto</p>
+                          <p class="alt-name">{{ d.name }}</p>
+                          <p class="alt-meta">
+                            {{ d.realTeam }} · {{ roleLabel(d) }} · {{ d.cost }} cr.
+                          </p>
+                        </div>
+                      }
                     }
                     @if (!alt.lowCostAlternative && !alt.closestAlternative && alt.reasonIfNone) {
                       <p class="alt-none">{{ alt.reasonIfNone }}</p>
                     }
                   </div>
+                  @if (alt.maxAffordableBid != null || alt.strategyPriceCap != null) {
+                    <div class="bid-caps-row">
+                      @if (alt.maxAffordableBid != null) {
+                        <span class="bid-cap" title="Max bid rispettando la riserva crediti">
+                          Max bid: <strong>{{ alt.maxAffordableBid }}</strong> cr.
+                        </span>
+                      }
+                      @if (alt.strategyPriceCap != null) {
+                        <span class="bid-cap" title="Soglia strategia-aware sul prezzo atteso">
+                          Cap strategia: <strong>{{ alt.strategyPriceCap }}</strong> cr.
+                        </span>
+                      }
+                    </div>
+                  }
                 }
               </div>
 
               <!-- Record card -->
-              <div class="card">
-                <p class="card-section-label">Registra assegnazione di turno</p>
+              <div class="card card--action">
+                <div class="card-head">
+                  <p class="card-section-label">Registra turno</p>
+                  <p class="card-section-hint">vincitore · slot · prezzo</p>
+                </div>
 
                 <div class="field-group">
-                  <label class="field-label" for="recordPlayer">
-                  >Giocatore da assegnare <span class="field-hint">playerId</span></label>
+                  <label class="field-label" for="recordPlayer"
+                    >Giocatore <span class="field-hint">dal lookup</span></label
+                  >
                   <input
                     id="recordPlayer"
                     class="field-input"
@@ -520,35 +597,53 @@ function makeParticipants(
                   />
                 </div>
 
-                <div class="field-group">
-                  <label class="field-label" for="recordWinner"
+                <div class="field-row">
+                  <div class="field-group">
+                    <label class="field-label" for="recordWinner"
+                      >Vincitore</label
                     >
-                  >Vincitore turno <span class="field-hint">participantId</span></label
-                  >
-                  <select
-                    id="recordWinner"
-                    class="field-input"
-                    [(ngModel)]="recordWinnerId"
-                    [attr.aria-describedby]="'legend-recordWinner'"
-                  >
-                    <option value="">— seleziona —</option>
-                    @if (summary(); as s) {
-                      @for (p of s.participants; track p.participantId) {
-                        <option [value]="p.participantId">{{ p.displayName }}</option>
+                    <select
+                      id="recordWinner"
+                      class="field-input"
+                      [ngModel]="recordWinnerId"
+                      (ngModelChange)="onWinnerChange($event)"
+                      [attr.aria-describedby]="'legend-recordWinner'"
+                    >
+                      <option value="">— seleziona —</option>
+                      @if (summary(); as s) {
+                        @for (p of s.participants; track p.participantId) {
+                          <option [value]="p.participantId">{{ p.displayName }}</option>
+                        }
                       }
-                    }
-                  </select>
-                  <app-field-legend
-                    fieldId="legend-recordWinner"
-                    [description]="LIVE_LEGENDS['recordWinner'].description"
-                    [examples]="LIVE_LEGENDS['recordWinner'].examples"
-                  />
+                    </select>
+                    <app-field-legend
+                      fieldId="legend-recordWinner"
+                      [description]="LIVE_LEGENDS['recordWinner'].description"
+                      [examples]="LIVE_LEGENDS['recordWinner'].examples"
+                    />
+                  </div>
+                  @if (recordEligibleSlots.length > 1) {
+                    <div class="field-group">
+                      <label class="field-label" for="recordSlot"
+                        >Slot MANTRA</label
+                      >
+                      <select
+                        id="recordSlot"
+                        class="field-input"
+                        [(ngModel)]="recordAssignedSlot"
+                      >
+                        <option [ngValue]="null">Auto</option>
+                        @for (slot of recordEligibleSlots; track slot) {
+                          <option [ngValue]="slot">{{ slot }}</option>
+                        }
+                      </select>
+                    </div>
+                  }
                 </div>
 
                 <div class="field-group">
                   <label class="field-label" for="recordPrice"
-                    >
-                  >Prezzo pagato <span class="field-hint">aggiorna EWMA e budget</span></label
+                    >Prezzo pagato <span class="field-hint">cr. · aggiorna EWMA</span></label
                   >
                   <input
                     id="recordPrice"
@@ -651,7 +746,7 @@ function makeParticipants(
                               class="role-badge"
                               [style.color]="roleColor(a.role)"
                               [style.border-color]="roleColor(a.role)"
-                              >{{ a.role }}</span
+                              >{{ a.assignedSlot || a.role }}</span
                             >
                           </td>
                           <td class="num accent">{{ a.finalPrice }}</td>
@@ -916,6 +1011,28 @@ function makeParticipants(
             <p class="section-divider">Pool e sessione</p>
 
             <div class="field-group">
+              <label class="field-label" for="auction-ruleset">Regolamento</label>
+              <select
+                id="auction-ruleset"
+                class="field-input"
+                [ngModel]="ruleset"
+                (ngModelChange)="onRulesetChange($event)"
+                [attr.aria-describedby]="'legend-auction-ruleset'"
+              >
+                <option value="CLASSIC">CLASSIC — 4 ruoli (P/D/C/A)</option>
+                <option value="MANTRA">MANTRA — 12 ruoli multi-slot</option>
+              </select>
+              <app-field-legend
+                fieldId="legend-auction-ruleset"
+                description="Cambia il modello di assegnazione ruoli. CLASSIC: 4 ruoli (P/D/C/A) con quote 3/8/8/6. MANTRA: 12 ruoli multi-slot (eligible_roles) e quote Por/Dc/B/… che devono sommare a 25. Stesso selettore già in produzione sull'optimizer."
+                [examples]="[
+                  { label: 'CLASSIC', value: 'comportamento storico, zero regressioni' },
+                  { label: 'MANTRA', value: 'ruoli modulari e multi-ruolo' }
+                ]"
+              />
+            </div>
+
+            <div class="field-group">
               <label class="field-label" for="seasonStart">Stagione del pool (listini + predizioni ML)</label>
               @if (seasonsLoading()) {
                 <app-skeleton height="36px" />
@@ -987,7 +1104,7 @@ function makeParticipants(
             <p class="section-divider">Quote rosa (vincolo hard per manager)</p>
 
             <div class="quota-grid">
-              @for (role of allRoles; track role) {
+              @for (role of quotaRoles; track role) {
                 <div class="field-group">
                   <label
                     class="field-label"
@@ -1006,6 +1123,9 @@ function makeParticipants(
                       }
                       @case ('A') {
                         Attaccanti (A) — max slot per manager
+                      }
+                      @default {
+                        {{ role }} — max slot per manager
                       }
                     }
                   </label>
@@ -1219,6 +1339,30 @@ function makeParticipants(
                 fieldId="legend-valuationMode"
                 [description]="SETUP_LEGENDS['valuationMode'].description"
                 [examples]="SETUP_LEGENDS['valuationMode'].examples"
+              />
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="hybridBlend"
+                >Blend fpIbrido (hybrid) <span class="field-hint">0–1, 0 = off</span></label
+              >
+              <input
+                id="hybridBlend"
+                class="field-input"
+                type="number"
+                min="0"
+                max="1"
+                step="0.05"
+                [(ngModel)]="hybridBlend"
+              />
+              <app-field-legend
+                fieldId="legend-hybridBlend"
+                description="Peso del segnale MANTRA-ibrido (fpIbrido) nel ranking VAR/ESV. 0 = disattivato. Stesso pattern dell'optimizer hybridBlend."
+                [examples]="[
+                  { label: '0', value: 'solo projected_score / season_value' },
+                  { label: '0.3–0.5', value: 'blend moderato' },
+                  { label: '1', value: 'solo fpIbrido dove disponibile' }
+                ]"
               />
             </div>
 
@@ -1541,6 +1685,49 @@ export class AuctionComponent {
   private readonly quotationService = inject(QuotationService);
 
   readonly allRoles: readonly AuctionRole[] = AUCTION_ROLES;
+  /** Roles shown in the quota grid; switches with ruleset. */
+  get quotaRoles(): readonly string[] {
+    return this.ruleset === 'MANTRA' ? MANTRA_ROLES : AUCTION_ROLES;
+  }
+
+  /**
+   * Roles used in the live price-index strip and related displays.
+   * Prefer keys present in the live summary priceIndex; fall back to quota roles.
+   */
+  displayRoles(): readonly string[] {
+    const s = this.summary();
+    if (s?.priceIndex && Object.keys(s.priceIndex).length) {
+      return Object.keys(s.priceIndex);
+    }
+    return this.quotaRoles;
+  }
+
+  /** Roles currently filled for a participant (any ruleset). */
+  rolesInBreakdown(p: AuctionParticipantState): string[] {
+    return Object.keys(p.roleBreakdown ?? {}).filter((r) => (p.roleBreakdown[r] ?? 0) > 0);
+  }
+
+  roleLabel(p: { role: string; eligibleRoles?: string[] | null }): string {
+    if (p.eligibleRoles && p.eligibleRoles.length > 1) {
+      return p.eligibleRoles.join('/');
+    }
+    if (p.eligibleRoles && p.eligibleRoles.length === 1) {
+      return p.eligibleRoles[0];
+    }
+    return p.role;
+  }
+
+  completionPct(participantId: string): number | null {
+    const cp = this.summary()?.completionProbability?.[participantId];
+    if (cp == null || Number.isNaN(cp)) return null;
+    return Math.round(Math.max(0, Math.min(1, cp)) * 100);
+  }
+
+  completionColor(pct: number): string {
+    if (pct >= 70) return 'var(--color-success, #22c55e)';
+    if (pct >= 40) return 'var(--color-accent)';
+    return 'var(--color-danger, #ef4444)';
+  }
   readonly allTiers: readonly AuctionTier[] = ['LOW', 'MID', 'TOP'];
 
   /** Legende dei campi del pannello di setup (configurazione iniziale). */
@@ -1572,8 +1759,23 @@ export class AuctionComponent {
   useInflationBaseline = true;
   referenceBudget = 300;
   budgetInitial = 300;
-  roleQuotas: Partial<Record<AuctionRole, number>> = { P: 3, D: 8, C: 8, A: 6 };
+  ruleset: AuctionRuleset = 'CLASSIC';
+  roleQuotas: Partial<Record<string, number>> = { P: 3, D: 8, C: 8, A: 6 };
   valuationMode: ValuationMode = 'PER_MATCH_RATING';
+  /** WS3 #2: fpIbrido blend weight for VarEngine (0 = off). */
+  hybridBlend = 0.0;
+  /** Optional strategy for alternatives price cap (WS3 #5). */
+  altStrategyName: string | null = null;
+
+  /** Switch ruleset and reset quotas to the corresponding defaults. */
+  onRulesetChange(value: AuctionRuleset): void {
+    this.ruleset = value;
+    if (value === 'MANTRA') {
+      this.roleQuotas = { ...MANTRA_DEFAULT_QUOTAS };
+    } else {
+      this.roleQuotas = { P: 3, D: 8, C: 8, A: 6 };
+    }
+  }
 
   // ── Inflation config (only sent when useInflationBaseline = true) ──
   // Defaults mirror the backend Pydantic InflationConfigSchema defaults
@@ -1660,6 +1862,11 @@ export class AuctionComponent {
   recordPlayerName = ''; // display text in record input
   recordWinnerId = '';
   recordPrice = 1;
+  /** MANTRA: explicit slot; null = backend auto-pick. */
+  recordAssignedSlot: string | null = null;
+  recordEligibleSlots: string[] = [];
+  /** Last selected pool player (for eligible roles / slot UI). */
+  recordSelectedPlayer: AuctionPlayerSummary | null = null;
 
   // ── Initial budgets map (for budget-bar computation) ──────────────────
   private readonly initialBudgets = new Map<string, number>();
@@ -1901,6 +2108,8 @@ export class AuctionComponent {
         config: {
           numParticipants: this.numParticipants,
           roleQuotas: this.roleQuotas,
+          ruleset: this.ruleset,
+          hybridBlend: this.hybridBlend,
           marketDriftConfig: {
             alpha: this.alpha,
             spilloverAdjacentTier: this.spilloverAdj,
@@ -1992,7 +2201,16 @@ export class AuctionComponent {
     this.lookupQuery = p.name;
     // pre-fill record card too
     this.recordPlayerId = p.playerId;
-    this.recordPlayerName = `${p.name} (${p.role} · ${p.realTeam})`;
+    this.recordPlayerName = `${p.name} (${this.roleLabel(p)} · ${p.realTeam})`;
+    this.recordSelectedPlayer = p;
+    this.recordEligibleSlots =
+      p.eligibleRoles && p.eligibleRoles.length > 0
+        ? [...p.eligibleRoles]
+        : this.ruleset === 'MANTRA'
+          ? [p.role]
+          : [];
+    this.recordAssignedSlot =
+      this.recordEligibleSlots.length === 1 ? this.recordEligibleSlots[0] : null;
     this.poolOpen.set(false);
     this.poolSuggestions.set([]);
     this.lookupPlayer(p.playerId);
@@ -2008,7 +2226,10 @@ export class AuctionComponent {
 
     forkJoin({
       proj: this.auctionService.projection(sid, playerId),
-      alt: this.auctionService.alternatives(sid, playerId),
+      alt: this.auctionService.alternatives(sid, playerId, {
+        participantId: this.recordWinnerId || null,
+        strategyName: this.altStrategyName,
+      }),
     }).subscribe({
       next: ({ proj, alt }) => {
         this.projection.set(proj);
@@ -2020,6 +2241,22 @@ export class AuctionComponent {
         this.lookupLoading.set(false);
       },
     });
+  }
+
+  /** Refresh alternatives when the winner changes (max bid depends on residual budget). */
+  onWinnerChange(participantId: string): void {
+    this.recordWinnerId = participantId;
+    if (this.lookupId || this.recordPlayerId) {
+      this.lookupPlayer(this.lookupId || this.recordPlayerId);
+    }
+  }
+
+  /** Refresh alternatives when strategy cap changes. */
+  onStrategyChange(name: string | null): void {
+    this.altStrategyName = name;
+    if (this.lookupId || this.recordPlayerId) {
+      this.lookupPlayer(this.lookupId || this.recordPlayerId);
+    }
   }
 
   submitRecord(): void {
@@ -2034,6 +2271,7 @@ export class AuctionComponent {
         playerId: this.recordPlayerId,
         winnerParticipantId: this.recordWinnerId,
         finalPrice: this.recordPrice,
+        assignedSlot: this.recordAssignedSlot,
       })
       .subscribe({
         next: (res) => {
@@ -2045,6 +2283,9 @@ export class AuctionComponent {
             this.recordPlayerName = '';
             this.recordWinnerId = '';
             this.recordPrice = 1;
+            this.recordAssignedSlot = null;
+            this.recordEligibleSlots = [];
+            this.recordSelectedPlayer = null;
             this.recordError.set(null);
             this.projection.set(null);
             this.altResult.set(null);

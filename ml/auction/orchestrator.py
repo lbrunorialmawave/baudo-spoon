@@ -201,17 +201,89 @@ def initialize_auction(
 # ---------------------------------------------------------------------------
 
 
+def _resolve_assigned_slot(
+    state: AuctionState,
+    player: Player,
+    winner: ParticipantState,
+    assigned_slot: str | None,
+) -> tuple[str | None, str | None]:
+    """Decide lo slot di ruolo da riempire e valida la quota residua.
+
+    Returns
+    -------
+    (slot, rejection_code_or_None)
+        Se ``rejection_code`` è non-None, ``slot`` è None e il chiamante
+        deve rifiutare l'assegnazione.
+    """
+    quotas = state.config.role_quotas
+    ruleset = state.config.ruleset
+
+    if ruleset == "CLASSIC":
+        role = player.role
+        if assigned_slot is not None and assigned_slot != role:
+            return None, "invalid_slot"
+        quota = quotas.get(role, 0)
+        filled = winner.role_breakdown.get(role, 0)
+        if filled >= quota:
+            return None, "role_full"
+        return role, None
+
+    # MANTRA: slot must be one of the player's eligible_roles (or a single
+    # explicit role if eligible_roles is empty — defensive fallback).
+    eligible = set(player.eligible_roles) if player.eligible_roles else set()
+    if not eligible:
+        eligible = {player.role}
+
+    if assigned_slot is not None:
+        if assigned_slot not in eligible:
+            return None, "invalid_slot"
+        if assigned_slot not in quotas:
+            return None, "invalid_slot"
+        filled = winner.role_breakdown.get(assigned_slot, 0)
+        if filled >= quotas[assigned_slot]:
+            return None, "role_full"
+        return assigned_slot, None
+
+    # Auto-pick: among eligible slots that still have residual quota for
+    # the winner, prefer the one with the *least residual capacity*
+    # (scarcest remaining slot for this participant). Ties broken by
+    # stable role-name order for determinism.
+    candidates = [
+        r
+        for r in eligible
+        if r in quotas and winner.role_breakdown.get(r, 0) < quotas[r]
+    ]
+    if not candidates:
+        return None, "role_full"
+
+    def _scarcity_key(r: str) -> tuple[int, str]:
+        residual = quotas[r] - winner.role_breakdown.get(r, 0)
+        return (residual, r)
+
+    return min(candidates, key=_scarcity_key), None
+
+
 def record_assignment(
     state: AuctionState,
     player_id: str,
     winner_participant_id: str,
     final_price: int,
+    assigned_slot: str | None = None,
 ) -> RecordResult:
     """Valida e registra un'assegnazione, aggiornando lo stato in place.
 
     Le validazioni sono eseguite in ordine; al primo errore lo stato non
     viene mutato e viene restituito un :class:`RecordResult` con
     ``success=False`` e ``rejection_reason`` esplicito.
+
+    Parameters
+    ----------
+    assigned_slot:
+        Slot di ruolo MANTRA effettivamente occupato (es. ``"Dd"``).
+        Opzionale: se omesso in modalità MANTRA, l'orchestratore sceglie
+        automaticamente tra gli ``eligible_roles`` del giocatore lo slot
+        con minor capacità residua per il vincitore. In CLASSIC viene
+        ignorato (si usa sempre ``player.role``).
     """
     # -- 1. player_id esiste nel pool originale (lookup in available_pool
     #       è sufficiente perché available_pool è la fonte di verità
@@ -241,17 +313,33 @@ def record_assignment(
             f"winner_participant_id {winner_participant_id!r} non esiste",
         )
 
-    # -- 3. il partecipante ha ancora uno slot libero nel ruolo del giocatore.
-    role = player.role
-    role_quota = state.config.role_quotas[role]
-    if winner.role_breakdown[role] >= role_quota:
+    # -- 3. risoluzione e validazione dello slot di ruolo.
+    slot, slot_err = _resolve_assigned_slot(
+        state, player, winner, assigned_slot
+    )
+    if slot_err == "invalid_slot":
+        return _reject(
+            "invalid_slot",
+            (
+                f"slot {assigned_slot!r} non valido per il giocatore "
+                f"{player_id!r} (eligible={sorted(player.eligible_roles) if player.eligible_roles else [player.role]})"
+            ),
+        )
+    if slot_err == "role_full" or slot is None:
+        role_label = assigned_slot or player.role
+        quota = state.config.role_quotas.get(role_label, 0)
+        filled = winner.role_breakdown.get(role_label, 0)
         return _reject(
             "role_full",
             (
                 f"partecipante {winner.participant_id!r} ha gia' completato "
-                f"il ruolo {role} ({winner.role_breakdown[role]}/{role_quota})"
+                f"il ruolo {role_label} ({filled}/{quota})"
             ),
         )
+
+    # ``role`` sullo AssignmentRecord resta il codice usato per price index
+    # e breakdown: in CLASSIC = player.role; in MANTRA = assigned_slot.
+    role = slot
 
     # -- 4. regola della riserva crediti:
     #       final_price <= budget_residual - (slots_ancora_da_riempire - 1)
@@ -279,6 +367,8 @@ def record_assignment(
         )
 
     # -- Calcola tier, expected price ed applica EWMA PRIMA di mutare lo stato.
+    # Lo slot assegnato guida l'aggiornamento del price_index (Fase 3:
+    # non più la risoluzione speculativa di resolve_pricing_role).
     percentile = state.role_percentile_map.get(player_id, 0.0)
     tier = classify_tier(percentile, state.config.market_drift_config)
     expected_price = compute_expected_price(
@@ -303,7 +393,7 @@ def record_assignment(
     # -- Mutazioni dello stato (post-validazione).
     winner.budget_residual -= final_price
     winner.squad.append(player)
-    winner.role_breakdown[role] += 1
+    winner.role_breakdown[role] = winner.role_breakdown.get(role, 0) + 1
     # Rimuovi il giocatore dal pool disponibile.
     state.available_pool = [p for p in state.available_pool if p.player_id != player_id]
 
@@ -313,20 +403,22 @@ def record_assignment(
         player=player,
         winner_participant_id=winner_participant_id,
         final_price=final_price,
-        role=role,
+        role=role,  # type: ignore[arg-type]
         tier=tier,
         price_index_before=index_before,
         price_index_after=index_after,
         price_index_snapshot_before=snapshot_before,
+        assigned_slot=role,
     )
     state.assignments.append(record)
 
     logger.info(
-        "assignment_recorded seq=%d player=%s winner=%s role=%s tier=%s "
-        "price=%d expected=%.2f index=%.4f->%.4f budget_residuo=%d",
+        "assignment_recorded seq=%d player=%s winner=%s role=%s slot=%s "
+        "tier=%s price=%d expected=%.2f index=%.4f->%.4f budget_residuo=%d",
         seq,
         player_id,
         winner_participant_id,
+        role,
         role,
         tier,
         final_price,
@@ -374,6 +466,9 @@ def undo_last_assignment(
         )
 
     # 1) Ripristina budget, roster e breakdown.
+    # Prefer assigned_slot (MANTRA multi-role) with fallback to role for
+    # legacy records deserialized without the field.
+    slot = last.assigned_slot if last.assigned_slot is not None else last.role
     winner.budget_residual += last.final_price
     if winner.squad and winner.squad[-1].player_id == last.player.player_id:
         winner.squad.pop()
@@ -382,8 +477,8 @@ def undo_last_assignment(
         winner.squad = [
             p for p in winner.squad if p.player_id != last.player.player_id
         ]
-    if winner.role_breakdown[last.role] > 0:
-        winner.role_breakdown[last.role] -= 1
+    if winner.role_breakdown.get(slot, 0) > 0:
+        winner.role_breakdown[slot] -= 1
 
     # 2) Ripristina il price_index dallo snapshot deterministico.
     if last.price_index_snapshot_before:
@@ -419,12 +514,32 @@ def undo_last_assignment(
 # ---------------------------------------------------------------------------
 
 
-def get_auction_summary(state: AuctionState) -> AuctionSummary:
-    """Restituisce un riepilogo immutabile dello stato corrente."""
+def get_auction_summary(
+    state: AuctionState,
+    *,
+    include_completion_probability: bool = True,
+) -> AuctionSummary:
+    """Restituisce un riepilogo immutabile dello stato corrente.
+
+    When ``include_completion_probability`` is True (default), attaches
+    the WS3 #1 live indicator ``completion_probability`` per participant.
+    """
+    completion: dict[str, float] | None = None
+    if include_completion_probability:
+        try:
+            from ml.auction.completion_probability import (
+                estimate_all_completion_probabilities,
+            )
+
+            completion = estimate_all_completion_probabilities(state)
+        except Exception:  # pragma: no cover - defensive
+            logger.exception("completion_probability_failed")
+            completion = None
     return AuctionSummary(
         participants=list(state.participants.values()),
         assignments=list(state.assignments),
         price_index=copy.deepcopy(state.price_index),
+        completion_probability=completion,
     )
 
 
@@ -466,6 +581,7 @@ def serialize_state(state: AuctionState) -> dict[str, object]:
                     role: dict(tiers)
                     for role, tiers in r.price_index_snapshot_before.items()
                 },
+                "assigned_slot": r.assigned_slot if r.assigned_slot is not None else r.role,
             }
             for r in state.assignments
         ],
@@ -518,17 +634,21 @@ def deserialize_state(payload: dict[str, object]) -> AuctionState:
                 dict[Role, dict[Tier, float]], r["price_index_snapshot_before"]
             ).items()
         }
+        role_val = cast(Role, r["role"])
+        # Backward compat: pre-Fase-3 payloads lack assigned_slot.
+        assigned_slot_val = cast(str | None, r.get("assigned_slot", role_val))
         assignments.append(
             AssignmentRecord(
                 sequence_number=cast(int, r["sequence_number"]),
                 player=player,
                 winner_participant_id=cast(str, r["winner_participant_id"]),
                 final_price=cast(int, r["final_price"]),
-                role=cast(Role, r["role"]),
+                role=role_val,
                 tier=cast(Tier, r["tier"]),
                 price_index_before=cast(float, r["price_index_before"]),
                 price_index_after=cast(float, r["price_index_after"]),
                 price_index_snapshot_before=snapshot,
+                assigned_slot=assigned_slot_val,
             )
         )
 
@@ -595,9 +715,14 @@ class AuctionSession:
         player_id: str,
         winner_participant_id: str,
         final_price: int,
+        assigned_slot: str | None = None,
     ) -> RecordResult:
         return record_assignment(
-            self._state, player_id, winner_participant_id, final_price
+            self._state,
+            player_id,
+            winner_participant_id,
+            final_price,
+            assigned_slot=assigned_slot,
         )
 
     def undo(self) -> AuctionState:
@@ -613,6 +738,10 @@ class AuctionSession:
         self,
         target_player_id: str,
         config: AlternativesConfig | None = None,
+        *,
+        participant_id: str | None = None,
+        strategy_name: str | None = None,
+        diversify: bool = True,
     ) -> AlternativeSuggestion:
         cfg = config or self._state.config.alternatives_config
         target = next(
@@ -635,6 +764,9 @@ class AuctionSession:
             state=self._state,
             config=cfg,
             valuation_mode=vm,
+            participant_id=participant_id,
+            strategy_name=strategy_name,
+            diversify=diversify,
         )
 
     def serialize(self) -> dict[str, object]:
@@ -647,7 +779,7 @@ class AuctionSession:
 
 
 def _player_to_dict(p: Player) -> dict[str, object]:
-    return {
+    out: dict[str, object] = {
         "player_id": p.player_id,
         "name": p.name,
         "real_team": p.real_team,
@@ -655,6 +787,11 @@ def _player_to_dict(p: Player) -> dict[str, object]:
         "cost": p.cost,
         "projected_score": p.projected_score,
     }
+    if p.eligible_roles:
+        out["eligible_roles"] = sorted(p.eligible_roles)
+    if p.season_value is not None:
+        out["season_value"] = p.season_value
+    return out
 
 
 def _player_from_dict(
@@ -663,14 +800,22 @@ def _player_from_dict(
     pid = cast(str, d["player_id"])
     if pid in cache:
         return cache[pid]
-    p = Player(
-        player_id=pid,
-        name=cast(str, d["name"]),
-        real_team=cast(str, d["real_team"]),
-        role=cast(Role, d["role"]),
-        cost=cast(int, d["cost"]),
-        projected_score=cast(float, d["projected_score"]),
-    )
+    raw_eligible = d.get("eligible_roles")
+    eligible: frozenset[str] = frozenset()
+    if isinstance(raw_eligible, (list, tuple, set, frozenset)):
+        eligible = frozenset(str(r) for r in raw_eligible)
+    kwargs: dict[str, object] = {
+        "player_id": pid,
+        "name": cast(str, d["name"]),
+        "real_team": cast(str, d["real_team"]),
+        "role": cast(Role, d["role"]),
+        "cost": cast(int, d["cost"]),
+        "projected_score": cast(float, d["projected_score"]),
+        "eligible_roles": eligible,
+    }
+    if "season_value" in d and d["season_value"] is not None:
+        kwargs["season_value"] = cast(float, d["season_value"])
+    p = Player(**kwargs)  # type: ignore[arg-type]
     cache[pid] = p
     return p
 
@@ -679,6 +824,7 @@ def _config_to_dict(config: AuctionConfig) -> dict[str, object]:
     return {
         "num_participants": config.num_participants,
         "role_quotas": dict(config.role_quotas),
+        "ruleset": config.ruleset,
         "market_drift_config": {
             "alpha": config.market_drift_config.alpha,
             "spillover_adjacent_tier": config.market_drift_config.spillover_adjacent_tier,
@@ -693,6 +839,7 @@ def _config_to_dict(config: AuctionConfig) -> dict[str, object]:
         "use_inflation_baseline": config.use_inflation_baseline,
         "reference_budget": config.reference_budget,
         "budget_initial": config.budget_initial,
+        "valuation_mode": config.valuation_mode,
         # inflation_config non è serializzato di default: il caller può
         # ricostruirlo se davvero necessario (l'ottimizzatore rosa lo
         # ottiene via DI).  Per completezza includiamo il repr ma non
@@ -717,12 +864,15 @@ def _config_from_dict(d: dict[str, object]) -> AuctionConfig:
     alternatives_config = AlternativesConfig(
         low_cost_percentile=cast(float, alt["low_cost_percentile"]),
     )
+    # Backward compat: pre-Fase-3 payloads lack ruleset → CLASSIC.
+    ruleset = cast(str, d.get("ruleset", "CLASSIC"))
     return AuctionConfig(
         num_participants=cast(int, d["num_participants"]),
         role_quotas=cast(
             dict[Role, int],
             dict(cast(dict[object, object], d["role_quotas"])),
         ),
+        ruleset=ruleset,  # type: ignore[arg-type]
         market_drift_config=market_drift_config,
         alternatives_config=alternatives_config,
         use_inflation_baseline=cast(
@@ -731,6 +881,7 @@ def _config_from_dict(d: dict[str, object]) -> AuctionConfig:
         inflation_config=None,
         reference_budget=cast(int, d.get("reference_budget", 300)),
         budget_initial=cast(int, d.get("budget_initial", 300)),
+        valuation_mode=cast(str, d.get("valuation_mode", "PER_MATCH_RATING")),
     )
 
 

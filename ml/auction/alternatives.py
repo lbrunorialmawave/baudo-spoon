@@ -1,7 +1,7 @@
 """Pure function: alternative suggestions for a target player.
 
 Given a target ``Player`` and the current ``AuctionState``, the function
-returns two candidates restricted to the **same role**:
+returns two candidates restricted to a **compatible role set**:
 
 * ``low_cost_alternative`` - the available player with the best ratio
   ``projected_score / expected_price`` among those whose ``expected_price``
@@ -10,8 +10,18 @@ returns two candidates restricted to the **same role**:
   closest (absolute distance) to the target; ties broken by lower
   ``expected_price``.
 
-Both alternatives are validated to belong to the same role as the target.
-If the role has no available candidates, the function returns explicit
+Role compatibility
+------------------
+CLASSIC: candidates must share the same scalar ``role`` as the target
+(``p.role == target.role``) — unchanged behaviour.
+
+MANTRA: candidates must have a non-empty intersection between their
+``eligible_roles`` and the target's role set (``eligible_roles`` if
+present, else ``{role}``). This reuses the same "one player fills at
+most one slot" conceptual framing of the ILP solver: a multi-role
+player is a valid alternative for any vacant slot they can still cover.
+
+If no compatible candidates remain, the function returns explicit
 ``None`` results with a diagnostic ``reason_if_none`` (per spec §5).
 """
 
@@ -34,7 +44,29 @@ if TYPE_CHECKING:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["suggest_alternatives"]
+__all__ = [
+    "suggest_alternatives",
+    "player_role_set",
+    "pareto_diversify",
+    "max_affordable_bid",
+    "strategy_price_cap",
+]
+
+
+def player_role_set(player: Player, ruleset: str = "CLASSIC") -> frozenset[str]:
+    """Role codes a player can cover under the active ruleset.
+
+    CLASSIC (or missing ``eligible_roles``): singleton ``{player.role}``.
+    MANTRA with ``eligible_roles``: the eligible set as-is.
+    """
+    if ruleset == "MANTRA" and player.eligible_roles:
+        return frozenset(player.eligible_roles)
+    return frozenset({player.role})
+
+
+def _roles_compatible(a: Player, b: Player, ruleset: str) -> bool:
+    """True iff the two players share at least one coverable role slot."""
+    return bool(player_role_set(a, ruleset) & player_role_set(b, ruleset))
 
 
 def _get_player_score(player: Player, valuation_mode: ValuationMode) -> float:
@@ -46,54 +78,176 @@ def _get_player_score(player: Player, valuation_mode: ValuationMode) -> float:
     return player.projected_score
 
 
+def pareto_diversify(
+    candidates: list[Player],
+    expected_prices: dict[str, float],
+    valuation_mode: ValuationMode = ValuationMode.PER_MATCH_RATING,
+    *,
+    max_points: int = 5,
+    exclude_ids: set[str] | None = None,
+) -> list[Player]:
+    """Mini-fronte Pareto su (score ↑, -price ↑, value_ratio ↑).
+
+    WS3 #3: lightweight adaptation of :mod:`ml.optimizer.pareto` /
+    :mod:`ml.optimizer.diversity` for the live alternatives flow — no ILP,
+    pure dominance filter over the already-filtered role-compatible pool.
+
+    A candidate A dominates B if it is strictly better on at least one
+    axis and not worse on any other. Axes:
+
+    * score = projected (or season) score — higher is better
+    * -expected_price — lower price is better
+    * value_ratio = score / expected_price — higher is better
+    """
+    exclude = exclude_ids or set()
+    scored: list[tuple[Player, float, float, float]] = []
+    for p in candidates:
+        if p.player_id in exclude:
+            continue
+        score = _get_player_score(p, valuation_mode)
+        price = max(1e-9, expected_prices.get(p.player_id, p.cost or 1.0))
+        ratio = score / price
+        scored.append((p, score, -price, ratio))
+
+    frontier: list[tuple[Player, float, float, float]] = []
+    for cand in scored:
+        dominated = False
+        for other in scored:
+            if other[0].player_id == cand[0].player_id:
+                continue
+            # other dominates cand?
+            if (
+                other[1] >= cand[1]
+                and other[2] >= cand[2]
+                and other[3] >= cand[3]
+                and (other[1] > cand[1] or other[2] > cand[2] or other[3] > cand[3])
+            ):
+                dominated = True
+                break
+        if not dominated:
+            frontier.append(cand)
+
+    # Stable order: higher value ratio first, then higher score.
+    frontier.sort(key=lambda t: (t[3], t[1]), reverse=True)
+    return [t[0] for t in frontier[:max_points]]
+
+
+def max_affordable_bid(
+    state: AuctionState,
+    participant_id: str,
+) -> int | None:
+    """Max bid the participant can place without violating credit reserve.
+
+    WS3 #4 (sensitivity): ``budget_residual - (slots_remaining - 1)``,
+    clamped to >= 0. Returns ``None`` if the participant is unknown.
+    """
+    winner = state.participants.get(participant_id)
+    if winner is None:
+        return None
+    total = sum(int(q) for q in state.config.role_quotas.values())
+    current = sum(winner.role_breakdown.values())
+    slots_remaining = total - current
+    if slots_remaining <= 0:
+        return 0
+    return max(0, winner.budget_residual - (slots_remaining - 1))
+
+
+def strategy_price_cap(
+    player: Player,
+    base_expected_price: float,
+    strategy_name: str | None = None,
+) -> int | None:
+    """Strategy-aware max price threshold (WS3 #5).
+
+    Multiplies the expected price by a role weight from the default
+    strategy profiles. Returns ``None`` when no strategy is selected.
+    """
+    if not strategy_name:
+        return None
+    try:
+        from ml.optimizer.strategies import strategy_by_name
+        from ml.optimizer.models import StrategyName
+
+        profile = strategy_by_name(strategy_name)  # type: ignore[arg-type]
+    except (KeyError, ImportError, TypeError):
+        return None
+    weight = profile.role_weight.get(player.role, 1.0)
+    # Cap = expected * weight, floored at 1. Higher weight (e.g. D in
+    # SUPER_DEFENSIVE) allows paying more for that role.
+    return max(1, int(round(base_expected_price * weight)))
+
+
 def suggest_alternatives(
     target: Player,
     available_pool: list[Player],
     state: AuctionState,
     config: AlternativesConfig,
     valuation_mode: ValuationMode = ValuationMode.PER_MATCH_RATING,
+    *,
+    participant_id: str | None = None,
+    strategy_name: str | None = None,
+    diversify: bool = True,
+    max_diversified: int = 5,
 ) -> AlternativeSuggestion:
-    """Suggerisce due alternative nello stesso ruolo del ``target``.
+    """Suggerisce alternative compatibili col ruolo del ``target``.
 
     Parameters
     ----------
     target:
         Giocatore bersaglio (può essere già stato assegnato — la firma
-        ammette entrambi i casi).  Ne viene letto solo il ruolo.
+        ammette entrambi i casi).
     available_pool:
-        Sottoinsieme del pool di giocatori *non ancora assegnati* e con
-        ``role == target.role``.  L'orchestratore è tenuto a filtrare
-        prima; in ogni caso la funzione rifiuta giocatori di ruoli
-        diversi.
+        Pool di giocatori *non ancora assegnati*.  Il filtro di
+        compatibilità di ruolo è applicato internamente (CLASSIC:
+        uguaglianza scalare; MANTRA: intersezione su ``eligible_roles``).
     state:
         Stato corrente dell'asta, usato per calcolare gli ``expected_price``
-        aggiornati.
+        aggiornati e per leggere il ``ruleset``.
     config:
         Configurazione delle soglie (soprattutto ``low_cost_percentile``).
+    participant_id:
+        Optional: when set, computes ``max_affordable_bid`` for this manager.
+    strategy_name:
+        Optional: one of BALANCED / SUPER_DEFENSIVE / SUPER_OFFENSIVE / MIXED;
+        enables ``strategy_price_cap``.
+    diversify:
+        When True (default), populate ``diversified_alternatives`` via
+        Pareto filter (WS3 #3).
 
     Returns
     -------
-    :class:`AlternativeSuggestion` con i due candidati.  Se il ruolo è
-    esaurito, ``low_cost_alternative`` e ``closest_alternative`` sono
-    entrambi ``None`` e ``reason_if_none`` spiega il motivo.
+    :class:`AlternativeSuggestion` con i due candidati classici più i
+    campi WS3 opzionali.
     """
+    ruleset = getattr(state.config, "ruleset", "CLASSIC") or "CLASSIC"
     same_role = [
         p
         for p in available_pool
-        if p.role == target.role and p.player_id != target.player_id
+        if p.player_id != target.player_id
+        and _roles_compatible(p, target, ruleset)
     ]
 
+    bid_cap = max_affordable_bid(state, participant_id) if participant_id else None
+
     if not same_role:
+        role_label = (
+            "/".join(sorted(player_role_set(target, ruleset)))
+            if ruleset == "MANTRA"
+            else target.role
+        )
         logger.info(
             "alternatives_none role=%s target=%s reason=role_exhausted_or_empty",
-            target.role,
+            role_label,
             target.player_id,
         )
         return AlternativeSuggestion(
             target_player_id=target.player_id,
             low_cost_alternative=None,
             closest_alternative=None,
-            reason_if_none=f"reparto {target.role} esaurito o senza alternative",
+            reason_if_none=f"reparto {role_label} esaurito o senza alternative",
+            diversified_alternatives=(),
+            max_affordable_bid=bid_cap,
+            strategy_price_cap=None,
         )
 
     # Pre-calcola gli expected_price aggiornati (lazy, una sola volta).
@@ -115,11 +269,35 @@ def suggest_alternatives(
         valuation_mode=valuation_mode,
     )
 
+    exclude = set()
+    if low_cost is not None:
+        exclude.add(low_cost.player_id)
+    if closest is not None:
+        exclude.add(closest.player_id)
+    diversified: tuple = ()
+    if diversify:
+        diversified = tuple(
+            pareto_diversify(
+                same_role,
+                expected_prices,
+                valuation_mode,
+                max_points=max_diversified,
+                exclude_ids=exclude,
+            )
+        )
+
+    target_price = project_price_for_player(state, target)
+    strat_cap = strategy_price_cap(target, target_price, strategy_name)
+
     logger.info(
-        "alternatives_suggested target=%s low_cost=%s closest=%s",
+        "alternatives_suggested target=%s low_cost=%s closest=%s diversified=%d "
+        "max_bid=%s strat_cap=%s",
         target.player_id,
         low_cost.player_id if low_cost else None,
         closest.player_id if closest else None,
+        len(diversified),
+        bid_cap,
+        strat_cap,
     )
 
     return AlternativeSuggestion(
@@ -127,6 +305,9 @@ def suggest_alternatives(
         low_cost_alternative=low_cost,
         closest_alternative=closest,
         reason_if_none=None,
+        diversified_alternatives=diversified,
+        max_affordable_bid=bid_cap,
+        strategy_price_cap=strat_cap,
     )
 
 
