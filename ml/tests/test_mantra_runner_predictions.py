@@ -29,7 +29,6 @@ import pytest
 
 from ml.mantra.runner import _load_predictions_by_id, run_mantra
 
-
 # ── _load_predictions_by_id: file-level plumbing ────────────────────────────
 
 
@@ -150,6 +149,7 @@ def _stub_scores(df: pd.DataFrame) -> dict:
         "fp_mantra": _stub_pillar_series(7.5),
         "vr": _stub_pillar_series(9.0),
         "prezzo_massimo": _stub_pillar_series(15.0),
+        "percentile_ruolo": _stub_pillar_series(0.5),
     }
 
 
@@ -193,7 +193,7 @@ class _Patches:
         self._patches = list(patches)
         self._stack = None
 
-    def __enter__(self) -> "_Patches":
+    def __enter__(self) -> _Patches:
         from contextlib import ExitStack
 
         self._stack = ExitStack()

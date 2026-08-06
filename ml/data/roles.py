@@ -27,29 +27,37 @@ CanonicalRole = Literal["GK", "DEF", "MID", "FWD"]
 # Keys are normalised (hyphens stripped, lowercase) before lookup.
 _FOTMOB_TO_ROLE: dict[str, CanonicalRole] = {
     # ── Goalkeeper ────────────────────────────────────────────────────────────
-    "keeper_long": "GK",
+    "goalkeeper": "GK",
     # ── Defenders ─────────────────────────────────────────────────────────────
     "rightback": "DEF",
     "leftback": "DEF",
     "centerback": "DEF",
-    "right_wing_back": "DEF",
-    "left_wing_back": "DEF", 
+    "centreback": "DEF",
+    "rightcentreback": "DEF",
+    "leftcentreback": "DEF",
+    "rightwingback": "DEF",
+    "leftwingback": "DEF",
     "defender": "DEF",
     # ── Midfielders ───────────────────────────────────────────────────────────
+    "defensivemidfielder": "MID",
+    "centraldefensivemidfielder": "MID",
     "centerdefensivemidfielder": "MID",
+    "centralmidfielder": "MID",
+    "centermidfielder": "MID",
     "rightmidfielder": "MID",
     "leftmidfielder": "MID",
     "midfielder": "MID",
-    "centermidfielder": "MID", 
+    "attackingmidfielder": "MID",
     # ── Forwards ──────────────────────────────────────────────────────────────
     "striker": "FWD",
     "centerattackingmidfielder": "FWD",
     "secondstriker": "FWD",
+    "winger": "FWD",
     "rightwinger": "FWD",
     "leftwinger": "FWD",
 }
 
-_FALLBACK_ROLE: CanonicalRole = "MID"
+_FALLBACK_ROLE: CanonicalRole = "FWD"
 
 
 def _normalize_key(key: str) -> str:

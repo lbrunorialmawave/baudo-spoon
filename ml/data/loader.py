@@ -17,7 +17,6 @@ Assumptions:
 """
 
 import logging
-from typing import Optional
 
 import pandas as pd
 import sqlalchemy as sa
@@ -113,7 +112,7 @@ JOIN player_quotations pq
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _build_where(league_name: Optional[str]) -> str:
+def _build_where(league_name: str | None) -> str:
     if league_name:
         escaped = league_name.replace("'", "''")
         return f"WHERE l.name ILIKE '%{escaped}%'"
@@ -257,7 +256,7 @@ def _attach_role(
             "player_profiles. Apply migration 003_add_player_season_roles.sql "
             "and re-run the scraper with --roles."
         )
-    except Exception:  # noqa: BLE001
+    except Exception:
         log.warning(
             "Could not load player_season_roles; falling back to player_profiles.",
             exc_info=True,
@@ -284,7 +283,7 @@ def _attach_role(
                 "player_profiles table is empty — defaulting all roles to 'FWD'."
             )
             df_player["canonical_role"] = "FWD"
-    except Exception:  # noqa: BLE001
+    except Exception:
         log.warning(
             "Could not load player_profiles; defaulting all roles to 'FWD'.",
             exc_info=True,
@@ -365,7 +364,13 @@ def _append_foreign_fallback_rows(
         "Appended %d cross-league fallback row(s) for neo-arrivi with zero Serie A history",
         len(df_foreign),
     )
-    return pd.concat([df_player, df_foreign], ignore_index=True, sort=False)
+    result = pd.concat([df_player, df_foreign], ignore_index=True, sort=False)
+    # team_fotmob_id becomes object dtype once pd.NA is mixed with the Serie A
+    # rows' int64 values — pandas then refuses to merge it against the plain
+    # int64 key in df_team_strength ("You are trying to merge on object and
+    # int64 columns"). Nullable Int64 keeps NA support while staying numeric.
+    result["team_fotmob_id"] = result["team_fotmob_id"].astype("Int64")
+    return result
 
 
 def load_raw_data(engine: sa.Engine, cfg: MLConfig) -> pd.DataFrame:
