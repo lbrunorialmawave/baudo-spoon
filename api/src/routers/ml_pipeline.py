@@ -44,6 +44,31 @@ router = APIRouter(
 _WORKFLOW_FILE = "ml-training.yml"
 _GITHUB_API = "https://api.github.com"
 
+# Mirrors every `workflow_dispatch.inputs` default in
+# .github/workflows/ml-training.yml. GitHub Actions inputs are always
+# transmitted as strings, including booleans ("true"/"false").
+#
+# Sent explicitly rather than omitted (letting GitHub fill in the declared
+# defaults itself): omitting `inputs` entirely on a workflow with boolean
+# inputs is a known trigger for the GitHub API's generic, unhelpful
+# "Failed to run workflow dispatch" 500 (see GitHub community reports on
+# workflow_dispatch + boolean inputs) — passing every default explicitly
+# sidesteps that server-side default-filling path.
+_DEFAULT_WORKFLOW_INPUTS: dict[str, str] = {
+    "league": "Serie A",
+    "tune": "false",
+    "tune_iter": "30",
+    "clusters": "6",
+    "predict_next": "false",
+    "evaluate_mantra": "false",
+    "test_seasons": "1",
+    "min_minutes": "800",
+    "seed": "42",
+    "log_level": "INFO",
+    "output_dir": "",
+    "fantavoto_csv": "",
+}
+
 
 def _headers() -> dict:
     if not settings.github_token:
@@ -61,7 +86,10 @@ def _headers() -> dict:
 def _dispatch_workflow() -> None:
     url = f"{_GITHUB_API}/repos/{settings.github_repo}/actions/workflows/{_WORKFLOW_FILE}/dispatches"
     resp = requests.post(
-        url, headers=_headers(), json={"ref": settings.github_default_branch}, timeout=15
+        url,
+        headers=_headers(),
+        json={"ref": settings.github_default_branch, "inputs": _DEFAULT_WORKFLOW_INPUTS},
+        timeout=15,
     )
     resp.raise_for_status()
 
