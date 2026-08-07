@@ -13,11 +13,13 @@ sorprese"), che è esattamente il caso che prima veniva perso.
 
 from __future__ import annotations
 
+import requests
 from bs4 import BeautifulSoup
 
 import scraper.gruppo_esperti as gruppo_esperti
 from scraper.gruppo_esperti import (
     _discover_from_forum_listing,
+    _match_fantacalcio_id,
     _parse_role_section,
     _resolve_cross_reference,
 )
@@ -106,7 +108,7 @@ def test_discover_from_forum_listing_extracts_team_urls(monkeypatch) -> None:
         lambda url, session: BeautifulSoup(_FORUM_LISTING_HTML, "html.parser"),
     )
 
-    teams = _discover_from_forum_listing("https://forum.gruppoesperti.it/viewforum.php?f=199", session=None)
+    teams = _discover_from_forum_listing("https://forum.gruppoesperti.it/viewforum.php?f=199", session=requests.Session())
 
     assert teams == {
         "ATALANTA": "https://forum.gruppoesperti.it/viewtopic.php?t=232668",
@@ -126,3 +128,46 @@ def test_discover_team_topics_dispatches_to_forum_listing(monkeypatch) -> None:
     teams = gruppo_esperti.discover_team_topics("https://forum.gruppoesperti.it/viewforum.php?f=199")
 
     assert set(teams) == {"ATALANTA", "INTER"}
+
+
+# ── _match_fantacalcio_id ────────────────────────────────────────────────────
+
+# (fantacalcio_id, normalized_name, normalized_team, role) — the shape
+# _load_quotations returns, already normalized (uppercase, accents stripped).
+_QUOTATIONS = [
+    (1, "CARNESECCHI", "INTER", "GK"),
+    (2, "DE ROON", "ATALANTA", "MID"),
+    (3, "SOMMER", "INTER", "GK"),
+]
+
+
+def test_match_fantacalcio_id_prefers_own_team() -> None:
+    # Ambiguous surname present under two teams: must pick the one matching
+    # the scraped player's own team, not just the first/best global match.
+    quotations = [*_QUOTATIONS, (4, "SOMMER", "ATALANTA", "GK")]
+
+    assert _match_fantacalcio_id("Sommer", "Atalanta", "GK", quotations) == 4
+    assert _match_fantacalcio_id("Sommer", "Inter", "GK", quotations) == 3
+
+
+def test_match_fantacalcio_id_falls_back_to_same_role_across_teams() -> None:
+    # Carnesecchi scraped from Atalanta's forum thread (role=GK), but
+    # player_quotations already has him under Inter (e.g. a transfer the
+    # forum thread hasn't caught up with yet). Atalanta has OTHER players in
+    # quotations, so the old code's "only fall back if the team has zero
+    # candidates" check never triggered and this player was silently
+    # dropped. The fix retries scoped to the same role (GK) before falling
+    # back to the whole listone — a much safer disambiguator than team right
+    # after a transfer, since it's extracted independently on both sides.
+    assert _match_fantacalcio_id("Carnesecchi", "Atalanta", "GK", _QUOTATIONS) == 1
+
+
+def test_match_fantacalcio_id_falls_back_to_full_listone_as_last_resort() -> None:
+    # Wrong role too (e.g. the forum mis-sectioned the player, or role
+    # classification differs across sources) — still resolves via the
+    # unrestricted final tier rather than giving up.
+    assert _match_fantacalcio_id("Carnesecchi", "Atalanta", "DEF", _QUOTATIONS) == 1
+
+
+def test_match_fantacalcio_id_returns_none_when_truly_absent() -> None:
+    assert _match_fantacalcio_id("Sconosciuto", "Atalanta", "FWD", _QUOTATIONS) is None

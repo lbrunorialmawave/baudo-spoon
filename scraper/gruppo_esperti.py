@@ -429,22 +429,46 @@ def _normalize(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
-def _load_quotations(conn, season_start: int) -> list[tuple[int, str, str]]:
-    """Return [(fantacalcio_id, normalized_name, normalized_team), ...]."""
+def _load_quotations(conn, season_start: int) -> list[tuple[int, str, str, str]]:
+    """Return [(fantacalcio_id, normalized_name, normalized_team, role), ...]."""
     import sqlalchemy as sa
 
     rows = conn.execute(
         sa.text(
-            "SELECT fantacalcio_id, player_name, team FROM player_quotations "
+            "SELECT fantacalcio_id, player_name, team, role FROM player_quotations "
             "WHERE season_start = :season"
         ),
         {"season": season_start},
     ).all()
-    return [(r.fantacalcio_id, _normalize(r.player_name), _normalize(r.team)) for r in rows]
+    return [
+        (r.fantacalcio_id, _normalize(r.player_name), _normalize(r.team), r.role)
+        for r in rows
+    ]
+
+
+def _match_in(surname: str, candidates: list[tuple[int, str, str, str]]) -> Optional[int]:
+    """Try to match ``surname`` (already normalized) within ``candidates``.
+
+    Tier 1: exact surname match, or one is a whitespace-bounded prefix of
+    the other (covers "Kelly" vs "Kelly L.", "Moreno" vs "Moreno Alb.").
+    Tier 2: fuzzy fallback for minor spelling/transliteration differences.
+    """
+    for fid, q_name, _, _role in candidates:
+        if surname == q_name:
+            return fid
+        if q_name.startswith(surname + " ") or surname.startswith(q_name + " "):
+            return fid
+
+    best_id, best_score = None, 0.0
+    for fid, q_name, _, _role in candidates:
+        score = SequenceMatcher(None, surname, q_name).ratio()
+        if score > best_score:
+            best_id, best_score = fid, score
+    return best_id if best_score >= _FUZZY_MATCH_THRESHOLD else None
 
 
 def _match_fantacalcio_id(
-    surname: str, team: str, quotations: list[tuple[int, str, str]],
+    surname: str, team: str, role: str, quotations: list[tuple[int, str, str, str]],
 ) -> Optional[int]:
     """Match a scraped player's surname to a fantacalcio_id.
 
@@ -454,29 +478,35 @@ def _match_fantacalcio_id(
     forum's full "SURNAME Firstname" against that would tank a
     SequenceMatcher ratio purely from length mismatch, independent of
     whether the player is actually the same.
+
+    Three tiers, most confident first — mirrors the exact/relaxed-role/fuzzy
+    escalation ``ml/data/import_quotations.py`` already uses to build
+    ``player_id_map`` (a separate table, but the same underlying problem:
+    resolving free-text names against ``player_quotations``):
+
+      1. Same team (the common case, and disambiguates shared surnames
+         across teams, e.g. two different "Sommer"s).
+      2. Same role, any team — a transfer-window mismatch (forum thread's
+         team hasn't caught up with player_quotations, or vice versa)
+         leaves the team stale but role is a much safer signal to fall
+         back on than nothing, since it's extracted independently on both
+         sides (the forum's own role section vs. player_quotations.role).
+      3. Whole listone, unrestricted — last resort.
     """
     norm_surname = _normalize(surname)
     norm_team = _TEAM_ALIASES.get(_normalize(team), _normalize(team))
 
-    candidates = [q for q in quotations if q[2] == norm_team] or quotations
+    same_team = [q for q in quotations if q[2] == norm_team]
+    fid = _match_in(norm_surname, same_team)
+    if fid is not None:
+        return fid
 
-    # Tier 1: exact surname match, or one is a whitespace-bounded prefix of
-    # the other (covers "Kelly" vs "Kelly L.", "Moreno" vs "Moreno Alb.").
-    for fid, q_name, _ in candidates:
-        if norm_surname == q_name:
-            return fid
-        if q_name.startswith(norm_surname + " ") or norm_surname.startswith(q_name + " "):
-            return fid
+    same_role = [q for q in quotations if q[3] == role]
+    fid = _match_in(norm_surname, same_role)
+    if fid is not None:
+        return fid
 
-    # Tier 2: fuzzy fallback for minor spelling/transliteration differences.
-    best_id, best_score = None, 0.0
-    for fid, q_name, _ in candidates:
-        score = SequenceMatcher(None, norm_surname, q_name).ratio()
-        if score > best_score:
-            best_id, best_score = fid, score
-    if best_score >= _FUZZY_MATCH_THRESHOLD:
-        return best_id
-    return None
+    return _match_in(norm_surname, quotations)
 
 
 # ── Persistence ──────────────────────────────────────────────────────────────
@@ -553,10 +583,16 @@ def persist(
                 "Import quotations first (ml.data.import_quotations).", season_start,
             )
         for p in players:
-            fid = _match_fantacalcio_id(p.surname, p.team, quotations)
+            fid = _match_fantacalcio_id(p.surname, p.team, p.role, quotations)
             if fid is None:
                 unmatched += 1
-                log.debug("Unmatched player: %s (%s, %s)", p.name, p.team, p.role)
+                log.warning(
+                    "Unmatched player: %r (team=%r, role=%s) — no player_quotations row "
+                    "for season_start=%s matched surname %r closely enough (own team or "
+                    "otherwise). Check spelling/team in the listone, or whether the player "
+                    "is missing from player_quotations for this season.",
+                    p.name, p.team, p.role, season_start, p.surname,
+                )
                 continue
             conn.execute(
                 sa.text(_UPSERT_SQL),

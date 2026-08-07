@@ -86,6 +86,20 @@ import { PlayerDrawerComponent } from './components/player-drawer/player-drawer.
                  type="number" min="0" placeholder="max"
                  [ngModel]="priceMax()" (ngModelChange)="priceMax.set($event)" />
         </div>
+
+        <!-- Gruppo Esperti TOTALE range (0-50), same compound-control shape as Prezzo. -->
+        <div class="flex items-center gap-1 rounded-lg border px-2 py-1"
+             style="background:var(--color-surface-raised);border-color:var(--color-border)"
+             title="Filtra per punteggio Gruppo Esperti (TOTALE su 50)">
+          <span class="pl-0.5 text-xs" style="color:var(--color-text-secondary)">Esperti</span>
+          <input class="w-12 bg-transparent px-1 py-0.5 text-sm outline-none" style="color:var(--color-text-primary)"
+                 type="number" min="0" max="50" placeholder="min"
+                 [ngModel]="expertMin()" (ngModelChange)="expertMin.set($event)" />
+          <span style="color:var(--color-text-secondary)">–</span>
+          <input class="w-12 bg-transparent px-1 py-0.5 text-sm outline-none" style="color:var(--color-text-primary)"
+                 type="number" min="0" max="50" placeholder="max"
+                 [ngModel]="expertMax()" (ngModelChange)="expertMax.set($event)" />
+        </div>
       </div>
 
       <!-- Quick filters + reset — secondary row, visually lighter than the primary filters above. -->
@@ -195,6 +209,11 @@ export class PlayersComponent {
   readonly searchInput = signal('');
   readonly priceMin = signal<number | null>(null);
   readonly priceMax = signal<number | null>(null);
+  /** Gruppo Esperti TOTALE score range (0-50) — same client-side id-list
+   * filter pattern as selectedStatus (expertRatingsMap is loaded whole,
+   * for the season, up front — see loadExpertRatings). */
+  readonly expertMin = signal<number | null>(null);
+  readonly expertMax = signal<number | null>(null);
   readonly activeQuickFilter = signal<string | null>(null);
   readonly selectedPlayer = signal<any | null>(null);
   readonly matchdayStatusMap = signal<Record<number, any>>({});
@@ -238,7 +257,10 @@ export class PlayersComponent {
         this.selectedStatus(),
         this.priceMin(),
         this.priceMax(),
+        this.expertMin(),
+        this.expertMax(),
         this.matchdayStatusMap(),
+        this.expertRatingsMap(),
       ]);
       const filtersChanged = signature !== this.lastFilterSignature;
       this.lastFilterSignature = signature;
@@ -283,11 +305,32 @@ export class PlayersComponent {
     this.loading.set(true);
     this.error.set(null);
 
-    const fantacalcioIds = this.selectedStatus()
+    const statusIds = this.selectedStatus()
       ? Object.values(this.matchdayStatusMap())
           .filter((mds: any) => mds?.status === this.selectedStatus())
           .map((mds: any) => mds.fantacalcio_id)
-      : undefined;
+      : null;
+
+    const expertMin = this.expertMin();
+    const expertMax = this.expertMax();
+    const expertIds = (expertMin != null || expertMax != null)
+      ? Object.values(this.expertRatingsMap())
+          .filter(er => er.totale != null
+            && (expertMin == null || er.totale >= expertMin)
+            && (expertMax == null || er.totale <= expertMax))
+          .map(er => er.fantacalcio_id)
+      : null;
+
+    // Both filters derive their own id list client-side (matchdayStatusMap /
+    // expertRatingsMap are loaded whole, up front) — intersect when both are
+    // active instead of letting one silently override the other.
+    let fantacalcioIds: number[] | undefined;
+    if (statusIds && expertIds) {
+      const expertSet = new Set(expertIds);
+      fantacalcioIds = statusIds.filter((id: number) => expertSet.has(id));
+    } else {
+      fantacalcioIds = statusIds ?? expertIds ?? undefined;
+    }
 
     this.mantraService.listPlayers({
       ruolo: this.selectedRuolo() || undefined,
@@ -386,6 +429,8 @@ export class PlayersComponent {
     this.searchInput.set('');
     this.priceMin.set(null);
     this.priceMax.set(null);
+    this.expertMin.set(null);
+    this.expertMax.set(null);
     this.activeQuickFilter.set(null);
   };
 }

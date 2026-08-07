@@ -127,6 +127,10 @@ import { ErrorBoundaryComponent } from '../../../../shared/components/error-boun
                   <div class="flex items-center justify-between gap-2">
                     <span class="text-xs font-medium" style="color:var(--color-text-secondary)">
                       {{ r.expert_name ?? 'Gruppo Esperti' }}
+                      <span class="rounded px-1.5 py-0.5 ml-1" style="background:var(--color-border);color:var(--color-text-secondary)"
+                            [title]="'Dato riferito alla stagione ' + seasonLabel(r.season_start)">
+                        {{ seasonLabel(r.season_start) }}
+                      </span>
                     </span>
                     @if (r.rating != null) {
                       <span class="text-sm tracking-tight" style="color:var(--color-accent)"
@@ -243,6 +247,9 @@ export class PlayerDrawerComponent {
 
   readonly stars = (rating: number): string =>
     '★'.repeat(rating) + '☆'.repeat(Math.max(0, 5 - rating));
+
+  readonly seasonLabel = (seasonStart: number): string =>
+    `${seasonStart}/${String((seasonStart + 1) % 100).padStart(2, '0')}`;
 
   constructor() {
     effect(() => {
