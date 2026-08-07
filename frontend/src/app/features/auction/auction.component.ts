@@ -12,6 +12,7 @@ import {
   MANTRA_DEFAULT_QUOTAS,
   MANTRA_ROLES,
   AssignmentRecord,
+  AuctionConfig,
   AuctionParticipantSetup,
   AuctionParticipantState,
   AuctionPlayerSummary,
@@ -26,6 +27,7 @@ import {
 } from '../../core/models/auction.models';
 import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.component';
 import { AuctionPlayerDrawerComponent, AuctionDrawerPlayer } from './auction-player-drawer/auction-player-drawer.component';
+import { AuctionSimulationComponent } from './auction-simulation/auction-simulation.component';
 import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/error-boundary.component';
 import {
   FieldLegendComponent,
@@ -307,6 +309,7 @@ function makeParticipants(
     ErrorBoundaryComponent,
     FieldLegendComponent,
     AuctionPlayerDrawerComponent,
+    AuctionSimulationComponent,
   ],
   template: `
     @if (sessionId()) {
@@ -1669,6 +1672,12 @@ function makeParticipants(
                 }
               </div>
             </div>
+
+            <app-auction-simulation
+              [participants]="participants()"
+              [config]="setupAuctionConfig"
+              [seasonStart]="seasonStart"
+            />
           </section>
         </div>
       </div>
@@ -1738,7 +1747,16 @@ export class AuctionComponent {
   protected readonly OPTIMIZER_LEGENDS = OPTIMIZER_LEGENDS;
 
   /** Preset catalog (immutable). Exposed for the setup select. */
-  readonly presets: readonly AuctionPreset[] = AUCTION_PRESETS;
+  readonly allPresets: readonly AuctionPreset[] = AUCTION_PRESETS;
+
+  /** Presets compatible with the currently selected ruleset. */
+  get presets(): readonly AuctionPreset[] {
+    return this.allPresets.filter(
+      (p) =>
+        p.rulesetTarget === 'BOTH' ||
+        p.rulesetTarget === this.ruleset,
+    );
+  }
   protected readonly AUCTION_PRESET_NONE = AUCTION_PRESET_NONE;
 
   /**
@@ -1774,6 +1792,15 @@ export class AuctionComponent {
       this.roleQuotas = { ...MANTRA_DEFAULT_QUOTAS };
     } else {
       this.roleQuotas = { P: 3, D: 8, C: 8, A: 6 };
+    }
+    // Drop selected preset if it is no longer compatible with the active ruleset.
+    const selected = findAuctionPreset(this.selectedPresetId);
+    if (
+      selected &&
+      selected.rulesetTarget !== 'BOTH' &&
+      selected.rulesetTarget !== value
+    ) {
+      this.selectedPresetId = AUCTION_PRESET_NONE;
     }
   }
 
@@ -1988,38 +2015,14 @@ export class AuctionComponent {
   }
 
   /**
-   * Patches setup form fields from a preset AuctionConfig.
-   * Does not start the session and does not mutate participants identities.
+   * Patches setup form fields from a preset strategy config.
+   * League logistics (numParticipants, budgetInitial, referenceBudget,
+   * roleQuotas, ruleset) are intentionally left untouched — they belong
+   * exclusively to the setup form. Does not start the session and does not
+   * mutate participants identities.
    */
   applyPreset(preset: AuctionPreset): void {
     const cfg = preset.config;
-
-    if (cfg.numParticipants != null && cfg.numParticipants >= 2) {
-      this.numParticipants = cfg.numParticipants;
-      // Resize roster rows to match config, preserving names where possible.
-      this.resizeParticipants();
-    }
-
-    if (cfg.budgetInitial != null) {
-      this.budgetInitial = cfg.budgetInitial;
-      this.defaultBudget = cfg.budgetInitial;
-      this.applyDefaultBudget();
-    }
-    if (cfg.referenceBudget != null) {
-      this.referenceBudget = cfg.referenceBudget;
-    }
-    if (cfg.roleQuotas) {
-      // Presets always ship CLASSIC-shaped quotas (P/D/C/A). If the operator
-      // is currently in MANTRA mode, only merge the keys that are actually
-      // valid MANTRA roles (e.g. 'C' and 'A') and drop the rest (e.g. 'P',
-      // 'D') instead of sending them straight to the backend, which rejects
-      // any role not in the active ruleset's role set.
-      const validRoles = new Set(this.quotaRoles);
-      const filteredQuotas = Object.fromEntries(
-        Object.entries(cfg.roleQuotas).filter(([role]) => validRoles.has(role)),
-      );
-      this.roleQuotas = { ...this.roleQuotas, ...filteredQuotas };
-    }
     if (cfg.valuationMode === 'PER_MATCH_RATING' || cfg.valuationMode === 'SEASON_VALUE') {
       this.valuationMode = cfg.valuationMode;
     }
@@ -2070,6 +2073,10 @@ export class AuctionComponent {
       this.lowCostPercentile = alt.lowCostPercentile;
     }
 
+    if (typeof cfg.hybridBlend === 'number') {
+      this.hybridBlend = cfg.hybridBlend;
+    }
+
     // Advanced panel is useful when a non-default preset is applied.
     this.showAdvanced = true;
   }
@@ -2104,6 +2111,42 @@ export class AuctionComponent {
   }
 
   // ── Session init ──────────────────────────────────────────────────────
+
+  /** Snapshot of the setup form as AuctionConfig (used by simulation satellite). */
+  get setupAuctionConfig(): AuctionConfig {
+    return {
+      numParticipants: this.numParticipants,
+      roleQuotas: this.roleQuotas,
+      ruleset: this.ruleset,
+      hybridBlend: this.hybridBlend,
+      marketDriftConfig: {
+        alpha: this.alpha,
+        spilloverAdjacentTier: this.spilloverAdj,
+        spilloverCrossRole: this.spilloverCross,
+        minIndex: this.minIndex,
+        maxIndex: this.maxIndex,
+        tierThresholds: [this.tierLow, this.tierTop],
+      },
+      alternativesConfig: { lowCostPercentile: this.lowCostPercentile },
+      useInflationBaseline: this.useInflationBaseline,
+      ...(this.useInflationBaseline
+        ? {
+            inflationConfig: {
+              inflationPercentileThreshold: this.inflationPercentileThreshold,
+              maxInflationMultiplier: this.maxInflationMultiplier,
+              baseInflationRate: this.baseInflationRate,
+              baselineParticipants: this.baselineParticipants,
+              teamStrengthMultiplier: this.teamStrengthMultiplier,
+            },
+          }
+        : {}),
+      minStartProbability: this.minStartProbability,
+      replacementMethod: this.replacementMethod,
+      referenceBudget: this.referenceBudget,
+      budgetInitial: this.budgetInitial,
+      valuationMode: this.valuationMode,
+    };
+  }
 
   startAuction(): void {
     this.starting.set(true);

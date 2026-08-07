@@ -13,6 +13,7 @@ preserving its single-operator, single-process semantics:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from typing import cast
@@ -32,14 +33,20 @@ from ..schemas import (
     AuctionPlayerSchema,
     AuctionPlayerSummarySchema,
     AuctionParticipantStateSchema,
+    AuctionSimulationResponse,
     AuctionSummarySchema,
+    BidderPolicySchema,
+    BidderProfileSchema,
     InitializeAuctionRequest,
     InitializeAuctionResponse,
     MarketDriftConfigSchema,
+    ParticipantSimStatsSchema,
+    PlayerAcquisitionStatsSchema,
     ProjectionResponse,
     RecordAssignmentRequest,
     RecordAssignmentResponse,
     SerializedAuctionStateResponse,
+    SimulateAuctionRequest,
     VarRankingItemSchema,
     VarRankingResponse,
 )
@@ -57,6 +64,12 @@ from ml.auction.orchestrator import (
 )
 from ml.auction.price_drift import classify_tier, get_current_projection
 from ml.auction.models import ValuationMode
+from ml.auction.simulation import (
+    AuctionSimulationConfig,
+    BidderPolicy,
+    BidderProfile,
+    simulate_auction,
+)
 from ml.auction.var import VarEngine
 from ml.optimizer.inflation import InflationConfig
 from ml.optimizer.models import Player, RulesetType
@@ -184,6 +197,67 @@ def _price_index_to_dict(
     return {role: {tier: float(v) for tier, v in tiers.items()} for role, tiers in price_index.items()}
 
 
+
+def _bidder_policy_from_schema(p: BidderPolicySchema) -> BidderPolicy:
+    return BidderPolicy(
+        aggressiveness=p.aggressiveness,
+        inflation_tolerance=p.inflation_tolerance,
+        max_overpay_ratio=p.max_overpay_ratio,
+        min_residual_credits_per_slot=p.min_residual_credits_per_slot,
+        all_in_probability=p.all_in_probability,
+        budget_elasticity=p.budget_elasticity,
+        var_weight=p.var_weight,
+        team_strength_weight=p.team_strength_weight,
+        prefer_alternatives=p.prefer_alternatives,
+        prefer_low_cost_alternative=p.prefer_low_cost_alternative,
+        rebid_trigger_pct_above_expected=p.rebid_trigger_pct_above_expected,
+        budget_share_by_role=p.budget_share_by_role,
+        phase_bias=p.phase_bias,
+        prefer_young_players=p.prefer_young_players,
+        max_age_preference=p.max_age_preference,
+        prefer_high_start_probability=p.prefer_high_start_probability,
+        min_start_probability=p.min_start_probability,
+        prefer_high_variance=p.prefer_high_variance,
+        prefer_multi_role=p.prefer_multi_role,
+        min_num_roles=p.min_num_roles,
+        budget_share_by_block=p.budget_share_by_block,
+        max_top_tier_count=p.max_top_tier_count,
+        target_top_tier_count=p.target_top_tier_count,
+        avoid_top_tier_early=p.avoid_top_tier_early,
+        adaptive=p.adaptive,
+        adapt_on=tuple(p.adapt_on or ()),
+    )
+
+
+def _bidder_profile_from_schema(p: BidderProfileSchema) -> BidderProfile:
+    return BidderProfile(participant_id=p.participant_id, policy=_bidder_policy_from_schema(p.policy))
+
+
+def _sim_config_from_schema(cfg: object) -> AuctionSimulationConfig:
+    from ..schemas import AuctionSimulationConfigSchema
+    c = cast(AuctionSimulationConfigSchema, cfg)
+    return AuctionSimulationConfig(
+        n_simulations=c.n_simulations, random_seed=c.random_seed,
+        price_noise_std_ratio=c.price_noise_std_ratio, timeout_seconds=c.timeout_seconds,
+        min_bid_step=c.min_bid_step,
+    )
+
+
+def _resolve_inflation(cfg: AuctionConfigSchema) -> InflationConfig | None:
+    if not cfg.use_inflation_baseline:
+        return None
+    if cfg.inflation_config is not None:
+        ic = cfg.inflation_config
+        return InflationConfig(
+            inflation_percentile_threshold=ic.inflation_percentile_threshold,
+            max_inflation_multiplier=ic.max_inflation_multiplier,
+            base_inflation_rate=ic.base_inflation_rate,
+            baseline_participants=ic.baseline_participants,
+            team_strength_multiplier=ic.team_strength_multiplier,
+        )
+    return InflationConfig()
+
+
 # ---------------------------------------------------------------------------
 # Session store helpers
 # ---------------------------------------------------------------------------
@@ -304,6 +378,83 @@ async def init_auction(
         len(pool),
     )
     return InitializeAuctionResponse(session_id=session_id)
+
+
+@router.post(
+    "/simulate",
+    response_model=AuctionSimulationResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_role("member"))],
+)
+async def simulate_auction_endpoint(
+    payload: SimulateAuctionRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> AuctionSimulationResponse:
+    """Stateless Monte Carlo auction simulation. Does not touch auction_sessions."""
+    inflation = _resolve_inflation(payload.config)
+    auction_cfg = _auction_config_from_schema(payload.config, inflation)
+    participants = [_participant_from_schema(p) for p in payload.participants]
+    profiles = [_bidder_profile_from_schema(p) for p in payload.bidder_profiles]
+    sim_cfg = _sim_config_from_schema(payload.sim_config)
+
+    if payload.player_pool is not None:
+        pool: list[Player] = [_player_from_schema(p) for p in payload.player_pool]
+    else:
+        repo = DataRepository(
+            artifacts_dir=settings.artifacts_dir,
+            r2_endpoint_url=settings.r2_endpoint_url,
+            r2_access_key_id=settings.r2_access_key_id,
+            r2_secret_access_key=settings.r2_secret_access_key,
+            r2_bucket_name=settings.r2_bucket_name,
+        )
+        rows = await repo.get_player_pool(
+            db, season_start=payload.season_start, min_qt_a=1, ruleset=payload.config.ruleset,
+        )
+        pool = [
+            Player(
+                player_id=r["player_id"], name=r["name"], role=cast(Role, r["role"]),
+                real_team=r["real_team"], cost=int(r["cost"]),
+                projected_score=float(r["projected_score"]),
+                season_value=r.get("season_value"), start_probability=r.get("start_probability"),
+                eligible_roles=frozenset(r.get("eligible_roles") or []),
+            )
+            for r in rows
+        ]
+        if not pool:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty player pool")
+
+    store_before = len(getattr(request.app.state, "auction_sessions", {}) or {})
+    try:
+        result = await asyncio.to_thread(
+            simulate_auction, participants, profiles, auction_cfg, pool, sim_cfg,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+    store_after = len(getattr(request.app.state, "auction_sessions", {}) or {})
+    if store_after != store_before:
+        logger.error("simulate_auction mutated auction_sessions (%d -> %d)", store_before, store_after)
+
+    return AuctionSimulationResponse(
+        n_completed=result.n_completed,
+        per_participant={
+            pid: ParticipantSimStatsSchema(
+                spend_p10=s.spend_p10, spend_p50=s.spend_p50, spend_p90=s.spend_p90,
+                esv_total_p10=s.esv_total_p10, esv_total_p50=s.esv_total_p50, esv_total_p90=s.esv_total_p90,
+                completion_probability=s.completion_probability,
+                squad_composition_mode=dict(s.squad_composition_mode),
+            )
+            for pid, s in result.per_participant.items()
+        },
+        price_index_drift_p50=result.price_index_drift_p50,
+        player_acquisition_probability={
+            pid: PlayerAcquisitionStatsSchema(prob=st["prob"], avg_price=st["avg_price"])
+            for pid, st in result.player_acquisition_probability.items()
+        },
+        wall_time_seconds=result.wall_time_seconds,
+        warnings=list(result.warnings),
+    )
 
 
 @router.post(
