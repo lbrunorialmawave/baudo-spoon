@@ -273,3 +273,81 @@ export interface VarRankingResponse {
   items: VarRankingItem[];
   usingLivePrices: boolean;
 }
+
+// ── Monte Carlo auction simulation (stateless) ─────────────────────────────
+
+export interface BidderPolicy {
+  aggressiveness?: number;
+  inflationTolerance?: number;
+  maxOverpayRatio?: number;
+  minResidualCreditsPerSlot?: number;
+  allInProbability?: number;
+  budgetElasticity?: number;
+  varWeight?: number;
+  teamStrengthWeight?: number;
+  preferAlternatives?: boolean;
+  preferLowCostAlternative?: boolean;
+  rebidTriggerPctAboveExpected?: number;
+  budgetShareByRole?: Partial<Record<'P' | 'D' | 'C' | 'A', number>>;
+  phaseBias?: 'early' | 'late' | string;
+  preferYoungPlayers?: boolean;
+  maxAgePreference?: number;
+  preferHighStartProbability?: boolean;
+  minStartProbability?: number;
+  preferHighVariance?: boolean;
+  preferMultiRole?: boolean;
+  minNumRoles?: number;
+  budgetShareByBlock?: Record<string, number>;
+  maxTopTierCount?: number;
+  targetTopTierCount?: number;
+  avoidTopTierEarly?: boolean;
+  adaptive?: boolean;
+  adaptOn?: string[];
+}
+
+export interface BidderProfile {
+  participantId: string;
+  policy: BidderPolicy;
+}
+
+export interface AuctionSimulationConfig {
+  nSimulations?: number;
+  randomSeed?: number;
+  priceNoiseStdRatio?: number;
+  timeoutSeconds?: number;
+  minBidStep?: number;
+}
+
+export interface SimulateAuctionRequest {
+  seasonStart: number;
+  participants: AuctionParticipantSetup[];
+  config: AuctionConfig;
+  playerPool?: AuctionPlayer[] | null;
+  bidderProfiles: BidderProfile[];
+  simConfig?: AuctionSimulationConfig;
+}
+
+export interface ParticipantSimStats {
+  spendP10: number;
+  spendP50: number;
+  spendP90: number;
+  esvTotalP10: number;
+  esvTotalP50: number;
+  esvTotalP90: number;
+  completionProbability: number;
+  squadCompositionMode: Record<string, number>;
+}
+
+export interface PlayerAcquisitionStats {
+  prob: number;
+  avgPrice: number;
+}
+
+export interface AuctionSimulationResponse {
+  nCompleted: number;
+  perParticipant: Record<string, ParticipantSimStats>;
+  priceIndexDriftP50: Record<string, Record<string, number>>;
+  playerAcquisitionProbability: Record<string, PlayerAcquisitionStats>;
+  wallTimeSeconds: number;
+  warnings: string[];
+}

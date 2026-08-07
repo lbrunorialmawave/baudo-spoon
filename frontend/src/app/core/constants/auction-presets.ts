@@ -1,6 +1,12 @@
 /**
  * Auction strategy presets — single source of truth for the Auction setup UI.
  *
+ * Presets are **strategy-only**: they carry market drift, inflation, alternatives,
+ * valuation mode, replacement method, minStartProbability, hybridBlend, and a
+ * semantic BidderPolicy. League logistics (numParticipants, budgetInitial,
+ * referenceBudget, roleQuotas, ruleset) are owned exclusively by the setup form
+ * and must never be overwritten by applyPreset().
+ *
  * Recalibrated on Quotazioni Fantacalcio pooled 2023/24–2025/26 (Qt.A):
  * - Overall: mean≈8.1, median=7, p75≈11–12, p90≈16, p95≈20–21
  * - Elite ≥18: 49 → 49 → 39 names; ultra ≥26: 17 → 10 → 7 (2025/26 is flatter)
@@ -15,15 +21,6 @@
  * @see LISTINO_BUDGET_SHARE_PRIOR / TOP_TIER_COST in shared-presets.ts
  */
 import { AuctionConfig } from '../models/auction.models';
-import { DEFAULT_CLASSIC_ROLE_QUOTAS } from './shared-presets';
-
-/**
- * Identity function used purely for contextual type-checking.
- * Prefer this over `obj as AuctionConfig` in every new preset.
- */
-function defineAuctionConfig(config: AuctionConfig): AuctionConfig {
-  return config;
-}
 
 /** Semantic UI / auto-bidder hints — never sent as-is to POST /auction/init. */
 export interface AuctionPresetPolicy {
@@ -55,14 +52,44 @@ export interface AuctionPresetPolicy {
   adaptOn?: string[];
 }
 
+/**
+ * Strategy slice of AuctionConfig that presets are allowed to set.
+ * Logistics (numParticipants, budgetInitial, referenceBudget, roleQuotas,
+ * ruleset) are deliberately excluded — those belong to the setup form only.
+ */
+export type AuctionStrategyConfig = Pick<
+  AuctionConfig,
+  | 'marketDriftConfig'
+  | 'alternativesConfig'
+  | 'useInflationBaseline'
+  | 'inflationConfig'
+  | 'valuationMode'
+  | 'replacementMethod'
+  | 'minStartProbability'
+  | 'hybridBlend'
+>;
+
 export interface AuctionPreset {
   readonly id: string;
   readonly name: string;
   readonly labelIt: string;
   readonly description: string;
-  /** Full AuctionConfig applied to the setup form. */
-  readonly config: AuctionConfig;
+  /**
+   * Which ruleset(s) this preset is valid for. Used by the UI to filter/disable
+   * incompatible presets instead of silently merging overlapping role keys.
+   */
+  readonly rulesetTarget: 'CLASSIC' | 'MANTRA' | 'BOTH';
+  /** Strategy-only config applied to the setup form (never logistics). */
+  readonly config: AuctionStrategyConfig;
   readonly policy: AuctionPresetPolicy;
+}
+
+/**
+ * Identity function used purely for contextual type-checking of strategy config.
+ * Prefer this over a cast in every new preset.
+ */
+    function defineAuctionConfig(config: AuctionStrategyConfig): AuctionStrategyConfig {
+  return config;
 }
 
 export const AUCTION_PRESET_NONE = '' as const;
@@ -74,9 +101,8 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     labelIt: "Conservativo",
     description:
       "Evita overpay, protegge il residuo, predilige alternative low-cost e inflazione bassa. Filtra il rumore (Qt.A bassi). Ideale se sei ultimo di budget o temi di restare scoperto a fine asta.",
+    rulesetTarget: 'CLASSIC',
     config: defineAuctionConfig({
-      numParticipants: 8,
-      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.18,
         spilloverAdjacentTier: 0.12,
@@ -96,8 +122,6 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.04,
       },
-      referenceBudget: 300,
-      budgetInitial: 300,
       valuationMode: "PER_MATCH_RATING",
       minStartProbability: 0.55,
       replacementMethod: "percentile",
@@ -128,9 +152,8 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     labelIt: "Bilanciato",
     description:
       "Profilo neutro: EWMA standard, inflazione moderata, alternative standard. Punto di partenza consigliato per la maggior parte delle leghe a 8.",
+    rulesetTarget: 'CLASSIC',
     config: defineAuctionConfig({
-      numParticipants: 8,
-      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.30,
         spilloverAdjacentTier: 0.25,
@@ -150,8 +173,6 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.10,
       },
-      referenceBudget: 300,
-      budgetInitial: 300,
       valuationMode: "PER_MATCH_RATING",
       minStartProbability: null,
       replacementMethod: "percentile",
@@ -181,9 +202,8 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     labelIt: "Aggressivo",
     description:
       "Insegue i top (Qt.A elite ≥18), tollera overpay e inflazione alta, spillover più reattivo. Rischia residuo basso ma punta a massimizzare il ceiling della rosa.",
+    rulesetTarget: 'CLASSIC',
     config: defineAuctionConfig({
-      numParticipants: 8,
-      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.42,
         spilloverAdjacentTier: 0.35,
@@ -203,8 +223,6 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.22,
       },
-      referenceBudget: 300,
-      budgetInitial: 300,
       valuationMode: "SEASON_VALUE",
       minStartProbability: null,
       replacementMethod: "percentile",
@@ -234,9 +252,8 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     labelIt: "Cacciatore di top",
     description:
       "Concentra budget sui TOP tier (Qt.A ≥18 / FVM alto); spillover alto sui top, all-in più probabile. Accetta buchi di rosa per 2–4 nomi chiave.",
+    rulesetTarget: 'CLASSIC',
     config: defineAuctionConfig({
-      numParticipants: 8,
-      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.40,
         spilloverAdjacentTier: 0.40,
@@ -256,8 +273,6 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.28,
       },
-      referenceBudget: 300,
-      budgetInitial: 300,
       valuationMode: "SEASON_VALUE",
       minStartProbability: null,
       replacementMethod: "percentile",
@@ -288,9 +303,8 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     labelIt: "Cacciatore di valore",
     description:
       "Massimizza ESV/VR nella fascia Qt.A 5–12 (solid mid-tier). Overpay quasi nullo; VAR e alternative low-cost pesano molto. Evita il rumore Qt.A≤3.",
+    rulesetTarget: 'CLASSIC',
     config: defineAuctionConfig({
-      numParticipants: 8,
-      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.22,
         spilloverAdjacentTier: 0.18,
@@ -310,8 +324,6 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.04,
       },
-      referenceBudget: 300,
-      budgetInitial: 300,
       valuationMode: "PER_MATCH_RATING",
       minStartProbability: null,
       replacementMethod: "percentile",
@@ -342,9 +354,8 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     labelIt: "Anti-inflazione",
     description:
       "Assume mercato caldo: inflazione alta nel baseline, EWMA reattivo, non insegue i picchi TOP (Qt.A elite). Preferisce MID solidi (Qt.A 6–12) e alternative.",
+    rulesetTarget: 'CLASSIC',
     config: defineAuctionConfig({
-      numParticipants: 8,
-      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.48,
         spilloverAdjacentTier: 0.30,
@@ -364,8 +375,6 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
         baselineParticipants: 6,
         teamStrengthMultiplier: 0.25,
       },
-      referenceBudget: 300,
-      budgetInitial: 300,
       valuationMode: "PER_MATCH_RATING",
       minStartProbability: null,
       replacementMethod: "percentile",
@@ -396,9 +405,8 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     labelIt: "Stelle all'inizio",
     description:
       "Spende forte nella prima fase sui nomi chiave (elite Qt.A), poi si adatta. Overpay consentito solo sui TOP; dopo fase 1 diventa più selettivo.",
+    rulesetTarget: 'CLASSIC',
     config: defineAuctionConfig({
-      numParticipants: 8,
-      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.36,
         spilloverAdjacentTier: 0.30,
@@ -418,8 +426,6 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.20,
       },
-      referenceBudget: 300,
-      budgetInitial: 300,
       valuationMode: "SEASON_VALUE",
       minStartProbability: null,
       replacementMethod: "percentile",
@@ -450,9 +456,8 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     labelIt: "Cecchino di fine asta",
     description:
       "Conserva budget e agisce a fine asta su residual value nella fascia Qt.A 5–11. Alpha moderato, overpay basso, alternative low-cost prioritizzate.",
+    rulesetTarget: 'CLASSIC',
     config: defineAuctionConfig({
-      numParticipants: 8,
-      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.25,
         spilloverAdjacentTier: 0.20,
@@ -472,8 +477,6 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.06,
       },
-      referenceBudget: 300,
-      budgetInitial: 300,
       valuationMode: "PER_MATCH_RATING",
       minStartProbability: null,
       replacementMethod: "percentile",
@@ -504,9 +507,8 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     labelIt: "Giovani first",
     description:
       "Privilegia season_value e potenziale (giovani in rampa). Drift moderato; team strength meno rilevante; tollera minutaggio incerto se ESV alto.",
+    rulesetTarget: 'CLASSIC',
     config: defineAuctionConfig({
-      numParticipants: 8,
-      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.28,
         spilloverAdjacentTier: 0.18,
@@ -526,8 +528,6 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.0,
       },
-      referenceBudget: 300,
-      budgetInitial: 300,
       valuationMode: "SEASON_VALUE",
       minStartProbability: null,
       replacementMethod: "percentile",
@@ -559,9 +559,8 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     labelIt: "Scelte sicure",
     description:
       "Titolari consolidati (alta Pr, Qt.A solidi ≥8), bassa varianza, overpay minimo. Ideale per chi vuole certezze e floor elevato.",
+    rulesetTarget: 'CLASSIC',
     config: defineAuctionConfig({
-      numParticipants: 8,
-      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.20,
         spilloverAdjacentTier: 0.14,
@@ -581,8 +580,6 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.10,
       },
-      referenceBudget: 300,
-      budgetInitial: 300,
       valuationMode: "PER_MATCH_RATING",
       minStartProbability: 0.70,
       replacementMethod: "percentile",
@@ -614,9 +611,8 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     labelIt: "Amante del rischio",
     description:
       "Scommesse, svincolati, high ceiling, outlier VAR. Season value, spillover cross-role, all-in frequente. Accetta Qt.A bassi se il potenziale è alto.",
+    rulesetTarget: 'CLASSIC',
     config: defineAuctionConfig({
-      numParticipants: 8,
-      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.48,
         spilloverAdjacentTier: 0.35,
@@ -636,8 +632,6 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.14,
       },
-      referenceBudget: 300,
-      budgetInitial: 300,
       valuationMode: "SEASON_VALUE",
       minStartProbability: null,
       replacementMethod: "percentile",
@@ -668,9 +662,8 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     labelIt: "Ottimizzato Mantra",
     description:
       "Pensato per leghe MANTRA: valorizza polivalenza (Num_Ruoli), flessibilità di modulo, alternative multi-ruolo. Budget share allineato ai 6 blocchi algoritmo v3.1.",
+    rulesetTarget: 'MANTRA',
     config: defineAuctionConfig({
-      numParticipants: 8,
-      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.30,
         spilloverAdjacentTier: 0.25,
@@ -690,8 +683,6 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.14,
       },
-      referenceBudget: 300,
-      budgetInitial: 300,
       valuationMode: "SEASON_VALUE",
       minStartProbability: null,
       replacementMethod: "percentile",
@@ -731,9 +722,8 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     labelIt: "Costruttore di profondità",
     description:
       "Priorità a copertura ruoli e panchina utile (Qt.A usable 5–10) piuttosto che a un singolo superstar. Budget più uniforme, residuale alto.",
+    rulesetTarget: 'CLASSIC',
     config: defineAuctionConfig({
-      numParticipants: 8,
-      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.24,
         spilloverAdjacentTier: 0.18,
@@ -753,8 +743,6 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.06,
       },
-      referenceBudget: 300,
-      budgetInitial: 300,
       valuationMode: "PER_MATCH_RATING",
       minStartProbability: null,
       replacementMethod: "percentile",
@@ -785,9 +773,8 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     labelIt: "Risparmiatore",
     description:
       "Massimizza residuo e flessibilità di fine asta. Quasi zero overpay; credit reserve stretta. Filtra il rumore e punta su low-cost solidi.",
+    rulesetTarget: 'CLASSIC',
     config: defineAuctionConfig({
-      numParticipants: 8,
-      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.15,
         spilloverAdjacentTier: 0.10,
@@ -807,8 +794,6 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.0,
       },
-      referenceBudget: 300,
-      budgetInitial: 300,
       valuationMode: "PER_MATCH_RATING",
       minStartProbability: null,
       replacementMethod: "percentile",
@@ -839,9 +824,8 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
     labelIt: "AI adattiva",
     description:
       "Profilo meta: EWMA reattivo, VAR e team strength bilanciati, valuation season, inflazione attiva. Si aggiorna dinamicamente su price_index e residuo.",
+    rulesetTarget: 'CLASSIC',
     config: defineAuctionConfig({
-      numParticipants: 8,
-      roleQuotas: DEFAULT_CLASSIC_ROLE_QUOTAS,
       marketDriftConfig: {
         alpha: 0.36,
         spilloverAdjacentTier: 0.28,
@@ -861,8 +845,6 @@ export const AUCTION_PRESETS: readonly AuctionPreset[] = [
         baselineParticipants: 8,
         teamStrengthMultiplier: 0.20,
       },
-      referenceBudget: 300,
-      budgetInitial: 300,
       valuationMode: "SEASON_VALUE",
       minStartProbability: null,
       replacementMethod: "percentile",

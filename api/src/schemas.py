@@ -1008,3 +1008,88 @@ class VarRankingResponse(_CamelModel):
     session_id: str
     items: list[VarRankingItemSchema]
     using_live_prices: bool
+
+
+# ---------------------------------------------------------------------------
+# Monte Carlo auction simulation (stateless)
+# ---------------------------------------------------------------------------
+
+
+class BidderPolicySchema(_CamelModel):
+    aggressiveness: float = Field(default=0.5, ge=0.0, le=1.0)
+    inflation_tolerance: float = Field(default=0.5, ge=0.0, le=1.0)
+    max_overpay_ratio: float = Field(default=1.2, ge=1.0)
+    min_residual_credits_per_slot: float = Field(default=1.5, ge=0.0)
+    all_in_probability: float = Field(default=0.1, ge=0.0, le=1.0)
+    budget_elasticity: float = Field(default=0.4, ge=0.0, le=1.0)
+    var_weight: float = Field(default=0.35, ge=0.0, le=1.0)
+    team_strength_weight: float = Field(default=0.15, ge=0.0, le=1.0)
+    prefer_alternatives: bool = True
+    prefer_low_cost_alternative: bool = False
+    rebid_trigger_pct_above_expected: float = Field(default=0.12, ge=0.0)
+    budget_share_by_role: dict[str, float] | None = None
+    phase_bias: str | None = None
+    prefer_young_players: bool = False
+    max_age_preference: int | None = None
+    prefer_high_start_probability: bool = False
+    min_start_probability: float | None = Field(default=None, ge=0.0, le=1.0)
+    prefer_high_variance: bool = False
+    prefer_multi_role: bool = False
+    min_num_roles: int | None = Field(default=None, ge=1)
+    budget_share_by_block: dict[str, float] | None = None
+    max_top_tier_count: int | None = Field(default=None, ge=0)
+    target_top_tier_count: int | None = Field(default=None, ge=0)
+    avoid_top_tier_early: bool = False
+    adaptive: bool = False
+    adapt_on: list[str] | None = None
+
+
+class BidderProfileSchema(_CamelModel):
+    participant_id: str
+    policy: BidderPolicySchema = Field(default_factory=BidderPolicySchema)
+
+
+class AuctionSimulationConfigSchema(_CamelModel):
+    n_simulations: int = Field(default=200, ge=1, le=500)
+    random_seed: int = Field(default=42)
+    price_noise_std_ratio: float = Field(default=0.15, ge=0.0)
+    timeout_seconds: float = Field(default=0.0, ge=0.0)
+    min_bid_step: int = Field(default=1, ge=1)
+
+
+class SimulateAuctionRequest(_CamelModel):
+    season_start: int
+    participants: list[AuctionParticipantSetupSchema]
+    config: AuctionConfigSchema
+    player_pool: list[AuctionPlayerSchema] | None = None
+    bidder_profiles: list[BidderProfileSchema] = Field(default_factory=list)
+    sim_config: AuctionSimulationConfigSchema = Field(
+        default_factory=AuctionSimulationConfigSchema
+    )
+
+
+class ParticipantSimStatsSchema(_CamelModel):
+    spend_p10: float
+    spend_p50: float
+    spend_p90: float
+    esv_total_p10: float
+    esv_total_p50: float
+    esv_total_p90: float
+    completion_probability: float
+    squad_composition_mode: dict[str, int] = Field(default_factory=dict)
+
+
+class PlayerAcquisitionStatsSchema(_CamelModel):
+    prob: float
+    avg_price: float
+
+
+class AuctionSimulationResponse(_CamelModel):
+    n_completed: int
+    per_participant: dict[str, ParticipantSimStatsSchema]
+    price_index_drift_p50: dict[str, dict[str, float]] = Field(default_factory=dict)
+    player_acquisition_probability: dict[str, PlayerAcquisitionStatsSchema] = Field(
+        default_factory=dict
+    )
+    wall_time_seconds: float
+    warnings: list[str] = Field(default_factory=list)

@@ -14,6 +14,8 @@ import {
   RecordAssignmentRequest,
   RecordAssignmentResponse,
   SerializedAuctionStateResponse,
+  SimulateAuctionRequest,
+  AuctionSimulationResponse,
   VarRankingResponse,
 } from '../models/auction.models';
 
@@ -154,6 +156,17 @@ export class AuctionService {
   varRanking(sessionId: string): Observable<VarRankingResponse> {
     return this.http.get<VarRankingResponse>(
       `${this.baseUrl}/auction/${sessionId}/var-ranking`,
+    );
+  }
+
+  /**
+   * POST /auction/simulate — stateless Monte Carlo auction simulation.
+   * Does not create a live session.
+   */
+  simulate(req: SimulateAuctionRequest): Observable<AuctionSimulationResponse> {
+    return this.http.post<AuctionSimulationResponse>(
+      `${this.baseUrl}/auction/simulate`,
+      req,
     );
   }
 }
