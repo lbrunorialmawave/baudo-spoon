@@ -1,6 +1,6 @@
 import { Component, input, output } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
-import { OverviewPlayer } from '../../../../core/models/overview.models';
+import { OverviewPlayer, SortKey } from '../../../../core/models/overview.models';
 import { FASE7_LABELS, FASE7_TOOLTIPS, HYBRID_LABELS } from '../../../../core/models/mantra.models';
 import { TitolaritaBadgesComponent } from '../titolarita-badges/titolarita-badges.component';
 import { SkeletonComponent } from '../../../../shared/components/skeleton/skeleton.component';
@@ -21,40 +21,40 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
           <tr class="border-b text-xs font-medium uppercase tracking-wide"
               style="border-color:var(--color-border);color:var(--color-text-secondary)">
             <th class="px-3 py-2 text-right w-10 sm:w-12">#</th>
-            <th class="px-3 py-2 text-left sortable" (click)="sortChanged.emit('player_name')">
-              Player @if (sortColumn() === 'player_name') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
+            <th class="px-3 py-2 text-left sortable" (click)="sortChanged.emit({ column: 'player_name', additive: $event.shiftKey })" [title]="sortHint()">
+              Player @if (sortDirFor('player_name'); as dir) { <span style="color:var(--color-accent)"><sup>{{ sortRankLabel('player_name') }}</sup>{{ dir === 'asc' ? '▲' : '▼' }}</span> }
             </th>
-            <th class="px-3 py-2 text-left sortable hidden sm:table-cell" (click)="sortChanged.emit('team')">
-              Team @if (sortColumn() === 'team') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
+            <th class="px-3 py-2 text-left sortable hidden sm:table-cell" (click)="sortChanged.emit({ column: 'team', additive: $event.shiftKey })" [title]="sortHint()">
+              Team @if (sortDirFor('team'); as dir) { <span style="color:var(--color-accent)"><sup>{{ sortRankLabel('team') }}</sup>{{ dir === 'asc' ? '▲' : '▼' }}</span> }
             </th>
-            <th class="px-3 py-2 text-left sortable hidden md:table-cell" (click)="sortChanged.emit('ruolo_primario')" title="Ruolo primario / ruoli secondari nel sistema Mantra">
-              Ruolo @if (sortColumn() === 'ruolo_primario') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
+            <th class="px-3 py-2 text-left sortable hidden md:table-cell" (click)="sortChanged.emit({ column: 'ruolo_primario', additive: $event.shiftKey })" [title]="'Ruolo primario / ruoli secondari nel sistema Mantra · ' + sortHint()">
+              Ruolo @if (sortDirFor('ruolo_primario'); as dir) { <span style="color:var(--color-accent)"><sup>{{ sortRankLabel('ruolo_primario') }}</sup>{{ dir === 'asc' ? '▲' : '▼' }}</span> }
             </th>
-            <th class="px-3 py-2 text-right sortable" (click)="sortChanged.emit('fpIbrido')" title="FP Ibrido — punteggio combinato MANTRA + Machine Learning">
-              FP Ibrido @if (sortColumn() === 'fpIbrido') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
+            <th class="px-3 py-2 text-right sortable" (click)="sortChanged.emit({ column: 'fpIbrido', additive: $event.shiftKey })" [title]="'FP Ibrido — punteggio combinato MANTRA + Machine Learning · ' + sortHint()">
+              FP Ibrido @if (sortDirFor('fpIbrido'); as dir) { <span style="color:var(--color-accent)"><sup>{{ sortRankLabel('fpIbrido') }}</sup>{{ dir === 'asc' ? '▲' : '▼' }}</span> }
             </th>
-            <th class="px-3 py-2 text-right sortable hidden md:table-cell" (click)="sortChanged.emit('FP_Mantra')" title="FP calcolato solo dal sistema MANTRA (voti storici)">
-              FP Mantra @if (sortColumn() === 'FP_Mantra') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
+            <th class="px-3 py-2 text-right sortable hidden md:table-cell" (click)="sortChanged.emit({ column: 'FP_Mantra', additive: $event.shiftKey })" [title]="'FP calcolato solo dal sistema MANTRA (voti storici) · ' + sortHint()">
+              FP Mantra @if (sortDirFor('FP_Mantra'); as dir) { <span style="color:var(--color-accent)"><sup>{{ sortRankLabel('FP_Mantra') }}</sup>{{ dir === 'asc' ? '▲' : '▼' }}</span> }
             </th>
-            <th class="px-3 py-2 text-right sortable hidden md:table-cell" (click)="sortChanged.emit('predicted_fantavoto')" title="Fantavoto previsto dal modello Machine Learning">
-              Voto ML @if (sortColumn() === 'predicted_fantavoto') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
+            <th class="px-3 py-2 text-right sortable hidden md:table-cell" (click)="sortChanged.emit({ column: 'predicted_fantavoto', additive: $event.shiftKey })" [title]="'Fantavoto previsto dal modello Machine Learning · ' + sortHint()">
+              Voto ML @if (sortDirFor('predicted_fantavoto'); as dir) { <span style="color:var(--color-accent)"><sup>{{ sortRankLabel('predicted_fantavoto') }}</sup>{{ dir === 'asc' ? '▲' : '▼' }}</span> }
             </th>
-            <th class="px-3 py-2 text-right sortable hidden md:table-cell" (click)="sortChanged.emit('confidenceScore')" title="Affidabilità della prediction ML (0-100)">
-              Conf. @if (sortColumn() === 'confidenceScore') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
+            <th class="px-3 py-2 text-right sortable hidden md:table-cell" (click)="sortChanged.emit({ column: 'confidenceScore', additive: $event.shiftKey })" [title]="'Affidabilità della prediction ML (0-100) · ' + sortHint()">
+              Conf. @if (sortDirFor('confidenceScore'); as dir) { <span style="color:var(--color-accent)"><sup>{{ sortRankLabel('confidenceScore') }}</sup>{{ dir === 'asc' ? '▲' : '▼' }}</span> }
             </th>
-            <th class="px-3 py-2 text-right sortable hidden lg:table-cell" (click)="sortChanged.emit('VR')" title="Valore Reale — indice di convenienza prezzo/valore">
-              VR @if (sortColumn() === 'VR') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
+            <th class="px-3 py-2 text-right sortable hidden lg:table-cell" (click)="sortChanged.emit({ column: 'VR', additive: $event.shiftKey })" [title]="'Valore Reale — indice di convenienza prezzo/valore · ' + sortHint()">
+              VR @if (sortDirFor('VR'); as dir) { <span style="color:var(--color-accent)"><sup>{{ sortRankLabel('VR') }}</sup>{{ dir === 'asc' ? '▲' : '▼' }}</span> }
             </th>
             <th class="px-3 py-2 text-left" title="Titolarità: Reale (probabili formazioni) · ML · Gruppo Esperti — 3 segnali distinti, non ordinabile come colonna unica">Titolarità</th>
-            <th class="px-3 py-2 text-left sortable" (click)="sortChanged.emit('Fase7')">
-              Profilo @if (sortColumn() === 'Fase7') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
+            <th class="px-3 py-2 text-left sortable" (click)="sortChanged.emit({ column: 'Fase7', additive: $event.shiftKey })" [title]="sortHint()">
+              Profilo @if (sortDirFor('Fase7'); as dir) { <span style="color:var(--color-accent)"><sup>{{ sortRankLabel('Fase7') }}</sup>{{ dir === 'asc' ? '▲' : '▼' }}</span> }
             </th>
             <th class="px-3 py-2 text-left hidden lg:table-cell" title="Segnali di classificazione ibrida MANTRA vs ML — non ordinabile (più etichette per riga)">Segnali</th>
-            <th class="px-3 py-2 text-right sortable hidden md:table-cell" (click)="sortChanged.emit('Pz1')" title="Quotazione ufficiale corrente del listone">
-              Prezzo @if (sortColumn() === 'Pz1') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
+            <th class="px-3 py-2 text-right sortable hidden md:table-cell" (click)="sortChanged.emit({ column: 'Pz1', additive: $event.shiftKey })" [title]="'Quotazione ufficiale corrente del listone · ' + sortHint()">
+              Prezzo @if (sortDirFor('Pz1'); as dir) { <span style="color:var(--color-accent)"><sup>{{ sortRankLabel('Pz1') }}</sup>{{ dir === 'asc' ? '▲' : '▼' }}</span> }
             </th>
-            <th class="px-3 py-2 text-left sortable hidden lg:table-cell" (click)="sortChanged.emit('expert_totale')">
-              Esperti @if (sortColumn() === 'expert_totale') { <span style="color:var(--color-accent)">{{ sortDirection() === 'asc' ? '▲' : '▼' }}</span> }
+            <th class="px-3 py-2 text-left sortable hidden lg:table-cell" (click)="sortChanged.emit({ column: 'expert_totale', additive: $event.shiftKey })" [title]="sortHint()">
+              Esperti @if (sortDirFor('expert_totale'); as dir) { <span style="color:var(--color-accent)"><sup>{{ sortRankLabel('expert_totale') }}</sup>{{ dir === 'asc' ? '▲' : '▼' }}</span> }
             </th>
           </tr>
         </thead>
@@ -184,9 +184,8 @@ export class OverviewTableComponent {
   readonly loading = input<boolean>(false);
   readonly page = input<number>(1);
   readonly pageSize = input<number>(50);
-  readonly sortColumn = input<string>('');
-  readonly sortDirection = input<'asc' | 'desc'>('asc');
-  readonly sortChanged = output<string>();
+  readonly sortKeys = input<SortKey[]>([]);
+  readonly sortChanged = output<{ column: string; additive: boolean }>();
   readonly playerSelected = output<OverviewPlayer>();
 
   hoverId: number | null = null;
@@ -194,6 +193,25 @@ export class OverviewTableComponent {
 
   readonly FASE7_LABELS = FASE7_LABELS;
   readonly FASE7_TOOLTIPS = FASE7_TOOLTIPS;
+
+  private static readonly SUPERSCRIPTS = ['¹', '²', '³'];
+
+  readonly sortHint = (): string =>
+    this.sortKeys().length
+      ? 'Click per ordinare, Shift+click per combinare più criteri'
+      : 'Click per ordinare, Shift+click per aggiungere un secondo criterio';
+
+  /** Direction for a column if it's an active sort key, else null. */
+  readonly sortDirFor = (column: string): 'asc' | 'desc' | null =>
+    this.sortKeys().find(k => k.column === column)?.direction ?? null;
+
+  /** Priority superscript (¹²³) for a column, only once ≥2 criteria are
+   *  active — a single active key needs no rank, the arrow alone reads fine. */
+  readonly sortRankLabel = (column: string): string => {
+    if (this.sortKeys().length < 2) return '';
+    const idx = this.sortKeys().findIndex(k => k.column === column);
+    return idx === -1 ? '' : (OverviewTableComponent.SUPERSCRIPTS[idx] ?? '');
+  };
 
   readonly stars = (rating: number): string =>
     '★'.repeat(rating) + '☆'.repeat(Math.max(0, 5 - rating));

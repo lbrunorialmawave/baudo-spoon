@@ -5,7 +5,7 @@ import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { OverviewService } from '../../core/services/overview.service';
 import { MantraService } from '../../core/services/mantra.service';
-import { OverviewPlayer } from '../../core/models/overview.models';
+import { OverviewPlayer, SortKey } from '../../core/models/overview.models';
 import { FASE7_LABELS, FASE7_TOOLTIPS, HYBRID_LABELS, MANTRA_ROLES } from '../../core/models/mantra.models';
 import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/error-boundary.component';
 import { OverviewTableComponent } from './components/overview-table/overview-table.component';
@@ -239,6 +239,28 @@ import { OverviewDrawerComponent } from './components/overview-drawer/overview-d
         }
       </div>
 
+      <!-- Sort summary — independent from filters: "Clear" above never touches
+           this, "Cancella ordinamento" here never touches filters (see
+           clearFilters()/clearSort()). -->
+      @if (sortKeys().length > 0) {
+        <div class="flex flex-wrap items-center gap-2 border-b px-4 py-2 sm:px-6"
+             style="border-color:var(--color-border);background:var(--color-surface)">
+          <span class="text-xs" style="color:var(--color-text-secondary)">Ordinamento:</span>
+          @for (k of sortKeys(); track k.column; let i = $index) {
+            <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs"
+                  style="border-color:var(--color-border);background:var(--color-surface-raised);color:var(--color-text-primary)">
+              {{ i + 1 }}. {{ sortColumnLabel(k.column) }} {{ k.direction === 'asc' ? '↑' : '↓' }}
+              <button class="ml-0.5 opacity-60 hover:opacity-100" (click)="removeSortKey(k.column)" aria-label="Rimuovi criterio">✕</button>
+            </span>
+          }
+          @if (sortKeys().length > 1) {
+            <button class="text-xs underline" style="color:var(--color-text-secondary)" (click)="clearSort()">
+              Cancella ordinamento
+            </button>
+          }
+        </div>
+      }
+
       <div class="p-4 sm:p-6">
         @if (error()) {
           <app-error-boundary [message]="error()!" />
@@ -249,8 +271,7 @@ import { OverviewDrawerComponent } from './components/overview-drawer/overview-d
               [loading]="loading()"
               [page]="currentPage()"
               [pageSize]="pageSize"
-              [sortColumn]="sortColumn()"
-              [sortDirection]="sortDirection()"
+              [sortKeys]="sortKeys()"
               (sortChanged)="onSort($event)"
               (playerSelected)="selectedPlayer.set($event)" />
           </div>
@@ -347,8 +368,29 @@ export class OverviewComponent {
   });
 
   readonly selectedPlayer = signal<OverviewPlayer | null>(null);
-  readonly sortColumn = signal<string>('');
-  readonly sortDirection = signal<'asc' | 'desc'>('asc');
+
+  // ── Multi-column sort — independent of the filter signals above ────
+  readonly MAX_SORT_KEYS = 3; // must mirror api/src/routers/overview.py
+  readonly sortKeys = signal<SortKey[]>([]);
+  readonly sortByParam = computed(() =>
+    this.sortKeys().map(k => (k.direction === 'desc' ? '-' : '') + k.column).join(',') || undefined
+  );
+
+  private static readonly SORT_COLUMN_LABELS: Record<string, string> = {
+    player_name: 'Player',
+    team: 'Team',
+    ruolo_primario: 'Ruolo',
+    fpIbrido: 'FP Ibrido',
+    FP_Mantra: 'FP Mantra',
+    predicted_fantavoto: 'Voto ML',
+    confidenceScore: 'Conf.',
+    VR: 'VR',
+    Fase7: 'Profilo',
+    Pz1: 'Prezzo',
+    expert_totale: 'Esperti',
+  };
+  readonly sortColumnLabel = (column: string): string =>
+    OverviewComponent.SORT_COLUMN_LABELS[column] ?? column;
 
   private readonly searchQuery$ = new Subject<string>();
   private lastFilterSignature = '';
@@ -396,8 +438,7 @@ export class OverviewComponent {
       }
 
       this.currentPage();
-      this.sortColumn();
-      this.sortDirection();
+      this.sortKeys();
       this.loadData();
     });
 
@@ -444,8 +485,7 @@ export class OverviewComponent {
       expertSaluteMin: this.expertSaluteMin() ?? undefined,
       hasMlData: mlFilter === 'yes' ? true : mlFilter === 'no' ? false : undefined,
       hasRiskFlag: this.hasRiskFlag() ? true : undefined,
-      sortBy: this.sortColumn() || undefined,
-      sortDir: this.sortDirection() || undefined,
+      sortBy: this.sortByParam(),
       page: this.currentPage(),
       size: this.pageSize,
     }).subscribe({
@@ -481,13 +521,43 @@ export class OverviewComponent {
     });
   };
 
-  readonly onSort = (column: string) => {
-    if (this.sortColumn() === column) {
-      this.sortDirection.update(d => d === 'asc' ? 'desc' : 'asc');
-    } else {
-      this.sortColumn.set(column);
-      this.sortDirection.set('asc');
-    }
+  /** Plain click = new sole sort key (toggles direction if it's already
+   *  the only one). Shift+click = add/toggle a secondary/tertiary key
+   *  without losing the others (Excel/Airtable convention), replacing the
+   *  lowest-priority key once MAX_SORT_KEYS is reached — always visible
+   *  feedback, never a silently-ignored click. */
+  readonly onSort = ({ column, additive }: { column: string; additive: boolean }) => {
+    this.sortKeys.update(keys => {
+      const idx = keys.findIndex(k => k.column === column);
+
+      if (!additive) {
+        if (keys.length === 1 && idx === 0) {
+          return [{ column, direction: keys[0].direction === 'asc' ? 'desc' : 'asc' }];
+        }
+        return [{ column, direction: 'asc' }];
+      }
+
+      if (idx !== -1) {
+        const next = [...keys];
+        next[idx] = { ...next[idx], direction: next[idx].direction === 'asc' ? 'desc' : 'asc' };
+        return next;
+      }
+
+      if (keys.length >= this.MAX_SORT_KEYS) {
+        return [...keys.slice(0, -1), { column, direction: 'asc' as const }];
+      }
+      return [...keys, { column, direction: 'asc' as const }];
+    });
+    this.currentPage.set(1);
+  };
+
+  readonly removeSortKey = (column: string) => {
+    this.sortKeys.update(keys => keys.filter(k => k.column !== column));
+    this.currentPage.set(1);
+  };
+
+  readonly clearSort = () => {
+    this.sortKeys.set([]);
     this.currentPage.set(1);
   };
 

@@ -65,6 +65,13 @@ export interface OverviewPlayer {
   expertMatchday: number | null;
 }
 
+/** One combined sort criterion. Priority is purely positional — the array
+ *  index in `OverviewComponent.sortKeys`, no explicit priority field. */
+export interface SortKey {
+  column: string;
+  direction: 'asc' | 'desc';
+}
+
 export interface OverviewPlayersResponse {
   total: number;
   page: number;

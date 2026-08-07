@@ -72,6 +72,73 @@ _ROLE_ORDER = {r: i for i, r in enumerate(
     ["Por", "Dc", "Dd", "Ds", "B", "E", "M", "C", "T", "W", "A", "Pc"]
 )}
 
+# Max combinable sort criteria — enough for real use (e.g. "price, then
+# expert score, then a tie-break role") without the priority indicator in
+# the UI (superscript ¹²³) running out of single-digit ranks.
+MAX_SORT_KEYS = 3
+
+
+def _parse_sort_keys(raw: str | None) -> list[tuple[OverviewSortField, bool]]:
+    """Parse a DRF-style combined sort param: 'Pz1,-expert_totale' → a list
+    of (field, reverse) in the user's priority order (first = most
+    important). '-' prefix means descending.
+
+    Raises 422 (not a silent skip) on an unknown field, a duplicate field,
+    or more than MAX_SORT_KEYS criteria — with up to 3 fields combined a
+    silently-dropped one would be hard to notice in QA.
+    """
+    if not raw:
+        return []
+    tokens = [t.strip() for t in raw.split(",") if t.strip()]
+    if len(tokens) > MAX_SORT_KEYS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Too many sort keys ({len(tokens)}); max {MAX_SORT_KEYS}",
+        )
+    parsed: list[tuple[OverviewSortField, bool]] = []
+    seen: set[str] = set()
+    for tok in tokens:
+        reverse = tok.startswith("-")
+        field_raw = tok[1:] if reverse else tok
+        try:
+            field = OverviewSortField(field_raw)  # lookup by VALUE, not member name
+        except ValueError:
+            raise HTTPException(status_code=422, detail=f"Unknown sort field: {field_raw!r}")
+        if field_raw in seen:
+            raise HTTPException(status_code=422, detail=f"Duplicate sort field: {field_raw!r}")
+        seen.add(field_raw)
+        parsed.append((field, reverse))
+    return parsed
+
+
+def _apply_single_sort(players: list[dict], field: OverviewSortField, reverse: bool) -> None:
+    """Apply ONE sort criterion in place, stably. Call this once per
+    criterion, in order from least to most important — Python's Timsort is
+    stable, so each later call becomes the dominant key while earlier calls
+    survive as the tie-break within groups of equal values (this is exactly
+    how the pre-existing two-pass string-field branch already works
+    internally; composing multiple calls externally follows the same
+    principle)."""
+    if field is OverviewSortField.ruolo_primario:
+        players.sort(
+            key=lambda p: _ROLE_ORDER.get(p.get("ruolo_primario", ""), 999),
+            reverse=reverse,
+        )
+    elif field in (OverviewSortField.player_name, OverviewSortField.team, OverviewSortField.fase7):
+        # String fields: sort by value in the requested direction, then a
+        # second *stable* pass pushes missing values to the end either way
+        # (a single reversed tuple key would flip None to the front on
+        # desc, which reads as broken, not as "descending").
+        players.sort(key=lambda p: p.get(field.value) or "", reverse=reverse)
+        players.sort(key=lambda p: p.get(field.value) is None)
+    else:
+        players.sort(
+            key=lambda p: (
+                p.get(field.value) if p.get(field.value) is not None else -999999
+            ),
+            reverse=reverse,
+        )
+
 
 @router.get(
     "/players",
@@ -127,8 +194,14 @@ async def list_overview_players(
     has_risk_flag: bool | None = Query(
         None, description="When true, only players with a contextual risk flag (e.g. cambio squadra)"
     ),
-    sort_by: OverviewSortField | None = Query(None),
-    sort_dir: str | None = Query("asc", description="Sort direction: asc or desc"),
+    sort_by: str | None = Query(
+        None,
+        description=(
+            "Comma-separated sort keys in priority order, e.g. "
+            "'Pz1,-expert_totale' (prefix '-' for descending). "
+            f"Up to {MAX_SORT_KEYS} combined."
+        ),
+    ),
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
     artifact_store: ArtifactStore = Depends(get_artifact_store),
@@ -217,28 +290,11 @@ async def list_overview_players(
     if has_risk_flag is not None:
         players = [p for p in players if (p.get("rischio") is not None) == has_risk_flag]
 
-    # Sorting
-    if sort_by:
-        reverse = sort_dir == "desc"
-        if sort_by is OverviewSortField.ruolo_primario:
-            players.sort(
-                key=lambda p: _ROLE_ORDER.get(p.get("ruolo_primario", ""), 999),
-                reverse=reverse,
-            )
-        elif sort_by in (OverviewSortField.player_name, OverviewSortField.team, OverviewSortField.fase7):
-            # String fields: sort by value in the requested direction, then a
-            # second *stable* pass pushes missing values to the end either
-            # way (a single reversed tuple key would flip None to the front
-            # on desc, which reads as broken, not as "descending").
-            players.sort(key=lambda p: p.get(sort_by.value) or "", reverse=reverse)
-            players.sort(key=lambda p: p.get(sort_by.value) is None)
-        else:
-            players.sort(
-                key=lambda p: (
-                    p.get(sort_by.value) if p.get(sort_by.value) is not None else -999999
-                ),
-                reverse=reverse,
-            )
+    # Sorting — combine up to MAX_SORT_KEYS criteria by applying them from
+    # least to most important (see _apply_single_sort docstring).
+    sort_keys = _parse_sort_keys(sort_by)
+    for field, reverse in reversed(sort_keys):
+        _apply_single_sort(players, field, reverse)
 
     total = len(players)
     start = (page - 1) * size

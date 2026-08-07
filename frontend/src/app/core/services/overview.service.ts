@@ -38,8 +38,9 @@ export class OverviewService {
     expertSaluteMin?: number;
     hasMlData?: boolean;
     hasRiskFlag?: boolean;
+    /** DRF-style combined sort keys, e.g. 'Pz1,-expert_totale' — already
+     *  serialized by the caller (see OverviewComponent.sortByParam). */
     sortBy?: string;
-    sortDir?: string;
     page?: number;
     size?: number;
   } = {}): Observable<OverviewPlayersResponse> {
@@ -73,7 +74,6 @@ export class OverviewService {
     if (opts.hasMlData != null) params = params.set('has_ml_data', opts.hasMlData);
     if (opts.hasRiskFlag != null) params = params.set('has_risk_flag', opts.hasRiskFlag);
     if (opts.sortBy) params = params.set('sort_by', opts.sortBy);
-    if (opts.sortDir) params = params.set('sort_dir', opts.sortDir);
     return this.http.get<OverviewPlayersResponse>(`${this.baseUrl}/overview/players`, { params });
   }
 }
