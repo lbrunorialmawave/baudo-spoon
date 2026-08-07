@@ -135,6 +135,7 @@ class ArtifactStore:
         path = self._local_path(filename)
         fd, tmp_path = tempfile.mkstemp(dir=self._local_dir, suffix=".tmp")
         try:
+            os.fchmod(fd, 0o644) 
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
             os.replace(tmp_path, path)
