@@ -62,7 +62,7 @@ class MantraConfig:
     # Absolute VR floor for TOP (small-pool / absolute mode fallback).
     # Lower than AFFARE_VR_SOGLIA: TOP requires quality + non-cheap VR, not
     # necessarily "bargain" VR.
-    TOP_VR_SOGLIA: float = 100.0
+    TOP_VR_SOGLIA: float = 95.0
     AFFARE_FP_SOGLIA: float = 60.0
     AFFARE_VR_SOGLIA: float = 140.0
     SCOMMESSA_FP_SOGLIA: float = 50.0
@@ -82,9 +82,9 @@ class MantraConfig:
     #   thresholds above (pre-percentile behavior, useful as a rollback knob).
     FASE7_THRESHOLD_MODE: Literal["percentile", "absolute"] = "percentile"
     # Raised from 0.85 → 0.90 so TOP is the top ~10% of the role pool, not ~15%.
-    TOP_FP_PERCENTILE: float = 0.90
+    TOP_FP_PERCENTILE: float = 0.88
     # TOP also requires VR at least around the role-pool median (anti-lowcost-only).
-    TOP_VR_PERCENTILE: float = 0.55
+    TOP_VR_PERCENTILE: float = 0.40
     AFFARE_FP_PERCENTILE: float = 0.65
     AFFARE_VR_PERCENTILE: float = 0.85
     SCOMMESSA_FP_PERCENTILE: float = 0.35
@@ -99,15 +99,15 @@ class MantraConfig:
     # (does not block TOP). If present, the value must pass the threshold.
     # Expert rating scale follows the scraped source (e.g. 1-10 style where
     # Muric=4 is weak); raise/lower TOP_EXPERT_MIN if your source uses 1-5 stars.
-    TOP_EXPERT_MIN: float = 6.0
+    TOP_EXPERT_MIN: float = 3.0
     # Minimum predicted_next_fantavoto (or predicted_fantavoto fallback) by
     # primary MANTRA role. Used only when the column is present and non-null.
     NEXT_FANTAVOTO_MIN_BY_ROLE: dict[str, float] = field(default_factory=lambda: {
-        "Por": 5.7,
-        "Dc": 5.9, "Dd": 5.9, "Ds": 5.9, "B": 5.9,
-        "C": 6.1, "M": 6.1, "E": 6.1,
-        "W": 6.3, "T": 6.3,
-        "A": 6.5, "Pc": 6.5,
+        "Por": 5.5,
+        "Dc": 5.7, "Dd": 5.7, "Ds": 5.7, "B": 5.7,
+        "C": 5.9, "M": 5.9, "E": 5.9,
+        "W": 6.0, "T": 6.0,
+        "A": 6.2, "Pc": 6.2,
     })
 
     # ── Budget ───────────────────────────────────────────────────────────────
