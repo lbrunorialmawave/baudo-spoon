@@ -59,6 +59,10 @@ class MantraConfig:
     # Fixed thresholds — used as-is in FASE7_THRESHOLD_MODE="absolute", and as
     # the small-pool fallback in "percentile" mode (pools under SOGLIA_POOL).
     TOP_FP_SOGLIA: float = 80.0
+    # Absolute VR floor for TOP (small-pool / absolute mode fallback).
+    # Lower than AFFARE_VR_SOGLIA: TOP requires quality + non-cheap VR, not
+    # necessarily "bargain" VR.
+    TOP_VR_SOGLIA: float = 100.0
     AFFARE_FP_SOGLIA: float = 60.0
     AFFARE_VR_SOGLIA: float = 140.0
     SCOMMESSA_FP_SOGLIA: float = 50.0
@@ -73,11 +77,14 @@ class MantraConfig:
     # ── Fase 7 threshold mode ─────────────────────────────────────────────────
     # "percentile": TOP/AFFARE/SCOMMESSA/SOPRAVALUTATO/GIUSTO thresholds are
     #   computed per role-pool (see ml/mantra/fase7.py) so e.g. TOP means "top
-    #   15% of FP_Mantra within your role", not one global number that may
+    #   ~10% of FP_Mantra within your role", not one global number that may
     #   favor/disadvantage specific roles. "absolute": always use the fixed
     #   thresholds above (pre-percentile behavior, useful as a rollback knob).
     FASE7_THRESHOLD_MODE: Literal["percentile", "absolute"] = "percentile"
-    TOP_FP_PERCENTILE: float = 0.85
+    # Raised from 0.85 → 0.90 so TOP is the top ~10% of the role pool, not ~15%.
+    TOP_FP_PERCENTILE: float = 0.90
+    # TOP also requires VR at least around the role-pool median (anti-lowcost-only).
+    TOP_VR_PERCENTILE: float = 0.55
     AFFARE_FP_PERCENTILE: float = 0.65
     AFFARE_VR_PERCENTILE: float = 0.85
     SCOMMESSA_FP_PERCENTILE: float = 0.35
@@ -86,6 +93,22 @@ class MantraConfig:
     GIUSTO_VR_PERCENTILE_MIN: float = 0.42
     GIUSTO_VR_PERCENTILE_MAX: float = 0.58
     CERTEZZA_DV_PERCENTILE: float = 0.50   # 0.50 = median (unchanged historical behavior)
+
+    # ── TOP external gates (optional columns on the player DataFrame) ─────────
+    # If the column is missing or the cell is null, the gate is skipped
+    # (does not block TOP). If present, the value must pass the threshold.
+    # Expert rating scale follows the scraped source (e.g. 1-10 style where
+    # Muric=4 is weak); raise/lower TOP_EXPERT_MIN if your source uses 1-5 stars.
+    TOP_EXPERT_MIN: float = 6.0
+    # Minimum predicted_next_fantavoto (or predicted_fantavoto fallback) by
+    # primary MANTRA role. Used only when the column is present and non-null.
+    NEXT_FANTAVOTO_MIN_BY_ROLE: dict[str, float] = field(default_factory=lambda: {
+        "Por": 5.7,
+        "Dc": 5.9, "Dd": 5.9, "Ds": 5.9, "B": 5.9,
+        "C": 6.1, "M": 6.1, "E": 6.1,
+        "W": 6.3, "T": 6.3,
+        "A": 6.5, "Pc": 6.5,
+    })
 
     # ── Budget ───────────────────────────────────────────────────────────────
     BUDGET_TOTALE: int = 500

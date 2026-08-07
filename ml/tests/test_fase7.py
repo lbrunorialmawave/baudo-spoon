@@ -54,7 +54,8 @@ def _classify(df, fp, fp_mantra, vr, p1, cfg):
 class TestIndividualLabels:
     def test_top(self, cfg):
         df = _base_df(1)
-        result = _classify(df, fp=[70], fp_mantra=[85], vr=[100], p1=[50], cfg=cfg)
+        # VR must clear TOP_VR_SOGLIA (100) in absolute/small-pool mode
+        result = _classify(df, fp=[70], fp_mantra=[85], vr=[101], p1=[50], cfg=cfg)
         assert result.iloc[0] == "TOP"
 
     def test_affare(self, cfg):
@@ -138,7 +139,7 @@ class TestRulePriority:
             "DV": [1.0],
         })
         result = _classify(
-            df, fp=[85], fp_mantra=[85], vr=[95], p1=[90], cfg=cfg,
+            df, fp=[85], fp_mantra=[85], vr=[101], p1=[90], cfg=cfg,
         )
         assert result.iloc[0] == "TOP"
 
@@ -165,7 +166,11 @@ class TestPercentileMode:
         threshold (80) still produces a TOP label in percentile mode,
         because the pool is large enough (>= SOGLIA_POOL) for TOP to be
         evaluated relative to the role's own distribution rather than a
-        single global number that would systematically starve this role."""
+        single global number that would systematically starve this role.
+
+        TOP also requires VR above the role-pool VR floor (TOP_VR_PERCENTILE),
+        so the top-FP player is given a VR in the upper half of the pool.
+        """
         n = 25  # >= SOGLIA_POOL (20) -> percentile mode applies, no small-pool fallback
         fp_mantra_values = list(np.linspace(30.0, 54.0, n))  # all well below 80
         df = pd.DataFrame({
@@ -174,12 +179,13 @@ class TestPercentileMode:
             "Pr": [0.0] * n,
             "DV": [5.0] * n,
         })
-        vr = pd.Series([100.0] * n, index=df.index)  # neutral, so only FP_Mantra drives TOP
+        vr_values = list(np.linspace(80.0, 130.0, n))
+        vr = pd.Series(vr_values, index=df.index)
         p1 = pd.Series([50.0] * n, index=df.index)
         fp_mantra = pd.Series(fp_mantra_values, index=df.index)
 
         label, _ = classify_fase7(df, fp_mantra, fp_mantra, vr, p1, cfg)
-        assert label.iloc[-1] == "TOP"  # highest FP_Mantra in the pool
+        assert label.iloc[-1] == "TOP"  # highest FP_Mantra + high VR in the pool
 
         abs_cfg = replace(cfg, FASE7_THRESHOLD_MODE="absolute")
         label_abs, _ = classify_fase7(df, fp_mantra, fp_mantra, vr, p1, abs_cfg)
@@ -193,7 +199,8 @@ class TestPercentileMode:
         threshold instead, so a single "C" player with FP_Mantra=85 is
         still classified TOP under the default percentile mode."""
         df = _base_df(1)
-        result = _classify(df, fp=[85], fp_mantra=[85], vr=[100], p1=[50], cfg=cfg)
+        # VR must exceed TOP_VR_SOGLIA (100) absolute fallback
+        result = _classify(df, fp=[85], fp_mantra=[85], vr=[101], p1=[50], cfg=cfg)
         assert result.iloc[0] == "TOP"
 
 
@@ -204,7 +211,7 @@ class TestFase7Motivo:
             df,
             pd.Series([70], index=df.index),
             pd.Series([85], index=df.index),
-            pd.Series([100], index=df.index),
+            pd.Series([101], index=df.index),
             pd.Series([50], index=df.index),
             cfg,
         )
@@ -256,3 +263,58 @@ class TestFase7Motivo:
         )
         assert "Quasi CERTEZZA" in motivo.iloc[0]
         assert "Pr" in motivo.iloc[0]
+
+
+class TestTopExternalGates:
+    """TOP blocked by present ML / expert signals; nulls never block."""
+
+    def test_expert_rating_blocks_top(self, cfg):
+        df = _base_df(1)
+        df["expert_rating"] = [4.0]  # below TOP_EXPERT_MIN (6)
+        result = _classify(df, fp=[85], fp_mantra=[85], vr=[120], p1=[50], cfg=cfg)
+        assert result.iloc[0] != "TOP"
+
+    def test_expert_rating_passes_top(self, cfg):
+        df = _base_df(1)
+        df["expert_rating"] = [7.0]
+        result = _classify(df, fp=[85], fp_mantra=[85], vr=[120], p1=[50], cfg=cfg)
+        assert result.iloc[0] == "TOP"
+
+    def test_missing_expert_does_not_block(self, cfg):
+        df = _base_df(1)
+        result = _classify(df, fp=[85], fp_mantra=[85], vr=[120], p1=[50], cfg=cfg)
+        assert result.iloc[0] == "TOP"
+
+    def test_ml_below_soglia_blocks_top(self, cfg):
+        df = _base_df(1)
+        df["ruolo_primario"] = ["Por"]
+        df["predicted_next_fantavoto"] = [5.0]  # Por soglia 5.7
+        result = _classify(df, fp=[85], fp_mantra=[85], vr=[120], p1=[50], cfg=cfg)
+        assert result.iloc[0] != "TOP"
+
+    def test_ml_above_soglia_allows_top(self, cfg):
+        df = _base_df(1)
+        df["ruolo_primario"] = ["Por"]
+        df["predicted_next_fantavoto"] = [6.0]
+        result = _classify(df, fp=[85], fp_mantra=[85], vr=[120], p1=[50], cfg=cfg)
+        assert result.iloc[0] == "TOP"
+
+    def test_vr_below_floor_blocks_top(self, cfg):
+        df = _base_df(1)
+        result = _classify(df, fp=[85], fp_mantra=[85], vr=[90], p1=[50], cfg=cfg)
+        assert result.iloc[0] != "TOP"
+
+    def test_motivo_mentions_expert_block(self, cfg):
+        df = _base_df(1)
+        df["expert_rating"] = [4.0]
+        label, motivo = classify_fase7(
+            df,
+            pd.Series([85], index=df.index),
+            pd.Series([85], index=df.index),
+            pd.Series([120], index=df.index),
+            pd.Series([50], index=df.index),
+            cfg,
+        )
+        assert label.iloc[0] != "TOP"
+        assert motivo.iloc[0] is not None
+        assert "esperti" in motivo.iloc[0].lower() or "rating" in motivo.iloc[0].lower()

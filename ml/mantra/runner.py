@@ -205,6 +205,137 @@ def _load_predictions_by_id(
     return lookup
 
 
+_NEXT_SEASON_FILENAME: str = "next_season_predictions.json"
+
+
+def _load_next_season_by_id(
+    artifacts_dir: Optional[Path],
+) -> dict[int, float]:
+    """Return ``player_fotmob_id → predicted_next_fantavoto`` from the
+    companion next-season artefact (written by the trainer when
+    ``--predict-next`` is set). Missing file → empty dict.
+    """
+    if artifacts_dir is None:
+        return {}
+    path = Path(artifacts_dir) / _NEXT_SEASON_FILENAME
+    if not path.is_file():
+        return {}
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        log.warning("Could not read next-season artefact at %s: %s", path, exc)
+        return {}
+
+    records = payload if isinstance(payload, list) else payload.get("next_season_predictions", []) or []
+    lookup: dict[int, float] = {}
+    for record in records:
+        raw_id = record.get("player_fotmob_id")
+        if not isinstance(raw_id, (int, float)) or (isinstance(raw_id, float) and raw_id != raw_id):
+            continue
+        val = record.get("predicted_next_fantavoto")
+        if val is None:
+            continue
+        try:
+            lookup[int(raw_id)] = float(val)
+        except (TypeError, ValueError):
+            continue
+    return lookup
+
+
+def _load_expert_ratings_by_fotmob(
+    engine: sa.Engine,
+    season_start: int,
+) -> dict[int, float]:
+    """Average expert ``rating`` per ``player_fotmob_id`` for the season.
+
+    Joins ``expert_ratings.player_id`` (typically ``fc-{fantacalcio_id}``)
+    through ``player_id_map``. Failures are non-fatal (empty dict).
+    """
+    sql = sa.text(
+        """
+        SELECT pim.player_fotmob_id AS fotmob_id,
+               AVG(er.rating)::float AS avg_rating
+        FROM expert_ratings er
+        JOIN player_id_map pim
+          ON (
+               er.player_id = 'fc-' || pim.fantacalcio_id::text
+               OR er.player_id = pim.player_fotmob_id::text
+             )
+        WHERE er.season_start = :season_start
+          AND er.rating IS NOT NULL
+          AND pim.player_fotmob_id IS NOT NULL
+        GROUP BY pim.player_fotmob_id
+        """
+    )
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(sql, {"season_start": season_start}).fetchall()
+    except Exception as exc:  # noqa: BLE001 — informational gate only
+        log.warning("Could not load expert ratings for Fase7 gates: %s", exc)
+        return {}
+    return {int(r[0]): float(r[1]) for r in rows if r[0] is not None and r[1] is not None}
+
+
+def _attach_fase7_external_signals(
+    df: pd.DataFrame,
+    engine: sa.Engine,
+    season_start: int,
+    artifacts_dir: Optional[Path],
+) -> pd.DataFrame:
+    """Attach optional ``predicted_next_fantavoto`` / ``predicted_fantavoto``
+    / ``expert_rating`` columns used by Fase7 TOP gates. Missing sources
+    leave the columns as NaN (gate skipped).
+    """
+    out = df.copy()
+
+    next_by_id = _load_next_season_by_id(artifacts_dir)
+    preds_by_id = _load_predictions_by_id(artifacts_dir)
+
+    def _pred_next(fid):
+        if fid is None or (isinstance(fid, float) and fid != fid):
+            return None
+        try:
+            i = int(fid)
+        except (TypeError, ValueError):
+            return None
+        if i in next_by_id:
+            return next_by_id[i]
+        rec = preds_by_id.get(i)
+        if not rec:
+            return None
+        for key in ("predicted_next_fantavoto", "predicted_fantavoto", "predicted"):
+            if rec.get(key) is not None:
+                try:
+                    return float(rec[key])
+                except (TypeError, ValueError):
+                    return None
+        return None
+
+    out["predicted_next_fantavoto"] = out["player_fotmob_id"].map(_pred_next)
+    out["predicted_fantavoto"] = out["predicted_next_fantavoto"]
+
+    experts = _load_expert_ratings_by_fotmob(engine, season_start)
+
+    def _exp(fid):
+        if fid is None or (isinstance(fid, float) and fid != fid):
+            return None
+        try:
+            return experts.get(int(fid))
+        except (TypeError, ValueError):
+            return None
+
+    out["expert_rating"] = out["player_fotmob_id"].map(_exp)
+
+    n_ml = int(out["predicted_next_fantavoto"].notna().sum())
+    n_ex = int(out["expert_rating"].notna().sum())
+    log.info(
+        "Fase7 external signals: %d/%d with ML next, %d/%d with expert rating",
+        n_ml, len(out), n_ex, len(out),
+    )
+    return out
+
+
 def load_data(
     engine: sa.Engine,
     season_start: int,
@@ -347,11 +478,14 @@ def run_mantra(
     fp = compute_fp(p1, p2, p3, p4, cfg)
     scores = compute_fp_corr(fp, cp, df["ruolo_primario"], df["num_ruoli"], df["Pz1"], cfg)
 
-    # 4. Fase 7
+    # 4. Fase 7 external signals (ML next + expert ratings) — optional gates
+    df = _attach_fase7_external_signals(df, engine, season_start, output_dir)
+
+    # 5. Fase 7
     log.info("Classifying Fase 7 …")
     fase7_label, fase7_motivo = classify_fase7(df, fp, scores["fp_mantra"], scores["vr"], p1, cfg)
 
-    # 5. Fase 8
+    # 6. Fase 8
     log.info("Classifying Fase 8 …")
     df_all = df.copy()
     df_all["p1"] = p1
@@ -372,7 +506,7 @@ def run_mantra(
     classification_8f = watchlist_giovani(df_all, cfg.GIOVANE_ETA_MAX)
     classification_8g = rischio_contestuale(df_all)
 
-    # 6. Build output
+    # 7. Build output
     # Load the ML predictions artefact (if present) so the two
     # informational fields ``season_value`` / ``start_probability`` can
     # be projected onto each player record. The lookup is keyed by

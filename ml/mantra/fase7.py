@@ -3,12 +3,19 @@
 Order
 -----
 1. 🏆 TOP            FP_Mantra above the role-pool's top percentile
+                     AND VR above the role-pool VR floor (median-ish)
+                     AND (optional) ML next-fantavoto ≥ role soglia when present
+                     AND (optional) expert rating ≥ TOP_EXPERT_MIN when present
 2. 💎 AFFARE         FP_Mantra and VR both above their role-pool percentiles
 3. 🔄 SCOMMESSA      raw FP low, VR high — both relative to the role pool
 4. ✅ CERTEZZA       Stagioni_IT >= 2 AND Pr >= 0.70 AND DV <= pool quantile AND P1 >= 55
 5. ⚠️ SOPRAVALUTATO  VR below the role-pool's low percentile
 6. ⚖️ GIUSTO         VR within the role-pool's "fair value" percentile band
 7. (none)            others — see Fase7_Motivo for why
+
+Missing ML / expert values never block TOP (null = gate skipped). Present
+values that fail the threshold do block TOP — see ``cfg.TOP_EXPERT_MIN`` and
+``cfg.NEXT_FANTAVOTO_MIN_BY_ROLE``.
 
 Threshold mode
 --------------
@@ -53,6 +60,7 @@ _LABEL_ORDER: list[str] = [
 
 _THRESHOLD_KEYS = (
     "top_fp_mantra",
+    "top_vr",
     "affare_fp_mantra",
     "affare_vr",
     "scommessa_fp",
@@ -92,6 +100,7 @@ def _pool_thresholds(
         if pool_size < cfg.SOGLIA_POOL:
             out[ruolo] = {
                 "top_fp_mantra": cfg.TOP_FP_SOGLIA,
+                "top_vr": cfg.TOP_VR_SOGLIA,
                 "affare_fp_mantra": cfg.AFFARE_FP_SOGLIA,
                 "affare_vr": cfg.AFFARE_VR_SOGLIA,
                 "scommessa_fp": cfg.SCOMMESSA_FP_SOGLIA,
@@ -108,6 +117,7 @@ def _pool_thresholds(
         pool_fp = fp[pool_mask].dropna()
         out[ruolo] = {
             "top_fp_mantra": float(pool_fp_mantra.quantile(cfg.TOP_FP_PERCENTILE)),
+            "top_vr": float(pool_vr.quantile(cfg.TOP_VR_PERCENTILE)),
             "affare_fp_mantra": float(pool_fp_mantra.quantile(cfg.AFFARE_FP_PERCENTILE)),
             "affare_vr": float(pool_vr.quantile(cfg.AFFARE_VR_PERCENTILE)),
             "scommessa_fp": float(pool_fp.quantile(cfg.SCOMMESSA_FP_PERCENTILE)),
@@ -129,6 +139,7 @@ def _absolute_thresholds(
     historical behavior — this is not new with percentile mode)."""
     fixed = {k: cfg.__getattribute__(v) for k, v in {
         "top_fp_mantra": "TOP_FP_SOGLIA",
+        "top_vr": "TOP_VR_SOGLIA",
         "affare_fp_mantra": "AFFARE_FP_SOGLIA",
         "affare_vr": "AFFARE_VR_SOGLIA",
         "scommessa_fp": "SCOMMESSA_FP_SOGLIA",
@@ -213,16 +224,54 @@ def _explain_unclassified(
             motivo.at[idx] = f"Quasi CERTEZZA: manca solo {failing[0]}"
             continue
 
-        v = vr.at[idx]
+        # Near-TOP diagnostics (FP high but blocked by VR / ML / experts)
+        top_th = th.at[idx, "top_fp_mantra"]
+        top_vr_th = th.at[idx, "top_vr"]
+        fp_v = float(fp_mantra.at[idx])
+        v = float(vr.at[idx])
+        if fp_v > top_th:
+            reasons = []
+            if not (v > top_vr_th):
+                reasons.append(f"VR {v:.0f} <= soglia TOP VR {top_vr_th:.0f}")
+            pred_val = None
+            for col in ("predicted_next_fantavoto", "predicted_fantavoto"):
+                if col in df.columns and pd.notna(df.at[idx, col]):
+                    try:
+                        pred_val = float(df.at[idx, col])
+                    except (TypeError, ValueError):
+                        pred_val = None
+                    break
+            if pred_val is not None:
+                ruolo = df.at[idx, "ruolo_primario"] if "ruolo_primario" in df.columns else None
+                soglia = cfg.NEXT_FANTAVOTO_MIN_BY_ROLE.get(ruolo, 6.0) if isinstance(ruolo, str) else 6.0
+                if pred_val < soglia:
+                    reasons.append(
+                        f"predicted_next {pred_val:.2f} < soglia ruolo {soglia:.1f}"
+                    )
+            if "expert_rating" in df.columns and pd.notna(df.at[idx, "expert_rating"]):
+                try:
+                    er = float(df.at[idx, "expert_rating"])
+                except (TypeError, ValueError):
+                    er = None
+                if er is not None and er < cfg.TOP_EXPERT_MIN:
+                    reasons.append(
+                        f"rating esperti {er:.0f} < {cfg.TOP_EXPERT_MIN:.0f}"
+                    )
+            if reasons:
+                motivo.at[idx] = (
+                    f"Quasi TOP (FP_Mantra {fp_v:.0f} > {top_th:.0f}) ma "
+                    + "; ".join(reasons)
+                )
+                continue
+
         sopra = th.at[idx, "sopravalutato_vr"]
         gmin = th.at[idx, "giusto_vr_min"]
         gmax = th.at[idx, "giusto_vr_max"]
         if v > gmax:
-            top_th = th.at[idx, "top_fp_mantra"]
             affare_fp_th = th.at[idx, "affare_fp_mantra"]
             motivo.at[idx] = (
                 f"VR {v:.0f} sopra GIUSTO (>{gmax:.0f}) ma FP_Mantra "
-                f"{fp_mantra.at[idx]:.0f} non basta per AFFARE "
+                f"{fp_v:.0f} non basta per AFFARE "
                 f"(serve >{affare_fp_th:.0f}) o TOP (serve >{top_th:.0f})"
             )
         else:
@@ -231,6 +280,34 @@ def _explain_unclassified(
                 f"({gmin:.0f}-{gmax:.0f}): zona neutra"
             )
     return motivo
+
+
+def _external_ml_ok(df: pd.DataFrame, cfg: MantraConfig) -> pd.Series:
+    """True where ML next-fantavoto is missing OR meets the role soglia.
+
+    Looks for ``predicted_next_fantavoto`` first, then ``predicted_fantavoto``.
+    """
+    pred = None
+    for col in ("predicted_next_fantavoto", "predicted_fantavoto"):
+        if col in df.columns:
+            pred = pd.to_numeric(df[col], errors="coerce")
+            break
+    if pred is None:
+        return pd.Series(True, index=df.index)
+
+    roles = df.get("ruolo_primario", pd.Series(index=df.index, dtype=object))
+    soglie = cfg.NEXT_FANTAVOTO_MIN_BY_ROLE
+    min_req = roles.map(lambda r: soglie.get(r, 6.0) if isinstance(r, str) else 6.0)
+    return pred.isna() | (pred >= min_req)
+
+
+def _external_expert_ok(df: pd.DataFrame, cfg: MantraConfig) -> pd.Series:
+    """True where expert rating is missing OR >= TOP_EXPERT_MIN."""
+    if "expert_rating" not in df.columns:
+        return pd.Series(True, index=df.index)
+    rating = pd.to_numeric(df["expert_rating"], errors="coerce")
+    return rating.isna() | (rating >= cfg.TOP_EXPERT_MIN)
+
 
 
 def classify_fase7(
@@ -251,6 +328,10 @@ def classify_fase7(
         - ``Pr``           — presence rate (0-1)
         - ``DV``           — vote std dev
         - ``ruolo_primario`` — MANTRA primary role
+        - ``predicted_next_fantavoto`` / ``predicted_fantavoto`` (optional)
+          — ML projection; when present must meet role soglia for TOP
+        - ``expert_rating`` (optional) — average expert score; when present
+          must be >= ``cfg.TOP_EXPERT_MIN`` for TOP
     fp:
         Raw FP values.
     fp_mantra:
@@ -271,8 +352,16 @@ def classify_fase7(
 
     result = pd.Series([None] * len(df), index=df.index, dtype=object)
 
-    # 1. TOP
-    mask = fp_mantra > th["top_fp_mantra"]
+    # 1. TOP — quality (FP_Mantra) + value (VR) + optional external gates
+    # External gates: null/missing = pass; present failing value = block.
+    ml_ok = _external_ml_ok(df, cfg)
+    expert_ok = _external_expert_ok(df, cfg)
+    mask = (
+        (fp_mantra > th["top_fp_mantra"])
+        & (vr > th["top_vr"])
+        & ml_ok
+        & expert_ok
+    )
     result[mask] = "TOP"
 
     # 2. AFFARE — use fp_mantra (flexibility-adjusted) instead of raw fp
