@@ -1065,6 +1065,7 @@ class ParticipantSimStatsSchema(_CamelModel):
     completion_probability: float
     squad_composition_mode: dict[str, int] = Field(default_factory=dict)
     top_players: list[PlayerAcquisitionDetailSchema] = Field(default_factory=list)
+    typical_squad: list[PlayerAcquisitionDetailSchema] = Field(default_factory=list)
 
 class PlayerAcquisitionStatsSchema(_CamelModel):
     prob: float

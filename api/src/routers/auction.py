@@ -454,6 +454,16 @@ async def simulate_auction_endpoint(
                     }
                     for tp in (s.top_players or ())
                 ],
+                typical_squad=[
+                    {
+                        "player_id": tp.player_id,
+                        "name": tp.name,
+                        "role": tp.role,
+                        "frequency": tp.frequency,
+                        "avg_price": tp.avg_price,
+                    }
+                    for tp in (s.typical_squad or ())
+                ],
             )
             for pid, s in result.per_participant.items()
         },

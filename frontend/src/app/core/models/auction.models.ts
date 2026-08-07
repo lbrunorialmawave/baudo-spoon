@@ -346,6 +346,8 @@ export interface ParticipantSimStats {
   squadCompositionMode: Record<string, number>;
   /** Most frequently acquired players for this manager across scenarios. */
   topPlayers?: PlayerAcquisitionDetail[];
+  /** Rosa tipo: quota players per role ranked by acquisition frequency. */
+  typicalSquad?: PlayerAcquisitionDetail[];
 }
 
 export interface PlayerAcquisitionStats {

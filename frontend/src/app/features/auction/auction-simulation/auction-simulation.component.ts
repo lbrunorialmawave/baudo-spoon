@@ -139,7 +139,7 @@ interface ParticipantRow {
             {{ res.wallTimeSeconds | number: '1.1-1' }}s
             @if (res.warnings.length) { · {{ res.warnings.length }} warning }
           </p>
-          <p class="hint click-hint">Clicca una card per il dettaglio rosa e i giocatori più frequenti.</p>
+          <p class="hint click-hint">Clicca una card per la rosa tipo (roster rappresentativo per ruolo).</p>
 
           <div class="stats-grid">
             @for (row of participantRows(); track row.id) {
@@ -214,7 +214,7 @@ interface ParticipantRow {
                 <div>
                   <h3 class="detail-title">{{ sel.name }}</h3>
                   <p class="hint">
-                    Rosa tipica e giocatori acquistati più spesso nelle {{ res.nCompleted }} simulazioni.
+                    Rosa tipo bilanciata per ruolo (quote P/D/C/A) sulle {{ res.nCompleted }} simulazioni.
                   </p>
                 </div>
                 <button type="button" class="secondary-btn" (click)="selectedId.set(null)">Chiudi</button>
@@ -234,9 +234,13 @@ interface ParticipantRow {
                 </div>
 
                 <div class="detail-block detail-block--wide">
-                  <p class="card-section-label">Giocatori più frequenti</p>
-                  <p class="hint">Quanto spesso questo manager ha vinto l’asta sul giocatore e a che prezzo medio.</p>
-                  @if (sel.stats.topPlayers?.length) {
+                  <p class="card-section-label">Rosa tipo</p>
+                  <p class="hint">
+                    Roster rappresentativo: per ogni ruolo prendiamo i giocatori che questo manager
+                    ha comprato più spesso, fino a riempire la quota (P/D/C/A). Non è una singola
+                    asta, ma il profilo più stabile sulle N simulazioni.
+                  </p>
+                  @if (sel.stats.typicalSquad?.length) {
                     <div class="player-table-wrap">
                       <table class="player-table">
                         <thead>
@@ -248,7 +252,7 @@ interface ParticipantRow {
                           </tr>
                         </thead>
                         <tbody>
-                          @for (pl of sel.stats.topPlayers; track pl.playerId) {
+                          @for (pl of sel.stats.typicalSquad; track pl.playerId) {
                             <tr>
                               <td>
                                 <span class="pl-name">{{ pl.name }}</span>

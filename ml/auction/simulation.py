@@ -129,6 +129,8 @@ class ParticipantSimStats:
     """Average role counts across completed scenarios (rounded)."""
     top_players: tuple[PlayerAcquisitionDetail, ...] = ()
     """Most frequently acquired players by this participant (desc by frequency)."""
+    typical_squad: tuple[PlayerAcquisitionDetail, ...] = ()
+    """Rosa tipo: for each role, the quota most frequent acquisitions (balanced)."""
 
 
 @dataclass(frozen=True)
@@ -164,6 +166,16 @@ class AuctionSimulationResult:
                             "avg_price": round(tp.avg_price, 2),
                         }
                         for tp in s.top_players
+                    ],
+                    "typical_squad": [
+                        {
+                            "player_id": tp.player_id,
+                            "name": tp.name,
+                            "role": tp.role,
+                            "frequency": round(tp.frequency, 4),
+                            "avg_price": round(tp.avg_price, 2),
+                        }
+                        for tp in s.typical_squad
                     ],
                 }
                 for pid, s in self.per_participant.items()
@@ -387,7 +399,7 @@ def simulate_auction(
         flags = completed_flags.get(pid, [0])
         comp = composition_counts.get(pid, Counter())
         mode_comp = {role: int(round(total / max(n_completed, 1))) for role, total in comp.items()}
-        # Top players by acquisition frequency for this participant
+        # All acquisitions ranked by frequency (global list — biased toward scarce roles)
         tops: list[PlayerAcquisitionDetail] = []
         for pl_id, prices in per_acq_prices.get(pid, {}).items():
             name, role = player_meta.get(pl_id, (pl_id, "?"))
@@ -401,12 +413,35 @@ def simulate_auction(
                 )
             )
         tops.sort(key=lambda x: (-x.frequency, x.avg_price))
+
+        # Typical squad: fill each role quota with that role's most frequent buys.
+        # This is the "rosa tipo" — balanced across roles, not global top-N.
+        by_role: dict[str, list[PlayerAcquisitionDetail]] = defaultdict(list)
+        for tp in tops:
+            by_role[tp.role].append(tp)
+        typical: list[PlayerAcquisitionDetail] = []
+        role_order = list(config.role_quotas.keys()) or sorted(by_role.keys())
+        for role in role_order:
+            quota = int(config.role_quotas.get(role, 0))
+            if quota <= 0:
+                continue
+            candidates = by_role.get(role, [])
+            typical.extend(candidates[:quota])
+        # Stable display order: role order, then frequency within role
+        typical.sort(
+            key=lambda x: (
+                role_order.index(x.role) if x.role in role_order else 99,
+                -x.frequency,
+            )
+        )
+
         per_participant[pid] = ParticipantSimStats(
             spend_p10=_percentile(spends, 10), spend_p50=_percentile(spends, 50), spend_p90=_percentile(spends, 90),
             esv_total_p10=_percentile(esvs, 10), esv_total_p50=_percentile(esvs, 50), esv_total_p90=_percentile(esvs, 90),
             completion_probability=float(np.mean(flags)) if flags else 0.0,
             squad_composition_mode=mode_comp,
             top_players=tuple(tops[:25]),
+            typical_squad=tuple(typical),
         )
 
     price_index_drift_p50: dict[str, dict[str, float]] = {}
