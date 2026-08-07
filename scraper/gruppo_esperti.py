@@ -520,7 +520,7 @@ _UPSERT_SQL = """
         (:player_id, :source, :expert_name, :rating, :comment, :matchday, :season_start, :url, :scraped_at,
          :titolarita, :media_voto, :salute, :bonus_label, :bonus_value, :totale, :consiglio_esperti_raw,
          :birth_year, :cross_reference_section, :cross_reference_text)
-    ON CONFLICT (player_id, source, expert_name, matchday) DO UPDATE SET
+    ON CONFLICT (player_id, source, expert_name, matchday, season_start) DO UPDATE SET
         rating = EXCLUDED.rating,
         comment = EXCLUDED.comment,
         url = EXCLUDED.url,

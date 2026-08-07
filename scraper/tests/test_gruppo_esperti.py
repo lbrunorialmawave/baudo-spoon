@@ -171,3 +171,18 @@ def test_match_fantacalcio_id_falls_back_to_full_listone_as_last_resort() -> Non
 
 def test_match_fantacalcio_id_returns_none_when_truly_absent() -> None:
     assert _match_fantacalcio_id("Sconosciuto", "Atalanta", "FWD", _QUOTATIONS) is None
+
+
+# ── _UPSERT_SQL ──────────────────────────────────────────────────────────────
+
+
+def test_upsert_sql_conflict_target_includes_season_start() -> None:
+    # Regression guard: fantacalcio_id (and so player_id = "fc-{id}") is
+    # reassigned to a different physical player every season. Without
+    # season_start in the conflict target, a new season's upsert silently
+    # overwrote a previous season's row in place — matching the DB's
+    # UNIQUE constraint (db/migrations/021_scope_expert_ratings_unique_by_season.sql)
+    # left season_start stuck at whatever it was first inserted with, even
+    # though every other column got the new season's data.
+    assert "ON CONFLICT (player_id, source, expert_name, matchday, season_start)" \
+        in gruppo_esperti._UPSERT_SQL
