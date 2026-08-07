@@ -327,6 +327,14 @@ export interface SimulateAuctionRequest {
   simConfig?: AuctionSimulationConfig;
 }
 
+export interface PlayerAcquisitionDetail {
+  playerId: string;
+  name: string;
+  role: string;
+  frequency: number;
+  avgPrice: number;
+}
+
 export interface ParticipantSimStats {
   spendP10: number;
   spendP50: number;
@@ -336,6 +344,8 @@ export interface ParticipantSimStats {
   esvTotalP90: number;
   completionProbability: number;
   squadCompositionMode: Record<string, number>;
+  /** Most frequently acquired players for this manager across scenarios. */
+  topPlayers?: PlayerAcquisitionDetail[];
 }
 
 export interface PlayerAcquisitionStats {

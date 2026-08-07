@@ -106,6 +106,17 @@ class AuctionSimulationConfig:
 
 
 @dataclass(frozen=True)
+class PlayerAcquisitionDetail:
+    """How often a participant bought a given player across scenarios."""
+
+    player_id: str
+    name: str
+    role: str
+    frequency: float
+    avg_price: float
+
+
+@dataclass(frozen=True)
 class ParticipantSimStats:
     spend_p10: float
     spend_p50: float
@@ -115,6 +126,9 @@ class ParticipantSimStats:
     esv_total_p90: float
     completion_probability: float
     squad_composition_mode: dict[str, int]
+    """Average role counts across completed scenarios (rounded)."""
+    top_players: tuple[PlayerAcquisitionDetail, ...] = ()
+    """Most frequently acquired players by this participant (desc by frequency)."""
 
 
 @dataclass(frozen=True)
@@ -141,6 +155,16 @@ class AuctionSimulationResult:
                     "esv_total_p90": round(s.esv_total_p90, 2),
                     "completion_probability": round(s.completion_probability, 4),
                     "squad_composition_mode": dict(s.squad_composition_mode),
+                    "top_players": [
+                        {
+                            "player_id": tp.player_id,
+                            "name": tp.name,
+                            "role": tp.role,
+                            "frequency": round(tp.frequency, 4),
+                            "avg_price": round(tp.avg_price, 2),
+                        }
+                        for tp in s.top_players
+                    ],
                 }
                 for pid, s in self.per_participant.items()
             },
@@ -314,7 +338,11 @@ def simulate_auction(
     completed_flags: dict[str, list[int]] = defaultdict(list)
     composition_counts: dict[str, Counter[str]] = defaultdict(Counter)
     price_index_samples: list[dict[str, dict[str, float]]] = []
+    # global: player_id -> [(winner_id, price)]
     acquisition: dict[str, list[tuple[str, float]]] = defaultdict(list)
+    # per participant: player_id -> list of prices paid when they won
+    per_acq_prices: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
+    player_meta: dict[str, tuple[str, str]] = {}  # player_id -> (name, role)
     n_completed = 0
 
     for k in range(sim_config.n_simulations):
@@ -346,7 +374,10 @@ def simulate_auction(
             if pstate.budget_residual < 0:
                 warnings.append(f"budget_residual < 0 for {pid} in scenario {k}")
         for a in state.assignments:
-            acquisition[a.player.player_id].append((a.winner_participant_id, float(a.final_price)))
+            pid_pl = a.player.player_id
+            acquisition[pid_pl].append((a.winner_participant_id, float(a.final_price)))
+            per_acq_prices[a.winner_participant_id][pid_pl].append(float(a.final_price))
+            player_meta[pid_pl] = (a.player.name, str(a.player.role))
 
     per_participant: dict[str, ParticipantSimStats] = {}
     for p in participants:
@@ -356,11 +387,26 @@ def simulate_auction(
         flags = completed_flags.get(pid, [0])
         comp = composition_counts.get(pid, Counter())
         mode_comp = {role: int(round(total / max(n_completed, 1))) for role, total in comp.items()}
+        # Top players by acquisition frequency for this participant
+        tops: list[PlayerAcquisitionDetail] = []
+        for pl_id, prices in per_acq_prices.get(pid, {}).items():
+            name, role = player_meta.get(pl_id, (pl_id, "?"))
+            tops.append(
+                PlayerAcquisitionDetail(
+                    player_id=pl_id,
+                    name=name,
+                    role=role,
+                    frequency=len(prices) / max(n_completed, 1),
+                    avg_price=float(np.mean(prices)),
+                )
+            )
+        tops.sort(key=lambda x: (-x.frequency, x.avg_price))
         per_participant[pid] = ParticipantSimStats(
             spend_p10=_percentile(spends, 10), spend_p50=_percentile(spends, 50), spend_p90=_percentile(spends, 90),
             esv_total_p10=_percentile(esvs, 10), esv_total_p50=_percentile(esvs, 50), esv_total_p90=_percentile(esvs, 90),
             completion_probability=float(np.mean(flags)) if flags else 0.0,
             squad_composition_mode=mode_comp,
+            top_players=tuple(tops[:25]),
         )
 
     price_index_drift_p50: dict[str, dict[str, float]] = {}

@@ -27,6 +27,16 @@ import { AuctionService } from '../../../core/services/auction.service';
 
 const DEFAULT_BOT_PRESET_IDS = ['balanced', 'aggressive', 'value_hunter'] as const;
 
+/** Plain-language legend for metrics on each team card. */
+const METRIC_HELP = {
+  completion:
+    'In quanti scenari questa squadra ha riempito tutti gli slot della rosa. 100% = roster completo in ogni run.',
+  spend:
+    'Crediti spesi a fine asta. p10 / p50 / p90: in 1 caso su 10 spendi meno di p10, in metà circa p50, in 1 su 10 più di p90.',
+  esv:
+    'Expected Surplus Value della rosa: valore in più rispetto al prezzo pagato. Più alto = rosa più conveniente sul mercato simulato.',
+} as const;
+
 function policyFromPreset(policy: AuctionPresetPolicy | undefined): BidderPolicy {
   if (!policy) return {};
   return {
@@ -59,18 +69,24 @@ function policyFromPreset(policy: AuctionPresetPolicy | undefined): BidderPolicy
   };
 }
 
+interface ParticipantRow {
+  id: string;
+  name: string;
+  stats: ParticipantSimStats;
+}
+
 @Component({
   selector: 'app-auction-simulation',
   standalone: true,
   imports: [FormsModule, DecimalPipe, PercentPipe],
   template: `
-    <section class="sim-panel card">
+    <section class="sim-panel">
       <header class="sim-header">
         <div>
           <p class="card-section-label">Simulazioni Monte Carlo</p>
-          <p class="sim-subtitle muted">
-            Stima spesa, ESV e probabilità di completamento rosa con bot avversari
-            guidati dai preset strategici. Stateless — non avvia una sessione live.
+          <p class="sim-subtitle">
+            Stima spesa, valore rosa e probabilità di completamento con bot guidati dai preset.
+            Stateless: non avvia una sessione live.
           </p>
         </div>
       </header>
@@ -99,7 +115,7 @@ function policyFromPreset(policy: AuctionPresetPolicy | undefined): BidderPolicy
               </div>
             }
           </div>
-          <p class="muted small">Il primo partecipante (tu) usa un profilo neutro; gli altri N−1 sono bot.</p>
+          <p class="hint">Il primo partecipante (tu) usa un profilo bilanciato; gli altri N−1 sono bot.</p>
         </div>
 
         <div class="field-group">
@@ -108,53 +124,160 @@ function policyFromPreset(policy: AuctionPresetPolicy | undefined): BidderPolicy
             [ngModel]="targetIdsRaw()" (ngModelChange)="targetIdsRaw.set($event)" />
         </div>
 
-        <button type="button" class="primary-btn full-w" [disabled]="loading() || !canRun()" (click)="run()">
+        <button type="button" class="run-btn" [disabled]="loading() || !canRun()" (click)="run()">
           {{ loading() ? 'Simulazione in corso…' : 'Simula' }}
         </button>
-        @if (error(); as err) { <p class="error-text" role="alert">{{ err }}</p> }
+        @if (error(); as err) {
+          <p class="error-text" role="alert">{{ err }}</p>
+        }
       </div>
 
       @if (result(); as res) {
         <div class="sim-results">
-          <p class="muted small">
-            Completate {{ res.nCompleted }} scenari in {{ res.wallTimeSeconds | number: '1.2-2' }}s
+          <p class="sim-meta">
+            Completate <strong>{{ res.nCompleted }}</strong> scenari in
+            {{ res.wallTimeSeconds | number: '1.1-1' }}s
             @if (res.warnings.length) { · {{ res.warnings.length }} warning }
           </p>
+          <p class="hint click-hint">Clicca una card per il dettaglio rosa e i giocatori più frequenti.</p>
+
           <div class="stats-grid">
             @for (row of participantRows(); track row.id) {
-              <article class="stat-card">
-                <h4 class="stat-title">{{ row.name }}</h4>
-                <p class="stat-line">Completamento rosa: <strong>{{ row.stats.completionProbability | percent: '1.0-0' }}</strong></p>
-                <div class="bar-block">
-                  <span class="bar-label">Spesa (p10 / p50 / p90)</span>
+              <button
+                type="button"
+                class="stat-card"
+                [class.stat-card--active]="selectedId() === row.id"
+                (click)="toggleDetail(row.id)"
+                [attr.aria-expanded]="selectedId() === row.id"
+                [attr.aria-label]="'Dettaglio simulazione ' + row.name"
+              >
+                <div class="stat-card__head">
+                  <h4 class="stat-title">{{ row.name }}</h4>
+                  <span class="stat-badge" [class.ok]="row.stats.completionProbability >= 0.9">
+                    {{ row.stats.completionProbability | percent: '1.0-0' }} rosa
+                  </span>
+                </div>
+
+                <div class="metric">
+                  <div class="metric__label">
+                    Completamento rosa
+                    <span class="info" [title]="help.completion">?</span>
+                  </div>
+                  <p class="metric__desc">{{ help.completion }}</p>
+                  <div class="completion-track">
+                    <div class="completion-fill" [style.width.%]="row.stats.completionProbability * 100"></div>
+                  </div>
+                </div>
+
+                <div class="metric">
+                  <div class="metric__label">
+                    Spesa crediti
+                    <span class="info" [title]="help.spend">?</span>
+                  </div>
+                  <p class="metric__desc">{{ help.spend }}</p>
                   <div class="pct-bar">
-                    <div class="pct-fill p50" [style.width.%]="spendWidth(row.stats.spendP50)"></div>
-                    <div class="pct-marker p10" [style.left.%]="spendWidth(row.stats.spendP10)"></div>
-                    <div class="pct-marker p90" [style.left.%]="spendWidth(row.stats.spendP90)"></div>
+                    <div class="pct-fill" [style.width.%]="spendWidth(row.stats.spendP50)"></div>
+                    <div class="pct-marker" [style.left.%]="spendWidth(row.stats.spendP10)"></div>
+                    <div class="pct-marker pct-marker--hi" [style.left.%]="spendWidth(row.stats.spendP90)"></div>
                   </div>
                   <span class="bar-values">
-                    {{ row.stats.spendP10 | number: '1.0-0' }} / {{ row.stats.spendP50 | number: '1.0-0' }} / {{ row.stats.spendP90 | number: '1.0-0' }} cr
+                    p10 {{ row.stats.spendP10 | number: '1.0-0' }}
+                    · p50 {{ row.stats.spendP50 | number: '1.0-0' }}
+                    · p90 {{ row.stats.spendP90 | number: '1.0-0' }} cr
                   </span>
                 </div>
-                <div class="bar-block">
-                  <span class="bar-label">ESV totale (p10 / p50 / p90)</span>
-                  <div class="pct-bar esv">
-                    <div class="pct-fill p50" [style.width.%]="esvWidth(row.stats.esvTotalP50)"></div>
-                    <div class="pct-marker p10" [style.left.%]="esvWidth(row.stats.esvTotalP10)"></div>
-                    <div class="pct-marker p90" [style.left.%]="esvWidth(row.stats.esvTotalP90)"></div>
+
+                <div class="metric">
+                  <div class="metric__label">
+                    Valore rosa (ESV)
+                    <span class="info" [title]="help.esv">?</span>
+                  </div>
+                  <p class="metric__desc">{{ help.esv }}</p>
+                  <div class="pct-bar pct-bar--esv">
+                    <div class="pct-fill" [style.width.%]="esvWidth(row.stats.esvTotalP50)"></div>
+                    <div class="pct-marker" [style.left.%]="esvWidth(row.stats.esvTotalP10)"></div>
+                    <div class="pct-marker pct-marker--hi" [style.left.%]="esvWidth(row.stats.esvTotalP90)"></div>
                   </div>
                   <span class="bar-values">
-                    {{ row.stats.esvTotalP10 | number: '1.1-1' }} / {{ row.stats.esvTotalP50 | number: '1.1-1' }} / {{ row.stats.esvTotalP90 | number: '1.1-1' }}
+                    p10 {{ row.stats.esvTotalP10 | number: '1.1-1' }}
+                    · p50 {{ row.stats.esvTotalP50 | number: '1.1-1' }}
+                    · p90 {{ row.stats.esvTotalP90 | number: '1.1-1' }}
                   </span>
                 </div>
-              </article>
+              </button>
             }
           </div>
+
+          @if (selectedRow(); as sel) {
+            <aside class="detail-panel" role="region" [attr.aria-label]="'Dettaglio ' + sel.name">
+              <div class="detail-panel__head">
+                <div>
+                  <h3 class="detail-title">{{ sel.name }}</h3>
+                  <p class="hint">
+                    Rosa tipica e giocatori acquistati più spesso nelle {{ res.nCompleted }} simulazioni.
+                  </p>
+                </div>
+                <button type="button" class="secondary-btn" (click)="selectedId.set(null)">Chiudi</button>
+              </div>
+
+              <div class="detail-grid">
+                <div class="detail-block">
+                  <p class="card-section-label">Composizione rosa (media)</p>
+                  <p class="hint">Numero medio di giocatori per ruolo a fine asta.</p>
+                  <div class="role-chips">
+                    @for (entry of roleEntries(sel.stats); track entry.role) {
+                      <span class="role-chip"><strong>{{ entry.role }}</strong> × {{ entry.count }}</span>
+                    } @empty {
+                      <span class="hint">Nessun dato di composizione.</span>
+                    }
+                  </div>
+                </div>
+
+                <div class="detail-block detail-block--wide">
+                  <p class="card-section-label">Giocatori più frequenti</p>
+                  <p class="hint">Quanto spesso questo manager ha vinto l’asta sul giocatore e a che prezzo medio.</p>
+                  @if (sel.stats.topPlayers?.length) {
+                    <div class="player-table-wrap">
+                      <table class="player-table">
+                        <thead>
+                          <tr>
+                            <th>Giocatore</th>
+                            <th>Ruolo</th>
+                            <th>Frequenza</th>
+                            <th>Prezzo medio</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          @for (pl of sel.stats.topPlayers; track pl.playerId) {
+                            <tr>
+                              <td>
+                                <span class="pl-name">{{ pl.name }}</span>
+                                <code class="pl-id">{{ pl.playerId }}</code>
+                              </td>
+                              <td>{{ pl.role }}</td>
+                              <td>{{ pl.frequency | percent: '1.0-1' }}</td>
+                              <td>{{ pl.avgPrice | number: '1.0-1' }} cr</td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  } @else {
+                    <p class="hint">Nessun acquisto registrato per questo manager.</p>
+                  }
+                </div>
+              </div>
+            </aside>
+          }
+
           @if (targetAcquisitions().length) {
-            <div class="acq-table-wrap">
+            <div class="acq-block">
               <p class="card-section-label">Probabilità acquisizione (obiettivi)</p>
-              <table class="acq-table">
-                <thead><tr><th>Player</th><th>Prob.</th><th>Prezzo medio</th></tr></thead>
+              <p class="hint">Su tutti i manager: quanto spesso il player finisce assegnato in un’asta simulata.</p>
+              <table class="player-table">
+                <thead>
+                  <tr><th>Player</th><th>Prob.</th><th>Prezzo medio</th></tr>
+                </thead>
                 <tbody>
                   @for (row of targetAcquisitions(); track row.playerId) {
                     <tr>
@@ -175,52 +298,82 @@ function policyFromPreset(policy: AuctionPresetPolicy | undefined): BidderPolicy
 })
 export class AuctionSimulationComponent {
   private readonly auctionService = inject(AuctionService);
+
   readonly participants = input.required<AuctionParticipantSetup[]>();
   readonly config = input.required<AuctionConfig>();
   readonly seasonStart = input.required<number>();
+
   readonly availablePresets: readonly AuctionPreset[] = AUCTION_PRESETS;
+  readonly help = METRIC_HELP;
+
   readonly nSimulations = signal(200);
   readonly botPresetIds = signal<string[]>([]);
   readonly targetIdsRaw = signal('');
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
   readonly result = signal<AuctionSimulationResponse | null>(null);
+  readonly selectedId = signal<string | null>(null);
+
   readonly botSlots = computed(() => this.participants().slice(1));
+
   readonly canRun = computed(() => {
     const parts = this.participants();
     const cfg = this.config();
     return parts.length >= 1 && !!cfg?.numParticipants && cfg.numParticipants >= 1;
   });
-  readonly participantRows = computed(() => {
+
+  readonly participantRows = computed((): ParticipantRow[] => {
     const res = this.result();
-    if (!res) return [] as { id: string; name: string; stats: ParticipantSimStats }[];
+    if (!res) return [];
     const parts = this.participants();
     return Object.entries(res.perParticipant).map(([id, stats]) => ({
-      id, name: parts.find((p) => p.participantId === id)?.displayName ?? id, stats,
+      id,
+      name: parts.find((p) => p.participantId === id)?.displayName ?? id,
+      stats,
     }));
   });
+
+  readonly selectedRow = computed((): ParticipantRow | null => {
+    const id = this.selectedId();
+    if (!id) return null;
+    return this.participantRows().find((r) => r.id === id) ?? null;
+  });
+
   readonly targetAcquisitions = computed(() => {
     const res = this.result();
     if (!res) return [];
-    const ids = this.targetIdsRaw().split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
+    const ids = this.targetIdsRaw()
+      .split(/[,;\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
     if (!ids.length) return [];
-    return ids.map((playerId) => {
-      const stats = res.playerAcquisitionProbability[playerId];
-      return stats ? { playerId, prob: stats.prob, avgPrice: stats.avgPrice } : { playerId, prob: 0, avgPrice: 0 };
-    }).sort((a, b) => b.prob - a.prob);
+    return ids
+      .map((playerId) => {
+        const stats = res.playerAcquisitionProbability[playerId];
+        return stats
+          ? { playerId, prob: stats.prob, avgPrice: stats.avgPrice }
+          : { playerId, prob: 0, avgPrice: 0 };
+      })
+      .sort((a, b) => b.prob - a.prob);
   });
+
   private maxSpend = 1;
   private maxEsv = 1;
 
   constructor() {
-    effect(() => { this.participants(); this.ensureBotPresets(); });
+    effect(() => {
+      this.participants();
+      this.ensureBotPresets();
+    });
   }
 
   ensureBotPresets(): void {
     const bots = this.botSlots();
     const current = this.botPresetIds();
     if (current.length === bots.length) return;
-    this.botPresetIds.set(bots.map((_, i) => current[i] ?? DEFAULT_BOT_PRESET_IDS[i % DEFAULT_BOT_PRESET_IDS.length]));
+    this.botPresetIds.set(
+      bots.map((_, i) => current[i] ?? DEFAULT_BOT_PRESET_IDS[i % DEFAULT_BOT_PRESET_IDS.length]),
+    );
   }
 
   setBotPreset(index: number, presetId: string): void {
@@ -230,9 +383,20 @@ export class AuctionSimulationComponent {
     this.botPresetIds.set(next);
   }
 
+  toggleDetail(id: string): void {
+    this.selectedId.update((cur) => (cur === id ? null : id));
+  }
+
+  roleEntries(stats: ParticipantSimStats): { role: string; count: number }[] {
+    return Object.entries(stats.squadCompositionMode ?? {})
+      .map(([role, count]) => ({ role, count }))
+      .sort((a, b) => a.role.localeCompare(b.role));
+  }
+
   spendWidth(value: number): number {
     return Math.max(0, Math.min(100, (value / Math.max(this.maxSpend, 1)) * 100));
   }
+
   esvWidth(value: number): number {
     return Math.max(0, Math.min(100, (Math.max(0, value) / Math.max(this.maxEsv, 1)) * 100));
   }
@@ -242,9 +406,12 @@ export class AuctionSimulationComponent {
     this.error.set(null);
     this.loading.set(true);
     this.result.set(null);
+    this.selectedId.set(null);
+
     const parts = this.participants();
     const cfg = this.config();
     const botIds = this.botPresetIds();
+
     const bidderProfiles: BidderProfile[] = parts.map((p, i) => {
       if (i === 0) {
         const balanced = findAuctionPreset('balanced');
@@ -253,6 +420,7 @@ export class AuctionSimulationComponent {
       const preset = findAuctionPreset(botIds[i - 1] ?? 'balanced');
       return { participantId: p.participantId, policy: policyFromPreset(preset?.policy) };
     });
+
     const req: SimulateAuctionRequest = {
       seasonStart: this.seasonStart(),
       participants: parts,
@@ -260,15 +428,19 @@ export class AuctionSimulationComponent {
       bidderProfiles,
       simConfig: { nSimulations: this.nSimulations(), randomSeed: 42 },
     };
+
     this.auctionService.simulate(req).subscribe({
       next: (res) => {
-        let ms = 1, me = 1;
+        let ms = 1;
+        let me = 1;
         for (const s of Object.values(res.perParticipant)) {
           ms = Math.max(ms, s.spendP90, s.spendP50);
           me = Math.max(me, s.esvTotalP90, s.esvTotalP50, 1);
         }
-        this.maxSpend = ms; this.maxEsv = me;
-        this.result.set(res); this.loading.set(false);
+        this.maxSpend = ms;
+        this.maxEsv = me;
+        this.result.set(res);
+        this.loading.set(false);
       },
       error: (err) => {
         const detail = err?.error?.detail ?? err?.message ?? 'Simulazione fallita';

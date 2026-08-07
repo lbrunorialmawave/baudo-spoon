@@ -1045,6 +1045,16 @@ class SimulateAuctionRequest(_CamelModel):
     bidder_profiles: list[BidderProfileSchema] = Field(default_factory=list)
     sim_config: AuctionSimulationConfigSchema = Field(default_factory=AuctionSimulationConfigSchema)
 
+class PlayerAcquisitionDetailSchema(_CamelModel):
+    """How often a participant acquired a player across Monte Carlo scenarios."""
+
+    player_id: str
+    name: str
+    role: str
+    frequency: float
+    avg_price: float
+
+
 class ParticipantSimStatsSchema(_CamelModel):
     spend_p10: float
     spend_p50: float
@@ -1054,6 +1064,7 @@ class ParticipantSimStatsSchema(_CamelModel):
     esv_total_p90: float
     completion_probability: float
     squad_composition_mode: dict[str, int] = Field(default_factory=dict)
+    top_players: list[PlayerAcquisitionDetailSchema] = Field(default_factory=list)
 
 class PlayerAcquisitionStatsSchema(_CamelModel):
     prob: float

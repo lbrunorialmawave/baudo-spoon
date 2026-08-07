@@ -444,6 +444,16 @@ async def simulate_auction_endpoint(
                 esv_total_p10=s.esv_total_p10, esv_total_p50=s.esv_total_p50, esv_total_p90=s.esv_total_p90,
                 completion_probability=s.completion_probability,
                 squad_composition_mode=dict(s.squad_composition_mode),
+                top_players=[
+                    {
+                        "player_id": tp.player_id,
+                        "name": tp.name,
+                        "role": tp.role,
+                        "frequency": tp.frequency,
+                        "avg_price": tp.avg_price,
+                    }
+                    for tp in (s.top_players or ())
+                ],
             )
             for pid, s in result.per_participant.items()
         },
