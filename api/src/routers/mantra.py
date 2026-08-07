@@ -29,6 +29,7 @@ from ml.storage.artifact_store import ArtifactStore, R2Config
 
 from ..config import settings
 from ..deps import get_db, require_role
+from ..services.player_enrichment import enrich_with_matchday_status
 
 log = logging.getLogger(__name__)
 
@@ -58,63 +59,6 @@ def _get_artifact_store() -> ArtifactStore:
             ),
         )
     return _artifact_store
-
-
-async def _enrich_with_matchday_status(db: AsyncSession, players: list[dict]) -> list[dict]:
-    """Add the real scr aped titolarità to each MANTRA player.
-
-    Reads ``player_matchday_status`` (populated by the probabili-formazioni
-    scraper) for the season of the loaded MANTRA results and the most recent
-    available matchday, keyed by ``fantacalcio_id``. Each player gains two
-    read-only fields — ``status_scraped`` (starter/bench/doubtful) and
-    ``probability_scraped`` (0-100) — that reflect the real line-up picture,
-    kept distinct from the ML-derived ``start_probability``. Players without
-    a scrape row are left with ``None``; an empty/absent table is a no-op.
-    """
-    if not players:
-        return players
-
-    # Season: prefer the MANTRA results' own season, else the latest quotation.
-    season = None
-    for p in players:
-        if p.get("season_start") is not None:
-            season = int(p["season_start"])
-            break
-    if season is None:
-        season = await db.scalar(sa.text("SELECT MAX(season_start) FROM player_quotations"))
-    if season is None:
-        return players
-
-    # Most recent matchday present for that season in the scrape table.
-    matchday = await db.scalar(
-        sa.text("SELECT MAX(matchday) FROM player_matchday_status WHERE season_start = :s"),
-        {"s": season},
-    )
-    if matchday is None:
-        return players
-
-    rows = (await db.execute(
-        sa.text(
-            "SELECT fantacalcio_id, status, probability "
-            "FROM player_matchday_status "
-            "WHERE season_start = :s AND matchday = :m"
-        ),
-        {"s": season, "m": matchday},
-    )).all()
-    by_id = {r.fantacalcio_id: r for r in rows}
-
-    out: list[dict] = []
-    for p in players:
-        record = dict(p)
-        row = by_id.get(p.get("fantacalcio_id"))
-        if row is not None:
-            record["status_scraped"] = row.status
-            record["probability_scraped"] = row.probability
-        else:
-            record["status_scraped"] = None
-            record["probability_scraped"] = None
-        out.append(record)
-    return out
 
 
 async def _load_mantra_results(db: AsyncSession) -> dict:
@@ -171,7 +115,7 @@ async def list_mantra_players(
     # recente. Chiave di join: fantacalcio_id (coerente tra le due fonti).
     # Sorgente separata da start_probability (ML): non la sovrascriviamo.
     try:
-        players = await _enrich_with_matchday_status(db, players)
+        players = await enrich_with_matchday_status(db, players)
     except Exception:
         # L'arricchimento non deve mai far fallire la lista MANTRA.
         log.warning("matchday_status enrichment skipped", exc_info=True)

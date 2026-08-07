@@ -32,6 +32,11 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'overview',
+        loadComponent: () =>
+          import('./features/overview/overview.component').then((m) => m.OverviewComponent),
+      },
+      {
         path: 'optimizer',
         loadComponent: () =>
           import('./features/optimizer/optimizer.component').then((m) => m.OptimizerComponent),

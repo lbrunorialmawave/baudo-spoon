@@ -371,6 +371,53 @@ class HybridSortField(str, Enum):
     vr = "VR"
 
 
+# Transform selected snake_case keys to camelCase for the frontend. Explicit
+# mapping ensures FP_Corr, CP_Corr etc. are handled correctly. Module-level
+# (not just used by /predictions/hybrid) so /overview/players can reuse the
+# exact same conversion without duplicating it.
+_CAMEL_OVERRIDES = {
+    "player_name": "playerName",
+    "player_fotmob_id": "playerFotmobId",
+    "season_start": "seasonStart",
+    "ruolo_primario": "ruoloPrimario",
+    "ruoli_mantra": "ruoliMantra",
+    "has_ml_data": "hasMlData",
+    "predicted_fantavoto": "predictedFantavoto",
+    "prediction_std": "predictionStd",
+    "expected_minutes": "expectedMinutes",
+    "var_score": "varScore",
+    "next_season_predicted": "nextSeasonPredicted",
+    "ml_score_norm": "mlScoreNorm",
+    "confidence_score": "confidenceScore",
+    "fp_gap": "fpGap",
+    "fp_ibrido": "fpIbrido",
+    "expected_value": "expectedValue",
+    "prezzo_massimo": "prezzoMassimo",
+    "hybrid_labels": "hybridLabels",
+    # Mixed-case keys that must pass through unchanged
+    "FP_Corr": "FP_Corr",
+    "CP_Corr": "CP_Corr",
+    "FP_Mantra": "FP_Mantra",
+    "Prezzo_Massimo": "prezzoMassimo",
+    "Fase7": "Fase7",
+}
+
+
+def _to_camel(key: str) -> str:
+    if key in _CAMEL_OVERRIDES:
+        return _CAMEL_OVERRIDES[key]
+    # Keys already camelCase pass through unchanged
+    if "_" not in key:
+        return key
+    # Mixed-case keys with underscore (FP_Corr, CP_Corr, FP_Mantra, Prezzo_Massimo, Fase7)
+    # contain acronym parts — pass them through as-is
+    if any(c.isupper() for c in key):
+        return key
+    # Generic snake_case → camelCase
+    parts = key.split("_")
+    return parts[0] + "".join(p.capitalize() for p in parts[1:])
+
+
 async def _load_hybrid_results(
     artifact_store: ArtifactStore, db: AsyncSession, repo: DataRepository
 ) -> tuple[int, dict[str, Any]]:
@@ -456,49 +503,8 @@ async def list_hybrid_predictions(
     start = (page - 1) * size
     items = players[start:start + size]
 
-    # Transform selected snake_case keys to camelCase for the frontend.
-    # Explicit mapping ensures FP_Corr, CP_Corr etc. are handled correctly.
-    _CAMEL_OVERRIDES = {
-        "player_name": "playerName",
-        "player_fotmob_id": "playerFotmobId",
-        "season_start": "seasonStart",
-        "ruolo_primario": "ruoloPrimario",
-        "ruoli_mantra": "ruoliMantra",
-        "has_ml_data": "hasMlData",
-        "predicted_fantavoto": "predictedFantavoto",
-        "prediction_std": "predictionStd",
-        "expected_minutes": "expectedMinutes",
-        "var_score": "varScore",
-        "next_season_predicted": "nextSeasonPredicted",
-        "ml_score_norm": "mlScoreNorm",
-        "confidence_score": "confidenceScore",
-        "fp_gap": "fpGap",
-        "fp_ibrido": "fpIbrido",
-        "expected_value": "expectedValue",
-        "prezzo_massimo": "prezzoMassimo",
-        "hybrid_labels": "hybridLabels",
-        # Mixed-case keys that must pass through unchanged
-        "FP_Corr": "FP_Corr",
-        "CP_Corr": "CP_Corr",
-        "FP_Mantra": "FP_Mantra",
-        "Prezzo_Massimo": "prezzoMassimo",
-        "Fase7": "Fase7",
-    }
-
-    def _to_camel(key: str) -> str:
-        if key in _CAMEL_OVERRIDES:
-            return _CAMEL_OVERRIDES[key]
-        # Keys already camelCase pass through unchanged
-        if "_" not in key:
-            return key
-        # Mixed-case keys with underscore (FP_Corr, CP_Corr, FP_Mantra, Prezzo_Massimo, Fase7)
-        # contain acronym parts — pass them through as-is
-        if any(c.isupper() for c in key):
-            return key
-        # Generic snake_case → camelCase
-        parts = key.split("_")
-        return parts[0] + "".join(p.capitalize() for p in parts[1:])
-
+    # camelCase conversion via the module-level _to_camel/_CAMEL_OVERRIDES
+    # (shared with /overview/players — see routers/overview.py).
     camel_items = [
         {_to_camel(k): v for k, v in p.items()}
         for p in items
