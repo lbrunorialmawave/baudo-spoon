@@ -145,43 +145,47 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Path fantavoto: input utente oppure quello scaricato da R2
-          FANTAVOTO_FLAG=""
-          if [ -n "${{ github.event.inputs.fantavoto_csv }}" ]; then
-            FANTAVOTO_FLAG='--fantavoto-csv "${{ github.event.inputs.fantavoto_csv }}"'
-          elif [ -f artifacts/fantavoto_real.csv ]; then
-            FANTAVOTO_FLAG="--fantavoto-csv /app/artifacts/fantavoto_real.csv"
-          fi
+          # Costruisci gli argomenti in un array (gestisce correttamente gli spazi)
+          ARGS=()
 
-          OUTPUT_FLAG=""
-          if [ -n "${{ github.event.inputs.output_dir }}" ]; then
-            OUTPUT_FLAG='--output-dir "${{ github.event.inputs.output_dir }}"'
-          fi
-
-          LEAGUE_FLAG=""
           if [ -n "${{ github.event.inputs.league }}" ]; then
-            LEAGUE_FLAG='--league "${{ github.event.inputs.league }}"'
+            ARGS+=(--league "${{ github.event.inputs.league }}")
           fi
 
-          TUNE_FLAG=""
+          ARGS+=(--clusters "${{ github.event.inputs.clusters || '6' }}")
+          ARGS+=(--tune-iter "${{ github.event.inputs.tune_iter || '30' }}")
+          ARGS+=(--test-seasons "${{ github.event.inputs.test_seasons || '1' }}")
+          ARGS+=(--min-minutes "${{ github.event.inputs.min_minutes || '800' }}")
+          ARGS+=(--seed "${{ github.event.inputs.seed || '42' }}")
+          ARGS+=(--log-level "${{ github.event.inputs.log_level || 'INFO' }}")
+
           if [ "${{ github.event.inputs.tune }}" = "true" ]; then
-            TUNE_FLAG="--tune"
+            ARGS+=(--tune)
           fi
 
-          PREDICT_NEXT_FLAG=""
           if [ "${{ github.event.inputs.predict_next }}" = "true" ]; then
-            PREDICT_NEXT_FLAG="--predict-next"
+            ARGS+=(--predict-next)
           fi
 
-          EVALUATE_MANTRA_FLAG=""
           if [ "${{ github.event.inputs.evaluate_mantra }}" = "true" ]; then
-            EVALUATE_MANTRA_FLAG="--evaluate-mantra"
+            ARGS+=(--evaluate-mantra)
           fi
 
-          echo "Starting pipeline with fantavoto flag: ${FANTAVOTO_FLAG:-<none>}"
+          # Fantavoto: path custom oppure quello scaricato da R2
+          if [ -n "${{ github.event.inputs.fantavoto_csv }}" ]; then
+            ARGS+=(--fantavoto-csv "${{ github.event.inputs.fantavoto_csv }}")
+          elif [ -f artifacts/fantavoto_real.csv ]; then
+            ARGS+=(--fantavoto-csv /app/artifacts/fantavoto_real.csv)
+          fi
 
-          # Monta ./artifacts → /app/artifacts così il CSV scaricato è visibile
-          # e gli output della pipeline restano sul runner (upload artifact sotto).
+          if [ -n "${{ github.event.inputs.output_dir }}" ]; then
+            ARGS+=(--output-dir "${{ github.event.inputs.output_dir }}")
+          fi
+
+          ARGS+=(--json-logs)
+
+          echo "Pipeline args: ${ARGS[*]}"
+
           docker run --rm \
             -e ML_DATABASE_URL \
             -e ML_R2_ENDPOINT_URL \
@@ -191,19 +195,7 @@ jobs:
             -e ML_ARTIFACTS_DIR=/app/artifacts \
             -v "${{ github.workspace }}/artifacts:/app/artifacts" \
             ml-runner:latest \
-            ${LEAGUE_FLAG} \
-            --clusters "${{ github.event.inputs.clusters || '6' }}" \
-            --tune-iter "${{ github.event.inputs.tune_iter || '30' }}" \
-            --test-seasons "${{ github.event.inputs.test_seasons || '1' }}" \
-            --min-minutes "${{ github.event.inputs.min_minutes || '800' }}" \
-            --seed "${{ github.event.inputs.seed || '42' }}" \
-            --log-level "${{ github.event.inputs.log_level || 'INFO' }}" \
-            ${TUNE_FLAG} \
-            ${PREDICT_NEXT_FLAG} \
-            ${EVALUATE_MANTRA_FLAG} \
-            ${FANTAVOTO_FLAG} \
-            ${OUTPUT_FLAG} \
-            --json-logs
+            "${ARGS[@]}"
 
       - name: List produced artifacts
         if: always()
