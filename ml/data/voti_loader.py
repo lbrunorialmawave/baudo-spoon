@@ -39,18 +39,19 @@ import argparse
 import json
 import logging
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any
 
 import pandas as pd
 import sqlalchemy as sa
 
 from .import_quotations import (
+    apply_team_alias,
     last_name_token,
     normalise_player_name,
     normalise_team,
-    apply_team_alias,
 )
 
 log = logging.getLogger(__name__)
@@ -60,10 +61,10 @@ log = logging.getLogger(__name__)
 
 #: Italian (Fantacalcio) role labels in the JSON → canonical pipeline role.
 ROLE_IT_TO_CANONICAL: dict[str, str] = {
-    "Portiere":        "GK",
-    "Difensore":       "DEF",
-    "Centrocampista":  "MID",
-    "Attaccante":      "FWD",
+    "Portiere": "GK",
+    "Difensore": "DEF",
+    "Centrocampista": "MID",
+    "Attaccante": "FWD",
 }
 
 #: Regex to extract the starting year from a filename like
@@ -87,14 +88,17 @@ _NO_VOTE_TOKENS: frozenset[str] = frozenset({"s.v.", "sv", "55"})
 
 # ── Data structures ──────────────────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class SeasonVotiFile:
     """A voti JSON with its inferred ``season_start`` year."""
+
     path: Path
     season_start: int
 
 
 # ── JSON parsing ─────────────────────────────────────────────────────────────
+
 
 def discover_voti_files(voti_dir: Path) -> list[SeasonVotiFile]:
     """Find all ``voti_fantacalcio-YYYY-YY.json`` files and infer the season.
@@ -118,7 +122,7 @@ def discover_voti_files(voti_dir: Path) -> list[SeasonVotiFile]:
     return out
 
 
-def _parse_italian_decimal(s: str) -> Optional[float]:
+def _parse_italian_decimal(s: str) -> float | None:
     """Parse ``"6,5"`` → ``6.5``.
 
     Returns ``None`` for:
@@ -180,28 +184,30 @@ def parse_voti_file(file: SeasonVotiFile) -> pd.DataFrame:
                 team = player.get("squadra", "")
                 role_it = player.get("ruolo", "")
 
-                rows.append({
-                    "season_start":      file.season_start,
-                    "matchday":          matchday,
-                    "match_date":        match_date,
-                    "team":              team,
-                    "opponent":          away if team == home else home,
-                    "is_home":           team == home,
-                    "name":              player.get("nome", ""),
-                    "role":              ROLE_IT_TO_CANONICAL.get(role_it, ""),
-                    "status":            player.get("stato", ""),
-                    "voto":              voto,
-                    "fantavoto":         fantavoto,
-                    "played":            1,
-                    "goals_scored":      int(bonus.get("gol_segnati", 0) or 0),
-                    "penalties_scored":  int(bonus.get("rigori_segnati", 0) or 0),
-                    "penalties_saved":   int(bonus.get("rigori_parati", 0) or 0),
-                    "assists":           int(bonus.get("assist", 0) or 0),
-                    "potm":              int(bonus.get("player_of_the_match", 0) or 0),
-                    "goals_conceded":    int(malus.get("gol_subiti", 0) or 0),
-                    "own_goals":         int(malus.get("autoreti", 0) or 0),
-                    "penalties_missed":  int(malus.get("rigori_sbagliati", 0) or 0),
-                })
+                rows.append(
+                    {
+                        "season_start": file.season_start,
+                        "matchday": matchday,
+                        "match_date": match_date,
+                        "team": team,
+                        "opponent": away if team == home else home,
+                        "is_home": team == home,
+                        "name": player.get("nome", ""),
+                        "role": ROLE_IT_TO_CANONICAL.get(role_it, ""),
+                        "status": player.get("stato", ""),
+                        "voto": voto,
+                        "fantavoto": fantavoto,
+                        "played": 1,
+                        "goals_scored": int(bonus.get("gol_segnati", 0) or 0),
+                        "penalties_scored": int(bonus.get("rigori_segnati", 0) or 0),
+                        "penalties_saved": int(bonus.get("rigori_parati", 0) or 0),
+                        "assists": int(bonus.get("assist", 0) or 0),
+                        "potm": int(bonus.get("player_of_the_match", 0) or 0),
+                        "goals_conceded": int(malus.get("gol_subiti", 0) or 0),
+                        "own_goals": int(malus.get("autoreti", 0) or 0),
+                        "penalties_missed": int(malus.get("rigori_sbagliati", 0) or 0),
+                    }
+                )
 
     df = pd.DataFrame(rows)
     log.info("  → %d player-match rows after s.v. filter", len(df))
@@ -218,6 +224,7 @@ def parse_all(voti_dir: Path) -> pd.DataFrame:
 
 # ── Aggregation to player-season target ─────────────────────────────────────
 
+
 def aggregate_fantavoto_medio(df_long: pd.DataFrame) -> pd.DataFrame:
     """Aggregate match-level votes to a single mean per (player, season).
 
@@ -230,20 +237,25 @@ def aggregate_fantavoto_medio(df_long: pd.DataFrame) -> pd.DataFrame:
     fantavoto values, which is the standard Fantacalcio convention.
     """
     if df_long.empty:
-        return pd.DataFrame(columns=[
-            "name", "role", "team", "season_start",
-            "fantavoto_medio", "n_votes", "n_matches",
-        ])
-
-    grouped = (
-        df_long
-        .groupby(["name", "role", "season_start"], dropna=False, as_index=False)
-        .agg(
-            fantavoto_medio=("fantavoto", "mean"),
-            n_votes=("fantavoto", "size"),
-            n_matches=("matchday", "nunique"),
-            team=("team", lambda s: s.value_counts().idxmax()),
+        return pd.DataFrame(
+            columns=[
+                "name",
+                "role",
+                "team",
+                "season_start",
+                "fantavoto_medio",
+                "n_votes",
+                "n_matches",
+            ]
         )
+
+    grouped = df_long.groupby(
+        ["name", "role", "season_start"], dropna=False, as_index=False
+    ).agg(
+        fantavoto_medio=("fantavoto", "mean"),
+        n_votes=("fantavoto", "size"),
+        n_matches=("matchday", "nunique"),
+        team=("team", lambda s: s.value_counts().idxmax()),
     )
     # A more honest "primary team" is the one with the most appearances.
     # (lambda above does exactly that.)  Sort for deterministic output.
@@ -257,6 +269,7 @@ def aggregate_fantavoto_medio(df_long: pd.DataFrame) -> pd.DataFrame:
 
 
 # ── Mapping Fantacalcio name → FotMob ID ─────────────────────────────────────
+
 
 def _load_id_map(engine: sa.Engine) -> pd.DataFrame:
     """Load the canonical Fantacalcio-id → FotMob-id map.
@@ -286,14 +299,10 @@ def _load_id_map(engine: sa.Engine) -> pd.DataFrame:
     """)
     df = pd.read_sql(sql, engine)
 
-    df["name_norm"]      = df["name_fantacalcio"].map(normalise_player_name)
-    df["team_norm"]      = (
-        df["team_fantacalcio"]
-        .map(normalise_team)
-        .map(apply_team_alias)
-    )
+    df["name_norm"] = df["name_fantacalcio"].map(normalise_player_name)
+    df["team_norm"] = df["team_fantacalcio"].map(normalise_team).map(apply_team_alias)
     df["last_name_norm"] = df["name_norm"].map(last_name_token)
-    df["role"]           = df["canonical_role"]
+    df["role"] = df["canonical_role"]
     return df
 
 
@@ -323,12 +332,10 @@ def map_voti_to_fotmob(
         return df_agg.copy()
 
     work = df_agg.copy()
-    work["name_norm"]      = work["name"].map(normalise_player_name)
-    work["team_norm"]      = (
-        work["team"].map(normalise_team).map(apply_team_alias)
-    )
+    work["name_norm"] = work["name"].map(normalise_player_name)
+    work["team_norm"] = work["team"].map(normalise_team).map(apply_team_alias)
     work["last_name_norm"] = work["name_norm"].map(last_name_token)
-    work["match_method"]   = "unmatched"
+    work["match_method"] = "unmatched"
     work["player_fotmob_id"] = pd.NA
 
     # Build a small helper to drop duplicate matches before merge so
@@ -365,10 +372,7 @@ def map_voti_to_fotmob(
         # Only fill rows that are currently unmatched AND that the merge
         # can resolve.  This is the key invariant that keeps the stage
         # labels honest.
-        hit = (
-            (work["match_method"] == "unmatched")
-            & merged["_fotmob_id"].notna()
-        )
+        hit = (work["match_method"] == "unmatched") & merged["_fotmob_id"].notna()
         work.loc[hit, "player_fotmob_id"] = merged.loc[hit, "_fotmob_id"].values
         work.loc[hit, "match_method"] = method
         after_unmatched = (work["match_method"] == "unmatched").sum()
@@ -404,13 +408,14 @@ def map_voti_to_fotmob(
     )
 
     matched = (work["player_fotmob_id"].notna()).sum()
-    total   = len(work)
+    total = len(work)
     log.info("Mapping summary: %d / %d rows matched to a FotMob ID", matched, total)
 
     return work
 
 
 # ── End-to-end CSV builder ──────────────────────────────────────────────────
+
 
 def build_fantavoto_csv(
     voti_dir: Path,
@@ -424,12 +429,11 @@ def build_fantavoto_csv(
     """
     log.info("Discovering voti files in %s …", voti_dir)
     files = discover_voti_files(voti_dir)
-    log.info("Found %d season file(s): %s",
-             len(files), ", ".join(f.path.name for f in files))
-
-    df_long = pd.concat(
-        (parse_voti_file(f) for f in files), ignore_index=True
+    log.info(
+        "Found %d season file(s): %s", len(files), ", ".join(f.path.name for f in files)
     )
+
+    df_long = pd.concat((parse_voti_file(f) for f in files), ignore_index=True)
     if df_long.empty:
         raise ValueError(
             "Voti files parsed but produced no rows — check the JSON format."
@@ -448,11 +452,16 @@ def build_fantavoto_csv(
     # Overrides update the player_fotmob_id for rows that the automatic
     # mapping got wrong or left unmatched.
     import os as _os
+
     override_csv = _os.environ.get("ML_MATCH_OVERRIDES")
     if override_csv:
         override_path = Path(override_csv)
         if override_path.exists():
-            from .match_override import apply_overrides_to_voti_mapping, load_overrides_csv
+            from .match_override import (
+                apply_overrides_to_voti_mapping,
+                load_overrides_csv,
+            )
+
             _overrides = load_overrides_csv(override_path)
             if _overrides:
                 df_mapped = apply_overrides_to_voti_mapping(df_mapped, _overrides)
@@ -461,13 +470,23 @@ def build_fantavoto_csv(
 
     # Output schema: prefer the FotMob-id-based merge key, but also keep
     # name+season_label as a fallback column for debugging.
-    out = df_mapped[[
-        "player_fotmob_id", "season_start", "name", "team", "role",
-        "fantavoto_medio", "n_votes", "n_matches", "match_method",
-    ]].copy()
+    out = df_mapped[
+        [
+            "player_fotmob_id",
+            "season_start",
+            "name",
+            "team",
+            "role",
+            "fantavoto_medio",
+            "n_votes",
+            "n_matches",
+            "match_method",
+        ]
+    ].copy()
     out["player_fotmob_id"] = out["player_fotmob_id"].astype("Int64")
-    out = out.sort_values(["season_start", "fantavoto_medio"],
-                          ascending=[True, False]).reset_index(drop=True)
+    out = out.sort_values(
+        ["season_start", "fantavoto_medio"], ascending=[True, False]
+    ).reset_index(drop=True)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(output_path, index=False, encoding="utf-8")
@@ -476,8 +495,7 @@ def build_fantavoto_csv(
     # Match-rate report.
     matched = out["player_fotmob_id"].notna().sum()
     pct = (matched / len(out) * 100) if len(out) else 0.0
-    log.info("Match rate vs player_id_map: %d / %d (%.1f%%)",
-             matched, len(out), pct)
+    log.info("Match rate vs player_id_map: %d / %d (%.1f%%)", matched, len(out), pct)
     by_method = out["match_method"].value_counts().to_dict()
     log.info("Match methods: %s", by_method)
 
@@ -485,6 +503,7 @@ def build_fantavoto_csv(
 
 
 # ── CLI ─────────────────────────────────────────────────────────────────────
+
 
 def _build_argparser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -495,28 +514,36 @@ def _build_argparser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
-        "--voti-dir", type=Path, required=True,
+        "--voti-dir",
+        type=Path,
+        required=True,
         help="Directory containing voti_fantacalcio-YYYY-YY.json files.",
     )
     p.add_argument(
-        "--output", type=Path, required=True,
+        "--output",
+        type=Path,
+        required=True,
         help="Destination CSV path.",
     )
     p.add_argument(
-        "--database-url", type=str, default=None,
+        "--database-url",
+        type=str,
+        default=None,
         help=(
             "Override the ML_DATABASE_URL env var if you need to target "
             "a different DB than the one used by the pipeline."
         ),
     )
     p.add_argument(
-        "--log-level", type=str, default="INFO",
+        "--log-level",
+        type=str,
+        default="INFO",
         help="Python logging level (default: INFO).",
     )
     return p
 
 
-def main(argv: Optional[Iterable[str]] = None) -> int:
+def main(argv: Iterable[str] | None = None) -> int:
     args = _build_argparser().parse_args(argv)
 
     logging.basicConfig(

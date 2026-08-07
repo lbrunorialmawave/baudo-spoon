@@ -92,12 +92,12 @@ from ml.auction.price_drift import (
     update_price_index,
 )
 
-__all__ = [
+__all__ = [  # noqa: RUF022 — grouped by module/purpose, not alphabetically, on purpose
     # models
     "ADJACENT_TIERS",
     "ALL_TIERS",
-    "AlternativesConfig",
     "AlternativeSuggestion",
+    "AlternativesConfig",
     "AssignmentRecord",
     "AuctionConfig",
     "AuctionState",
@@ -108,15 +108,15 @@ __all__ = [
     "RecordResult",
     # orchestrator
     "AuctionSession",
+    "deserialize_state",
+    "get_auction_summary",
     "initialize_auction",
     "record_assignment",
-    "undo_last_assignment",
-    "get_auction_summary",
     "serialize_state",
-    "deserialize_state",
+    "undo_last_assignment",
     # pure price drift
-    "classify_tier",
     "build_initial_price_index",
+    "classify_tier",
     "compute_baseline_cost",
     "compute_expected_price",
     "get_current_projection",

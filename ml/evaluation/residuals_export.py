@@ -21,10 +21,12 @@ Schema (written as ``residuals.json`` via ArtifactStore → local + R2):
 ``residual = actual_fantavoto_medio - predicted``.
 Compatible with ``ml.optimizer.residual_loader`` and ``MonteCarloSimulator.fit``.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +42,9 @@ def build_residuals_payload(
     extra_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Wrap residual rows in the artifact envelope."""
-    players = {str(r.get("player_id")) for r in residuals if r.get("player_id") is not None}
+    players = {
+        str(r.get("player_id")) for r in residuals if r.get("player_id") is not None
+    }
     roles = {str(r.get("role")) for r in residuals if r.get("role") is not None}
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -65,6 +69,7 @@ def summarize_residuals(residuals: Sequence[dict[str, Any]]) -> dict[str, Any]:
     if not vals:
         return {"n_rows": 0, "mean_abs_residual": None, "rmse_residual": None}
     import math
+
     n = len(vals)
     mean_abs = sum(abs(v) for v in vals) / n
     rmse = math.sqrt(sum(v * v for v in vals) / n)

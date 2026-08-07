@@ -62,8 +62,11 @@ def run_hybrid_computation(
         config = load_config()
 
     log.info("=" * 60)
-    log.info("Hybrid computation — weights: MANTRA=%.2f / ML=%.2f",
-             config.PESO_MANTRA, config.PESO_ML)
+    log.info(
+        "Hybrid computation — weights: MANTRA=%.2f / ML=%.2f",
+        config.PESO_MANTRA,
+        config.PESO_ML,
+    )
 
     # ── Merge ─────────────────────────────────────────────────────────────────
     # Optional ID-map file bridges fantacalcio_id → player_fotmob_id
@@ -92,8 +95,7 @@ def run_hybrid_computation(
     for p in players_ibridi:
         name = str(p.get("player_name", ""))
         p["hybridLabels"] = [
-            label for label, names in label_to_players.items()
-            if name in names
+            label for label, names in label_to_players.items() if name in names
         ]
 
     # ── Assemble output ──────────────────────────────────────────────────────

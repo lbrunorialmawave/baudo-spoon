@@ -112,7 +112,8 @@ def compute_hybrid_scores(
         # ── ML_score_norm (predicted 4-9 → 0-100) ───────────────────────────
         ml_norm = _clip(
             (predicted - _FANTAVOTO_MIN) / _FANTAVOTO_RANGE * 100.0,
-            0.0, 100.0,
+            0.0,
+            100.0,
         )
 
         # ── FP_Ibrido ────────────────────────────────────────────────────────
@@ -122,8 +123,7 @@ def compute_hybrid_scores(
         std_term = 1.0 / (1.0 + pred_std)
         min_term = min(expected_min / _MAX_EXPECTED_MINUTES, 1.0)
         confidence = (
-            std_term * config.W_PREDICTION_STD
-            + min_term * config.W_MINUTES
+            std_term * config.W_PREDICTION_STD + min_term * config.W_MINUTES
         ) * 100.0
 
         # ── ML_Boost (z-score centred at 50, σ=15) ──────────────────────────

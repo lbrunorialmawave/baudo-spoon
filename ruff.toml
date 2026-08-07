@@ -1,0 +1,17 @@
+[lint]
+ignore = [
+    # This codebase deliberately catches broad `Exception` at the boundary of
+    # scrapers (site layout/anti-bot changes), the ML pipeline (an artifact or
+    # optional feature must never crash the run — see e.g. the many
+    # "non-critical" / "best-effort" comments in ml/pipeline/trainer.py), and
+    # API routes (a single optional enrichment failing must not 500 the whole
+    # response). Narrowing each of the 60+ sites individually risks silently
+    # dropping an exception type that's currently handled.
+    "BLE001",
+]
+
+[lint.per-file-ignores]
+# FastAPI's dependency-injection pattern (`param: X = Depends(...)`) calls a
+# function in an argument default by design — this is the framework's own
+# recommended syntax (see FastAPI docs), not a bug B008 exists to catch.
+"api/src/**" = ["B008"]

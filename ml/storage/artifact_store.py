@@ -59,7 +59,7 @@ class R2Config:
         return bool(self.endpoint_url)
 
     @classmethod
-    def from_env(cls, prefix: str = "ML_") -> "R2Config":
+    def from_env(cls, prefix: str = "ML_") -> R2Config:
         """Costruisce R2Config leggendo direttamente le variabili d'ambiente
         ``{prefix}R2_*``, senza passare per ``MLConfig``/``Settings``.
 
@@ -74,7 +74,9 @@ class R2Config:
             endpoint_url=os.environ.get(f"{prefix}R2_ENDPOINT_URL") or None,
             access_key_id=os.environ.get(f"{prefix}R2_ACCESS_KEY_ID") or None,
             secret_access_key=os.environ.get(f"{prefix}R2_SECRET_ACCESS_KEY") or None,
-            bucket_name=os.environ.get(f"{prefix}R2_BUCKET_NAME", "baudo-spoon-ml-artifacts"),
+            bucket_name=os.environ.get(
+                f"{prefix}R2_BUCKET_NAME", "baudo-spoon-ml-artifacts"
+            ),
         )
 
 
@@ -174,7 +176,7 @@ class ArtifactStore:
                 self._r2_config.bucket_name,
                 key,
             )
-        except Exception as exc:  # noqa: BLE001 - deliberately broad, never fatal
+        except Exception as exc:
             log.warning(
                 "artifact_store: upload outcome=error operation=upload bucket=%s key=%s exception=%s",
                 self._r2_config.bucket_name,
@@ -221,7 +223,7 @@ class ArtifactStore:
                 self._r2_config.bucket_name,
                 key,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             outcome = "not_found" if _is_not_found_error(exc) else "r2_unreachable"
             log.warning(
                 "artifact_store: download outcome=%s operation=download bucket=%s key=%s exception=%s",
@@ -249,14 +251,16 @@ class ArtifactStore:
             return ArtifactAvailability.MISSING
 
         try:
-            self._r2_client().head_object(Bucket=self._r2_config.bucket_name, Key=filename)
+            self._r2_client().head_object(
+                Bucket=self._r2_config.bucket_name, Key=filename
+            )
             log.info(
                 "artifact_store: exists outcome=ok operation=head bucket=%s key=%s",
                 self._r2_config.bucket_name,
                 filename,
             )
             return ArtifactAvailability.REMOTE_ONLY
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if _is_not_found_error(exc):
                 log.info(
                     "artifact_store: exists outcome=not_found operation=head bucket=%s key=%s",

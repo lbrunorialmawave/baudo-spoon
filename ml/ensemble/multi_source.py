@@ -13,6 +13,7 @@ Usage:
 Backtest:
     compare_configs(cfg_a, cfg_b, history_df) shows per-config MAE.
 """
+
 from __future__ import annotations
 
 import logging
@@ -47,10 +48,18 @@ class MultiSourceEnsemble:
 
         active_extra = 0.0
         if expert_scores is not None:
-            result = result + expert_scores.reindex(ml_scores.index, fill_value=0.0) * cfg.expert_weight
+            result = (
+                result
+                + expert_scores.reindex(ml_scores.index, fill_value=0.0)
+                * cfg.expert_weight
+            )
             active_extra += cfg.expert_weight
         if bookmaker_scores is not None:
-            result = result + bookmaker_scores.reindex(ml_scores.index, fill_value=0.0) * cfg.bookmaker_weight
+            result = (
+                result
+                + bookmaker_scores.reindex(ml_scores.index, fill_value=0.0)
+                * cfg.bookmaker_weight
+            )
             active_extra += cfg.bookmaker_weight
 
         # renormalize when signals are missing
@@ -87,8 +96,12 @@ def compare_configs(
         ens = MultiSourceEnsemble(cfg)
         preds = ens.combine(
             ml_scores=history[ml_col],
-            expert_scores=history[expert_col] if expert_col and expert_col in history.columns else None,
-            bookmaker_scores=history[bookmaker_col] if bookmaker_col and bookmaker_col in history.columns else None,
+            expert_scores=history[expert_col]
+            if expert_col and expert_col in history.columns
+            else None,
+            bookmaker_scores=history[bookmaker_col]
+            if bookmaker_col and bookmaker_col in history.columns
+            else None,
         )
         mae = (preds - history[target_col]).abs().mean()
         results.append({"config_version": cfg.version, "mae": mae})

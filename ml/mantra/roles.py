@@ -11,36 +11,51 @@ primary role for a multi-role player.
 
 from __future__ import annotations
 
-from typing import Optional
-
 # ── Role catalogue ───────────────────────────────────────────────────────────
 
 ALL_ROLES: list[str] = [
-    "Por", "Dc", "B", "Dd", "Ds", "E", "M", "C", "T", "W", "A", "Pc",
+    "Por",
+    "Dc",
+    "B",
+    "Dd",
+    "Ds",
+    "E",
+    "M",
+    "C",
+    "T",
+    "W",
+    "A",
+    "Pc",
 ]
 
 #: Tactical depth: lower = more defensive.
 DEPTH_ORDER: dict[str, int] = {
     "Por": 0,
-    "Dc": 1, "B": 1, "Dd": 1, "Ds": 1,
-    "E": 2, "M": 2,
+    "Dc": 1,
+    "B": 1,
+    "Dd": 1,
+    "Ds": 1,
+    "E": 2,
+    "M": 2,
     "C": 3,
-    "T": 4, "W": 4,
-    "A": 5, "Pc": 5,
+    "T": 4,
+    "W": 4,
+    "A": 5,
+    "Pc": 5,
 }
 
 #: Pool fusion table: when a role has fewer than ``SOGLIA_POOL`` players,
 #: the pool is widened by merging with the roles listed here.
 POOL_FUSIONE: dict[str, tuple[str, ...]] = {
-    "B":  ("Dc", "Dd", "Ds"),
+    "B": ("Dc", "Dd", "Ds"),
     "Dd": ("Dc", "Ds", "B"),
     "Ds": ("Dc", "Dd", "B"),
-    "E":  ("M",),
-    "M":  ("E",),
+    "E": ("M",),
+    "M": ("E",),
     "Pc": ("A",),
-    "A":  ("Pc",),
-    "T":  ("W",),
-    "W":  ("T",),
+    "A": ("Pc",),
+    "T": ("W",),
+    "W": ("T",),
 }
 
 # Roles that do NOT appear in POOL_FUSIONE (Por, Dc, C) are already large
@@ -69,14 +84,14 @@ MANTRA_ROLE_MAP: dict[str, str] = {
     "A": "A",
     "Pc": "Pc",
     "PC": "Pc",
-    "P": "Pc",       # rare: P used for Punta in some old listoni
+    "P": "Pc",  # rare: P used for Punta in some old listoni
 }
 
 
 # ── Public helpers ──────────────────────────────────────────────────────────
 
 
-def calcola_ruolo_primario(ruoli: list[str]) -> Optional[str]:
+def calcola_ruolo_primario(ruoli: list[str]) -> str | None:
     """Return the most defensive (lowest depth) role from a list.
 
     When two roles have equal depth, the one appearing first in
@@ -95,7 +110,7 @@ def calcola_ruolo_primario(ruoli: list[str]) -> Optional[str]:
     if not ruoli:
         return None
 
-    best: Optional[str] = None
+    best: str | None = None
     best_depth: int = 999
     for r in ruoli:
         depth = DEPTH_ORDER.get(r, 999)
@@ -150,7 +165,7 @@ def calcola_pool_esteso(
     # Also check if *ruolo* is the target of someone else's fusion
     for base, targets in POOL_FUSIONE.items():
         if ruolo in targets:
-            return {ruolo, base} | set(t for t in targets if t != ruolo)
+            return {ruolo, base} | {t for t in targets if t != ruolo}
     return {ruolo}
 
 

@@ -29,12 +29,14 @@ def _base_df(n: int, ruolo: str = "C") -> pd.DataFrame:
     percentile mode falls back to the fixed absolute thresholds, so these
     fixtures behave identically regardless of cfg.FASE7_THRESHOLD_MODE.
     """
-    return pd.DataFrame({
-        "ruolo_primario": [ruolo] * n,
-        "Stagioni_IT": [0] * n,
-        "Pr": [0.0] * n,
-        "DV": [5.0] * n,
-    })
+    return pd.DataFrame(
+        {
+            "ruolo_primario": [ruolo] * n,
+            "Stagioni_IT": [0] * n,
+            "Pr": [0.0] * n,
+            "DV": [5.0] * n,
+        }
+    )
 
 
 def _classify(df, fp, fp_mantra, vr, p1, cfg):
@@ -76,37 +78,47 @@ class TestIndividualLabels:
         playing time) — CERTEZZA was structurally unreachable. This test
         exercises the rule in isolation, independent of the data source.
         """
-        df = pd.DataFrame({
-            "ruolo_primario": ["C", "C", "C"],
-            "Stagioni_IT": [2, 2, 2],
-            "Pr": [0.80, 0.75, 0.85],
-            "DV": [3.0, 3.0, 3.0],
-        })
+        df = pd.DataFrame(
+            {
+                "ruolo_primario": ["C", "C", "C"],
+                "Stagioni_IT": [2, 2, 2],
+                "Pr": [0.80, 0.75, 0.85],
+                "DV": [3.0, 3.0, 3.0],
+            }
+        )
         # FP/VR kept in "neutral" ranges so no earlier rule (TOP/AFFARE/SCOMMESSA)
         # pre-empts CERTEZZA for these rows.
         result = _classify(
-            df, fp=[55, 55, 55], fp_mantra=[55, 55, 55], vr=[95, 95, 95],
-            p1=[60, 58, 65], cfg=cfg,
+            df,
+            fp=[55, 55, 55],
+            fp_mantra=[55, 55, 55],
+            vr=[95, 95, 95],
+            p1=[60, 58, 65],
+            cfg=cfg,
         )
         assert (result == "CERTEZZA").all()
 
     def test_certezza_fails_below_stagioni_threshold(self, cfg):
-        df = pd.DataFrame({
-            "ruolo_primario": ["C"],
-            "Stagioni_IT": [1],  # below CERTEZZA_STAGIONI=2
-            "Pr": [0.80],
-            "DV": [3.0],
-        })
+        df = pd.DataFrame(
+            {
+                "ruolo_primario": ["C"],
+                "Stagioni_IT": [1],  # below CERTEZZA_STAGIONI=2
+                "Pr": [0.80],
+                "DV": [3.0],
+            }
+        )
         result = _classify(df, fp=[55], fp_mantra=[55], vr=[95], p1=[60], cfg=cfg)
         assert result.iloc[0] != "CERTEZZA"
 
     def test_certezza_fails_below_pr_threshold(self, cfg):
-        df = pd.DataFrame({
-            "ruolo_primario": ["C"],
-            "Stagioni_IT": [2],
-            "Pr": [0.50],  # below CERTEZZA_PR=0.70
-            "DV": [3.0],
-        })
+        df = pd.DataFrame(
+            {
+                "ruolo_primario": ["C"],
+                "Stagioni_IT": [2],
+                "Pr": [0.50],  # below CERTEZZA_PR=0.70
+                "DV": [3.0],
+            }
+        )
         result = _classify(df, fp=[55], fp_mantra=[55], vr=[95], p1=[60], cfg=cfg)
         assert result.iloc[0] != "CERTEZZA"
 
@@ -131,27 +143,41 @@ class TestRulePriority:
     def test_top_wins_over_certezza(self, cfg):
         """A player qualifying for both TOP and CERTEZZA must be labeled TOP,
         since TOP is evaluated first in _LABEL_ORDER."""
-        df = pd.DataFrame({
-            "ruolo_primario": ["C"],
-            "Stagioni_IT": [2],
-            "Pr": [0.90],
-            "DV": [1.0],
-        })
+        df = pd.DataFrame(
+            {
+                "ruolo_primario": ["C"],
+                "Stagioni_IT": [2],
+                "Pr": [0.90],
+                "DV": [1.0],
+            }
+        )
         result = _classify(
-            df, fp=[85], fp_mantra=[85], vr=[95], p1=[90], cfg=cfg,
+            df,
+            fp=[85],
+            fp_mantra=[85],
+            vr=[95],
+            p1=[90],
+            cfg=cfg,
         )
         assert result.iloc[0] == "TOP"
 
     def test_scommessa_wins_over_certezza(self, cfg):
         """SCOMMESSA is evaluated before CERTEZZA."""
-        df = pd.DataFrame({
-            "ruolo_primario": ["C"],
-            "Stagioni_IT": [2],
-            "Pr": [0.90],
-            "DV": [1.0],
-        })
+        df = pd.DataFrame(
+            {
+                "ruolo_primario": ["C"],
+                "Stagioni_IT": [2],
+                "Pr": [0.90],
+                "DV": [1.0],
+            }
+        )
         result = _classify(
-            df, fp=[40], fp_mantra=[40], vr=[140], p1=[90], cfg=cfg,
+            df,
+            fp=[40],
+            fp_mantra=[40],
+            vr=[140],
+            p1=[90],
+            cfg=cfg,
         )
         assert result.iloc[0] == "SCOMMESSA"
 
@@ -168,13 +194,17 @@ class TestPercentileMode:
         single global number that would systematically starve this role."""
         n = 25  # >= SOGLIA_POOL (20) -> percentile mode applies, no small-pool fallback
         fp_mantra_values = list(np.linspace(30.0, 54.0, n))  # all well below 80
-        df = pd.DataFrame({
-            "ruolo_primario": ["C"] * n,
-            "Stagioni_IT": [0] * n,
-            "Pr": [0.0] * n,
-            "DV": [5.0] * n,
-        })
-        vr = pd.Series([100.0] * n, index=df.index)  # neutral, so only FP_Mantra drives TOP
+        df = pd.DataFrame(
+            {
+                "ruolo_primario": ["C"] * n,
+                "Stagioni_IT": [0] * n,
+                "Pr": [0.0] * n,
+                "DV": [5.0] * n,
+            }
+        )
+        vr = pd.Series(
+            [100.0] * n, index=df.index
+        )  # neutral, so only FP_Mantra drives TOP
         p1 = pd.Series([50.0] * n, index=df.index)
         fp_mantra = pd.Series(fp_mantra_values, index=df.index)
 
@@ -183,7 +213,9 @@ class TestPercentileMode:
 
         abs_cfg = replace(cfg, FASE7_THRESHOLD_MODE="absolute")
         label_abs, _ = classify_fase7(df, fp_mantra, fp_mantra, vr, p1, abs_cfg)
-        assert (label_abs == "TOP").sum() == 0  # nobody ever reaches the fixed 80 threshold
+        assert (
+            label_abs == "TOP"
+        ).sum() == 0  # nobody ever reaches the fixed 80 threshold
 
     def test_small_pool_falls_back_to_absolute(self, cfg):
         """Without the small-pool fallback, a lone player's own P85 quantile
@@ -240,12 +272,14 @@ class TestFase7Motivo:
         assert "TOP" in motivo.iloc[0]
 
     def test_quasi_certezza_names_the_single_failing_condition(self, cfg):
-        df = pd.DataFrame({
-            "ruolo_primario": ["C"],
-            "Stagioni_IT": [2],   # passes (>=2)
-            "Pr": [0.62],         # fails: below CERTEZZA_PR (0.70)
-            "DV": [3.0],          # passes (pool-of-1 median == itself)
-        })
+        df = pd.DataFrame(
+            {
+                "ruolo_primario": ["C"],
+                "Stagioni_IT": [2],  # passes (>=2)
+                "Pr": [0.62],  # fails: below CERTEZZA_PR (0.70)
+                "DV": [3.0],  # passes (pool-of-1 median == itself)
+            }
+        )
         _label, motivo = classify_fase7(
             df,
             pd.Series([40], index=df.index),

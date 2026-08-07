@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,11 +20,19 @@ router = APIRouter(prefix="/matches", tags=["matches"])
     responses={200: {"description": "Paginated match stat records"}},
 )
 async def list_matches(
-    league: Optional[str] = Query(None, description="Filter by league name (partial match)"),
-    season: Optional[int] = Query(None, description="Filter by season start year (e.g. 2023)"),
-    team: Optional[str] = Query(None, description="Filter by team name (partial match)"),
-    opponent: Optional[str] = Query(None, description="Filter by opponent name (partial match)"),
-    search: Optional[str] = Query(None, description="Search match name (case-insensitive)"),
+    league: str | None = Query(
+        None, description="Filter by league name (partial match)"
+    ),
+    season: int | None = Query(
+        None, description="Filter by season start year (e.g. 2023)"
+    ),
+    team: str | None = Query(None, description="Filter by team name (partial match)"),
+    opponent: str | None = Query(
+        None, description="Filter by opponent name (partial match)"
+    ),
+    search: str | None = Query(
+        None, description="Search match name (case-insensitive)"
+    ),
     page: int = Query(1, ge=1, description="Page number (1-based)"),
     size: int = Query(20, ge=1, le=100, description="Items per page"),
     db: AsyncSession = Depends(get_db),

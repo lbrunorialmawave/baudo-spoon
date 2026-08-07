@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import Self
 from unittest.mock import patch
 
 import numpy as np
@@ -56,7 +57,9 @@ def test_load_predictions_by_id_returns_empty_on_malformed_json(
     with caplog.at_level(logging.WARNING, logger="ml.mantra.runner"):
         result = _load_predictions_by_id(tmp_path)
     assert result == {}
-    assert any("Could not read predictions artefact" in rec.message for rec in caplog.records)
+    assert any(
+        "Could not read predictions artefact" in rec.message for rec in caplog.records
+    )
 
 
 def test_load_predictions_by_id_indexes_by_player_fotmob_id(tmp_path: Path):
@@ -142,7 +145,6 @@ def _stub_pillar_series(value: float = 6.0) -> pd.Series:
 
 
 def _stub_scores(df: pd.DataFrame) -> dict:
-    n = len(df)
     return {
         "fp_corr": _stub_pillar_series(7.0),
         "cp_corr": _stub_pillar_series(8.0),
@@ -162,7 +164,9 @@ def _patch_heavy_compute():
         patch("ml.mantra.runner.compute_p4", return_value=_stub_pillar_series(4.5)),
         patch("ml.mantra.runner.compute_cp", return_value=_stub_pillar_series(6.0)),
         patch("ml.mantra.runner.compute_fp", return_value=_stub_pillar_series(7.0)),
-        patch("ml.mantra.runner.compute_fp_corr", return_value=_stub_scores(_stub_df())),
+        patch(
+            "ml.mantra.runner.compute_fp_corr", return_value=_stub_scores(_stub_df())
+        ),
         patch(
             "ml.mantra.runner.classify_fase7",
             return_value=(
@@ -176,9 +180,18 @@ def _patch_heavy_compute():
             "ml.mantra.runner.low_cost",
             side_effect=lambda *_a, **_k: pd.DataFrame({"player_name": []}),
         ),
-        patch("ml.mantra.runner.scommesse_multi_ruolo", return_value=pd.DataFrame({"player_name": []})),
-        patch("ml.mantra.runner.watchlist_giovani", return_value=pd.DataFrame({"player_name": []})),
-        patch("ml.mantra.runner.rischio_contestuale", return_value=pd.Series(["low", "high"])),
+        patch(
+            "ml.mantra.runner.scommesse_multi_ruolo",
+            return_value=pd.DataFrame({"player_name": []}),
+        ),
+        patch(
+            "ml.mantra.runner.watchlist_giovani",
+            return_value=pd.DataFrame({"player_name": []}),
+        ),
+        patch(
+            "ml.mantra.runner.rischio_contestuale",
+            return_value=pd.Series(["low", "high"]),
+        ),
     ]
 
 
@@ -193,7 +206,7 @@ class _Patches:
         self._patches = list(patches)
         self._stack = None
 
-    def __enter__(self) -> _Patches:
+    def __enter__(self) -> Self:
         from contextlib import ExitStack
 
         self._stack = ExitStack()
@@ -206,7 +219,9 @@ class _Patches:
             self._stack.__exit__(exc_type, exc, tb)
 
 
-def test_run_mantra_adds_season_value_and_start_probability_to_each_player(tmp_path: Path):
+def test_run_mantra_adds_season_value_and_start_probability_to_each_player(
+    tmp_path: Path,
+):
     """Two players, one matched in the artefact, one not.
 
     * Alpha (fotmob_id=100) is in the artefact → both fields populated.
@@ -336,7 +351,9 @@ def test_run_mantra_persists_both_fields_to_disk(tmp_path: Path):
     ):
         run_mantra(engine=None, season_start=2024, output_dir=tmp_path)
 
-    on_disk = json.loads((tmp_path / "mantra_results_2024.json").read_text(encoding="utf-8"))
+    on_disk = json.loads(
+        (tmp_path / "mantra_results_2024.json").read_text(encoding="utf-8")
+    )
     for p in on_disk["players"]:
         assert "season_value" in p
         assert "start_probability" in p

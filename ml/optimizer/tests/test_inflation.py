@@ -23,7 +23,6 @@ from ml.optimizer.inflation import (
 )
 from ml.optimizer.models import InflationConfig, Player
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -59,11 +58,15 @@ def player_a() -> Player:
 def test_no_inflation_below_threshold(cfg: InflationConfig, player_a: Player) -> None:
     """Players at or below the percentile threshold pay listino, no matter the league size."""
     for n in (1, 8, 20, 50, 100):
-        cost = estimate_effective_cost(player_a, role_percentile=0.7, num_participants=n, config=cfg)
+        cost = estimate_effective_cost(
+            player_a, role_percentile=0.7, num_participants=n, config=cfg
+        )
         assert cost == pytest.approx(float(player_a.cost)), (
             f"expected listino at threshold for n={n}, got {cost}"
         )
-        cost_below = estimate_effective_cost(player_a, role_percentile=0.5, num_participants=n, config=cfg)
+        cost_below = estimate_effective_cost(
+            player_a, role_percentile=0.5, num_participants=n, config=cfg
+        )
         assert cost_below == pytest.approx(float(player_a.cost))
 
 
@@ -140,7 +143,9 @@ def test_cap_exact_formula_at_extremes() -> None:
     )
     cost = estimate_effective_cost(
         Player("x", "X", "D", "Roma", 10, 7.0),
-        1.0, 9, cfg,
+        1.0,
+        9,
+        cfg,
     )
     # extra=1, headroom=1.0, raw=1+10*1*1=11 -> capped to 1.6
     assert cost == pytest.approx(16.0)
@@ -151,7 +156,9 @@ def test_cap_exact_formula_at_extremes() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_effective_cost_never_below_listino(cfg: InflationConfig, player_a: Player) -> None:
+def test_effective_cost_never_below_listino(
+    cfg: InflationConfig, player_a: Player
+) -> None:
     for n in (1, 8, 100):
         for p in (0.0, 0.5, 0.7, 0.9, 1.0, -0.1, 1.5):  # including out-of-range
             c = estimate_effective_cost(player_a, p, n, cfg)
@@ -180,7 +187,9 @@ def test_zero_cost_player_returns_zero(cfg: InflationConfig) -> None:
             assert estimate_effective_cost(p, perc, n, cfg) == 0
 
 
-def test_num_participants_must_be_positive(cfg: InflationConfig, player_a: Player) -> None:
+def test_num_participants_must_be_positive(
+    cfg: InflationConfig, player_a: Player
+) -> None:
     with pytest.raises(ValueError):
         estimate_effective_cost(player_a, 0.5, 0, cfg)
 

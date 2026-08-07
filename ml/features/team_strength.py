@@ -4,13 +4,14 @@ These features read from pre-computed team-strength columns produced by
 ``ml/data/loader.py``.  They are stateless lookups — no computation beyond
 normalisation.
 """
+
 from __future__ import annotations
 
 import polars as pl
 
 from ml.domain.features import Feature, MissingDataPolicy
 
-__all__ = ["TeamStrengthFeature", "IsTopTeamFeature", "TeamRankNormFeature"]
+__all__ = ["IsTopTeamFeature", "TeamRankNormFeature", "TeamStrengthFeature"]
 
 
 class TeamStrengthFeature(Feature):

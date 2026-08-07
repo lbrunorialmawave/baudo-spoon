@@ -129,7 +129,10 @@ def get_player_role(position_desc: dict[str, Any] | None) -> CanonicalRole:
         One of 'GK', 'DEF', 'MID', 'FWD'.
     """
     if not isinstance(position_desc, dict):
-        log.warning("role_mapping: positionDescription is None or invalid, falling back to %s", _FALLBACK_ROLE)
+        log.warning(
+            "role_mapping: positionDescription is None or invalid, falling back to %s",
+            _FALLBACK_ROLE,
+        )
         return _FALLBACK_ROLE
 
     # 1. primaryPosition.key

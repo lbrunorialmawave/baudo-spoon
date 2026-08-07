@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Generic, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
@@ -36,7 +36,7 @@ class SeasonSchema(BaseModel):
     id: int
     season_start: int
     season_label: str
-    scraped_at: Optional[datetime] = None
+    scraped_at: datetime | None = None
     league: LeagueSchema
 
 
@@ -44,18 +44,18 @@ class MatchStatSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    match_date: Optional[str] = None
-    round_num: Optional[int] = None
+    match_date: str | None = None
+    round_num: int | None = None
     match_name: str
-    score: Optional[str] = None
-    status: Optional[str] = None
-    url: Optional[str] = None
+    score: str | None = None
+    status: str | None = None
+    url: str | None = None
     team: str
-    side: Optional[str] = None
-    opponent: Optional[str] = None
-    goals_scored: Optional[int] = None
-    goals_conceded: Optional[int] = None
-    points: Optional[int] = None
+    side: str | None = None
+    opponent: str | None = None
+    goals_scored: int | None = None
+    goals_conceded: int | None = None
+    points: int | None = None
     stats: dict[str, Any]
     ingested_at: datetime
     season: SeasonSchema
@@ -67,12 +67,12 @@ class PlayerSeasonStatSchema(BaseModel):
     id: int
     fotmob_season_id: int
     stat_category: str
-    rank: Optional[int] = None
+    rank: int | None = None
     player_fotmob_id: int
     player_name: str
-    team_fotmob_id: Optional[int] = None
-    team_name: Optional[str] = None
-    value: Optional[Decimal] = None
+    team_fotmob_id: int | None = None
+    team_name: str | None = None
+    value: Decimal | None = None
     ingested_at: datetime
     season: SeasonSchema
 
@@ -83,10 +83,10 @@ class TeamSeasonStatSchema(BaseModel):
     id: int
     fotmob_season_id: int
     stat_category: str
-    rank: Optional[int] = None
+    rank: int | None = None
     team_fotmob_id: int
     team_name: str
-    value: Optional[Decimal] = None
+    value: Decimal | None = None
     ingested_at: datetime
     season: SeasonSchema
 
@@ -105,24 +105,24 @@ class PlayerPredictionSchema(_CamelModel):
     """Single player prediction record from the ML artifact."""
 
     player_name: str
-    player_fotmob_id: Optional[int] = None
-    team_name: Optional[str] = None
-    canonical_role: Optional[str] = None
-    season: Optional[str] = None
-    fantavoto_medio: Optional[float] = None  # actual (when available)
+    player_fotmob_id: int | None = None
+    team_name: str | None = None
+    canonical_role: str | None = None
+    season: str | None = None
+    fantavoto_medio: float | None = None  # actual (when available)
     predicted: float
     # Phase 3+ enrichments (optional — absent in older artifacts)
-    confidence: Optional[float] = None
-    prediction_interval_low: Optional[float] = None
-    prediction_interval_high: Optional[float] = None
-    expected_minutes: Optional[float] = None
+    confidence: float | None = None
+    prediction_interval_low: float | None = None
+    prediction_interval_high: float | None = None
+    expected_minutes: float | None = None
 
 
 class PlayerVarSchema(_CamelModel):
     """Value Above Replacement record for a single player."""
 
     player_id: str
-    player_name: Optional[str] = None
+    player_name: str | None = None
     role: str
     projected_score: float
     season_value: float | None = None
@@ -145,7 +145,7 @@ class VarResultsResponse(_CamelModel):
 
 class NextSeasonPredictionSchema(_CamelModel):
     player_name: str
-    player_fotmob_id: Optional[int] = None
+    player_fotmob_id: int | None = None
     predicted_next_fantavoto: float
 
 
@@ -169,13 +169,13 @@ class PlayerClusterSchema(_CamelModel):
     """Cluster membership for a single player."""
 
     player_name: str
-    player_fotmob_id: Optional[int] = None
-    team_name: Optional[str] = None
-    canonical_role: Optional[str] = None
+    player_fotmob_id: int | None = None
+    team_name: str | None = None
+    canonical_role: str | None = None
     cluster_id: int
-    pca_0: Optional[float] = None
-    pca_1: Optional[float] = None
-    predicted_fantavoto: Optional[float] = None
+    pca_0: float | None = None
+    pca_1: float | None = None
+    predicted_fantavoto: float | None = None
 
 
 class LowCostAlternativeSchema(_CamelModel):
@@ -185,26 +185,26 @@ class LowCostAlternativeSchema(_CamelModel):
     ml/clustering/kmeans.py so that dataclasses.asdict() output maps directly.
     """
 
-    top_player_id: Optional[int] = None
+    top_player_id: int | None = None
     top_player_name: str
-    top_player_team: Optional[str] = None
-    top_player_fantavoto: Optional[float] = None
-    alt_player_id: Optional[int] = None
+    top_player_team: str | None = None
+    top_player_fantavoto: float | None = None
+    alt_player_id: int | None = None
     alt_player_name: str
-    alt_player_team: Optional[str] = None
-    alt_player_fantavoto: Optional[float] = None
+    alt_player_team: str | None = None
+    alt_player_fantavoto: float | None = None
     cluster_id: int
     distance: float
 
 
 class ClusteringStatsSchema(_CamelModel):
     n_clusters: int
-    silhouette: Optional[float] = None
-    inertia: Optional[float] = None
-    pca_explained_variance: Optional[list[float]] = None
+    silhouette: float | None = None
+    inertia: float | None = None
+    pca_explained_variance: list[float] | None = None
 
 
-class AlternativesResponse(_CamelModel):
+class LowCostAlternativesResponse(_CamelModel):
     clustering_stats: ClusteringStatsSchema
     player_clusters: list[PlayerClusterSchema]
     low_cost_recommendations: list[LowCostAlternativeSchema]
@@ -227,11 +227,11 @@ class PlayerQuotationSchema(_CamelModel):
     qt_a: int
     qt_i: int
     diff_val: int
-    qt_a_m: Optional[int] = None
-    qt_i_m: Optional[int] = None
-    diff_val_m: Optional[int] = None
-    fvm: Optional[int] = None
-    fvm_m: Optional[int] = None
+    qt_a_m: int | None = None
+    qt_i_m: int | None = None
+    diff_val_m: int | None = None
+    fvm: int | None = None
+    fvm_m: int | None = None
     source: str
     imported_at: datetime
 
@@ -239,13 +239,13 @@ class PlayerQuotationSchema(_CamelModel):
 class PlayerQuotationWithMappingSchema(PlayerQuotationSchema):
     """Quotation joined to its id-map row (left-join: mapping may be null)."""
 
-    player_fotmob_id: Optional[int] = None
-    name_fotmob: Optional[str] = None
-    team_fotmob: Optional[str] = None
-    match_method: Optional[str] = None
-    confidence: Optional[float] = None
-    ruolo_primario: Optional[str] = None
-    ruoli_mantra: Optional[list[str]] = None
+    player_fotmob_id: int | None = None
+    name_fotmob: str | None = None
+    team_fotmob: str | None = None
+    match_method: str | None = None
+    confidence: float | None = None
+    ruolo_primario: str | None = None
+    ruoli_mantra: list[str] | None = None
 
 
 class PlayerIdMapSchema(_CamelModel):
@@ -256,20 +256,20 @@ class PlayerIdMapSchema(_CamelModel):
     id: int
     fantacalcio_id: int
     season_start: int
-    player_fotmob_id: Optional[int] = None
+    player_fotmob_id: int | None = None
     name_fantacalcio: str
-    name_fotmob: Optional[str] = None
-    team_fantacalcio: Optional[str] = None
-    team_fotmob: Optional[str] = None
-    canonical_role: Optional[str] = None
+    name_fotmob: str | None = None
+    team_fantacalcio: str | None = None
+    team_fotmob: str | None = None
+    canonical_role: str | None = None
     match_method: str
     confidence: float
     resolved_from_history: bool = False
     created_at: datetime
     updated_at: datetime
     # MANTRA 12-role fields (from player_mantra_roles, may be null)
-    ruoli_mantra: Optional[list[str]] = None
-    ruolo_primario: Optional[str] = None
+    ruoli_mantra: list[str] | None = None
+    ruolo_primario: str | None = None
 
 
 class UpdateIdMappingRequest(_CamelModel):
@@ -279,22 +279,22 @@ class UpdateIdMappingRequest(_CamelModel):
     non-``None`` fields will be updated.
     """
 
-    player_fotmob_id: Optional[int] = None
+    player_fotmob_id: int | None = None
     """FotMob player ID to assign. Set to ``-1`` to clear/keep unmatched."""
-    name_fotmob: Optional[str] = None
+    name_fotmob: str | None = None
     """FotMob player name (informational)."""
-    team_fotmob: Optional[str] = None
+    team_fotmob: str | None = None
     """FotMob team name (optional override)."""
-    canonical_role: Optional[str] = None
+    canonical_role: str | None = None
     """Override canonical role (GK/DEF/MID/FWD)."""
-    note: Optional[str] = None
+    note: str | None = None
     """Free-text note about this override."""
     # MANTRA role overrides (optional)
-    ruoli_mantra: Optional[list[str]] = None
+    ruoli_mantra: list[str] | None = None
     """Override MANTRA roles (e.g. ["Dd", "E"])."""
-    ruolo_primario: Optional[str] = None
+    ruolo_primario: str | None = None
     """Override primary MANTRA role."""
-    data_validated: Optional[bool] = None
+    data_validated: bool | None = None
     """Mark as validated by the user."""
 
 
@@ -309,7 +309,7 @@ class QuotationRoleAggregateSchema(_CamelModel):
     median_qt_a: float
     min_qt_a: int
     max_qt_a: int
-    avg_fvm: Optional[float] = None
+    avg_fvm: float | None = None
 
 
 class QuotationStatsResponse(_CamelModel):
@@ -330,12 +330,12 @@ class ManualResolutionSchema(_CamelModel):
     player_fotmob_id: int
     season_start: int
     name_fantacalcio: str
-    team_fantacalcio: Optional[str] = None
-    canonical_role: Optional[str] = None
-    name_fotmob: Optional[str] = None
-    team_fotmob: Optional[str] = None
-    resolved_by: Optional[str] = None
-    note: Optional[str] = None
+    team_fantacalcio: str | None = None
+    canonical_role: str | None = None
+    name_fotmob: str | None = None
+    team_fotmob: str | None = None
+    resolved_by: str | None = None
+    note: str | None = None
     created_at: datetime
 
 
@@ -397,12 +397,12 @@ class PlayerSchema(_CamelModel):
     real_team: str
     cost: int
     projected_score: float
-    reliability_weight: Optional[float] = None
+    reliability_weight: float | None = None
     eligible_roles: list[str] = Field(default_factory=list)  # MANTRA only
-    prediction_std: Optional[float] = None  # ensemble std; drives risk_aversion penalty
-    historical_overpay_ratio: Optional[float] = None  # Picco/listino from pilastro4
-    season_value: Optional[float] = None
-    start_probability: Optional[float] = None
+    prediction_std: float | None = None  # ensemble std; drives risk_aversion penalty
+    historical_overpay_ratio: float | None = None  # Picco/listino from pilastro4
+    season_value: float | None = None
+    start_probability: float | None = None
 
 
 class OptimizationRequest(_CamelModel):
@@ -442,13 +442,14 @@ class OptimizationRequest(_CamelModel):
     must_include: list[str] = Field(default_factory=list, max_length=25)
     exclude: list[str] = Field(default_factory=list, max_length=200)
     ruleset: str = "CLASSIC"  # "CLASSIC" | "MANTRA"
-    mantra_role_quotas: Optional[dict[str, int]] = None
+    mantra_role_quotas: dict[str, int] | None = None
     # When set, the squad is guaranteed to be able to field this module.
     # All formations in `formations` are still evaluated post-hoc and reported
     # in formation_feasibility, but only this one is a hard solver constraint.
-    preferred_formation: Optional[FormationSchema] = None
+    preferred_formation: FormationSchema | None = None
     risk_aversion: float = Field(
-        default=0.0, ge=0.0,
+        default=0.0,
+        ge=0.0,
         description=(
             "Coefficient applied to prediction_std as a penalty on projected_score "
             "(score_eff = projected_score - risk_aversion * prediction_std). "
@@ -461,7 +462,9 @@ class OptimizationRequest(_CamelModel):
     var_blend: float = Field(default=0.0, ge=0.0, le=1.0)
     esv_weight: float = Field(default=0.0, ge=0.0)
     hybrid_blend: float = Field(
-        default=0.0, ge=0.0, le=1.0,
+        default=0.0,
+        ge=0.0,
+        le=1.0,
         description=(
             "0.0 (default) = disabled, legacy behaviour. >0 blends the MANTRA-ibrido "
             "fpIbrido signal (ml/mantra_ibrido) into the CLASSIC objective, same shape "
@@ -474,7 +477,7 @@ class OptimizationRequest(_CamelModel):
     # `None` (default) ⇒ nessun filtro (compatibilità con richieste legacy).
     # Quando `var_blend > 0` oppure `esv_weight > 0`, lo stesso valore viene
     # propagato al VarEngine per garantire coerenza tra ranking VAR e pool.
-    min_start_probability: Optional[float] = Field(
+    min_start_probability: float | None = Field(
         default=None,
         ge=0.0,
         le=1.0,
@@ -509,15 +512,15 @@ class OptimizationRequest(_CamelModel):
             "an ML prediction match and falls back to PER_MATCH_RATING ranking for those rows)."
         ),
     )
-    strategy_names: Optional[list[str]] = None
-    custom_strategies: Optional[list["StrategyProfileSchema"]] = None
-    pool_override: Optional[list[PlayerSchema]] = Field(default=None, max_length=500)
-    monte_carlo: Optional["MonteCarloConfigSchema"] = Field(default=None)
+    strategy_names: list[str] | None = None
+    custom_strategies: list[StrategyProfileSchema] | None = None
+    pool_override: list[PlayerSchema] | None = Field(default=None, max_length=500)
+    monte_carlo: MonteCarloConfigSchema | None = Field(default=None)
     diversify_strategies: bool = Field(
         default=False,
         description="If true on /multi, re-solve secondary strategies excluding core of the primary when overlap is high.",
     )
-    near_optimal: Optional["NearOptimalConfigSchema"] = Field(default=None)
+    near_optimal: NearOptimalConfigSchema | None = Field(default=None)
 
 
 class MonteCarloConfigSchema(_CamelModel):
@@ -532,9 +535,14 @@ class MonteCarloConfigSchema(_CamelModel):
     * Do not combine high ``risk_aversion`` with MC without reading both effects
       (risk_aversion shrinks projected_score once; MC re-samples scores).
     """
-    enabled: bool = Field(default=False, description="Master switch; false keeps deterministic path.")
+
+    enabled: bool = Field(
+        default=False, description="Master switch; false keeps deterministic path."
+    )
     n_simulations: int = Field(
-        default=200, ge=1, le=1000,
+        default=200,
+        ge=1,
+        le=1000,
         description=(
             "SAA scenarios. Sync saa_frequency capped by API_OPTIMIZER_ASYNC_THRESHOLD; "
             "hard ceiling API_OPTIMIZER_MAX_SIMULATIONS on all paths."
@@ -544,14 +552,21 @@ class MonteCarloConfigSchema(_CamelModel):
         default="saa_frequency",
         description="mean_std (fast risk-adjusted single solve) | saa_frequency (distributional).",
     )
-    risk_lambda: float = Field(default=0.5, ge=0.0, description="Only for mean_std: mean − λ·std.")
+    risk_lambda: float = Field(
+        default=0.5, ge=0.0, description="Only for mean_std: mean − λ·std."
+    )
     min_selection_frequency: float = Field(
-        default=0.0, ge=0.0, le=1.0,
+        default=0.0,
+        ge=0.0,
+        le=1.0,
         description="Warn when representative players fall below this SAA frequency.",
     )
-    random_seed: int = Field(default=42, description="Reproducible residual draws / scenario order.")
+    random_seed: int = Field(
+        default=42, description="Reproducible residual draws / scenario order."
+    )
     timeout_seconds: float = Field(
-        default=0.0, ge=0.0,
+        default=0.0,
+        ge=0.0,
         description="Soft SAA wall budget; 0 → API_OPTIMIZER_SAA_TIMEOUT_SECONDS default.",
     )
 
@@ -584,7 +599,7 @@ class ParetoPointSchema(_CamelModel):
     status: str
     score: float
     risk: float
-    win_probability: Optional[float] = None
+    win_probability: float | None = None
     squad_size: int
     dominated: bool = False
 
@@ -608,10 +623,10 @@ class MonteCarloSummarySchema(_CamelModel):
     sampling_methods_counts: dict[str, int] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
     # Residual provenance (walk-forward file vs prediction_std fallback)
-    residual_source: Optional[str] = None
-    residual_using: Optional[str] = None
-    residual_rows: Optional[int] = None
-    residual_merged_rows: Optional[int] = None
+    residual_source: str | None = None
+    residual_using: str | None = None
+    residual_rows: int | None = None
+    residual_merged_rows: int | None = None
 
 
 class NearOptimalConfigSchema(_CamelModel):
@@ -625,7 +640,7 @@ class NearOptimalAlternativeSchema(_CamelModel):
     excluded_player_ids: list[str]
     score_delta: float
     score_delta_pct: float
-    squad: list["SquadPlayerSchema"]
+    squad: list[SquadPlayerSchema]
     total_projected_score: float
     status: str
 
@@ -650,9 +665,9 @@ class OptimizeJobStatusSchema(_CamelModel):
     status: str
     created_at: str
     updated_at: str
-    error: Optional[str] = None
-    result: Optional["OptimizationResultSchema"] = None
-    monte_carlo_summary: Optional[MonteCarloSummarySchema] = None
+    error: str | None = None
+    result: OptimizationResultSchema | None = None
+    monte_carlo_summary: MonteCarloSummarySchema | None = None
 
 
 class SquadPlayerSchema(_CamelModel):
@@ -683,8 +698,8 @@ class OptimizationResultSchema(_CamelModel):
     big_teams_players_count: int
     formation_feasibility: dict[str, bool]
     diagnostics: dict[str, Any]
-    win_probability: Optional[float] = None
-    monte_carlo_summary: Optional[MonteCarloSummarySchema] = None
+    win_probability: float | None = None
+    monte_carlo_summary: MonteCarloSummarySchema | None = None
     near_optimal: list[NearOptimalAlternativeSchema] = Field(default_factory=list)
 
 
@@ -692,8 +707,8 @@ class MultiStrategyResultSchema(_CamelModel):
     """Output di ``POST /optimize/multi``: una entry per strategia richiesta."""
 
     results: dict[str, OptimizationResultSchema]
-    monte_carlo_summary: Optional[MonteCarloSummarySchema] = None
-    diversity: Optional[DiversityMetricsSchema] = None
+    monte_carlo_summary: MonteCarloSummarySchema | None = None
+    diversity: DiversityMetricsSchema | None = None
 
 
 class StrategyProfileSchema(_CamelModel):
@@ -701,9 +716,9 @@ class StrategyProfileSchema(_CamelModel):
 
     name: str
     role_weight: dict[str, float]
-    min_budget_share_by_roles: Optional[tuple[list[str], float]] = None
-    max_top_tier_players: Optional[int] = None
-    top_tier_cost_threshold: Optional[float] = None
+    min_budget_share_by_roles: tuple[list[str], float] | None = None
+    max_top_tier_players: int | None = None
+    top_tier_cost_threshold: float | None = None
 
 
 class DefaultStrategiesResponse(_CamelModel):
@@ -754,7 +769,7 @@ class AuctionConfigSchema(_CamelModel):
     market_drift_config: MarketDriftConfigSchema = MarketDriftConfigSchema()
     alternatives_config: AlternativesConfigSchema = AlternativesConfigSchema()
     use_inflation_baseline: bool = False
-    inflation_config: Optional[InflationConfigSchema] = None
+    inflation_config: InflationConfigSchema | None = None
     """Custom inflation parameters. When None and use_inflation_baseline=True,
     server-side defaults are used."""
     reference_budget: int = 300
@@ -851,7 +866,7 @@ class InitializeAuctionRequest(_CamelModel):
     season_start: int
     participants: list[AuctionParticipantSetupSchema]
     config: AuctionConfigSchema
-    player_pool: Optional[list[AuctionPlayerSchema]] = None
+    player_pool: list[AuctionPlayerSchema] | None = None
 
 
 class InitializeAuctionResponse(_CamelModel):
@@ -881,10 +896,10 @@ class RecordAssignmentResponse(_CamelModel):
     """
 
     success: bool
-    sequence_number: Optional[int] = None
-    price_index_after: Optional[float] = None
-    rejection_code: Optional[str] = None
-    rejection_reason: Optional[str] = None
+    sequence_number: int | None = None
+    price_index_after: float | None = None
+    rejection_code: str | None = None
+    rejection_reason: str | None = None
 
 
 class ProjectionResponse(_CamelModel):
@@ -898,7 +913,7 @@ class ProjectionResponse(_CamelModel):
 class AlternativesRequest(_CamelModel):
     """Request body opzionale per ``GET /auction/{session_id}/alternatives``."""
 
-    config: Optional[AlternativesConfigSchema] = None
+    config: AlternativesConfigSchema | None = None
 
 
 class AuctionPlayerSummarySchema(_CamelModel):
@@ -910,8 +925,8 @@ class AuctionPlayerSummarySchema(_CamelModel):
     role: str
     cost: int
     projected_score: float
-    season_value: Optional[float] = None
-    start_probability: Optional[float] = None
+    season_value: float | None = None
+    start_probability: float | None = None
     eligible_roles: list[str] | None = None
 
 
@@ -946,7 +961,7 @@ class AuctionSummarySchema(_CamelModel):
     participants: list[AuctionParticipantStateSchema]
     assignments: list[AssignmentRecordSchema]
     price_index: dict[str, dict[str, float]]
-    completion_probability: Optional[dict[str, float]] = None
+    completion_probability: dict[str, float] | None = None
     """WS3 #1: participant_id → P(complete roster | residual budget)."""
 
 
@@ -954,14 +969,14 @@ class AlternativesResponse(_CamelModel):
     """Response di ``GET /auction/{session_id}/alternatives/{player_id}``."""
 
     target_player_id: str
-    low_cost_alternative: Optional[AuctionPlayerSummarySchema] = None
-    closest_alternative: Optional[AuctionPlayerSummarySchema] = None
-    reason_if_none: Optional[str] = None
+    low_cost_alternative: AuctionPlayerSummarySchema | None = None
+    closest_alternative: AuctionPlayerSummarySchema | None = None
+    reason_if_none: str | None = None
     diversified_alternatives: list[AuctionPlayerSummarySchema] = []
     """WS3 #3: mini-Pareto diversified candidates."""
-    max_affordable_bid: Optional[int] = None
+    max_affordable_bid: int | None = None
     """WS3 #4: credit-reserve max bid for the requested participant."""
-    strategy_price_cap: Optional[int] = None
+    strategy_price_cap: int | None = None
     """WS3 #5: strategy-weighted price threshold."""
 
 
@@ -983,8 +998,8 @@ class VarRankingItemSchema(_CamelModel):
     esv: float
     calibrated: bool
     buy_signal: bool  # esv > 0
-    season_value: Optional[float] = None
-    start_probability: Optional[float] = None
+    season_value: float | None = None
+    start_probability: float | None = None
 
 
 class VarRankingResponse(_CamelModel):

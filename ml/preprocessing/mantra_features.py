@@ -93,7 +93,14 @@ def _compute_cumulative_lag(df_per_season: pd.DataFrame) -> pd.DataFrame:
             row = {"player_fotmob_id": pid, "season_start": grp.loc[i, "season_start"]}
             prior = grp.iloc[:i]
             if prior.empty:
-                for col in ["vote_avg", "vote_std", "minutes_avg", "xg_per90", "xa_per90", "presence_rate"]:
+                for col in [
+                    "vote_avg",
+                    "vote_std",
+                    "minutes_avg",
+                    "xg_per90",
+                    "xa_per90",
+                    "presence_rate",
+                ]:
                     row[f"mantra_{col}"] = np.nan
                 row["mantra_seasons_it"] = 0
             else:
@@ -142,7 +149,9 @@ def attach_mantra_features(
         try:
             raw_stats = pd.read_sql(_FALLBACK_STATS_SQL, engine)
             if raw_stats.empty:
-                log.warning("No player_season_stats for MANTRA features. All will be NaN.")
+                log.warning(
+                    "No player_season_stats for MANTRA features. All will be NaN."
+                )
                 for col in MANTRA_FEATURE_COLS:
                     df[col] = np.nan
                 return df
@@ -163,7 +172,9 @@ def attach_mantra_features(
     n_with = int(df["mantra_vote_avg"].notna().sum())
     log.info(
         "MANTRA features: %d / %d rows have historical data (%.1f%%).",
-        n_with, len(df), 100.0 * n_with / len(df) if len(df) else 0,
+        n_with,
+        len(df),
+        100.0 * n_with / len(df) if len(df) else 0,
     )
     return df
 
@@ -177,14 +188,18 @@ def add_mantra_derived_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # mantra_voto_trend: vote_avg / role_median_vote
     if "mantra_vote_avg" in df.columns and "canonical_role" in df.columns:
-        role_median = df.groupby("canonical_role")["mantra_vote_avg"].transform("median")
+        role_median = df.groupby("canonical_role")["mantra_vote_avg"].transform(
+            "median"
+        )
         df["mantra_voto_trend"] = df["mantra_vote_avg"] / role_median.clip(lower=0.1)
     else:
         df["mantra_voto_trend"] = np.nan
 
     # mantra_consistency: vote_avg / (vote_std + 0.1)
     if "mantra_vote_avg" in df.columns and "mantra_vote_std" in df.columns:
-        df["mantra_consistency"] = df["mantra_vote_avg"] / (df["mantra_vote_std"].fillna(0) + 0.1)
+        df["mantra_consistency"] = df["mantra_vote_avg"] / (
+            df["mantra_vote_std"].fillna(0) + 0.1
+        )
     else:
         df["mantra_consistency"] = np.nan
 
@@ -193,7 +208,9 @@ def add_mantra_derived_features(df: pd.DataFrame) -> pd.DataFrame:
         goals_col = "goals_per90" if "goals_per90" in df.columns else None
         if goals_col:
             denom = pd.to_numeric(df[goals_col], errors="coerce").fillna(0) + 0.01
-            df["mantra_expected_ratio"] = (df["mantra_xg_per90"] / denom).clip(upper=5.0)
+            df["mantra_expected_ratio"] = (df["mantra_xg_per90"] / denom).clip(
+                upper=5.0
+            )
         else:
             df["mantra_expected_ratio"] = np.nan
     else:
@@ -232,7 +249,9 @@ class MantraImputer(BaseEstimator, TransformerMixin):
                 self.global_means_[col] = 0.0
                 continue
             if self.season_col in X.columns and self.role_col in X.columns:
-                self.group_means_[col] = X.groupby([self.season_col, self.role_col])[col].mean()
+                self.group_means_[col] = X.groupby([self.season_col, self.role_col])[
+                    col
+                ].mean()
             if self.role_col in X.columns:
                 self.role_means_[col] = X.groupby(self.role_col)[col].mean()
             self.global_means_[col] = X[col].mean() if col in X.columns else 0.0
@@ -254,15 +273,26 @@ class MantraImputer(BaseEstimator, TransformerMixin):
                 continue
 
             # Level 1: (season, role) mean
-            if col in self.group_means_ and self.season_col in X_out.columns and self.role_col in X_out.columns:
+            if (
+                col in self.group_means_
+                and self.season_col in X_out.columns
+                and self.role_col in X_out.columns
+            ):
                 for idx in X_out[missing_mask].index:
-                    key = (X_out.loc[idx, self.season_col], X_out.loc[idx, self.role_col])
+                    key = (
+                        X_out.loc[idx, self.season_col],
+                        X_out.loc[idx, self.role_col],
+                    )
                     if key in self.group_means_[col].index:
                         X_out.loc[idx, col] = self.group_means_[col].loc[key]
 
             # Level 2: role mean (remaining NaN)
             still_missing = X_out[col].isna()
-            if still_missing.any() and col in self.role_means_ and self.role_col in X_out.columns:
+            if (
+                still_missing.any()
+                and col in self.role_means_
+                and self.role_col in X_out.columns
+            ):
                 for idx in X_out[still_missing].index:
                     role = X_out.loc[idx, self.role_col]
                     if role in self.role_means_[col].index:

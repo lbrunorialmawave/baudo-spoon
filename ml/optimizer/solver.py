@@ -15,25 +15,25 @@ from collections import defaultdict
 import pulp
 
 from ml.optimizer.inflation import compute_role_percentile_map, estimate_effective_cost
-from ml.optimizer.team_strength import load_team_strength_scores
 from ml.optimizer.models import (
     MANTRA_DEFAULT_QUOTAS,
-    OptimizationConfig,
-    OptimizationResult,
-    Player,
     ROLE_QUOTAS,
     SOLVER_STATUS_ERROR,
     SOLVER_STATUS_INFEASIBLE,
     SOLVER_STATUS_OPTIMAL,
     SOLVER_STATUS_TIMEOUT,
     SOLVER_STATUS_UNBOUNDED,
-    StrategyProfile,
     TOTAL_SQUAD_SIZE,
+    OptimizationConfig,
+    OptimizationResult,
+    Player,
+    StrategyProfile,
 )
+from ml.optimizer.team_strength import load_team_strength_scores
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["solve_strategy", "_build_player_index"]
+__all__ = ["_build_player_index", "solve_strategy"]
 
 
 # ---------------------------------------------------------------------------
@@ -181,9 +181,7 @@ def _build_role_constraints_mantra(
             continue
         prob += (
             pulp.lpSum(
-                x_ir[(p.player_id, role)]
-                for p in pool
-                if (p.player_id, role) in x_ir
+                x_ir[(p.player_id, role)] for p in pool if (p.player_id, role) in x_ir
             )
             == quota,
             f"mantra_quota_{role}",
@@ -314,8 +312,13 @@ def solve_strategy(
         * (p.reliability_weight if p.reliability_weight is not None else 1.0)
         * (
             _base_score(p)
-            - config.risk_aversion * (p.prediction_std if p.prediction_std is not None else 0.0)
-            + (config.esv_weight * p.esv if config.esv_weight > 0 and p.esv is not None else 0.0)
+            - config.risk_aversion
+            * (p.prediction_std if p.prediction_std is not None else 0.0)
+            + (
+                config.esv_weight * p.esv
+                if config.esv_weight > 0 and p.esv is not None
+                else 0.0
+            )
         )
         * x[p.player_id]
         for p in pool
@@ -356,7 +359,9 @@ def solve_strategy(
             )
 
     # Big teams aggregate cap.
-    big_pids = [pid for t, pids in by_team.items() if t in config.big_teams for pid in pids]
+    big_pids = [
+        pid for t, pids in by_team.items() if t in config.big_teams for pid in pids
+    ]
     if big_pids:
         prob += (
             pulp.lpSum(x[pid] for pid in big_pids) <= config.big_teams_cap,
@@ -434,14 +439,15 @@ def solve_strategy(
         )
 
     # Top-tier cap: count players with effective_cost >= threshold.
-    if strategy.max_top_tier_players is not None and strategy.top_tier_cost_threshold is not None:
+    if (
+        strategy.max_top_tier_players is not None
+        and strategy.top_tier_cost_threshold is not None
+    ):
         threshold = float(strategy.top_tier_cost_threshold)
         # Pre-filter to candidates; the constraint reduces to a simple sum
         # over the candidate subset.
         top_tier_pids = [
-            p.player_id
-            for p in pool
-            if effective_cost[p.player_id] >= threshold
+            p.player_id for p in pool if effective_cost[p.player_id] >= threshold
         ]
         prob += (
             pulp.lpSum(x[pid] for pid in top_tier_pids)
@@ -502,7 +508,11 @@ def solve_strategy(
             },
         )
 
-    selected = [p for p in pool if pulp.value(x[p.player_id]) is not None and pulp.value(x[p.player_id]) > 0.5]
+    selected = [
+        p
+        for p in pool
+        if pulp.value(x[p.player_id]) is not None and pulp.value(x[p.player_id]) > 0.5
+    ]
     return _build_result(
         strategy_name=strategy.name,
         selected=selected,
@@ -629,7 +639,6 @@ def _build_result(
             ),
         },
     )
-
 
 
 def _evaluate_formations(

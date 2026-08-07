@@ -17,6 +17,6 @@ from .runner import run_hybrid_computation
 __all__ = [
     "MantraIbridoConfig",
     "load_config",
-    "update_config",
     "run_hybrid_computation",
+    "update_config",
 ]

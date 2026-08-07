@@ -10,6 +10,7 @@ or ``expert_rating`` with equal-weight fallback.
 # ponytail: equal source weights for now; derive from EnsembleWeightConfig
 # when per-source reliability data is available.
 """
+
 from __future__ import annotations
 
 import polars as pl

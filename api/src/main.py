@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,8 +15,22 @@ from ml.storage.artifact_store import ArtifactStore, R2Config
 from .config import settings
 from .data_repository import DataRepository
 from .logging_cfg import configure_logging
-from .routers import auction, leagues, matches, optimizer, quotations, seasons, stats
-from .routers import admin_scrape, auth, expert_ratings, mantra, matchday, ml_pipeline, model_metrics
+from .routers import (
+    admin_scrape,
+    auction,
+    auth,
+    expert_ratings,
+    leagues,
+    mantra,
+    matchday,
+    matches,
+    ml_pipeline,
+    model_metrics,
+    optimizer,
+    quotations,
+    seasons,
+    stats,
+)
 from .routers.intelligence import intelligence_router, predictions_router
 
 configure_logging(settings.log_level)
@@ -132,7 +147,9 @@ async def health_check() -> ORJSONResponse:
 
 
 @app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request, exc: Exception) -> ORJSONResponse:
+async def unhandled_exception_handler(
+    request: Request, exc: Exception
+) -> ORJSONResponse:
     log.exception("Unhandled error on %s %s", request.method, request.url)
     return ORJSONResponse(
         status_code=500,

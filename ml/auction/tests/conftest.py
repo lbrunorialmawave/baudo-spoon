@@ -12,7 +12,6 @@ from ml.auction.models import (
 )
 from ml.optimizer.models import Player
 
-
 # ---------------------------------------------------------------------------
 # Player fixtures
 # ---------------------------------------------------------------------------
@@ -109,6 +108,8 @@ def auction_config(alternatives_config: AlternativesConfig) -> AuctionConfig:
 @pytest.fixture
 def participants() -> list[ParticipantSetup]:
     return [
-        ParticipantSetup(participant_id=f"u{i}", display_name=f"User {i}", budget_initial=500)
+        ParticipantSetup(
+            participant_id=f"u{i}", display_name=f"User {i}", budget_initial=500
+        )
         for i in range(1, 5)
     ]

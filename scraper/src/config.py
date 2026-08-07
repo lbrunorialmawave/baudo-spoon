@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -16,7 +15,7 @@ class ScraperSettings(BaseSettings):
 
     # Optional locally — required only when --no-db is NOT passed.
     # Set via SCRAPER_DATABASE_URL environment variable.
-    database_url: Optional[str] = Field(None, description="PostgreSQL connection URL")
+    database_url: str | None = Field(None, description="PostgreSQL connection URL")
     output_dir: Path = Path("downloaded_files/output")
     log_level: str = "INFO"
 

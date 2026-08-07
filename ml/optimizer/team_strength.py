@@ -13,7 +13,9 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-_DEFAULT_PATH = Path(__file__).resolve().parents[2] / "config" / "team_strength_elo.json"
+_DEFAULT_PATH = (
+    Path(__file__).resolve().parents[2] / "config" / "team_strength_elo.json"
+)
 
 
 def _download_from_r2(path: Path) -> None:
@@ -25,7 +27,7 @@ def _download_from_r2(path: Path) -> None:
     try:
         from ml.config import settings
         from ml.storage.artifact_store import ArtifactStore, R2Config
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.warning("R2 download skipped for %s (import): %s", path.name, exc)
         return
 
@@ -42,7 +44,7 @@ def _download_from_r2(path: Path) -> None:
         # load_json downloads into local_dir if missing; we only care about the
         # side-effect of materialising the file (caller re-reads path).
         store.load_json(path.name)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.warning("R2 download skipped for %s: %s", path.name, exc)
 
 

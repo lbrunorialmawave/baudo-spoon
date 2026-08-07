@@ -40,6 +40,7 @@ def compute_hybrid_classifications(
     # Use a dummy config with defaults if none provided (avoids circular import).
     if config is None:
         from .config import MantraIbridoConfig as _C
+
         config = _C()
 
     labels: dict[str, list[str]] = {
@@ -83,9 +84,14 @@ def compute_hybrid_classifications(
 
         # ── ML_Confirmed ─────────────────────────────────────────────────────
         # High predicted value + decent confidence + enough minutes
-        if (predicted is not None and predicted > 6.5
-                and confidence is not None and confidence >= config.CONFIDENZA_SOGLIA
-                and expected_min is not None and expected_min > 1500):
+        if (
+            predicted is not None
+            and predicted > 6.5
+            and confidence is not None
+            and confidence >= config.CONFIDENZA_SOGLIA
+            and expected_min is not None
+            and expected_min > 1500
+        ):
             labels["ML_Confirmed"].append(name)
 
         # ── ML_Risky ──────────────────────────────────────────────────────────
@@ -96,14 +102,22 @@ def compute_hybrid_classifications(
         # ── ML_Boosted ────────────────────────────────────────────────────────
         # ML significantly above role mean AND player is not already top-rated
         # by MANTRA (FP_Corr not high) → "hidden gem" signal
-        if (ml_boost is not None and ml_boost > config.ML_BOOST_SOGLIA
-                and fp_corr is not None and fp_corr < config.ML_BOOST_FP_CORR_MAX):
+        if (
+            ml_boost is not None
+            and ml_boost > config.ML_BOOST_SOGLIA
+            and fp_corr is not None
+            and fp_corr < config.ML_BOOST_FP_CORR_MAX
+        ):
             labels["ML_Boosted"].append(name)
 
         # ── ML_Top ────────────────────────────────────────────────────────────
         # High predicted value + ML above role mean → top player
-        if (predicted is not None and predicted >= config.ML_TOP_PRED_MIN
-                and ml_boost is not None and ml_boost >= config.ML_TOP_BOOST_MIN):
+        if (
+            predicted is not None
+            and predicted >= config.ML_TOP_PRED_MIN
+            and ml_boost is not None
+            and ml_boost >= config.ML_TOP_BOOST_MIN
+        ):
             labels["ML_Top"].append(name)
 
         # ── Contradiction ─────────────────────────────────────────────────────
@@ -117,14 +131,22 @@ def compute_hybrid_classifications(
 
         # ── Best_Value ────────────────────────────────────────────────────────
         # High VR (Value Rating) and decent hybrid score
-        if (vr is not None and vr >= config.BEST_VALUE_VR_MIN
-                and fp_ibrido is not None and fp_ibrido >= config.BEST_VALUE_FP_IBRIDO_MIN):
+        if (
+            vr is not None
+            and vr >= config.BEST_VALUE_VR_MIN
+            and fp_ibrido is not None
+            and fp_ibrido >= config.BEST_VALUE_FP_IBRIDO_MIN
+        ):
             labels["Best_Value"].append(name)
 
         # ── Sleeper ───────────────────────────────────────────────────────────
         # Low MANTRA score but decent ML prediction → could be undervalued
-        if (fp_corr is not None and fp_corr < config.SLEEPER_FP_CORR_MAX
-                and ml_score_norm is not None and ml_score_norm > config.SLEEPER_ML_NORM_MIN):
+        if (
+            fp_corr is not None
+            and fp_corr < config.SLEEPER_FP_CORR_MAX
+            and ml_score_norm is not None
+            and ml_score_norm > config.SLEEPER_ML_NORM_MIN
+        ):
             labels["Sleeper"].append(name)
 
     log.info(

@@ -39,6 +39,7 @@ explicitly rather than leaving them as an accident of implementation:
    have the shallowest bottom (which would overstate how much better
    than "replaceable" they really are). See :func:`_select_scarcest_replacement`.
 """
+
 from __future__ import annotations
 
 import logging
@@ -80,7 +81,7 @@ class ReplacementLevel:
         role: str,
         scores: list[float],
         percentile_threshold: float = 0.10,
-    ) -> "ReplacementLevel":
+    ) -> ReplacementLevel:
         """Compute replacement level from the bottom percentile of a role pool.
 
         Args:
@@ -95,11 +96,13 @@ class ReplacementLevel:
             ValueError: If scores is empty.
         """
         if not scores:
-            raise ValueError(f"Cannot compute ReplacementLevel for role '{role}': empty scores.")
+            raise ValueError(
+                f"Cannot compute ReplacementLevel for role '{role}': empty scores."
+            )
         import numpy as np
 
         sorted_scores = sorted(scores)
-        n = max(1, int(math.ceil(len(sorted_scores) * percentile_threshold)))
+        n = max(1, math.ceil(len(sorted_scores) * percentile_threshold))
         replacement_score = float(np.median(sorted_scores[:n]))
         return cls(
             role=role,
@@ -115,7 +118,7 @@ class ReplacementLevel:
         scores: list[float],
         num_participants: int,
         role_quota: int,
-    ) -> "ReplacementLevel":
+    ) -> ReplacementLevel:
         """Replacement level = score at position (num_participants × role_quota) in descending sort.
 
         This models the last player drafted at a role in a league of N teams,
@@ -134,7 +137,9 @@ class ReplacementLevel:
             ValueError: If scores is empty.
         """
         if not scores:
-            raise ValueError(f"Cannot compute ReplacementLevel for role '{role}': empty scores.")
+            raise ValueError(
+                f"Cannot compute ReplacementLevel for role '{role}': empty scores."
+            )
         sorted_desc = sorted(scores, reverse=True)
         cutoff_idx = min(num_participants * role_quota, len(sorted_desc)) - 1
         cutoff_idx = max(0, cutoff_idx)
@@ -170,7 +175,7 @@ class VAR:
         role: str,
         projected_score: float,
         replacement_level: ReplacementLevel,
-    ) -> "VAR":
+    ) -> VAR:
         """Compute VAR for a player.
 
         Args:
@@ -207,10 +212,10 @@ class DemandCurve:
     When calibrated=False, a warning is logged on every call to expected_price().
     """
 
-    base_price: float = 1.0     # minimum bid (Fantacalcio: 1 credit)
-    scale: float = 8.0          # price sensitivity to VAR
-    exponent: float = 1.4       # convexity (>1 = convex, top players get premium)
-    calibrated: bool = False    # MUST be False until fitted on real auction data
+    base_price: float = 1.0  # minimum bid (Fantacalcio: 1 credit)
+    scale: float = 8.0  # price sensitivity to VAR
+    exponent: float = 1.4  # convexity (>1 = convex, top players get premium)
+    calibrated: bool = False  # MUST be False until fitted on real auction data
 
     def expected_price(self, var_score: float) -> float:
         """Compute expected auction price for a given VAR.
@@ -250,7 +255,7 @@ class ExpectedSurplusValue:
     var_score: float
     expected_price: float
     budget_per_slot: float
-    esv: float   # = expected_performance_value - expected_price
+    esv: float  # = expected_performance_value - expected_price
     calibrated: bool  # mirrors DemandCurve.calibrated
 
     @classmethod
@@ -261,7 +266,7 @@ class ExpectedSurplusValue:
         budget_per_slot: float,
         baseline_var: float,
         override_expected_price: float | None = None,
-    ) -> "ExpectedSurplusValue":
+    ) -> ExpectedSurplusValue:
         """Compute ESV for a player.
 
         Args:
@@ -276,15 +281,20 @@ class ExpectedSurplusValue:
         Returns:
             ExpectedSurplusValue with esv = perf_value - expected_price.
         """
-        expected_px = override_expected_price if override_expected_price is not None \
+        expected_px = (
+            override_expected_price
+            if override_expected_price is not None
             else demand_curve.expected_price(var.var_score)
+        )
 
         # Performance value: fraction of budget proportional to VAR above replacement
         # Uses baseline_var to normalise; clamped at 0 for negative VAR players
         if baseline_var > 0 and var.var_score > 0:
             perf_value = (var.var_score / baseline_var) * budget_per_slot
         else:
-            perf_value = demand_curve.base_price  # replacement-level player = min bid value
+            perf_value = (
+                demand_curve.base_price
+            )  # replacement-level player = min bid value
 
         esv = perf_value - expected_px
 
@@ -301,8 +311,8 @@ class ExpectedSurplusValue:
 
 def _select_scarcest_replacement(
     eligible_roles: frozenset[str] | set[str],
-    replacement_by_role: dict[str, "ReplacementLevel"],
-) -> "ReplacementLevel":
+    replacement_by_role: dict[str, ReplacementLevel],
+) -> ReplacementLevel:
     """Pick the ReplacementLevel to VAR a multi-role player against.
 
     Policy: the eligible role whose ReplacementLevel.score is *highest*
@@ -448,7 +458,9 @@ class VarEngine:
 
         total_slots = sum(self.roster_slots.values())
         # ponytail: uniform budget_per_slot = total/total_slots; role-weighted if needed
-        budget_per_slot = self.total_budget / total_slots if total_slots > 0 else self.total_budget
+        budget_per_slot = (
+            self.total_budget / total_slots if total_slots > 0 else self.total_budget
+        )
 
         replacement_by_role: dict[str, ReplacementLevel] = {}
         for role, role_players in by_role.items():
@@ -485,7 +497,9 @@ class VarEngine:
 
         for role, vars_ in vars_by_role.items():
             positive_vars = [v.var_score for v in vars_ if v.var_score > 0]
-            baseline_var = sum(positive_vars) / len(positive_vars) if positive_vars else 1.0
+            baseline_var = (
+                sum(positive_vars) / len(positive_vars) if positive_vars else 1.0
+            )
 
             for v in vars_:
                 esv = ExpectedSurplusValue.compute(
@@ -506,7 +520,8 @@ class VarEngine:
                 for p in role_players
             }
             ranked = [
-                r for r in ranked
+                r
+                for r in ranked
                 if (sp_map.get(r.player_id) or 0.0) >= self.min_start_probability
             ]
 

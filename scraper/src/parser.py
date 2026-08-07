@@ -29,7 +29,11 @@ def parse_match_link(link_element: Any, match_url: str) -> dict[str, Any] | None
                 if match_time:
                     match_time = f"{match_time} {line}"
                 continue
-            if ":" in line and len(line) <= 5 and all(c.isdigit() or c == ":" for c in line):
+            if (
+                ":" in line
+                and len(line) <= 5
+                and all(c.isdigit() or c == ":" for c in line)
+            ):
                 match_time = line
             elif " - " in line and any(c.isdigit() for c in line):
                 score = line
@@ -41,7 +45,18 @@ def parse_match_link(link_element: Any, match_url: str) -> dict[str, Any] | None
             ):
                 status = line
             elif (
-                line not in ("FT", "Live", "HT", "Postponed", "Cancelled", "AET", "PEN", "AM", "PM")
+                line
+                not in (
+                    "FT",
+                    "Live",
+                    "HT",
+                    "Postponed",
+                    "Cancelled",
+                    "AET",
+                    "PEN",
+                    "AM",
+                    "PM",
+                )
                 and " - " not in line
                 and not (":" in line and len(line) <= 5)
             ):
@@ -75,12 +90,14 @@ def parse_score(score_str: str | None) -> tuple[int, int]:
             parts = score_str.split(" - ")
             if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
                 return int(parts[0]), int(parts[1])
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("Failed to parse score string %r: %s", score_str, exc)
     return 0, 0
 
 
-def create_team_rows(match: dict[str, Any], round_num: int) -> tuple[dict[str, Any], dict[str, Any]]:
+def create_team_rows(
+    match: dict[str, Any], round_num: int
+) -> tuple[dict[str, Any], dict[str, Any]]:
     base_info = {
         "Date": match.get("date", "N/A"),
         "Round": round_num,
@@ -94,31 +111,37 @@ def create_team_rows(match: dict[str, Any], round_num: int) -> tuple[dict[str, A
     home_points, away_points = calculate_match_points(home_goals, away_goals)
 
     home_row = base_info.copy()
-    home_row.update({
-        "Team": match["home"],
-        "Side": "Home",
-        "Opponent": match["away"],
-        "Goal scored": home_goals,
-        "Goal conceded": away_goals,
-        "points": home_points,
-    })
+    home_row.update(
+        {
+            "Team": match["home"],
+            "Side": "Home",
+            "Opponent": match["away"],
+            "Goal scored": home_goals,
+            "Goal conceded": away_goals,
+            "points": home_points,
+        }
+    )
 
     away_row = base_info.copy()
-    away_row.update({
-        "Team": match["away"],
-        "Side": "Away",
-        "Opponent": match["home"],
-        "Goal scored": away_goals,
-        "Goal conceded": home_goals,
-        "points": away_points,
-    })
+    away_row.update(
+        {
+            "Team": match["away"],
+            "Side": "Away",
+            "Opponent": match["home"],
+            "Goal scored": away_goals,
+            "Goal conceded": home_goals,
+            "points": away_points,
+        }
+    )
 
     return home_row, away_row
 
 
 def extract_possession(driver: Any, stats_data: dict[str, Any]) -> None:
     try:
-        possession_div = driver.find_element(By.CSS_SELECTOR, "div.css-1xzakdb-PossessionDiv")
+        possession_div = driver.find_element(
+            By.CSS_SELECTOR, "div.css-1xzakdb-PossessionDiv"
+        )
         possession_spans = possession_div.find_elements(By.TAG_NAME, "span")
 
         if len(possession_spans) >= 2:
@@ -128,13 +151,18 @@ def extract_possession(driver: Any, stats_data: dict[str, Any]) -> None:
             if "Top stats" not in stats_data:
                 stats_data["Top stats"] = {}
 
-            stats_data["Top stats"]["Ball possession"] = [home_possession, away_possession]
-    except Exception:
-        pass
+            stats_data["Top stats"]["Ball possession"] = [
+                home_possession,
+                away_possession,
+            ]
+    except Exception as exc:
+        log.debug("Ball possession extraction skipped (non-critical): %s", exc)
 
 
 def extract_stat_sections(driver: Any, stats_data: dict[str, Any]) -> None:
-    stat_containers = driver.find_elements(By.CSS_SELECTOR, "ul.css-1pxkecz-StatGroupContainer")
+    stat_containers = driver.find_elements(
+        By.CSS_SELECTOR, "ul.css-1pxkecz-StatGroupContainer"
+    )
 
     for container in stat_containers:
         current_section = "Top stats"
@@ -142,8 +170,10 @@ def extract_stat_sections(driver: Any, stats_data: dict[str, Any]) -> None:
             header = container.find_element(By.CSS_SELECTOR, "header h2")
             if header:
                 current_section = header.text.strip()
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug(
+                "Stat section header lookup failed, using default section: %s", exc
+            )
 
         items = container.find_elements(By.CSS_SELECTOR, "li")
 
@@ -162,7 +192,8 @@ def extract_stat_sections(driver: Any, stats_data: dict[str, Any]) -> None:
                     if current_section not in stats_data:
                         stats_data[current_section] = {}
                     stats_data[current_section][stat_name] = [home_val, away_val]
-            except Exception:
+            except Exception as exc:
+                log.debug("Skipping unparseable stat row: %s", exc)
                 continue
 
 

@@ -1,10 +1,12 @@
 """Phase 5 tests: auction VAR, demand curve, ESV."""
+
 import pytest
+
 from ml.auction.var import (
-    ReplacementLevel,
     VAR,
     DemandCurve,
     ExpectedSurplusValue,
+    ReplacementLevel,
     VarEngine,
 )
 
@@ -24,7 +26,9 @@ class TestReplacementLevel:
             ReplacementLevel.from_player_pool("A", [])
 
     def test_n_players_used_at_least_one(self, role_scores):
-        rl = ReplacementLevel.from_player_pool("A", role_scores, percentile_threshold=0.01)
+        rl = ReplacementLevel.from_player_pool(
+            "A", role_scores, percentile_threshold=0.01
+        )
         assert rl.n_players_used >= 1
 
 
@@ -70,7 +74,9 @@ class TestExpectedSurplusValue:
         rl = ReplacementLevel.from_player_pool("A", role_scores)
         v = VAR.compute("p_star", "A", 9.0, rl)
         dc = DemandCurve(scale=2.0, calibrated=True)
-        esv = ExpectedSurplusValue.compute(v, dc, budget_per_slot=20.0, baseline_var=2.0)
+        esv = ExpectedSurplusValue.compute(
+            v, dc, budget_per_slot=20.0, baseline_var=2.0
+        )
         # Star player with low-scale demand curve should have positive ESV
         assert isinstance(esv.esv, float)
 
@@ -78,7 +84,9 @@ class TestExpectedSurplusValue:
         rl = ReplacementLevel.from_player_pool("A", role_scores)
         v = VAR.compute("p1", "A", 7.0, rl)
         dc = DemandCurve(calibrated=False)
-        esv = ExpectedSurplusValue.compute(v, dc, budget_per_slot=20.0, baseline_var=2.0)
+        esv = ExpectedSurplusValue.compute(
+            v, dc, budget_per_slot=20.0, baseline_var=2.0
+        )
         assert not esv.calibrated
 
 

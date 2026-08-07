@@ -42,8 +42,8 @@ class MantraIbridoConfig:
     ML_BOOST_FP_CORR_MAX: float = 60.0
 
     # ML_Top: high predicted value AND strong mlBoost (top players)
-    ML_TOP_PRED_MIN: float = 6.7       # predicted P75
-    ML_TOP_BOOST_MIN: float = 65.0     # mlBoost ~P85
+    ML_TOP_PRED_MIN: float = 6.7  # predicted P75
+    ML_TOP_BOOST_MIN: float = 65.0  # mlBoost ~P85
 
     # Contradiction: strong MANTRA vs ML disagreement (|gap| > P85 ≈ 33)
     SOGLIA_GAP_ALERT: float = 30.0
@@ -58,4 +58,3 @@ class MantraIbridoConfig:
 
     # Minutes_Risk: low expected minutes
     MINUTES_RISK_MAX: float = 900.0
-

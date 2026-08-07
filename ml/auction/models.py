@@ -40,23 +40,24 @@ class ValuationMode(str, Enum):
     PER_MATCH_RATING = "PER_MATCH_RATING"
     SEASON_VALUE = "SEASON_VALUE"
 
+
 __all__ = [
     "ADJACENT_TIERS",
     "ALL_TIERS",
-    "Tier",
+    "AlternativeSuggestion",
+    "AlternativesConfig",
+    "AssignmentRecord",
+    "AuctionConfig",
+    "AuctionState",
+    "AuctionSummary",
+    "MarketDriftConfig",
+    "ParticipantSetup",
+    "ParticipantState",
+    "RecordResult",
     "Role",
     "RulesetType",
+    "Tier",
     "ValuationMode",
-    "MarketDriftConfig",
-    "AlternativesConfig",
-    "ParticipantSetup",
-    "AuctionConfig",
-    "ParticipantState",
-    "AssignmentRecord",
-    "AuctionState",
-    "RecordResult",
-    "AlternativeSuggestion",
-    "AuctionSummary",
 ]
 
 # ---------------------------------------------------------------------------
@@ -248,7 +249,10 @@ class AuctionConfig:
                 "AuctionConfig.num_participants must be >= 1, got "
                 f"{self.num_participants}"
             )
-        if self.ruleset == "MANTRA" and set(self.role_quotas.keys()) == _CLASSIC_ROLE_SET:
+        if (
+            self.ruleset == "MANTRA"
+            and set(self.role_quotas.keys()) == _CLASSIC_ROLE_SET
+        ):
             # Caller opted into MANTRA but left role_quotas at its CLASSIC
             # default (didn't pass one explicitly) — fall back to the shared
             # MANTRA default quotas, same convenience already provided by
@@ -293,8 +297,7 @@ class AuctionConfig:
             )
         if self.budget_initial <= 0:
             raise ValueError(
-                "AuctionConfig.budget_initial must be > 0, got "
-                f"{self.budget_initial}"
+                f"AuctionConfig.budget_initial must be > 0, got {self.budget_initial}"
             )
         if not 0.0 <= self.hybrid_blend <= 1.0:
             raise ValueError(

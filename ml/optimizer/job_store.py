@@ -8,6 +8,7 @@ Env:
   OPTIMIZER_JOB_BACKEND=memory|redis
   OPTIMIZER_JOB_TTL_SECONDS=86400
 """
+
 from __future__ import annotations
 
 import json
@@ -17,13 +18,13 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Literal, Protocol
+from typing import Any, Literal
 
 log = logging.getLogger(__name__)
 
 JobStatus = Literal["queued", "running", "completed", "failed"]
 
-__all__ = ["OptimizeJob", "JobStore", "job_store", "build_job_store"]
+__all__ = ["JobStore", "OptimizeJob", "build_job_store", "job_store"]
 
 
 def _now() -> str:
@@ -57,7 +58,7 @@ class OptimizeJob:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "OptimizeJob":
+    def from_dict(cls, data: dict[str, Any]) -> OptimizeJob:
         return cls(
             job_id=data["job_id"],
             status=data.get("status", "queued"),  # type: ignore[arg-type]
@@ -119,7 +120,9 @@ class MemoryJobStore:
 class RedisJobStore:
     """Sync Redis backend (safe to call from worker threads)."""
 
-    def __init__(self, url: str, *, ttl_seconds: int = 86400, prefix: str = "optjob:") -> None:
+    def __init__(
+        self, url: str, *, ttl_seconds: int = 86400, prefix: str = "optjob:"
+    ) -> None:
         import redis  # type: ignore[import]
 
         self._r = redis.Redis.from_url(url, decode_responses=True)
@@ -180,13 +183,17 @@ def build_job_store() -> MemoryJobStore | RedisJobStore:
     backend = os.environ.get("OPTIMIZER_JOB_BACKEND", "memory").lower()
     ttl = int(os.environ.get("OPTIMIZER_JOB_TTL_SECONDS", "86400"))
     if backend == "redis":
-        url = os.environ.get("REDIS_URL") or os.environ.get("API_REDIS_URL") or "redis://localhost:6379/0"
+        url = (
+            os.environ.get("REDIS_URL")
+            or os.environ.get("API_REDIS_URL")
+            or "redis://localhost:6379/0"
+        )
         try:
             store = RedisJobStore(url, ttl_seconds=ttl)
             store._r.ping()
             log.info("optimizer job_store backend=redis ttl=%s", ttl)
             return store
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.warning("Redis job store unavailable (%s); falling back to memory", exc)
     return MemoryJobStore()
 

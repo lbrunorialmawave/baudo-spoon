@@ -27,7 +27,6 @@ Assumptions:
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 
@@ -47,65 +46,65 @@ _BASE_RATING: float = 6.0
 
 WEIGHTS_BY_ROLE: dict[str, dict[str, float]] = {
     "GK": {
-        "goals":            4.5,
-        "goal_assist":      3.0,
-        "clean_sheet":      1.0,   # per-match rate × weight
-        "saves":            0.03,  # per save
-        "_goals_prevented": 0.5,   # per xG-unit prevented
-        "yellow_card":     -0.5,
+        "goals": 4.5,
+        "goal_assist": 3.0,
+        "clean_sheet": 1.0,  # per-match rate × weight
+        "saves": 0.03,  # per save
+        "_goals_prevented": 0.5,  # per xG-unit prevented
+        "yellow_card": -0.5,
         "yellow_red_card": -1.0,
-        "red_card":        -1.0,
-        "own_goals":       -2.0,
-        "penalty_scored":   3.0,
-        "penalty_missed":  -3.0,
+        "red_card": -1.0,
+        "own_goals": -2.0,
+        "penalty_scored": 3.0,
+        "penalty_missed": -3.0,
     },
     "DEF": {
-        "goals":               4.0,
-        "goal_assist":         2.5,
-        "clean_sheet":         1.5,
-        "total_tackle":        0.04,
-        "interception":        0.04,
+        "goals": 4.0,
+        "goal_assist": 2.5,
+        "clean_sheet": 1.5,
+        "total_tackle": 0.04,
+        "interception": 0.04,
         "effective_clearance": 0.02,
-        "penalty_won":         0.5,
-        "penalty_conceded":   -0.5,
-        "yellow_card":        -0.5,
-        "yellow_red_card":    -1.0,
-        "red_card":           -1.0,
-        "own_goals":          -2.0,
-        "penalty_scored":      3.0,
-        "penalty_missed":     -3.0,
+        "penalty_won": 0.5,
+        "penalty_conceded": -0.5,
+        "yellow_card": -0.5,
+        "yellow_red_card": -1.0,
+        "red_card": -1.0,
+        "own_goals": -2.0,
+        "penalty_scored": 3.0,
+        "penalty_missed": -3.0,
     },
     "MID": {
-        "goals":             3.5,
-        "goal_assist":       1.5,
+        "goals": 3.5,
+        "goal_assist": 1.5,
         "big_chance_created": 0.1,
-        "total_tackle":      0.02,
-        "interception":      0.02,
-        "penalty_won":       0.5,
+        "total_tackle": 0.02,
+        "interception": 0.02,
+        "penalty_won": 0.5,
         "penalty_conceded": -0.3,
-        "yellow_card":      -0.5,
-        "yellow_red_card":  -1.0,
-        "red_card":         -1.0,
-        "own_goals":        -2.0,
-        "penalty_scored":    3.0,
-        "penalty_missed":   -3.0,
+        "yellow_card": -0.5,
+        "yellow_red_card": -1.0,
+        "red_card": -1.0,
+        "own_goals": -2.0,
+        "penalty_scored": 3.0,
+        "penalty_missed": -3.0,
     },
     "FWD": {
-        "goals":            3.0,
-        "goal_assist":      1.0,
+        "goals": 3.0,
+        "goal_assist": 1.0,
         "big_chance_missed": -0.15,
-        "penalty_won":      0.5,
-        "yellow_card":     -0.5,
+        "penalty_won": 0.5,
+        "yellow_card": -0.5,
         "yellow_red_card": -1.0,
-        "red_card":        -1.0,
-        "own_goals":       -2.0,
-        "penalty_scored":   3.0,
-        "penalty_missed":  -3.0,
+        "red_card": -1.0,
+        "own_goals": -2.0,
+        "penalty_scored": 3.0,
+        "penalty_missed": -3.0,
     },
 }
 
 
-def _safe_col(df: pd.DataFrame, col_name: str) -> Optional[pd.Series]:
+def _safe_col(df: pd.DataFrame, col_name: str) -> pd.Series | None:
     """Return the column series if it exists, else None."""
     if col_name in df.columns:
         return df[col_name]
@@ -133,9 +132,7 @@ def _estimate_matches(df: pd.DataFrame) -> pd.Series:
     return raw.clip(lower=1).fillna(1)
 
 
-def _per_match_series(
-    df: pd.DataFrame, col_name: str, matches: pd.Series
-) -> pd.Series:
+def _per_match_series(df: pd.DataFrame, col_name: str, matches: pd.Series) -> pd.Series:
     """Return col / matches, or all-zeros if col is absent."""
     col = _safe_col(df, col_name)
     if col is None:
@@ -208,7 +205,7 @@ def compute_approx_fantavoto(df: pd.DataFrame) -> pd.Series:
 
 def attach_target(
     df: pd.DataFrame,
-    external_csv: Optional[Path] = None,
+    external_csv: Path | None = None,
     min_minutes: int = 800,
 ) -> pd.DataFrame:
     """Add ``fantavoto_medio`` column to *df* and drop under-represented players.
@@ -266,9 +263,7 @@ def attach_target(
                 missing,
             )
             mask = df["fantavoto_medio"].isna()
-            df.loc[mask, "fantavoto_medio"] = compute_approx_fantavoto(
-                df.loc[mask]
-            )
+            df.loc[mask, "fantavoto_medio"] = compute_approx_fantavoto(df.loc[mask])
             df.loc[mask, "target_source"] = "approx_fallback"
     else:
         log.info(
@@ -287,7 +282,9 @@ def attach_target(
         # "noisy target" rationale for this floor doesn't apply to them,
         # and dropping them here would defeat their entire purpose.
         if "is_foreign_fallback" in df.columns:
-            low_sample = low_sample & ~df["is_foreign_fallback"].fillna(False).astype(bool)
+            low_sample = low_sample & ~df["is_foreign_fallback"].fillna(False).astype(
+                bool
+            )
         dropped = int(low_sample.sum())
         if dropped:
             log.info(

@@ -1,13 +1,14 @@
 """Feature registry and batch computation utilities."""
+
 from __future__ import annotations
 
 import logging
 
 import polars as pl
 
-from ml.domain.features import Feature, MissingDataPolicy  # noqa: F401 — re-exported
+from ml.domain.features import Feature
 
-__all__ = ["FeatureRegistry", "REGISTRY", "compute_feature_matrix"]
+__all__ = ["REGISTRY", "FeatureRegistry", "compute_feature_matrix"]
 
 log = logging.getLogger(__name__)
 
@@ -42,9 +43,9 @@ class FeatureRegistry:
         Features without an ``applicable_roles`` attribute are included for all roles.
         """
         return [
-            f for f in self._features.values()
-            if not hasattr(f, "applicable_roles")
-            or role in getattr(f, "applicable_roles")
+            f
+            for f in self._features.values()
+            if not hasattr(f, "applicable_roles") or role in f.applicable_roles
         ]
 
 

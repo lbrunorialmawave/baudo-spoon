@@ -42,25 +42,29 @@ class TestEvaluateMantraWiring:
         mock_run_mantra = MagicMock(
             return_value={"players": [{"fantacalcio_id": 1, "VR": 6.5}]}
         )
-        mock_evaluate = MagicMock(
-            return_value={"rmse": 0.8, "mae": 0.6, "r2": 0.5}
-        )
+        mock_evaluate = MagicMock(return_value={"rmse": 0.8, "mae": 0.6, "r2": 0.5})
         mock_engine = MagicMock()
 
         # Simulate CLI args
         test_args = [
             "ml.run_pipeline",
             "--evaluate-mantra",
-            "--log-level", "WARNING",
+            "--log-level",
+            "WARNING",
         ]
         monkeypatch.setattr(sys, "argv", test_args)
 
         with (
-            patch("ml.run_pipeline._create_engine_with_retry", return_value=mock_engine),
-            patch.dict("sys.modules", {
-                "ml.config": MagicMock(MLConfig=mock_ml_config_cls),
-                "ml.pipeline.trainer": MagicMock(Trainer=mock_trainer_cls),
-            }),
+            patch(
+                "ml.run_pipeline._create_engine_with_retry", return_value=mock_engine
+            ),
+            patch.dict(
+                "sys.modules",
+                {
+                    "ml.config": MagicMock(MLConfig=mock_ml_config_cls),
+                    "ml.pipeline.trainer": MagicMock(Trainer=mock_trainer_cls),
+                },
+            ),
             patch("ml.mantra.runner.run_mantra", mock_run_mantra),
             patch("ml.mantra.evaluate.evaluate_mantra_vs_actuals", mock_evaluate),
         ):

@@ -16,8 +16,6 @@ I.  Indisponibili: injured / suspended / doubtful (needs matchday data)
 
 from __future__ import annotations
 
-from typing import Optional
-
 import pandas as pd
 
 
@@ -75,10 +73,7 @@ def low_cost(
     """C. Low Cost — Prezzo_Massimo <= soglia AND VR > 110.
     D. Low Cost Titolari — same + Pr >= 0.65 (use require_titolare=True).
     """
-    mask = (
-        (df["prezzo_massimo"] <= soglia_prezzo)
-        & (df["vr"] > vr_soglia)
-    )
+    mask = (df["prezzo_massimo"] <= soglia_prezzo) & (df["vr"] > vr_soglia)
     if require_titolare:
         pr = df.get("Pr", pd.Series(0, index=df.index)).fillna(0)
         mask = mask & (pr >= pr_soglia)

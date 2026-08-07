@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
@@ -31,8 +31,8 @@ _StatType = Literal["players", "teams"]
     responses={200: {"description": "Sorted list of category slugs"}},
 )
 async def list_player_categories(
-    league: Optional[str] = Query(None, description="Filter by league name (partial)"),
-    season: Optional[int] = Query(None, description="Filter by season start year"),
+    league: str | None = Query(None, description="Filter by league name (partial)"),
+    season: int | None = Query(None, description="Filter by season start year"),
     db: AsyncSession = Depends(get_db),
 ) -> list[str]:
     q = (
@@ -58,11 +58,15 @@ async def list_player_categories(
     responses={200: {"description": "Paginated player stat records"}},
 )
 async def list_player_stats(
-    league: Optional[str] = Query(None, description="Filter by league name (partial)"),
-    season: Optional[int] = Query(None, description="Filter by season start year (e.g. 2024)"),
-    stat_category: Optional[str] = Query(None, description="Exact stat category slug (e.g. 'goals')"),
-    player: Optional[str] = Query(None, description="Filter by player name (partial)"),
-    team: Optional[str] = Query(None, description="Filter by team name (partial)"),
+    league: str | None = Query(None, description="Filter by league name (partial)"),
+    season: int | None = Query(
+        None, description="Filter by season start year (e.g. 2024)"
+    ),
+    stat_category: str | None = Query(
+        None, description="Exact stat category slug (e.g. 'goals')"
+    ),
+    player: str | None = Query(None, description="Filter by player name (partial)"),
+    team: str | None = Query(None, description="Filter by team name (partial)"),
     page: int = Query(1, ge=1, description="Page number (1-based)"),
     size: int = Query(50, ge=1, le=200, description="Items per page"),
     db: AsyncSession = Depends(get_db),
@@ -117,7 +121,7 @@ async def list_player_stats(
 )
 async def get_player_stats(
     player_id: int,
-    league: Optional[str] = Query(None),
+    league: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ) -> list[PlayerSeasonStatSchema]:
     q = (
@@ -144,8 +148,8 @@ async def get_player_stats(
     responses={200: {"description": "Sorted list of category slugs"}},
 )
 async def list_team_categories(
-    league: Optional[str] = Query(None),
-    season: Optional[int] = Query(None),
+    league: str | None = Query(None),
+    season: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ) -> list[str]:
     q = (
@@ -171,10 +175,12 @@ async def list_team_categories(
     responses={200: {"description": "Paginated team stat records"}},
 )
 async def list_team_stats(
-    league: Optional[str] = Query(None),
-    season: Optional[int] = Query(None, description="Filter by season start year (e.g. 2024)"),
-    stat_category: Optional[str] = Query(None),
-    team: Optional[str] = Query(None, description="Filter by team name (partial)"),
+    league: str | None = Query(None),
+    season: int | None = Query(
+        None, description="Filter by season start year (e.g. 2024)"
+    ),
+    stat_category: str | None = Query(None),
+    team: str | None = Query(None, description="Filter by team name (partial)"),
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
@@ -227,7 +233,7 @@ async def list_team_stats(
 )
 async def get_team_stats(
     team_id: int,
-    league: Optional[str] = Query(None),
+    league: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ) -> list[TeamSeasonStatSchema]:
     q = (

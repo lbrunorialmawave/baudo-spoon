@@ -22,9 +22,7 @@ def _make_inputs(n_por=3, n_att=25, n_dif=25):
     n_ruoli = pd.Series([1] * n)
     # Real listino prices: attackers priced far higher than defenders,
     # matching real auction economics.
-    pz1 = pd.Series(
-        [10.0] * n_por + [80.0] * n_att + [8.0] * n_dif
-    )
+    pz1 = pd.Series([10.0] * n_por + [80.0] * n_att + [8.0] * n_dif)
     return roles, fp, cp, n_ruoli, pz1
 
 
@@ -63,7 +61,9 @@ def test_neo_arrivo_with_zero_pz1_does_not_drag_role_average_down() -> None:
     pz12 = pd.concat([pz1, pd.Series([0.0])], ignore_index=True)
     roles2_s = pd.Series(roles2)
 
-    with_neo = compute_fp_corr(fp2, cp2, roles2_s, n_ruoli2, pz12, cfg)["prezzo_massimo"]
+    with_neo = compute_fp_corr(fp2, cp2, roles2_s, n_ruoli2, pz12, cfg)[
+        "prezzo_massimo"
+    ]
     att_prices = with_neo[roles2_s == "A"]
 
     # Existing attackers' price should be unaffected by the neo-arrivo's 0.
@@ -73,7 +73,7 @@ def test_neo_arrivo_with_zero_pz1_does_not_drag_role_average_down() -> None:
 
 
 def test_prezzo_massimo_has_a_floor_of_one() -> None:
-    roles, fp, cp, n_ruoli, pz1 = _make_inputs()
+    roles, _fp, cp, n_ruoli, pz1 = _make_inputs()
     fp_low = pd.Series([0.0] * len(roles))
     cfg = MantraConfig()
 

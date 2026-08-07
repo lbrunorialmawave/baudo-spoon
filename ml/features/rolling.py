@@ -8,6 +8,7 @@ features safe inside cross-validation pipelines.
 Input DataFrame must contain per-90 columns (run ``ml/features/per90.py``
 first) and identifier columns ``player_fotmob_id`` + ``season_start``.
 """
+
 from __future__ import annotations
 
 import polars as pl
@@ -15,11 +16,11 @@ import polars as pl
 from ml.domain.features import Feature, MissingDataPolicy
 
 __all__ = [
+    "ALL_DELTA_FEATURES",
+    "ALL_ROLLING_FEATURES",
+    "ALL_TREND_FEATURES",
     "RollingMeanFeature",
     "YoYDeltaFeature",
-    "ALL_ROLLING_FEATURES",
-    "ALL_DELTA_FEATURES",
-    "ALL_TREND_FEATURES",
 ]
 
 # Stats for which trend features are computed (must already be per-90 columns).
@@ -59,8 +60,7 @@ class RollingMeanFeature(Feature):
 
     def compute(self, data: pl.DataFrame) -> pl.Series:
         df = (
-            data
-            .with_row_index("__row_idx__")
+            data.with_row_index("__row_idx__")
             .sort(["player_fotmob_id", "season_start"])
             .with_columns(pl.col(self.stat_col).cast(pl.Float64).fill_null(0.0))
             .with_columns(
@@ -90,15 +90,11 @@ class YoYDeltaFeature(Feature):
 
     def compute(self, data: pl.DataFrame) -> pl.Series:
         df = (
-            data
-            .with_row_index("__row_idx__")
+            data.with_row_index("__row_idx__")
             .sort(["player_fotmob_id", "season_start"])
             .with_columns(pl.col(self.stat_col).cast(pl.Float64).fill_null(0.0))
             .with_columns(
-                pl.col(self.stat_col)
-                .diff(1)
-                .over("player_fotmob_id")
-                .alias(self.name)
+                pl.col(self.stat_col).diff(1).over("player_fotmob_id").alias(self.name)
             )
         )
         return df.sort("__row_idx__")[self.name]

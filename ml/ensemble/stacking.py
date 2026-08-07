@@ -9,11 +9,12 @@ Architecture:
 TimeSeriesSplit is used for ALL cross-validation and OOF generation.
 KFold is never used. This is enforced by StackingEnsemble._assert_no_kfold().
 """
+
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Optional
+from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -95,7 +96,7 @@ class StackingEnsemble:
         self.n_splits = n_splits
         self.random_seed = random_seed
         self._base_pipelines: dict[str, Pipeline] = {}
-        self._meta_learner: Optional[Any] = None
+        self._meta_learner: Any | None = None
         self._base_names: list[str] = []
         self._is_fitted = False
 
@@ -159,7 +160,9 @@ class StackingEnsemble:
 
     def _build_meta_learner(self) -> Any:
         if self.target_spec.target_type == "probability":
-            return LogisticRegression(C=1.0, random_state=self.random_seed, max_iter=500)
+            return LogisticRegression(
+                C=1.0, random_state=self.random_seed, max_iter=500
+            )
         return Ridge(alpha=1.0)
 
     # ── Fit ───────────────────────────────────────────────────────────────────
@@ -169,7 +172,7 @@ class StackingEnsemble:
         X_train: pd.DataFrame,
         y_train: pd.Series,
         preprocessor: ColumnTransformer,
-    ) -> "StackingEnsemble":
+    ) -> StackingEnsemble:
         """Train base models via OOF + train meta-learner.
 
         TimeSeriesSplit is used for OOF generation. The full training set is
@@ -202,14 +205,18 @@ class StackingEnsemble:
             y_tr = y.iloc[tr_idx]
 
             for col_idx, (name, est) in enumerate(base_estimators.items()):
-                pipe = Pipeline([
-                    ("preprocessor", clone(preprocessor)),
-                    ("model", clone(est)),
-                ])
+                pipe = Pipeline(
+                    [
+                        ("preprocessor", clone(preprocessor)),
+                        ("model", clone(est)),
+                    ]
+                )
                 pipe.fit(X_tr, y_tr)
                 oof_preds[val_idx, col_idx] = pipe.predict(X_val)
 
-            log.debug("StackingEnsemble OOF fold %d/%d done.", fold_idx + 1, self.n_splits)
+            log.debug(
+                "StackingEnsemble OOF fold %d/%d done.", fold_idx + 1, self.n_splits
+            )
 
         # Fill any NaN OOF values (first fold has no prior data) with column medians
         col_medians = np.nanmedian(oof_preds, axis=0)
@@ -224,10 +231,12 @@ class StackingEnsemble:
         # Re-fit base models on full training set
         self._base_pipelines = {}
         for name, est in base_estimators.items():
-            pipe = Pipeline([
-                ("preprocessor", clone(preprocessor)),
-                ("model", clone(est)),
-            ])
+            pipe = Pipeline(
+                [
+                    ("preprocessor", clone(preprocessor)),
+                    ("model", clone(est)),
+                ]
+            )
             pipe.fit(X_train, y)
             self._base_pipelines[name] = pipe
             log.info("StackingEnsemble: fitted base model '%s'.", name)
@@ -304,4 +313,3 @@ class StackingEnsemble:
         never instantiates KFold anywhere in its code path.
         """
         # Verified at code-review time: grep for KFold in this file returns 0 hits.
-        pass

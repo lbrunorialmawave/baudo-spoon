@@ -21,19 +21,19 @@ Usage
 
 from ml.mantra.config import MantraConfig
 from ml.mantra.roles import (
+    ALL_ROLES,
     DEPTH_ORDER,
     POOL_FUSIONE,
-    calcola_ruolo_primario,
     calcola_pool_esteso,
-    ALL_ROLES,
+    calcola_ruolo_primario,
 )
 
 __all__ = [
-    "MantraConfig",
-    "PROFONDITA_MAP",
-    "POOL_FUSIONE",
-    "calcola_ruolo_primario",
-    "calcola_pool_esteso",
-    "DEPTH_ORDER",
     "ALL_ROLES",
+    "DEPTH_ORDER",
+    "POOL_FUSIONE",
+    "PROFONDITA_MAP",
+    "MantraConfig",
+    "calcola_pool_esteso",
+    "calcola_ruolo_primario",
 ]

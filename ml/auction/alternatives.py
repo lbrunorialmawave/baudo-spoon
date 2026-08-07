@@ -28,28 +28,24 @@ If no compatible candidates remain, the function returns explicit
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 from ml.auction.models import (
-    AlternativeSuggestion,
     AlternativesConfig,
+    AlternativeSuggestion,
     AuctionState,
     ValuationMode,
 )
 from ml.auction.price_drift import project_price_for_player
 from ml.optimizer.models import Player
 
-if TYPE_CHECKING:  # pragma: no cover
-    pass
-
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "suggest_alternatives",
-    "player_role_set",
-    "pareto_diversify",
     "max_affordable_bid",
+    "pareto_diversify",
+    "player_role_set",
     "strategy_price_cap",
+    "suggest_alternatives",
 ]
 
 
@@ -166,7 +162,6 @@ def strategy_price_cap(
         return None
     try:
         from ml.optimizer.strategies import strategy_by_name
-        from ml.optimizer.models import StrategyName
 
         profile = strategy_by_name(strategy_name)  # type: ignore[arg-type]
     except (KeyError, ImportError, TypeError):
@@ -174,7 +169,7 @@ def strategy_price_cap(
     weight = profile.role_weight.get(player.role, 1.0)
     # Cap = expected * weight, floored at 1. Higher weight (e.g. D in
     # SUPER_DEFENSIVE) allows paying more for that role.
-    return max(1, int(round(base_expected_price * weight)))
+    return max(1, round(base_expected_price * weight))
 
 
 def suggest_alternatives(
@@ -223,8 +218,7 @@ def suggest_alternatives(
     same_role = [
         p
         for p in available_pool
-        if p.player_id != target.player_id
-        and _roles_compatible(p, target, ruleset)
+        if p.player_id != target.player_id and _roles_compatible(p, target, ruleset)
     ]
 
     bid_cap = max_affordable_bid(state, participant_id) if participant_id else None
@@ -347,9 +341,7 @@ def _select_low_cost(
     price_threshold = sorted_prices[quantile_idx]
 
     eligible = [
-        p
-        for p in candidates
-        if expected_prices[p.player_id] <= price_threshold + 1e-9
+        p for p in candidates if expected_prices[p.player_id] <= price_threshold + 1e-9
     ]
     if not eligible:
         return None

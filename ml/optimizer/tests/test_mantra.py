@@ -5,16 +5,15 @@ from __future__ import annotations
 import pytest
 
 from ml.optimizer.models import (
-    Formation,
     MANTRA_DEFAULT_QUOTAS,
+    TOTAL_SQUAD_SIZE,
+    Formation,
     OptimizationConfig,
     Player,
     StrategyProfile,
-    TOTAL_SQUAD_SIZE,
 )
 from ml.optimizer.optimizer import optimize_squad
 from ml.optimizer.solver import PreFlightError, _preflight
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -145,7 +144,8 @@ def test_mantra_preflight_fails_insufficient_coverage() -> None:
 
 def test_classic_preflight_unchanged() -> None:
     """Classic preflight still works after MANTRA code was added."""
-    from ml.optimizer.tests.test_edge_cases import _diverse_pool, _basic_cfg
+    from ml.optimizer.tests.test_edge_cases import _basic_cfg, _diverse_pool
+
     pool = _diverse_pool()
     config = _basic_cfg()
     # Should not raise

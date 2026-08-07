@@ -23,7 +23,7 @@ class MantraConfig:
     # ── Pillar weights (must sum to 1.0) ─────────────────────────────────────
     PESO_P1: float = 0.25
     PESO_P2: float = 0.25
-    PESO_P3: float = 0.30   # raised from 0.20 for >= 10 % effective impact
+    PESO_P3: float = 0.30  # raised from 0.20 for >= 10 % effective impact
     PESO_P4: float = 0.20
 
     # ── Minutes thresholds ───────────────────────────────────────────────────
@@ -31,22 +31,30 @@ class MantraConfig:
     SOGLIA_MINUTI_MAX: int = 2700
 
     # ── Pool / standardisation ───────────────────────────────────────────────
-    SOGLIA_POOL: int = 20       # min players in a role pool before merging
-    CAP_K: float = 6.0          # cap for the tanh stretching factor
+    SOGLIA_POOL: int = 20  # min players in a role pool before merging
+    CAP_K: float = 6.0  # cap for the tanh stretching factor
 
     # ── Hero factor ──────────────────────────────────────────────────────────
     FATTORE_EROE_MIN: float = 0.6
     FATTORE_EROE_MAX: float = 1.6
 
     # ── Role-specific coefficients for P3 (Peso Squadra) ─────────────────────
-    COEFF_BASE: dict[str, float] = field(default_factory=lambda: {
-        "Por": 0.0025,
-        "Dc": 0.003, "B": 0.003, "Dd": 0.003, "Ds": 0.003,
-        "E": 0.0035, "M": 0.0035,
-        "C": 0.0038,
-        "T": 0.0042, "W": 0.0042,
-        "A": 0.004, "Pc": 0.004,
-    })
+    COEFF_BASE: dict[str, float] = field(
+        default_factory=lambda: {
+            "Por": 0.0025,
+            "Dc": 0.003,
+            "B": 0.003,
+            "Dd": 0.003,
+            "Ds": 0.003,
+            "E": 0.0035,
+            "M": 0.0035,
+            "C": 0.0038,
+            "T": 0.0042,
+            "W": 0.0042,
+            "A": 0.004,
+            "Pc": 0.004,
+        }
+    )
 
     # ── Flexibility bonus ────────────────────────────────────────────────────
     FLESSIBILITA_1: float = 1.00
@@ -54,8 +62,8 @@ class MantraConfig:
     FLESSIBILITA_3: float = 1.08
 
     # ── Classification thresholds ────────────────────────────────────────────
-    LOW_COST_SOGLIA: float = 15.0          # Prezzo_Massimo under this = low cost
-    GIOVANE_ETA_MAX: int = 23              # age <= this = young
+    LOW_COST_SOGLIA: float = 15.0  # Prezzo_Massimo under this = low cost
+    GIOVANE_ETA_MAX: int = 23  # age <= this = young
     # Fixed thresholds — used as-is in FASE7_THRESHOLD_MODE="absolute", and as
     # the small-pool fallback in "percentile" mode (pools under SOGLIA_POOL).
     TOP_FP_SOGLIA: float = 80.0
@@ -85,7 +93,9 @@ class MantraConfig:
     SOPRAVALUTATO_VR_PERCENTILE: float = 0.35
     GIUSTO_VR_PERCENTILE_MIN: float = 0.42
     GIUSTO_VR_PERCENTILE_MAX: float = 0.58
-    CERTEZZA_DV_PERCENTILE: float = 0.50   # 0.50 = median (unchanged historical behavior)
+    CERTEZZA_DV_PERCENTILE: float = (
+        0.50  # 0.50 = median (unchanged historical behavior)
+    )
 
     # ── Budget ───────────────────────────────────────────────────────────────
     BUDGET_TOTALE: int = 500
@@ -100,9 +110,7 @@ class MantraConfig:
     def __post_init__(self) -> None:
         total = self.PESO_P1 + self.PESO_P2 + self.PESO_P3 + self.PESO_P4
         if abs(total - 1.0) > 1e-6:
-            raise ValueError(
-                f"Pillar weights must sum to 1.0, got {total}"
-            )
+            raise ValueError(f"Pillar weights must sum to 1.0, got {total}")
         ps_total = (
             self.PS_TEAM_RANK_WEIGHT
             + self.PS_PREV_POINTS_WEIGHT
@@ -111,6 +119,4 @@ class MantraConfig:
             + self.PS_SQUAD_VALUE_WEIGHT
         )
         if abs(ps_total - 1.0) > 1e-6:
-            raise ValueError(
-                f"PS_corretto weights must sum to 1.0, got {ps_total}"
-            )
+            raise ValueError(f"PS_corretto weights must sum to 1.0, got {ps_total}")

@@ -25,6 +25,7 @@ Note on ``MissingDataPolicy``:
     ``__init_subclass__`` requirement for a class-level ``proxy_feature_name``
     string, which can't be expressed generically for per-stat subclasses.
 """
+
 from __future__ import annotations
 
 import logging
@@ -33,7 +34,7 @@ import polars as pl
 
 from ml.domain.features import Feature, MissingDataPolicy
 
-__all__ = ["SapFeature", "ALL_SAP_FEATURES"]
+__all__ = ["ALL_SAP_FEATURES", "SapFeature"]
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ class SapFeature(Feature):
     def required_columns(self) -> frozenset[str]:  # type: ignore[override]
         return frozenset([self.stat_col])
 
-    def compute(self, data: pl.DataFrame) -> pl.Series:  # noqa: C901
+    def compute(self, data: pl.DataFrame) -> pl.Series:
         raw = data[self.stat_col].cast(pl.Float64).fill_null(0.0)
 
         # If schedule info is absent, return raw stat unmodified (sap_weight=1.0).
@@ -69,7 +70,8 @@ class SapFeature(Feature):
             missing = sorted(_SCHEDULE_COLS - frozenset(data.columns))
             log.info(
                 "SapFeature '%s': schedule columns %s absent; sap_weight=1.0.",
-                self.name, missing,
+                self.name,
+                missing,
             )
             return raw
 
@@ -81,24 +83,24 @@ class SapFeature(Feature):
         else:
             dedup = data
 
-        league_stats = (
-            dedup
-            .group_by(group_cols)
-            .agg([
+        league_stats = dedup.group_by(group_cols).agg(
+            [
                 pl.col("team_rank_norm").sum().alias("_league_sum"),
                 pl.col("team_rank_norm").len().alias("_n_teams"),
                 pl.col("team_rank_norm").mean().alias("_league_mean"),
-            ])
+            ]
         )
 
         df = data.join(league_stats, on=group_cols, how="left")
 
         global_mean = float(data["team_rank_norm"].mean() or 1.0)
-        df = df.with_columns([
-            pl.col("_league_sum").fill_null(global_mean),
-            pl.col("_n_teams").fill_null(10),
-            pl.col("_league_mean").fill_null(global_mean),
-        ])
+        df = df.with_columns(
+            [
+                pl.col("_league_sum").fill_null(global_mean),
+                pl.col("_n_teams").fill_null(10),
+                pl.col("_league_mean").fill_null(global_mean),
+            ]
+        )
 
         own_rank = df["team_rank_norm"].fill_null(global_mean)
         n_minus_1 = (df["_n_teams"].cast(pl.Float64) - 1.0).clip(lower_bound=1.0)
@@ -121,6 +123,5 @@ _SAP_STAT_COLS: list[str] = [
 ]
 
 ALL_SAP_FEATURES: list[SapFeature] = [
-    type(f"Sap_{col}", (SapFeature,), {"stat_col": col})()
-    for col in _SAP_STAT_COLS
+    type(f"Sap_{col}", (SapFeature,), {"stat_col": col})() for col in _SAP_STAT_COLS
 ]

@@ -28,6 +28,7 @@ def _normalise(name: str) -> str:
     """Lower-case, strip, drop accents/apostrophes/hyphens, collapse whitespace."""
     import re
     import unicodedata
+
     nfkd = unicodedata.normalize("NFKD", str(name))
     ascii_str = nfkd.encode("ascii", "ignore").decode("ascii")
     # Drop apostrophes, hyphens, dots so "D'Ambrosio" → "dambrosio", "De Ketelaere" → "de ketelaere"
@@ -100,7 +101,6 @@ def merge_datasets(
     ml_var_results: list[dict[str, Any]] = []
     ml_next_season: list[dict[str, Any]] = []
     ml_run_id: str | None = None
-    ml_meta: dict[str, Any] = {}
 
     if ml_path.exists():
         with ml_path.open("r", encoding="utf-8") as f:
@@ -110,11 +110,17 @@ def merge_datasets(
         ml_var_results = ml_raw.get("var_results", [])
         ml_next_season = ml_raw.get("next_season_predictions", [])
         ml_run_id = ml_raw.get("run_id")
-        ml_meta = ml_raw.get("metadata", {})
-        log.info("ML artefact loaded: %d predictions, %d VAR, %d next-season",
-                 len(ml_predictions), len(ml_var_results), len(ml_next_season))
+        log.info(
+            "ML artefact loaded: %d predictions, %d VAR, %d next-season",
+            len(ml_predictions),
+            len(ml_var_results),
+            len(ml_next_season),
+        )
     else:
-        log.warning("ML artefact not found at %s — all players will have has_ml_data=false", ml_path)
+        log.warning(
+            "ML artefact not found at %s — all players will have has_ml_data=false",
+            ml_path,
+        )
 
     # ── Index ML data by player_fotmob_id ─────────────────────────────────────
     # Also build a name-based index for fallback matching.
@@ -124,9 +130,8 @@ def merge_datasets(
 
     for pred in ml_predictions:
         pid = pred.get("player_fotmob_id")
-        if pid is not None:
-            if pid not in ml_by_id:
-                ml_by_id[int(pid)] = pred
+        if pid is not None and pid not in ml_by_id:
+            ml_by_id[int(pid)] = pred
 
         pname = pred.get("player_name")
         if pname:
@@ -171,8 +176,12 @@ def merge_datasets(
         if pid is None and fc_id is not None and int(fc_id) in fc_to_fm:
             pid = fc_to_fm[int(fc_id)]
             player["player_fotmob_id"] = pid  # enrich the player dict
-            log.debug("Bridged fantacalcio_id=%s → fotmob_id=%s for %s",
-                      fc_id, pid, player.get("player_name"))
+            log.debug(
+                "Bridged fantacalcio_id=%s → fotmob_id=%s for %s",
+                fc_id,
+                pid,
+                player.get("player_name"),
+            )
 
         pname = _normalise(str(player.get("player_name", "")))
         pteam = _normalise(str(player.get("team", "")))
@@ -189,10 +198,14 @@ def merge_datasets(
         if matched is None:
             candidate = ml_by_name.get(pname)
             if candidate is not None:
-                cand_team = _normalise(str(candidate.get("teamName", candidate.get("team_name", ""))))
+                cand_team = _normalise(
+                    str(candidate.get("teamName", candidate.get("team_name", "")))
+                )
                 if not pteam or not cand_team or pteam == cand_team:
                     matched = candidate
-                    if pid is not None and int(pid) == candidate.get("player_fotmob_id"):
+                    if pid is not None and int(pid) == candidate.get(
+                        "player_fotmob_id"
+                    ):
                         match_by_bridge += 1
                     else:
                         match_by_name += 1
@@ -206,12 +219,17 @@ def merge_datasets(
                     # Single candidate with matching surname — accept it
                     matched = candidates[0]
                     match_by_name += 1
-                    log.debug("Surname match for %s → %s",
-                              player.get("player_name"), candidates[0].get("player_name"))
+                    log.debug(
+                        "Surname match for %s → %s",
+                        player.get("player_name"),
+                        candidates[0].get("player_name"),
+                    )
                 elif len(candidates) > 1 and pteam:
                     # Multiple candidates — disambiguate by team
                     for c in candidates:
-                        cand_team = _normalise(str(c.get("teamName", c.get("team_name", ""))))
+                        cand_team = _normalise(
+                            str(c.get("teamName", c.get("team_name", "")))
+                        )
                         if pteam and cand_team and pteam == cand_team:
                             matched = c
                             match_by_name += 1
@@ -219,9 +237,13 @@ def merge_datasets(
 
         if matched is not None:
             player["has_ml_data"] = True
-            player["predicted_fantavoto"] = matched.get("predicted") or matched.get("predicted_fantavoto")
+            player["predicted_fantavoto"] = matched.get("predicted") or matched.get(
+                "predicted_fantavoto"
+            )
             player["prediction_std"] = matched.get("prediction_std")
-            player["expected_minutes"] = matched.get("expected_minutes") or matched.get("expectedMinutes")
+            player["expected_minutes"] = matched.get("expected_minutes") or matched.get(
+                "expectedMinutes"
+            )
 
             # Enrich with VAR data
             resolved_id = pid if pid is not None else matched.get("player_fotmob_id")
@@ -233,7 +255,9 @@ def merge_datasets(
             # Enrich with next-season prediction
             ns = ns_by_name.get(pname)
             if ns is not None:
-                player["next_season_predicted"] = ns.get("predictedNextFantavoto") or ns.get("predicted_next_fantavoto")
+                player["next_season_predicted"] = ns.get(
+                    "predictedNextFantavoto"
+                ) or ns.get("predicted_next_fantavoto")
         else:
             player["has_ml_data"] = False
             player["predicted_fantavoto"] = None
@@ -246,7 +270,10 @@ def merge_datasets(
 
     log.info(
         "Merge complete: %d by fotmob_id, %d by bridge, %d by name, %d without ML data",
-        match_by_id, match_by_bridge, match_by_name, no_ml,
+        match_by_id,
+        match_by_bridge,
+        match_by_name,
+        no_ml,
     )
 
     # ── Assemble merged meta ──────────────────────────────────────────────────

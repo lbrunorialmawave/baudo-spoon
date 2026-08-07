@@ -6,6 +6,7 @@ GET /model-metrics/runs            — List pipeline runs with metrics (paginate
 GET /model-metrics/history         — Time-series for a specific metric
 GET /model-metrics/compare         — Side-by-side comparison of two runs
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -31,7 +32,9 @@ async def list_runs(
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> ORJSONResponse:
-    rows = (await db.execute(text("""
+    rows = (
+        await db.execute(
+            text("""
         SELECT
             r.run_id, r.model_name, r.trained_at, r.season_start,
             r.git_commit, r.status,
@@ -51,13 +54,18 @@ async def list_runs(
         GROUP BY r.id
         ORDER BY r.trained_at DESC
         LIMIT :limit OFFSET :offset
-    """), {"model_name": model_name, "limit": limit, "offset": offset})).fetchall()
+    """),
+            {"model_name": model_name, "limit": limit, "offset": offset},
+        )
+    ).fetchall()
 
-    return ORJSONResponse({
-        "items": [dict(r._mapping) for r in rows],
-        "offset": offset,
-        "limit": limit,
-    })
+    return ORJSONResponse(
+        {
+            "items": [dict(r._mapping) for r in rows],
+            "offset": offset,
+            "limit": limit,
+        }
+    )
 
 
 @router.get("/history", response_class=ORJSONResponse, summary="Metric time-series")
@@ -67,7 +75,9 @@ async def metrics_history(
     model_name: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ) -> ORJSONResponse:
-    rows = (await db.execute(text("""
+    rows = (
+        await db.execute(
+            text("""
         SELECT r.run_id, r.trained_at, r.model_name, r.status, m.metric_value
         FROM model_metrics m
         JOIN model_runs r ON r.run_id = m.run_id
@@ -75,7 +85,10 @@ async def metrics_history(
           AND m.split       = :split
           AND (CAST(:model_name AS TEXT) IS NULL OR r.model_name = :model_name)
         ORDER BY r.trained_at ASC
-    """), {"metric": metric, "split": split, "model_name": model_name})).fetchall()
+    """),
+            {"metric": metric, "split": split, "model_name": model_name},
+        )
+    ).fetchall()
 
     return ORJSONResponse([dict(r._mapping) for r in rows])
 
@@ -86,7 +99,9 @@ async def compare_runs(
     run_b: str = Query(..., description="Second run_id"),
     db: AsyncSession = Depends(get_db),
 ) -> ORJSONResponse:
-    rows = (await db.execute(text("""
+    rows = (
+        await db.execute(
+            text("""
         SELECT
             r.run_id, r.model_name, r.trained_at, r.status,
             r.hyperparams, r.dependencies,
@@ -105,7 +120,10 @@ async def compare_runs(
         WHERE r.run_id = ANY(:run_ids)
         GROUP BY r.id
         ORDER BY r.trained_at ASC
-    """), {"run_ids": [run_a, run_b]})).fetchall()
+    """),
+            {"run_ids": [run_a, run_b]},
+        )
+    ).fetchall()
 
     by_run: dict[str, Any] = {r.run_id: dict(r._mapping) for r in rows}
     return ORJSONResponse({"run_a": by_run.get(run_a), "run_b": by_run.get(run_b)})

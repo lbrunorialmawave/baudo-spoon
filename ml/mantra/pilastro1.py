@@ -78,8 +78,12 @@ def compute_p1(
             work.loc[reserve_mask, "Pr"] = work.loc[reserve_mask, "Pr"].fillna(0.40)
 
             # Min_annuo: 2000 if starter, 500 if reserve
-            work.loc[starter_mask, "Min_annuo"] = work.loc[starter_mask, "Min_annuo"].fillna(2000)
-            work.loc[reserve_mask, "Min_annuo"] = work.loc[reserve_mask, "Min_annuo"].fillna(500)
+            work.loc[starter_mask, "Min_annuo"] = work.loc[
+                starter_mask, "Min_annuo"
+            ].fillna(2000)
+            work.loc[reserve_mask, "Min_annuo"] = work.loc[
+                reserve_mask, "Min_annuo"
+            ].fillna(500)
 
     # ── Fill remaining NaNs with role medians ─────────────────────────────
     for ruolo in work["ruolo_primario"].unique():
@@ -92,7 +96,9 @@ def compute_p1(
                 work.loc[mask, col] = work.loc[mask, col].fillna(median_val)
 
     # ── Compute P1 ────────────────────────────────────────────────────────
-    min_term = np.minimum(work["Min_annuo"].clip(lower=0) / cfg.SOGLIA_MINUTI_MAX, 1.0) * 30
+    min_term = (
+        np.minimum(work["Min_annuo"].clip(lower=0) / cfg.SOGLIA_MINUTI_MAX, 1.0) * 30
+    )
     v_term = (work["V"].clip(lower=0, upper=10) / 10.0) * 25
     dv_term = (1.0 / (1.0 + work["DV"].clip(lower=0))) * 20
     pr_term = work["Pr"].clip(lower=0, upper=1) * 25

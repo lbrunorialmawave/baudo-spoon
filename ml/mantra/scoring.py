@@ -43,7 +43,7 @@ def _pool_percentile(
     """Rank-based percentile (0=worst, 1=best) of ``fp_mantra`` within the
     extended role pool of each player. Pools with a single player get 1.0."""
     out = pd.Series(1.0, index=fp_mantra.index)
-    for ruolo, pool_set in pool_roles_map.items():
+    for pool_set in pool_roles_map.values():
         mask = roles.isin(pool_set)
         idx = fp_mantra[mask].index
         n = len(idx)
@@ -62,7 +62,7 @@ def _pool_mean_std(
     """Return (mean, std) of *series* for the extended pool of each role."""
     mean_s = pd.Series(np.nan, index=series.index)
     std_s = pd.Series(np.nan, index=series.index)
-    for ruolo, pool_set in pool_roles_map.items():
+    for pool_set in pool_roles_map.values():
         mask = roles.isin(pool_set)
         if mask.sum() < 2:
             mean_s[mask] = 50.0
@@ -82,12 +82,7 @@ def compute_fp(
     cfg: MantraConfig,
 ) -> pd.Series:
     """FP = weighted sum of the four pillars."""
-    return (
-        p1 * cfg.PESO_P1
-        + p2 * cfg.PESO_P2
-        + p3 * cfg.PESO_P3
-        + p4 * cfg.PESO_P4
-    )
+    return p1 * cfg.PESO_P1 + p2 * cfg.PESO_P2 + p3 * cfg.PESO_P3 + p4 * cfg.PESO_P4
 
 
 def compute_fp_corr(
@@ -158,7 +153,9 @@ def compute_fp_corr(
         cp_medio_tutti = 50.0
 
     fattore_eroe = 1.0 + (1.0 - cp / cp_medio_tutti) * 0.5
-    fattore_eroe = fattore_eroe.clip(lower=cfg.FATTORE_EROE_MIN, upper=cfg.FATTORE_EROE_MAX)
+    fattore_eroe = fattore_eroe.clip(
+        lower=cfg.FATTORE_EROE_MIN, upper=cfg.FATTORE_EROE_MAX
+    )
 
     # ── VR (Valore Reale) ────────────────────────────────────────────────────
     vr = (fp_mantra * fattore_eroe / cp_corr.replace(0, 1.0)) * 100.0
@@ -180,7 +177,9 @@ def compute_fp_corr(
     for ruolo, pool_set in pool_roles_map.items():
         mask = roles.isin(pool_set)
         pool_vals = pz1_valid[mask].dropna()
-        quot_mean_ruolo[ruolo] = pool_vals.mean() if len(pool_vals) > 0 else quot_globale
+        quot_mean_ruolo[ruolo] = (
+            pool_vals.mean() if len(pool_vals) > 0 else quot_globale
+        )
     quot_ancora_ruolo = roles.map(quot_mean_ruolo)
 
     prezzo = np.maximum(pz1_valid.fillna(quot_ancora_ruolo), 1.0)

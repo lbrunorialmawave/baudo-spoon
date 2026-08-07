@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional
 
 import requests
 from fastapi import APIRouter, Depends, HTTPException
@@ -88,13 +87,16 @@ def _dispatch_workflow() -> None:
     resp = requests.post(
         url,
         headers=_headers(),
-        json={"ref": settings.github_default_branch, "inputs": _DEFAULT_WORKFLOW_INPUTS},
+        json={
+            "ref": settings.github_default_branch,
+            "inputs": _DEFAULT_WORKFLOW_INPUTS,
+        },
         timeout=15,
     )
     resp.raise_for_status()
 
 
-def _latest_run() -> Optional[dict]:
+def _latest_run() -> dict | None:
     url = f"{_GITHUB_API}/repos/{settings.github_repo}/actions/workflows/{_WORKFLOW_FILE}/runs"
     # Only completed runs represent a finished training; a queued/in_progress
     # run at the top of the list must not masquerade as the latest done one.
@@ -109,7 +111,7 @@ def _latest_run() -> Optional[dict]:
     return runs[0] if runs else None
 
 
-async def _latest_persisted_run() -> Optional[dict]:
+async def _latest_persisted_run() -> dict | None:
     """Return the most recent run that the ML pipeline actually wrote to the
     DB — the run proven to be functional (has metrics), not merely dispatched."""
     import sqlalchemy as sa
@@ -117,7 +119,9 @@ async def _latest_persisted_run() -> Optional[dict]:
     from ..database import AsyncSessionLocal
 
     async with AsyncSessionLocal() as db:
-        row = (await db.execute(sa.text("""
+        row = (
+            await db.execute(
+                sa.text("""
             SELECT r.run_id, r.model_name, r.trained_at, r.season_start,
                    r.status, r.git_commit
             FROM model_runs r
@@ -125,13 +129,15 @@ async def _latest_persisted_run() -> Optional[dict]:
             GROUP BY r.id
             ORDER BY r.trained_at DESC
             LIMIT 1
-        """))).fetchone()
+        """)
+            )
+        ).fetchone()
         if row is None:
             return None
         return dict(row._mapping)
 
 
-def _map_status(run: Optional[dict]) -> dict:
+def _map_status(run: dict | None) -> dict:
     if run is None:
         return {"status": "idle"}
     gh_status = run.get("status")  # queued | in_progress | completed
@@ -152,7 +158,9 @@ def _map_status(run: Optional[dict]) -> dict:
     }
 
 
-@router.post("/train", summary="Trigger the ML Training GitHub Actions workflow (admin required)")
+@router.post(
+    "/train", summary="Trigger the ML Training GitHub Actions workflow (admin required)"
+)
 async def trigger_training() -> ORJSONResponse:
     """Dispatch .github/workflows/ml-training.yml. Returns immediately;
     poll GET /admin/ml/train/status for progress (the workflow itself
@@ -164,7 +172,8 @@ async def trigger_training() -> ORJSONResponse:
     except requests.HTTPError as e:
         detail = (
             f"GitHub API error {e.response.status_code}: {e.response.text[:300]}"
-            if e.response is not None else str(e)
+            if e.response is not None
+            else str(e)
         )
         # log.exception's traceback doesn't include the response body — log
         # `detail` explicitly so it's visible in server logs, not only in the
@@ -173,7 +182,10 @@ async def trigger_training() -> ORJSONResponse:
         raise HTTPException(status_code=502, detail=detail)
     except Exception:
         log.exception("Failed to dispatch ML Training workflow")
-        raise HTTPException(status_code=500, detail="Failed to trigger training workflow. Check server logs.")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to trigger training workflow. Check server logs.",
+        )
 
     return ORJSONResponse({"status": "triggered"})
 
@@ -193,7 +205,9 @@ async def get_training_status() -> ORJSONResponse:
         if persisted is not None:
             status["run_id"] = persisted.get("run_id")
             status["model_name"] = persisted.get("model_name")
-            status["updated_at"] = persisted.get("trained_at") or status.get("updated_at")
+            status["updated_at"] = persisted.get("trained_at") or status.get(
+                "updated_at"
+            )
             status["season_start"] = persisted.get("season_start")
             status["git_commit"] = persisted.get("git_commit")
             # A persisted run is, by construction, the completed one.
@@ -204,12 +218,15 @@ async def get_training_status() -> ORJSONResponse:
     except requests.HTTPError as e:
         detail = (
             f"GitHub API error {e.response.status_code}: {e.response.text[:300]}"
-            if e.response is not None else str(e)
+            if e.response is not None
+            else str(e)
         )
         log.error("Failed to fetch ML Training workflow status: %s", detail)
         raise HTTPException(status_code=502, detail=detail)
     except Exception:
         log.exception("Failed to fetch ML Training workflow status")
-        raise HTTPException(status_code=502, detail="Failed to fetch training status from GitHub.")
+        raise HTTPException(
+            status_code=502, detail="Failed to fetch training status from GitHub."
+        )
 
     return ORJSONResponse(status)

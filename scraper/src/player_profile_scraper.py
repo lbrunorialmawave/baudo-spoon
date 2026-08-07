@@ -24,9 +24,9 @@ from .roles_bridge import extract_profile_from_player_data
 
 log = logging.getLogger(__name__)
 
-_BATCH_SIZE = 15            # concurrent fetch() calls per round-trip
-_INTER_BATCH_DELAY = 0.4    # seconds between batches
-_SCRIPT_TIMEOUT = 40        # seconds, network-bound not render-bound
+_BATCH_SIZE = 15  # concurrent fetch() calls per round-trip
+_INTER_BATCH_DELAY = 0.4  # seconds between batches
+_SCRIPT_TIMEOUT = 40  # seconds, network-bound not render-bound
 
 
 def _slugify(name: str) -> str:
@@ -125,7 +125,9 @@ def _fetch_positions_batch(
         except Exception as exc:
             log.warning(
                 "player_profile_batch: batch %d-%d failed entirely: %s",
-                start, start + len(chunk), exc,
+                start,
+                start + len(chunk),
+                exc,
             )
             for url in chunk:
                 results[url] = None
@@ -140,11 +142,18 @@ def _fetch_positions_batch(
             else:
                 results[url] = None
                 errors += 1
-                log.debug("player_profile_batch: %s → %s", url, item.get("error") or item.get("status"))
+                log.debug(
+                    "player_profile_batch: %s → %s",
+                    url,
+                    item.get("error") or item.get("status"),
+                )
 
         log.info(
             "player_profile: %d/%d done (ok=%d, errors=%d)",
-            min(start + batch_size, total), total, ok, errors,
+            min(start + batch_size, total),
+            total,
+            ok,
+            errors,
         )
         time.sleep(inter_batch_delay)
 
@@ -195,7 +204,9 @@ def fetch_player_profiles(
             errors += 1
             continue
         profiles.append(
-            extract_profile_from_player_data(player_id, name, {"positionDescription": pos})
+            extract_profile_from_player_data(
+                player_id, name, {"positionDescription": pos}
+            )
         )
         ok += 1
 

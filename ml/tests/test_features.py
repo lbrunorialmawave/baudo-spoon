@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from ml.preprocessing.features import (
     OpponentStrengthAdjuster,
@@ -18,8 +17,8 @@ from ml.preprocessing.features import (
     engineer_features,
 )
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 def _make_player_df(
     vals: list[float],
@@ -30,11 +29,13 @@ def _make_player_df(
     """Minimal DataFrame with one player and multiple seasons."""
     if seasons is None:
         seasons = list(range(2021, 2021 + len(vals)))
-    return pd.DataFrame({
-        "player_fotmob_id": [player_id] * len(vals),
-        "season_start": seasons,
-        stat_col: vals,
-    })
+    return pd.DataFrame(
+        {
+            "player_fotmob_id": [player_id] * len(vals),
+            "season_start": seasons,
+            stat_col: vals,
+        }
+    )
 
 
 def _make_full_df(n_players: int = 5, n_seasons: int = 3) -> pd.DataFrame:
@@ -43,31 +44,34 @@ def _make_full_df(n_players: int = 5, n_seasons: int = 3) -> pd.DataFrame:
     rows = []
     for pid in range(n_players):
         for season in range(2021, 2021 + n_seasons):
-            rows.append({
-                "player_fotmob_id": pid,
-                "player_name": f"Player{pid}",
-                "team_fotmob_id": pid % 3,
-                "team_name": f"Team{pid % 3}",
-                "season_start": season,
-                "season_label": str(season),
-                "league_name": "Serie A",
-                "canonical_role": ["GK", "DEF", "MID", "FWD", "MID"][pid % 5],
-                "mins_played": float(rng.integers(800, 3000)),
-                "goals": float(rng.integers(0, 15)),
-                "goal_assist": float(rng.integers(0, 10)),
-                "saves": float(rng.integers(0, 80)) if pid % 5 == 0 else 0.0,
-                "_goals_prevented": float(rng.uniform(0, 5)),
-                "clean_sheet": float(rng.integers(0, 20)),
-                "goals_conceded": float(rng.integers(0, 50)),
-                "appearances": float(rng.integers(20, 38)),
-                "team_strength_score": float(rng.uniform(0.3, 1.0)),
-                "is_top_team": int(rng.integers(0, 2)),
-                "team_rank_norm": float(rng.uniform(0.1, 1.0)),
-            })
+            rows.append(
+                {
+                    "player_fotmob_id": pid,
+                    "player_name": f"Player{pid}",
+                    "team_fotmob_id": pid % 3,
+                    "team_name": f"Team{pid % 3}",
+                    "season_start": season,
+                    "season_label": str(season),
+                    "league_name": "Serie A",
+                    "canonical_role": ["GK", "DEF", "MID", "FWD", "MID"][pid % 5],
+                    "mins_played": float(rng.integers(800, 3000)),
+                    "goals": float(rng.integers(0, 15)),
+                    "goal_assist": float(rng.integers(0, 10)),
+                    "saves": float(rng.integers(0, 80)) if pid % 5 == 0 else 0.0,
+                    "_goals_prevented": float(rng.uniform(0, 5)),
+                    "clean_sheet": float(rng.integers(0, 20)),
+                    "goals_conceded": float(rng.integers(0, 50)),
+                    "appearances": float(rng.integers(20, 38)),
+                    "team_strength_score": float(rng.uniform(0.3, 1.0)),
+                    "is_top_team": int(rng.integers(0, 2)),
+                    "team_rank_norm": float(rng.uniform(0.1, 1.0)),
+                }
+            )
     return pd.DataFrame(rows)
 
 
 # ── TASK_003: Temporal Isolation ──────────────────────────────────────────────
+
 
 class TestRollingFeatureTransformerTemporalIsolation:
     """Verify that closed='left' prevents look-ahead bias."""
@@ -80,34 +84,44 @@ class TestRollingFeatureTransformerTemporalIsolation:
         result = result.sort_values("season_start").reset_index(drop=True)
 
         # Season 2021 (index 0): no prior history → NaN
-        assert pd.isna(result.loc[0, "goals_per90_roll2"]), \
+        assert pd.isna(result.loc[0, "goals_per90_roll2"]), (
             "Season 2021 should have NaN rolling (no prior data)"
+        )
 
         # Season 2022 (index 1): only 1 prior season → 1.0
-        assert abs(result.loc[1, "goals_per90_roll2"] - 1.0) < 1e-9, \
+        assert abs(result.loc[1, "goals_per90_roll2"] - 1.0) < 1e-9, (
             f"Season 2022 rolling should be 1.0, got {result.loc[1, 'goals_per90_roll2']}"
+        )
 
         # Season 2023 (index 2): mean of 2021+2022 = 1.5
-        assert abs(result.loc[2, "goals_per90_roll2"] - 1.5) < 1e-9, \
+        assert abs(result.loc[2, "goals_per90_roll2"] - 1.5) < 1e-9, (
             f"Season 2023 rolling should be 1.5, got {result.loc[2, 'goals_per90_roll2']}"
+        )
 
     def test_modifying_future_data_does_not_change_historical_rolling(self):
         """KEY TEST: changing a future season's value must not alter prior rolling averages."""
         # Baseline
         df_base = _make_player_df([1.0, 2.0, 3.0])
         transformer = RollingFeatureTransformer(window=2)
-        result_base = transformer.fit_transform(df_base).sort_values("season_start").reset_index(drop=True)
+        result_base = (
+            transformer.fit_transform(df_base)
+            .sort_values("season_start")
+            .reset_index(drop=True)
+        )
 
         # Modify season 2023 (future relative to 2021 and 2022)
         df_modified = df_base.copy()
         df_modified.loc[df_modified["season_start"] == 2023, "goals_per90"] = 999.0
 
-        result_modified = transformer.fit_transform(df_modified).sort_values("season_start").reset_index(drop=True)
+        result_modified = (
+            transformer.fit_transform(df_modified)
+            .sort_values("season_start")
+            .reset_index(drop=True)
+        )
 
         # Season 2021 rolling must be unchanged
-        assert (
-            pd.isna(result_base.loc[0, "goals_per90_roll2"])
-            and pd.isna(result_modified.loc[0, "goals_per90_roll2"])
+        assert pd.isna(result_base.loc[0, "goals_per90_roll2"]) and pd.isna(
+            result_modified.loc[0, "goals_per90_roll2"]
         ), "Season 2021 rolling should still be NaN after modifying 2023 data"
 
         # Season 2022 rolling must be unchanged (was 1.0)
@@ -129,22 +143,31 @@ class TestRollingFeatureTransformerTemporalIsolation:
         """Year-over-year delta uses current − previous, never future data."""
         df = _make_player_df([10.0, 13.0, 100.0])
         transformer = RollingFeatureTransformer(window=2)
-        result = transformer.fit_transform(df).sort_values("season_start").reset_index(drop=True)
+        result = (
+            transformer.fit_transform(df)
+            .sort_values("season_start")
+            .reset_index(drop=True)
+        )
 
-        assert pd.isna(result.loc[0, "goals_per90_delta1"]), \
+        assert pd.isna(result.loc[0, "goals_per90_delta1"]), (
             "Season 2021 delta should be NaN (no prior season)"
-        assert abs(result.loc[1, "goals_per90_delta1"] - 3.0) < 1e-9, \
+        )
+        assert abs(result.loc[1, "goals_per90_delta1"] - 3.0) < 1e-9, (
             "Season 2022 delta should be 13-10=3"
+        )
         # Season 2023 delta = 100 - 13 = 87; this IS the current season's delta
-        assert abs(result.loc[2, "goals_per90_delta1"] - 87.0) < 1e-9, \
+        assert abs(result.loc[2, "goals_per90_delta1"] - 87.0) < 1e-9, (
             "Season 2023 delta should be 100-13=87"
+        )
 
     def test_multiple_players_are_isolated(self):
         """Each player's rolling window must not bleed into another player's history."""
-        df = pd.concat([
-            _make_player_df([10.0, 20.0], player_id="p1"),
-            _make_player_df([1.0, 2.0], player_id="p2"),
-        ]).reset_index(drop=True)
+        df = pd.concat(
+            [
+                _make_player_df([10.0, 20.0], player_id="p1"),
+                _make_player_df([1.0, 2.0], player_id="p2"),
+            ]
+        ).reset_index(drop=True)
         transformer = RollingFeatureTransformer(window=2)
         result = transformer.fit_transform(df)
 
@@ -153,8 +176,9 @@ class TestRollingFeatureTransformerTemporalIsolation:
         ]["goals_per90_roll2"].iloc[0]
 
         # p2's 2022 rolling should be 1.0 (only p2's 2021 data), not influenced by p1
-        assert abs(p2_2022 - 1.0) < 1e-9, \
+        assert abs(p2_2022 - 1.0) < 1e-9, (
             f"p2 season 2022 rolling should be 1.0 (p2's 2021 only), got {p2_2022}"
+        )
 
     def test_transformer_is_stateless_fit_is_noop(self):
         """fit() must not alter transform behaviour (stateless transformer)."""
@@ -174,21 +198,24 @@ class TestRollingFeatureTransformerTemporalIsolation:
 
 # ── TASK_002: OpponentStrengthAdjuster ────────────────────────────────────────
 
+
 class TestOpponentStrengthAdjuster:
     """Verify SAP feature generation and O(N) groupby semantics."""
 
     def _make_league_df(self) -> pd.DataFrame:
         """Two teams in the same league/season with known ranks."""
-        return pd.DataFrame({
-            "player_fotmob_id": [1, 2, 3, 4],
-            "player_name": ["A", "B", "C", "D"],
-            "team_fotmob_id": [10, 10, 20, 20],
-            "team_name": ["TeamA", "TeamA", "TeamB", "TeamB"],
-            "season_start": [2023, 2023, 2023, 2023],
-            "league_name": ["L1"] * 4,
-            "team_rank_norm": [0.8, 0.8, 0.4, 0.4],  # TeamA=0.8, TeamB=0.4
-            "goals_per90": [1.0, 2.0, 0.5, 0.8],
-        })
+        return pd.DataFrame(
+            {
+                "player_fotmob_id": [1, 2, 3, 4],
+                "player_name": ["A", "B", "C", "D"],
+                "team_fotmob_id": [10, 10, 20, 20],
+                "team_name": ["TeamA", "TeamA", "TeamB", "TeamB"],
+                "season_start": [2023, 2023, 2023, 2023],
+                "league_name": ["L1"] * 4,
+                "team_rank_norm": [0.8, 0.8, 0.4, 0.4],  # TeamA=0.8, TeamB=0.4
+                "goals_per90": [1.0, 2.0, 0.5, 0.8],
+            }
+        )
 
     def test_sap_weight_computed_correctly(self):
         """SAP weight for TeamA vs TeamB is deterministic and correct."""
@@ -196,8 +223,9 @@ class TestOpponentStrengthAdjuster:
         adj = OpponentStrengthAdjuster(group_cols=["season_start", "league_name"])
         result = adj.fit_transform(df)
 
-        assert "goals_per90_sap" in result.columns, \
+        assert "goals_per90_sap" in result.columns, (
             "goals_per90_sap column must be created"
+        )
 
         # For TeamA (rank 0.8), opponent = TeamB (0.4)
         # league_sum = 0.8+0.4=1.2, n_teams=2, league_mean=0.6
@@ -206,8 +234,9 @@ class TestOpponentStrengthAdjuster:
         team_a_rows = result[result["team_fotmob_id"] == 10]
         sap_a = team_a_rows["goals_per90_sap"].iloc[0]
         expected_a = 1.0 * (0.4 / 0.6)  # goals_per90=1.0, sap_weight≈0.667
-        assert abs(sap_a - expected_a) < 1e-6, \
+        assert abs(sap_a - expected_a) < 1e-6, (
             f"TeamA SAP value wrong: expected {expected_a:.4f}, got {sap_a:.4f}"
+        )
 
     def test_fit_only_on_train_transform_on_test(self):
         """Transformer fit on training data and applied to unseen test data."""
@@ -220,20 +249,24 @@ class TestOpponentStrengthAdjuster:
         result = adj.transform(df_test)
 
         # Should fall back to global mean — SAP columns should still be created
-        assert "goals_per90_sap" in result.columns, \
+        assert "goals_per90_sap" in result.columns, (
             "SAP columns must be created even for unseen season (global fallback)"
+        )
 
     def test_no_sap_when_team_rank_norm_missing(self):
         """When team_rank_norm is absent, transformer returns input unchanged."""
-        df = pd.DataFrame({
-            "player_fotmob_id": [1, 2],
-            "goals_per90": [1.0, 2.0],
-        })
+        df = pd.DataFrame(
+            {
+                "player_fotmob_id": [1, 2],
+                "goals_per90": [1.0, 2.0],
+            }
+        )
         adj = OpponentStrengthAdjuster()
         result = adj.fit_transform(df)
 
-        assert "goals_per90_sap" not in result.columns, \
+        assert "goals_per90_sap" not in result.columns, (
             "SAP column must NOT be created when team_rank_norm is missing"
+        )
 
     def test_helper_columns_dropped(self):
         """Internal computation columns (league_sum, sap_weight, etc.) must be dropped."""
@@ -242,11 +275,13 @@ class TestOpponentStrengthAdjuster:
         result = adj.fit_transform(df)
 
         for col in ("league_sum", "n_teams", "league_mean", "sap_weight"):
-            assert col not in result.columns, \
+            assert col not in result.columns, (
                 f"Internal column '{col}' must be dropped from output"
+            )
 
 
 # ── Idempotency ───────────────────────────────────────────────────────────────
+
 
 class TestEngineerFeaturesIdempotency:
     """Running engineer_features twice on the same data yields identical results."""
@@ -272,13 +307,16 @@ class TestEngineerFeaturesIdempotency:
 
         engineer_features(df)
 
-        assert set(df.columns) == original_cols, \
+        assert set(df.columns) == original_cols, (
             "Input DataFrame columns were mutated by engineer_features"
-        assert df.shape == original_shape, \
+        )
+        assert df.shape == original_shape, (
             "Input DataFrame shape was mutated by engineer_features"
+        )
 
 
 # ── Recursive Feature Elimination ─────────────────────────────────────────────
+
 
 class TestSelectFeaturesRfe:
     """Tests for select_features_rfe: collinearity pruning via Ridge-based RFE.
@@ -291,8 +329,11 @@ class TestSelectFeaturesRfe:
     """
 
     def _make_X_y(
-        self, n_rows: int = 80, n_feats: int = 12, seed: int = 0,
-    ) -> tuple[pd.DataFrame, "pd.Series"]:
+        self,
+        n_rows: int = 80,
+        n_feats: int = 12,
+        seed: int = 0,
+    ) -> tuple[pd.DataFrame, pd.Series]:
         """Synthetic feature matrix and continuous target."""
         rng = np.random.default_rng(seed)
         cols = [f"feat_{i}" for i in range(n_feats)]
@@ -306,7 +347,9 @@ class TestSelectFeaturesRfe:
 
         X, y = self._make_X_y(n_feats=10)
         fraction = 0.70
-        selected = select_features_rfe(X, y, list(X.columns), n_features_fraction=fraction)
+        selected = select_features_rfe(
+            X, y, list(X.columns), n_features_fraction=fraction
+        )
 
         expected_count = max(1, round(len(X.columns) * fraction))
         assert len(selected) == expected_count, (
@@ -355,8 +398,9 @@ class TestSelectFeaturesRfe:
         # Must not raise; missing column simply not included
         selected = select_features_rfe(X, y, candidates, n_features_fraction=0.5)
 
-        assert all(f in X.columns for f in selected), \
+        assert all(f in X.columns for f in selected), (
             "Selected features must all exist in X"
+        )
 
     def test_deterministic_across_calls(self):
         """Repeated calls with identical data yield identical selected features."""
@@ -365,6 +409,10 @@ class TestSelectFeaturesRfe:
         X, y = self._make_X_y(n_feats=12, seed=99)
         candidates = list(X.columns)
         run1 = select_features_rfe(X, y, candidates, n_features_fraction=0.6)
-        run2 = select_features_rfe(X.copy(), y.copy(), candidates, n_features_fraction=0.6)
+        run2 = select_features_rfe(
+            X.copy(), y.copy(), candidates, n_features_fraction=0.6
+        )
 
-        assert sorted(run1) == sorted(run2), "RFE must be deterministic for identical input"
+        assert sorted(run1) == sorted(run2), (
+            "RFE must be deterministic for identical input"
+        )

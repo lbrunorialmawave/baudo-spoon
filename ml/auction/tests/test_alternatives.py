@@ -25,10 +25,8 @@ from ml.auction.models import (
 from ml.auction.orchestrator import (
     AuctionSession,
     initialize_auction,
-    record_assignment,
 )
 from ml.optimizer.models import Player
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -105,7 +103,9 @@ class TestRoleExhausted:
             target=target,
             available_pool=[],
             state=initialize_auction(
-                _make_participants(4), AuctionConfig(num_participants=4), multi_role_pool
+                _make_participants(4),
+                AuctionConfig(num_participants=4),
+                multi_role_pool,
             ),
             config=AlternativesConfig(),
         )
@@ -115,9 +115,7 @@ class TestRoleExhausted:
         assert "esaurito" in result.reason_if_none.lower()
         assert result.target_player_id == "p1"
 
-    def test_nessun_candidato_stesso_ruolo(
-        self, multi_role_pool: list[Player]
-    ) -> None:
+    def test_nessun_candidato_stesso_ruolo(self, multi_role_pool: list[Player]) -> None:
         """Se l'available_pool contiene solo giocatori di altri ruoli, None esplicito."""
         target = _mk("p1", "GK", "P", 25, 7.0)
         # available_pool contiene solo difensori/centrocampisti/attaccanti
@@ -162,9 +160,7 @@ class TestSameRoleFiltering:
         assert result.closest_alternative is None
         assert result.reason_if_none is not None
 
-    def test_target_stesso_ruolo_dei_candidati(
-        self, gk_pool: list[Player]
-    ) -> None:
+    def test_target_stesso_ruolo_dei_candidati(self, gk_pool: list[Player]) -> None:
         target = gk_pool[0]  # top1, role P
         state = initialize_auction(
             _make_participants(4), AuctionConfig(num_participants=4), gk_pool
@@ -204,9 +200,7 @@ class TestClosestAlternative:
         # Distanza minima: |7.8 - 8.0| = 0.2
         assert result.closest_alternative.player_id == "top2"
 
-    def test_closest_tiebreak_per_prezzo_piu_basso(
-        self, gk_pool: list[Player]
-    ) -> None:
+    def test_closest_tiebreak_per_prezzo_piu_basso(self, gk_pool: list[Player]) -> None:
         """Se due candidati hanno la stessa distanza, vince quello col minor
         expected_price."""
         # Costruiamo un caso sintetico: due candidati a distanza identica
@@ -236,9 +230,7 @@ class TestClosestAlternative:
 
 
 class TestLowCostAlternative:
-    def test_low_cost_sotto_soglia_max_rapporto(
-        self, gk_pool: list[Player]
-    ) -> None:
+    def test_low_cost_sotto_soglia_max_rapporto(self, gk_pool: list[Player]) -> None:
         """low_cost_percentile=0.4 -> filtra i 40% più economici del ruolo,
         tra questi seleziona il max(score/expected_price)."""
         target = gk_pool[0]

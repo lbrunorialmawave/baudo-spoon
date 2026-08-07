@@ -98,9 +98,7 @@ def test_team_strength_scores_round_trip_identical(elo_pool: list[Player]) -> No
     and re-injected into the fresh ``AuctionState`` by
     ``deserialize_state``.
     """
-    state = initialize_auction(
-        _participants(4), _auction_config_with_elo({}), elo_pool
-    )
+    state = initialize_auction(_participants(4), _auction_config_with_elo({}), elo_pool)
     # Simulate what ``initialize_auction`` would have loaded given a
     # non-zero ``team_strength_multiplier``: a non-empty Elo table.
     elo_table = {"Inter": 0.95, "Lecce": 0.10}
@@ -121,15 +119,13 @@ def test_elo_signal_survives_resume_in_expected_price(elo_pool: list[Player]) ->
     *higher* than the weak-team player (Lecce) on the resumed state.
     """
 
-    state = initialize_auction(
-        _participants(4), _auction_config_with_elo({}), elo_pool
-    )
+    state = initialize_auction(_participants(4), _auction_config_with_elo({}), elo_pool)
     # Populate the Elo table manually (see _auction_config_with_elo).
     elo_table = {"Inter": 0.95, "Lecce": 0.10}
     object.__setattr__(state, "team_strength_scores", dict(elo_table))
 
     p_strong = state.available_pool[0]  # Inter
-    p_weak = state.available_pool[1]    # Lecce
+    p_weak = state.available_pool[1]  # Lecce
     role: Role = "A"  # type: ignore[assignment]
     tier: Tier = "TOP"
 
@@ -194,9 +190,7 @@ def test_pre_fix_payload_without_team_strength_scores_backfills_empty(
     table just backfills to ``{}`` (same as a brand-new state with
     ``team_strength_multiplier=0.0``).
     """
-    state = initialize_auction(
-        _participants(4), _auction_config_with_elo({}), elo_pool
-    )
+    state = initialize_auction(_participants(4), _auction_config_with_elo({}), elo_pool)
     payload = serialize_state(state)
     # Simulate a pre-fix payload by removing the new key.
     payload.pop("team_strength_scores", None)

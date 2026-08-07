@@ -10,11 +10,14 @@ Count fraction of simulations where total spend <= budget.
 
 from __future__ import annotations
 
-import math
 import random
 from dataclasses import dataclass
 
-from ml.optimizer.inflation import InflationConfig, compute_role_percentile_map, estimate_effective_cost
+from ml.optimizer.inflation import (
+    InflationConfig,
+    compute_role_percentile_map,
+    estimate_effective_cost,
+)
 from ml.optimizer.models import Player
 from ml.optimizer.team_strength import load_team_strength_scores
 
@@ -51,7 +54,10 @@ def estimate_completion_probability(
     percentiles = compute_role_percentile_map(squad)
     means: list[float] = [
         estimate_effective_cost(
-            p, percentiles[p.player_id], num_participants, inflation_config,
+            p,
+            percentiles[p.player_id],
+            num_participants,
+            inflation_config,
             team_strength_scores=team_strength_scores,
         )
         for p in squad
@@ -60,10 +66,7 @@ def estimate_completion_probability(
 
     wins = 0
     for _ in range(config.n_simulations):
-        total = sum(
-            max(1.0, random.gauss(mu, sigma))
-            for mu, sigma in zip(means, stds)
-        )
+        total = sum(max(1.0, random.gauss(mu, sigma)) for mu, sigma in zip(means, stds))
         if total <= budget:
             wins += 1
     return wins / config.n_simulations
@@ -72,7 +75,21 @@ def estimate_completion_probability(
 if __name__ == "__main__":
     # quick self-check
     from ml.optimizer.models import Player
-    p = Player(player_id="x", name="X", role="A", real_team="Inter", cost=20, projected_score=8.0)
-    prob = estimate_completion_probability([p], budget=25, config=WinProbabilityConfig(n_simulations=500), inflation_config=InflationConfig(), num_participants=8)
+
+    p = Player(
+        player_id="x",
+        name="X",
+        role="A",
+        real_team="Inter",
+        cost=20,
+        projected_score=8.0,
+    )
+    prob = estimate_completion_probability(
+        [p],
+        budget=25,
+        config=WinProbabilityConfig(n_simulations=500),
+        inflation_config=InflationConfig(),
+        num_participants=8,
+    )
     assert 0.0 <= prob <= 1.0, f"expected [0,1], got {prob}"
     print(f"OK: win_prob={prob:.2f}")

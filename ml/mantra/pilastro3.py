@@ -80,10 +80,10 @@ def compute_ps_corretto(df: pd.DataFrame, cfg: MantraConfig) -> pd.Series:
 
     # Weighted average
     ps = (
-        components["team_rank"]    * cfg.PS_TEAM_RANK_WEIGHT
+        components["team_rank"] * cfg.PS_TEAM_RANK_WEIGHT
         + components["prev_points"] * cfg.PS_PREV_POINTS_WEIGHT
-        + components["goal_diff"]   * cfg.PS_GOAL_DIFF_WEIGHT
-        + components["avg_rating"]  * cfg.PS_AVG_RATING_WEIGHT
+        + components["goal_diff"] * cfg.PS_GOAL_DIFF_WEIGHT
+        + components["avg_rating"] * cfg.PS_AVG_RATING_WEIGHT
         + components["squad_value"] * cfg.PS_SQUAD_VALUE_WEIGHT
     )
     return ps.clip(lower=0, upper=100)

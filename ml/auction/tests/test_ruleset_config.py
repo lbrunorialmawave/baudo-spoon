@@ -21,7 +21,6 @@ from ml.auction.models import AuctionConfig
 from ml.mantra.roles import ALL_ROLES as MANTRA_ALL_ROLES
 from ml.optimizer.models import MANTRA_DEFAULT_QUOTAS
 
-
 # ---------------------------------------------------------------------------
 # CLASSIC — unchanged behaviour (G2: zero regressions)
 # ---------------------------------------------------------------------------

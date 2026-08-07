@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ml.optimizer.models import Player, Role, ROLE_QUOTAS
 from ml.domain.predictions import PredictionExplanation
+from ml.optimizer.models import ROLE_QUOTAS, Player, Role
 
 PlayerV1 = Player
 """Alias for the current Player schema. Downstream-compatible interface."""

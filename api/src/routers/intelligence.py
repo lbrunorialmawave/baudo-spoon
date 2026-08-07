@@ -21,7 +21,7 @@ import asyncio
 import logging
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import ORJSONResponse
@@ -30,14 +30,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ml.storage.artifact_store import ArtifactAvailability, ArtifactStore
 
+from ..config import settings
 from ..data_repository import DataRepository
 from ..deps import get_db, rate_limit, require_role
-from ..config import settings
 from ..models import PlayerSeasonStat, Season
 from ..schemas import (
-    AlternativesResponse,
     ClusteringStatsSchema,
     LowCostAlternativeSchema,
+    LowCostAlternativesResponse,
     ModelComparisonSchema,
     NextSeasonPredictionSchema,
     PlayerClusterSchema,
@@ -48,8 +48,6 @@ from ..schemas import (
 
 log = logging.getLogger(__name__)
 
-log = logging.getLogger(__name__)
-
 # ── Shared dependency ─────────────────────────────────────────────────────────
 
 
@@ -57,7 +55,9 @@ def get_repository(request: Request) -> DataRepository:
     """Retrieve the application-scoped DataRepository from app.state."""
     repo: DataRepository | None = getattr(request.app.state, "repo", None)
     if repo is None:
-        raise HTTPException(status_code=503, detail="ML data repository not initialised")
+        raise HTTPException(
+            status_code=503, detail="ML data repository not initialised"
+        )
     return repo
 
 
@@ -93,9 +93,13 @@ predictions_router = APIRouter(prefix="/predictions", tags=["predictions"])
     },
 )
 async def list_player_predictions(
-    player: Optional[str] = Query(None, description="Filter by player name (partial, case-insensitive)"),
-    team: Optional[str] = Query(None, description="Filter by team name (partial, case-insensitive)"),
-    role: Optional[str] = Query(None, description="Canonical role: GK, DEF, MID, FWD"),
+    player: str | None = Query(
+        None, description="Filter by player name (partial, case-insensitive)"
+    ),
+    team: str | None = Query(
+        None, description="Filter by team name (partial, case-insensitive)"
+    ),
+    role: str | None = Query(None, description="Canonical role: GK, DEF, MID, FWD"),
     page: int = Query(1, ge=1, description="Page number (1-based)"),
     size: int = Query(50, ge=1, le=200, description="Items per page"),
     repo: DataRepository = Depends(get_repository),
@@ -120,7 +124,10 @@ async def list_player_predictions(
         .order_by(PlayerSeasonStat.player_fotmob_id, Season.season_start.desc())
     )
     db_lookup: dict[str, dict] = {
-        row.player_name: {"player_fotmob_id": row.player_fotmob_id, "team_name": row.team_name}
+        row.player_name: {
+            "player_fotmob_id": row.player_fotmob_id,
+            "team_name": row.team_name,
+        }
         for row in db_result.all()
     }
 
@@ -131,7 +138,8 @@ async def list_player_predictions(
         db_meta = db_lookup.get(name, {})
         item = PlayerPredictionSchema(
             player_name=name,
-            player_fotmob_id=r.get("player_fotmob_id") or db_meta.get("player_fotmob_id"),
+            player_fotmob_id=r.get("player_fotmob_id")
+            or db_meta.get("player_fotmob_id"),
             team_name=r.get("team_name") or db_meta.get("team_name"),
             canonical_role=r.get("canonical_role"),
             season=r.get("season"),
@@ -157,7 +165,10 @@ async def list_player_predictions(
         "runId": meta["run_id"],
         "bestModel": meta["best_model"],
         "rolePartitioned": meta["role_partitioned"],
-        "modelComparison": [ModelComparisonSchema(**m).model_dump(by_alias=True) for m in model_comparison],
+        "modelComparison": [
+            ModelComparisonSchema(**m).model_dump(by_alias=True)
+            for m in model_comparison
+        ],
         "total": total,
         "page": page,
         "size": size,
@@ -181,7 +192,7 @@ async def list_player_predictions(
     },
 )
 async def list_next_season_predictions(
-    player: Optional[str] = Query(None, description="Filter by player name (partial)"),
+    player: str | None = Query(None, description="Filter by player name (partial)"),
     repo: DataRepository = Depends(get_repository),
 ) -> ORJSONResponse:
     try:
@@ -190,7 +201,9 @@ async def list_next_season_predictions(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     if not raw:
-        raise HTTPException(status_code=404, detail="No next-season predictions in current artifact")
+        raise HTTPException(
+            status_code=404, detail="No next-season predictions in current artifact"
+        )
 
     items = [NextSeasonPredictionSchema(**r) for r in raw]
     if player:
@@ -223,8 +236,8 @@ intelligence_router = APIRouter(
     },
 )
 async def list_cluster_players(
-    cluster_id: Optional[int] = Query(None, description="Filter by cluster ID"),
-    role: Optional[str] = Query(None, description="Canonical role: GK, DEF, MID, FWD"),
+    cluster_id: int | None = Query(None, description="Filter by cluster ID"),
+    role: str | None = Query(None, description="Canonical role: GK, DEF, MID, FWD"),
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=500),
     repo: DataRepository = Depends(get_repository),
@@ -271,7 +284,7 @@ async def list_cluster_players(
     },
 )
 async def list_low_cost_alternatives(
-    top_player_id: Optional[int] = Query(
+    top_player_id: int | None = Query(
         None, description="FotMob player ID — filter recommendations for one top player"
     ),
     repo: DataRepository = Depends(get_repository),
@@ -289,7 +302,7 @@ async def list_low_cost_alternatives(
             detail=f"No recommendations found for player_id={top_player_id}",
         )
 
-    response = AlternativesResponse(
+    response = LowCostAlternativesResponse(
         clustering_stats=ClusteringStatsSchema(**stats),
         player_clusters=[PlayerClusterSchema(**c) for c in clusters],
         low_cost_recommendations=[LowCostAlternativeSchema(**r) for r in recs],
@@ -312,7 +325,7 @@ async def list_low_cost_alternatives(
     },
 )
 async def list_var_players(
-    role: Optional[str] = Query(None, description="Filter by role: P, D, C, A"),
+    role: str | None = Query(None, description="Filter by role: P, D, C, A"),
     repo: DataRepository = Depends(get_repository),
 ) -> ORJSONResponse:
     try:
@@ -388,7 +401,9 @@ async def _load_hybrid_results(
     source of truth per gli artefatti ML/MANTRA" (2026-08-02), Fase 4.
     """
     for season in await repo.resolve_season_candidates(db):
-        data = await artifact_store.load_json_async(f"mantra_ibrido_results_{season}.json")
+        data = await artifact_store.load_json_async(
+            f"mantra_ibrido_results_{season}.json"
+        )
         if data is not None:
             return season, data
     raise FileNotFoundError(
@@ -411,12 +426,14 @@ async def _load_hybrid_results(
     },
 )
 async def list_hybrid_predictions(
-    ruolo: Optional[str] = Query(None, description="Filter by MANTRA primary role"),
-    search: Optional[str] = Query(None, description="Search by player name"),
-    confidence_min: Optional[float] = Query(None, ge=0, le=100, alias="confidenceMin"),
-    label: Optional[str] = Query(None, description="Filter by hybrid label (e.g. ML_Confirmed)"),
-    sort_by: Optional[HybridSortField] = Query(None, alias="sortBy"),
-    sort_dir: Optional[str] = Query("asc", alias="sortDir"),
+    ruolo: str | None = Query(None, description="Filter by MANTRA primary role"),
+    search: str | None = Query(None, description="Search by player name"),
+    confidence_min: float | None = Query(None, ge=0, le=100, alias="confidenceMin"),
+    label: str | None = Query(
+        None, description="Filter by hybrid label (e.g. ML_Confirmed)"
+    ),
+    sort_by: HybridSortField | None = Query(None, alias="sortBy"),
+    sort_dir: str | None = Query("asc", alias="sortDir"),
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=2000),
     artifact_store: ArtifactStore = Depends(get_artifact_store),
@@ -437,7 +454,9 @@ async def list_hybrid_predictions(
         q = search.lower()
         players = [p for p in players if q in str(p.get("player_name", "")).lower()]
     if confidence_min is not None:
-        players = [p for p in players if (p.get("confidenceScore") or 0) >= confidence_min]
+        players = [
+            p for p in players if (p.get("confidenceScore") or 0) >= confidence_min
+        ]
     if label:
         players = [p for p in players if label in p.get("hybridLabels", [])]
 
@@ -446,15 +465,14 @@ async def list_hybrid_predictions(
         reverse = sort_dir == "desc"
         players.sort(
             key=lambda p: (
-                p.get(sort_by.value) if p.get(sort_by.value) is not None
-                else -999999
+                p.get(sort_by.value) if p.get(sort_by.value) is not None else -999999
             ),
             reverse=reverse,
         )
 
     total = len(players)
     start = (page - 1) * size
-    items = players[start:start + size]
+    items = players[start : start + size]
 
     # Transform selected snake_case keys to camelCase for the frontend.
     # Explicit mapping ensures FP_Corr, CP_Corr etc. are handled correctly.
@@ -499,18 +517,17 @@ async def list_hybrid_predictions(
         parts = key.split("_")
         return parts[0] + "".join(p.capitalize() for p in parts[1:])
 
-    camel_items = [
-        {_to_camel(k): v for k, v in p.items()}
-        for p in items
-    ]
+    camel_items = [{_to_camel(k): v for k, v in p.items()} for p in items]
 
-    return ORJSONResponse({
-        "total": total,
-        "page": page,
-        "size": size,
-        "items": camel_items,
-        "meta": data.get("meta"),
-    })
+    return ORJSONResponse(
+        {
+            "total": total,
+            "page": page,
+            "size": size,
+            "items": camel_items,
+            "meta": data.get("meta"),
+        }
+    )
 
 
 @predictions_router.get(
@@ -536,20 +553,28 @@ async def get_hybrid_stats(
     n_with_ml = sum(1 for p in players if p.get("has_ml_data"))
 
     fp_scores = [p["fpIbrido"] for p in players if p.get("fpIbrido") is not None]
-    conf_scores = [p["confidenceScore"] for p in players if p.get("confidenceScore") is not None]
+    conf_scores = [
+        p["confidenceScore"] for p in players if p.get("confidenceScore") is not None
+    ]
     gaps = [p["fpGap"] for p in players if p.get("fpGap") is not None]
 
     classifications = data.get("classifications", {})
     classification_counts = {k: len(v) for k, v in classifications.items()}
 
-    return ORJSONResponse({
-        "totalPlayers": n_total,
-        "pctWithMl": round(n_with_ml / max(n_total, 1), 2),
-        "avgFpIbrido": round(sum(fp_scores) / max(len(fp_scores), 1), 2) if fp_scores else None,
-        "avgConfidenceScore": round(sum(conf_scores) / max(len(conf_scores), 1), 2) if conf_scores else None,
-        "avgFpGap": round(sum(gaps) / max(len(gaps), 1), 2) if gaps else None,
-        "classificationCounts": classification_counts,
-    })
+    return ORJSONResponse(
+        {
+            "totalPlayers": n_total,
+            "pctWithMl": round(n_with_ml / max(n_total, 1), 2),
+            "avgFpIbrido": round(sum(fp_scores) / max(len(fp_scores), 1), 2)
+            if fp_scores
+            else None,
+            "avgConfidenceScore": round(sum(conf_scores) / max(len(conf_scores), 1), 2)
+            if conf_scores
+            else None,
+            "avgFpGap": round(sum(gaps) / max(len(gaps), 1), 2) if gaps else None,
+            "classificationCounts": classification_counts,
+        }
+    )
 
 
 @predictions_router.get(
@@ -607,16 +632,21 @@ async def get_hybrid_status(
         if availability_by_filename[filename].value in ready
     ]
 
-    return ORJSONResponse({
-        "mlPredictionsReady": ml_exists,
-        "mantraResults": mantra_available,
-        "hybridResults": hybrid_available,
-        "hybridReady": (
-            ml_exists
-            and len(mantra_available) > 0
-            and any(h["season"] in {m["season"] for m in mantra_available} for h in hybrid_available)
-        ),
-    })
+    return ORJSONResponse(
+        {
+            "mlPredictionsReady": ml_exists,
+            "mantraResults": mantra_available,
+            "hybridResults": hybrid_available,
+            "hybridReady": (
+                ml_exists
+                and len(mantra_available) > 0
+                and any(
+                    h["season"] in {m["season"] for m in mantra_available}
+                    for h in hybrid_available
+                )
+            ),
+        }
+    )
 
 
 @predictions_router.get(
@@ -628,24 +658,26 @@ async def get_hybrid_config() -> ORJSONResponse:
     from ml.mantra_ibrido.config_store import load_config
 
     cfg = load_config()
-    return ORJSONResponse({
-        "PESO_MANTRA": cfg.PESO_MANTRA,
-        "PESO_ML": cfg.PESO_ML,
-        "W_PREDICTION_STD": cfg.W_PREDICTION_STD,
-        "W_MINUTES": cfg.W_MINUTES,
-        "EV_SCALE_FACTOR": cfg.EV_SCALE_FACTOR,
-        "CONFIDENZA_SOGLIA": cfg.CONFIDENZA_SOGLIA,
-        "ML_BOOST_SOGLIA": cfg.ML_BOOST_SOGLIA,
-        "ML_BOOST_FP_CORR_MAX": cfg.ML_BOOST_FP_CORR_MAX,
-        "ML_TOP_PRED_MIN": cfg.ML_TOP_PRED_MIN,
-        "ML_TOP_BOOST_MIN": cfg.ML_TOP_BOOST_MIN,
-        "SOGLIA_GAP_ALERT": cfg.SOGLIA_GAP_ALERT,
-        "SLEEPER_FP_CORR_MAX": cfg.SLEEPER_FP_CORR_MAX,
-        "SLEEPER_ML_NORM_MIN": cfg.SLEEPER_ML_NORM_MIN,
-        "BEST_VALUE_VR_MIN": cfg.BEST_VALUE_VR_MIN,
-        "BEST_VALUE_FP_IBRIDO_MIN": cfg.BEST_VALUE_FP_IBRIDO_MIN,
-        "MINUTES_RISK_MAX": cfg.MINUTES_RISK_MAX,
-    })
+    return ORJSONResponse(
+        {
+            "PESO_MANTRA": cfg.PESO_MANTRA,
+            "PESO_ML": cfg.PESO_ML,
+            "W_PREDICTION_STD": cfg.W_PREDICTION_STD,
+            "W_MINUTES": cfg.W_MINUTES,
+            "EV_SCALE_FACTOR": cfg.EV_SCALE_FACTOR,
+            "CONFIDENZA_SOGLIA": cfg.CONFIDENZA_SOGLIA,
+            "ML_BOOST_SOGLIA": cfg.ML_BOOST_SOGLIA,
+            "ML_BOOST_FP_CORR_MAX": cfg.ML_BOOST_FP_CORR_MAX,
+            "ML_TOP_PRED_MIN": cfg.ML_TOP_PRED_MIN,
+            "ML_TOP_BOOST_MIN": cfg.ML_TOP_BOOST_MIN,
+            "SOGLIA_GAP_ALERT": cfg.SOGLIA_GAP_ALERT,
+            "SLEEPER_FP_CORR_MAX": cfg.SLEEPER_FP_CORR_MAX,
+            "SLEEPER_ML_NORM_MIN": cfg.SLEEPER_ML_NORM_MIN,
+            "BEST_VALUE_VR_MIN": cfg.BEST_VALUE_VR_MIN,
+            "BEST_VALUE_FP_IBRIDO_MIN": cfg.BEST_VALUE_FP_IBRIDO_MIN,
+            "MINUTES_RISK_MAX": cfg.MINUTES_RISK_MAX,
+        }
+    )
 
 
 @predictions_router.put(
@@ -664,24 +696,26 @@ async def update_hybrid_config(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
-    return ORJSONResponse({
-        "PESO_MANTRA": cfg.PESO_MANTRA,
-        "PESO_ML": cfg.PESO_ML,
-        "W_PREDICTION_STD": cfg.W_PREDICTION_STD,
-        "W_MINUTES": cfg.W_MINUTES,
-        "EV_SCALE_FACTOR": cfg.EV_SCALE_FACTOR,
-        "CONFIDENZA_SOGLIA": cfg.CONFIDENZA_SOGLIA,
-        "ML_BOOST_SOGLIA": cfg.ML_BOOST_SOGLIA,
-        "ML_BOOST_FP_CORR_MAX": cfg.ML_BOOST_FP_CORR_MAX,
-        "ML_TOP_PRED_MIN": cfg.ML_TOP_PRED_MIN,
-        "ML_TOP_BOOST_MIN": cfg.ML_TOP_BOOST_MIN,
-        "SOGLIA_GAP_ALERT": cfg.SOGLIA_GAP_ALERT,
-        "SLEEPER_FP_CORR_MAX": cfg.SLEEPER_FP_CORR_MAX,
-        "SLEEPER_ML_NORM_MIN": cfg.SLEEPER_ML_NORM_MIN,
-        "BEST_VALUE_VR_MIN": cfg.BEST_VALUE_VR_MIN,
-        "BEST_VALUE_FP_IBRIDO_MIN": cfg.BEST_VALUE_FP_IBRIDO_MIN,
-        "MINUTES_RISK_MAX": cfg.MINUTES_RISK_MAX,
-    })
+    return ORJSONResponse(
+        {
+            "PESO_MANTRA": cfg.PESO_MANTRA,
+            "PESO_ML": cfg.PESO_ML,
+            "W_PREDICTION_STD": cfg.W_PREDICTION_STD,
+            "W_MINUTES": cfg.W_MINUTES,
+            "EV_SCALE_FACTOR": cfg.EV_SCALE_FACTOR,
+            "CONFIDENZA_SOGLIA": cfg.CONFIDENZA_SOGLIA,
+            "ML_BOOST_SOGLIA": cfg.ML_BOOST_SOGLIA,
+            "ML_BOOST_FP_CORR_MAX": cfg.ML_BOOST_FP_CORR_MAX,
+            "ML_TOP_PRED_MIN": cfg.ML_TOP_PRED_MIN,
+            "ML_TOP_BOOST_MIN": cfg.ML_TOP_BOOST_MIN,
+            "SOGLIA_GAP_ALERT": cfg.SOGLIA_GAP_ALERT,
+            "SLEEPER_FP_CORR_MAX": cfg.SLEEPER_FP_CORR_MAX,
+            "SLEEPER_ML_NORM_MIN": cfg.SLEEPER_ML_NORM_MIN,
+            "BEST_VALUE_VR_MIN": cfg.BEST_VALUE_VR_MIN,
+            "BEST_VALUE_FP_IBRIDO_MIN": cfg.BEST_VALUE_FP_IBRIDO_MIN,
+            "MINUTES_RISK_MAX": cfg.MINUTES_RISK_MAX,
+        }
+    )
 
 
 @predictions_router.post(
@@ -691,9 +725,9 @@ async def update_hybrid_config(
     dependencies=[Depends(require_role("member"))],
 )
 async def run_hybrid(
-    season_start: Optional[int] = Query(None, ge=2020, le=2030),
+    season_start: int | None = Query(None, ge=2020, le=2030),
     persist: bool = Query(True, description="If false, writes to preview file only"),
-    overrides: Optional[dict[str, Any]] = Body(None),
+    overrides: dict[str, Any] | None = Body(None),
     artifact_store: ArtifactStore = Depends(get_artifact_store),
     db: AsyncSession = Depends(get_db),
     repo: DataRepository = Depends(get_repository),
@@ -704,7 +738,10 @@ async def run_hybrid(
     if season_start is None:
         season_start = await repo.get_current_season_start(db)
         if season_start is None:
-            raise HTTPException(status_code=400, detail="No quotations imported yet; pass season_start explicitly.")
+            raise HTTPException(
+                status_code=400,
+                detail="No quotations imported yet; pass season_start explicitly.",
+            )
 
     artifacts_dir = Path(settings.artifacts_dir)
     mantra_filename = f"mantra_results_{season_start}.json"
@@ -730,34 +767,40 @@ async def run_hybrid(
             # Save overrides permanently if provided
             config = update_config(overrides) if overrides else load_config()
             result = run_hybrid_computation(
-                mantra_path, ml_path, artifacts_dir,
+                mantra_path,
+                ml_path,
+                artifacts_dir,
                 config=config,
                 output_filename=None,  # production file
             )
         else:
             # Ephemeral: merge overrides in memory, write to preview file only
             base = load_config()
-            from dataclasses import asdict, replace
+            from dataclasses import replace
+
             effective = replace(
                 base,
-                **{k: v for k, v in (overrides or {}).items()
-                   if hasattr(base, k)},
+                **{k: v for k, v in (overrides or {}).items() if hasattr(base, k)},
             )
             result = run_hybrid_computation(
-                mantra_path, ml_path, artifacts_dir,
+                mantra_path,
+                ml_path,
+                artifacts_dir,
                 config=effective,
                 output_filename=f"mantra_ibrido_preview_{season_start}.json",
             )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
-    return ORJSONResponse({
-        "status": "ok",
-        "season": season_start,
-        "nPlayers": len(result["players"]),
-        "generatedAt": result["meta"]["generatedAt"],
-        "persisted": persist,
-    })
+    return ORJSONResponse(
+        {
+            "status": "ok",
+            "season": season_start,
+            "nPlayers": len(result["players"]),
+            "generatedAt": result["meta"]["generatedAt"],
+            "persisted": persist,
+        }
+    )
 
 
 @predictions_router.get(
@@ -767,7 +810,7 @@ async def run_hybrid(
     dependencies=[Depends(require_role("admin"))],
 )
 async def get_hybrid_preview(
-    season_start: Optional[int] = Query(None, ge=2020, le=2030, alias="seasonStart"),
+    season_start: int | None = Query(None, ge=2020, le=2030, alias="seasonStart"),
     artifact_store: ArtifactStore = Depends(get_artifact_store),
     db: AsyncSession = Depends(get_db),
     repo: DataRepository = Depends(get_repository),

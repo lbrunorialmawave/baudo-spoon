@@ -25,8 +25,8 @@ from typing import cast
 
 from ml.auction.alternatives import suggest_alternatives
 from ml.auction.models import (
-    AlternativeSuggestion,
     AlternativesConfig,
+    AlternativeSuggestion,
     AssignmentRecord,
     AuctionConfig,
     AuctionState,
@@ -52,14 +52,14 @@ from ml.optimizer.team_strength import load_team_strength_scores
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "AuctionSession",
+    "deserialize_state",
+    "get_auction_summary",
     "initialize_auction",
     "record_assignment",
-    "undo_last_assignment",
-    "get_auction_summary",
     "serialize_state",
-    "deserialize_state",
-    "AuctionSession",
     "suggest_alternatives",
+    "undo_last_assignment",
 ]
 
 
@@ -146,9 +146,7 @@ def initialize_auction(
     seen_ids: set[str] = set()
     for p in participants:
         if p.participant_id in seen_ids:
-            raise ValueError(
-                f"duplicate participant_id: {p.participant_id!r}"
-            )
+            raise ValueError(f"duplicate participant_id: {p.participant_id!r}")
         seen_ids.add(p.participant_id)
 
     _validate_inflation_config(config)
@@ -292,9 +290,7 @@ def record_assignment(
     if player is None:
         # Distingui "mai esistito" da "già assegnato" per dare un errore
         # diagnostico più utile.
-        already = any(
-            r.player.player_id == player_id for r in state.assignments
-        )
+        already = any(r.player.player_id == player_id for r in state.assignments)
         if already:
             return _reject(
                 "player_already_assigned",
@@ -314,9 +310,7 @@ def record_assignment(
         )
 
     # -- 3. risoluzione e validazione dello slot di ruolo.
-    slot, slot_err = _resolve_assigned_slot(
-        state, player, winner, assigned_slot
-    )
+    slot, slot_err = _resolve_assigned_slot(state, player, winner, assigned_slot)
     if slot_err == "invalid_slot":
         return _reject(
             "invalid_slot",
@@ -474,9 +468,7 @@ def undo_last_assignment(
         winner.squad.pop()
     else:
         # Squad non in coda: rimuovi comunque (idempotente sulla presenza).
-        winner.squad = [
-            p for p in winner.squad if p.player_id != last.player.player_id
-        ]
+        winner.squad = [p for p in winner.squad if p.player_id != last.player.player_id]
     if winner.role_breakdown.get(slot, 0) > 0:
         winner.role_breakdown[slot] -= 1
 
@@ -581,13 +573,13 @@ def serialize_state(state: AuctionState) -> dict[str, object]:
                     role: dict(tiers)
                     for role, tiers in r.price_index_snapshot_before.items()
                 },
-                "assigned_slot": r.assigned_slot if r.assigned_slot is not None else r.role,
+                "assigned_slot": r.assigned_slot
+                if r.assigned_slot is not None
+                else r.role,
             }
             for r in state.assignments
         ],
-        "price_index": {
-            role: dict(tiers) for role, tiers in state.price_index.items()
-        },
+        "price_index": {role: dict(tiers) for role, tiers in state.price_index.items()},
         "available_pool": [_player_to_dict(p) for p in state.available_pool],
         "role_percentile_map": dict(state.role_percentile_map),
         # Elo scores are loaded once per session in ``initialize_auction``
@@ -605,9 +597,7 @@ def deserialize_state(payload: dict[str, object]) -> AuctionState:
     config = _config_from_dict(cast(dict[str, object], payload["config"]))
     players_by_id: dict[str, Player] = {}
 
-    raw_participants = cast(
-        dict[str, dict[str, object]], payload["participants"]
-    )
+    raw_participants = cast(dict[str, dict[str, object]], payload["participants"])
     participants: dict[str, ParticipantState] = {}
     for pid, ps in raw_participants.items():
         squad = [
@@ -619,9 +609,7 @@ def deserialize_state(payload: dict[str, object]) -> AuctionState:
             display_name=cast(str, ps["display_name"]),
             budget_residual=cast(int, ps["budget_residual"]),
             squad=squad,
-            role_breakdown=cast(
-                dict[Role, int], _as_dict(ps["role_breakdown"])
-            ),
+            role_breakdown=cast(dict[Role, int], _as_dict(ps["role_breakdown"])),
         )
 
     raw_assignments = cast(list[dict[str, object]], payload["assignments"])
@@ -794,9 +782,7 @@ def _player_to_dict(p: Player) -> dict[str, object]:
     return out
 
 
-def _player_from_dict(
-    d: dict[str, object], cache: dict[str, Player]
-) -> Player:
+def _player_from_dict(d: dict[str, object], cache: dict[str, Player]) -> Player:
     pid = cast(str, d["player_id"])
     if pid in cache:
         return cache[pid]
@@ -875,9 +861,7 @@ def _config_from_dict(d: dict[str, object]) -> AuctionConfig:
         ruleset=ruleset,  # type: ignore[arg-type]
         market_drift_config=market_drift_config,
         alternatives_config=alternatives_config,
-        use_inflation_baseline=cast(
-            bool, d.get("use_inflation_baseline", False)
-        ),
+        use_inflation_baseline=cast(bool, d.get("use_inflation_baseline", False)),
         inflation_config=None,
         reference_budget=cast(int, d.get("reference_budget", 300)),
         budget_initial=cast(int, d.get("budget_initial", 300)),

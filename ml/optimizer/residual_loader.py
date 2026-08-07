@@ -10,20 +10,22 @@ JSON schema (list of objects):
   { "player_id": str, "role": str, "residual": float }
   residual = actual_fantavoto - predicted_fantavoto
 """
+
 from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 log = logging.getLogger(__name__)
 
 __all__ = [
-    "load_residuals_from_path",
-    "load_residuals_from_artifacts",
-    "load_residuals_preferring_r2",
     "ResidualLoadReport",
+    "load_residuals_from_artifacts",
+    "load_residuals_from_path",
+    "load_residuals_preferring_r2",
 ]
 
 
@@ -73,7 +75,9 @@ def load_residuals_from_path(path: str | Path) -> ResidualLoadReport:
     path = Path(path)
     warnings: list[str] = []
     if not path.exists():
-        return ResidualLoadReport([], f"missing:{path}", 0, 0, [f"file not found: {path}"])
+        return ResidualLoadReport(
+            [], f"missing:{path}", 0, 0, [f"file not found: {path}"]
+        )
 
     rows: list[dict] = []
     if path.suffix.lower() == ".json":
@@ -90,12 +94,13 @@ def load_residuals_from_path(path: str | Path) -> ResidualLoadReport:
     elif path.suffix.lower() in (".parquet", ".pq"):
         try:
             import polars as pl
+
             df = pl.read_parquet(path)
             for raw in df.to_dicts():
                 norm = _normalize_row(raw)
                 if norm:
                     rows.append(norm)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             warnings.append(f"parquet read failed: {exc}")
     else:
         warnings.append(f"unsupported residual file type: {path.suffix}")
@@ -105,7 +110,9 @@ def load_residuals_from_path(path: str | Path) -> ResidualLoadReport:
     return ResidualLoadReport(rows, str(path), len(players), len(roles), warnings)
 
 
-def load_residuals_from_artifacts(artifacts_dir: str | Path | None) -> ResidualLoadReport:
+def load_residuals_from_artifacts(
+    artifacts_dir: str | Path | None,
+) -> ResidualLoadReport:
     """Try common artifact locations under *artifacts_dir*."""
     if not artifacts_dir:
         return ResidualLoadReport([], "none", 0, 0, ["artifacts_dir not set"])
@@ -131,7 +138,6 @@ def load_residuals_from_artifacts(artifacts_dir: str | Path | None) -> ResidualL
     )
 
 
-
 def load_residuals_preferring_r2(
     artifacts_dir: str | Path | None = None,
     *,
@@ -149,7 +155,11 @@ def load_residuals_preferring_r2(
     """
     import os
 
-    art = artifacts_dir or os.environ.get("API_ARTIFACTS_DIR") or os.environ.get("ARTIFACTS_DIR")
+    art = (
+        artifacts_dir
+        or os.environ.get("API_ARTIFACTS_DIR")
+        or os.environ.get("ARTIFACTS_DIR")
+    )
     local = load_residuals_from_artifacts(art)
     if local.residuals:
         return local
@@ -157,7 +167,7 @@ def load_residuals_preferring_r2(
     # Attempt R2 via ArtifactStore
     try:
         from ml.storage.artifact_store import ArtifactStore, R2Config
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return ResidualLoadReport(
             [],
             "r2_unavailable",
@@ -169,10 +179,26 @@ def load_residuals_preferring_r2(
     root = Path(art) if art else Path("artifacts")
     root.mkdir(parents=True, exist_ok=True)
 
-    endpoint = r2_endpoint_url or os.environ.get("API_R2_ENDPOINT_URL") or os.environ.get("ML_R2_ENDPOINT_URL")
-    key_id = r2_access_key_id or os.environ.get("API_R2_ACCESS_KEY_ID") or os.environ.get("ML_R2_ACCESS_KEY_ID")
-    secret = r2_secret_access_key or os.environ.get("API_R2_SECRET_ACCESS_KEY") or os.environ.get("ML_R2_SECRET_ACCESS_KEY")
-    bucket = r2_bucket_name or os.environ.get("API_R2_BUCKET_NAME") or os.environ.get("ML_R2_BUCKET_NAME")
+    endpoint = (
+        r2_endpoint_url
+        or os.environ.get("API_R2_ENDPOINT_URL")
+        or os.environ.get("ML_R2_ENDPOINT_URL")
+    )
+    key_id = (
+        r2_access_key_id
+        or os.environ.get("API_R2_ACCESS_KEY_ID")
+        or os.environ.get("ML_R2_ACCESS_KEY_ID")
+    )
+    secret = (
+        r2_secret_access_key
+        or os.environ.get("API_R2_SECRET_ACCESS_KEY")
+        or os.environ.get("ML_R2_SECRET_ACCESS_KEY")
+    )
+    bucket = (
+        r2_bucket_name
+        or os.environ.get("API_R2_BUCKET_NAME")
+        or os.environ.get("ML_R2_BUCKET_NAME")
+    )
 
     r2_cfg = None
     if endpoint and key_id and secret and bucket:
@@ -219,8 +245,9 @@ def load_residuals_preferring_r2(
         warnings.append("residuals.json payload is not a list")
     players = {r["player_id"] for r in rows}
     roles = {r["role"] for r in rows}
-    return ResidualLoadReport(rows, "r2:residuals.json", len(players), len(roles), warnings)
-
+    return ResidualLoadReport(
+        rows, "r2:residuals.json", len(players), len(roles), warnings
+    )
 
 
 def merge_with_prediction_std(

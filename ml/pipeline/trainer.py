@@ -50,14 +50,18 @@ import os
 import platform
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import joblib
 import numpy as np
 import pandas as pd
 import sqlalchemy as sa
 
-from ..clustering.kmeans import find_low_cost_alternatives, plot_clusters, run_clustering
+from ..clustering.kmeans import (
+    find_low_cost_alternatives,
+    plot_clusters,
+    run_clustering,
+)
 from ..config import MLConfig
 from ..data.loader import load_raw_data
 from ..data.target import attach_target
@@ -75,6 +79,7 @@ from ..evaluation.metrics import (
     evaluate_on_test,
 )
 from ..models.regression import train_all_models
+from ..optimizer.models import DEFAULT_BUDGET, TOTAL_SQUAD_SIZE
 from ..preprocessing.features import (
     _ENVIRONMENTAL_STAT_COLS,
     engineer_features,
@@ -82,7 +87,6 @@ from ..preprocessing.features import (
     select_features_rfe,
 )
 from ..preprocessing.pipeline import build_preprocessor, get_feature_names
-from ..optimizer.models import DEFAULT_BUDGET, ROLE_QUOTAS, TOTAL_SQUAD_SIZE
 from ..storage.artifact_store import ArtifactStore, R2Config
 
 log = logging.getLogger(__name__)
@@ -93,39 +97,57 @@ log = logging.getLogger(__name__)
 _MIN_GK_TRAIN_SAMPLES: int = 20
 
 # Attacking features that are meaningless / always-zero for GKs.
-_GK_EXCLUDE_FEATURES: frozenset[str] = frozenset([
-    "goals_per90", "goal_assist_per90",
-    "total_scoring_att_per90", "ontarget_scoring_att_per90",
-    "big_chance_created_per90", "big_chance_missed_per90",
-    "total_att_assist_per90", "won_contest_per90",
-    "goals_per90_roll2", "goal_assist_per90_roll2",
-    "total_scoring_att_per90_roll2",
-    "goals_per90_delta1", "goal_assist_per90_delta1",
-    "goals_per90_sap", "goal_assist_per90_sap",
-    "total_scoring_att_per90_sap", "ontarget_scoring_att_per90_sap",
-])
+_GK_EXCLUDE_FEATURES: frozenset[str] = frozenset(
+    [
+        "goals_per90",
+        "goal_assist_per90",
+        "total_scoring_att_per90",
+        "ontarget_scoring_att_per90",
+        "big_chance_created_per90",
+        "big_chance_missed_per90",
+        "total_att_assist_per90",
+        "won_contest_per90",
+        "goals_per90_roll2",
+        "goal_assist_per90_roll2",
+        "total_scoring_att_per90_roll2",
+        "goals_per90_delta1",
+        "goal_assist_per90_delta1",
+        "goals_per90_sap",
+        "goal_assist_per90_sap",
+        "total_scoring_att_per90_sap",
+        "ontarget_scoring_att_per90_sap",
+    ]
+)
 
 # GK-specific features that are meaningless for outfielders.
-_OUTFIELD_EXCLUDE_FEATURES: frozenset[str] = frozenset([
-    "saves_per90", "_goals_prevented_per90",
-    "clean_sheet_per90", "goals_conceded_per90",
-    "saves_per90_roll2", "_goals_prevented_per90_roll2",
-    "saves_per90_delta1", "_goals_prevented_per90_delta1",
-    "saves_per90_sap", "_goals_prevented_per90_sap",
-])
+_OUTFIELD_EXCLUDE_FEATURES: frozenset[str] = frozenset(
+    [
+        "saves_per90",
+        "_goals_prevented_per90",
+        "clean_sheet_per90",
+        "goals_conceded_per90",
+        "saves_per90_roll2",
+        "_goals_prevented_per90_roll2",
+        "saves_per90_delta1",
+        "_goals_prevented_per90_delta1",
+        "saves_per90_sap",
+        "_goals_prevented_per90_sap",
+    ]
+)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _json_safe(obj: Any) -> Any:
     """Recursively convert a value to a JSON-serialisable type."""
-    if isinstance(obj, float) and (obj != obj):  # NaN check
+    if isinstance(obj, float) and np.isnan(obj):
         return None
     if isinstance(obj, (np.integer,)):
         return int(obj)
     if isinstance(obj, (np.floating,)):
         v = float(obj)
-        return None if v != v else v
+        return None if np.isnan(v) else v
     if isinstance(obj, np.ndarray):
         return obj.tolist()
     if isinstance(obj, pd.DataFrame):
@@ -174,9 +196,7 @@ def _filter_features_for_role(
 
 def _compute_data_hash(df: pd.DataFrame) -> str:
     """Return a SHA-256 hex digest of the DataFrame for auditability."""
-    h = hashlib.sha256(
-        pd.util.hash_pandas_object(df, index=True).values.tobytes()
-    )
+    h = hashlib.sha256(pd.util.hash_pandas_object(df, index=True).values.tobytes())
     return f"sha256:{h.hexdigest()}"
 
 
@@ -246,11 +266,14 @@ def _plot_residual_drift(
         output_path: Absolute path to write the PNG file.
     """
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     if not bt_result.season_metrics:
-        log.warning("_plot_residual_drift: no backtest seasons available; skipping plot.")
+        log.warning(
+            "_plot_residual_drift: no backtest seasons available; skipping plot."
+        )
         return
 
     seasons = [s["test_season"] for s in bt_result.season_metrics]
@@ -259,22 +282,32 @@ def _plot_residual_drift(
 
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.plot(seasons, rmses, marker="o", linewidth=2, label="RMSE", color="tab:red")
-    ax.plot(seasons, maes, marker="s", linewidth=2, linestyle="--", label="MAE", color="tab:blue")
+    ax.plot(
+        seasons,
+        maes,
+        marker="s",
+        linewidth=2,
+        linestyle="--",
+        label="MAE",
+        color="tab:blue",
+    )
     ax.axhline(
         bt_result.mean_rmse,
-        color="tab:red", linestyle=":", alpha=0.55,
+        color="tab:red",
+        linestyle=":",
+        alpha=0.55,
         label=f"Mean RMSE = {bt_result.mean_rmse:.3f}",
     )
     ax.axhline(
         bt_result.mean_mae,
-        color="tab:blue", linestyle=":", alpha=0.55,
+        color="tab:blue",
+        linestyle=":",
+        alpha=0.55,
         label=f"Mean MAE = {bt_result.mean_mae:.3f}",
     )
     ax.set_xlabel("Test Season (backtested)")
     ax.set_ylabel("Prediction Error")
-    ax.set_title(
-        f"Residual Drift Across Backtested Seasons — {bt_result.model_name}"
-    )
+    ax.set_title(f"Residual Drift Across Backtested Seasons — {bt_result.model_name}")
     ax.legend(loc="best", fontsize=9)
     ax.set_xticks(seasons)
     ax.grid(True, alpha=0.3)
@@ -286,6 +319,7 @@ def _plot_residual_drift(
 
 
 # ── Trainer ───────────────────────────────────────────────────────────────────
+
 
 class Trainer:
     """Orchestrates the full ML pipeline from DB to JSON output.
@@ -300,7 +334,7 @@ class Trainer:
         self.cfg = cfg
         self._artifacts_dir = cfg.artifacts_dir
         self._artifacts_dir.mkdir(parents=True, exist_ok=True)
-        self._run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self._run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         # Unica porta d'ingresso per lettura/scrittura artefatti (cache-aside
         # locale + R2). Vedi design doc "R2 come source of truth" (2026-08-02).
         self._artifact_store = ArtifactStore(
@@ -435,7 +469,9 @@ class Trainer:
         feature_cols = num_feats + cat_feats
         log.info(
             "[%s] features: %d numeric + %d categorical",
-            role, len(num_feats), len(cat_feats),
+            role,
+            len(num_feats),
+            len(cat_feats),
         )
 
         X_train = df_train[feature_cols]
@@ -446,7 +482,9 @@ class Trainer:
         # Differentiated imputation: environmental features (team context,
         # quotation signals) use median; event-based features use 0.
         env_feats = [f for f in num_feats if f in _ENVIRONMENTAL_STAT_COLS]
-        preprocessor = build_preprocessor(num_feats, cat_feats, environmental_features=env_feats)
+        preprocessor = build_preprocessor(
+            num_feats, cat_feats, environmental_features=env_feats
+        )
         fitted_pipelines = train_all_models(X_train, y_train, preprocessor, self.cfg)
 
         test_metrics: dict[str, SplitMetrics] = {}
@@ -457,7 +495,11 @@ class Trainer:
             test_metrics[name] = m
             log.info(
                 "[%s] %s → RMSE=%.4f, MAE=%.4f, R²=%.4f",
-                role, name, m.rmse, m.mae, m.r2,
+                role,
+                name,
+                m.rmse,
+                m.mae,
+                m.r2,
             )
 
         comparison_df = build_comparison_table(test_metrics)
@@ -465,7 +507,9 @@ class Trainer:
         best_pipe = fitted_pipelines[best_name]
         log.info(
             "[%s] best model: %s (RMSE=%.4f)",
-            role, best_name, comparison_df.iloc[0]["rmse"],
+            role,
+            best_name,
+            comparison_df.iloc[0]["rmse"],
         )
         return test_metrics, best_name, best_pipe, feature_cols, fitted_pipelines
 
@@ -473,8 +517,8 @@ class Trainer:
 
     def run(
         self,
-        external_fantavoto_csv: Optional[Path] = None,
-        engine: Optional[Any] = None,
+        external_fantavoto_csv: Path | None = None,
+        engine: Any | None = None,
     ) -> dict[str, Any]:
         """Execute the full pipeline and return the results dict.
 
@@ -505,7 +549,9 @@ class Trainer:
 
         # ── 1b. Build and persist run metadata ────────────────────────────────
         metadata = _gather_metadata(self._run_id, cfg, data_hash)
-        self._artifact_store.save_json(_json_safe(metadata), f"metadata_{self._run_id}.json")
+        self._artifact_store.save_json(
+            _json_safe(metadata), f"metadata_{self._run_id}.json"
+        )
         log.info("Run metadata saved (deps: %s)", list(metadata["dependencies"].keys()))
 
         # ── 2. Attach target ──────────────────────────────────────────────────
@@ -520,7 +566,9 @@ class Trainer:
         # Neo-arrivi with zero Serie A history (ml/data/loader.py) are
         # inference-only: they must never influence feature selection,
         # training, backtest, or evaluation — only get a prediction (step 8b).
-        _foreign_mask = df.get("is_foreign_fallback", pd.Series(False, index=df.index)).fillna(False)
+        _foreign_mask = df.get(
+            "is_foreign_fallback", pd.Series(False, index=df.index)
+        ).fillna(False)
         df_core = df[~_foreign_mask].copy()
         df_foreign = df[_foreign_mask].copy()
         if len(df_foreign):
@@ -546,21 +594,28 @@ class Trainer:
 
         # ── 6. Role partition ─────────────────────────────────────────────────
         log.info("Step 6/12 — Role-partitioned sub-pipeline (GK vs Outfield)")
-        gk_mask_train = df_train.get("canonical_role", pd.Series("MID", index=df_train.index)) == "GK"
-        gk_mask_test = df_test.get("canonical_role", pd.Series("MID", index=df_test.index)) == "GK"
+        gk_mask_train = (
+            df_train.get("canonical_role", pd.Series("MID", index=df_train.index))
+            == "GK"
+        )
+        gk_mask_test = (
+            df_test.get("canonical_role", pd.Series("MID", index=df_test.index)) == "GK"
+        )
         n_gk_train = int(gk_mask_train.sum())
 
         role_partitioned = n_gk_train >= _MIN_GK_TRAIN_SAMPLES
         if role_partitioned:
             log.info(
                 "  GK partition: %d train / %d test rows",
-                n_gk_train, int(gk_mask_test.sum()),
+                n_gk_train,
+                int(gk_mask_test.sum()),
             )
         else:
             log.warning(
                 "  Only %d GK training rows (threshold %d); "
                 "skipping GK-specific sub-pipeline.",
-                n_gk_train, _MIN_GK_TRAIN_SAMPLES,
+                n_gk_train,
+                _MIN_GK_TRAIN_SAMPLES,
             )
 
         # ── 7. Train & evaluate — role-partitioned ────────────────────────────
@@ -570,28 +625,36 @@ class Trainer:
 
         if role_partitioned:
             # ── GK sub-pipeline ───────────────────────────────────────────────
-            gk_test_metrics, best_gk_name, best_gk_pipe, gk_feature_cols, gk_all_pipes = (
-                self._run_role_pipeline(
-                    df_train[gk_mask_train].reset_index(drop=True),
-                    df_test[gk_mask_test].reset_index(drop=True),
-                    "GK",
-                    numeric_features,
-                    categorical_features,
-                )
+            (
+                gk_test_metrics,
+                best_gk_name,
+                best_gk_pipe,
+                gk_feature_cols,
+                gk_all_pipes,
+            ) = self._run_role_pipeline(
+                df_train[gk_mask_train].reset_index(drop=True),
+                df_test[gk_mask_test].reset_index(drop=True),
+                "GK",
+                numeric_features,
+                categorical_features,
             )
             role_metrics["gk"] = {
                 name: m.as_dict() for name, m in gk_test_metrics.items()
             }
 
             # ── Outfield sub-pipeline ─────────────────────────────────────────
-            out_test_metrics, best_out_name, best_out_pipe, out_feature_cols, out_all_pipes = (
-                self._run_role_pipeline(
-                    df_train[~gk_mask_train].reset_index(drop=True),
-                    df_test[~gk_mask_test].reset_index(drop=True),
-                    "OUTFIELD",
-                    numeric_features,
-                    categorical_features,
-                )
+            (
+                out_test_metrics,
+                best_out_name,
+                best_out_pipe,
+                out_feature_cols,
+                out_all_pipes,
+            ) = self._run_role_pipeline(
+                df_train[~gk_mask_train].reset_index(drop=True),
+                df_test[~gk_mask_test].reset_index(drop=True),
+                "OUTFIELD",
+                numeric_features,
+                categorical_features,
             )
             role_metrics["outfield"] = {
                 name: m.as_dict() for name, m in out_test_metrics.items()
@@ -620,7 +683,9 @@ class Trainer:
             y_test = df_test["fantavoto_medio"]
 
             env_feats = [f for f in numeric_features if f in _ENVIRONMENTAL_STAT_COLS]
-            preprocessor = build_preprocessor(numeric_features, categorical_features, environmental_features=env_feats)
+            preprocessor = build_preprocessor(
+                numeric_features, categorical_features, environmental_features=env_feats
+            )
             fitted_pipelines = train_all_models(X_train, y_train, preprocessor, cfg)
 
             test_metrics_unified: dict[str, SplitMetrics] = {}
@@ -665,7 +730,10 @@ class Trainer:
         if len(df_foreign):
             if role_partitioned:
                 gk_mask_foreign = (
-                    df_foreign.get("canonical_role", pd.Series("MID", index=df_foreign.index)) == "GK"
+                    df_foreign.get(
+                        "canonical_role", pd.Series("MID", index=df_foreign.index)
+                    )
+                    == "GK"
                 )
                 gk_idx_f = df_foreign.index[gk_mask_foreign]
                 out_idx_f = df_foreign.index[~gk_mask_foreign]
@@ -681,11 +749,15 @@ class Trainer:
                 pred_foreign = pd.Series(
                     best_pipe.predict(df_foreign[feature_cols]), index=df_foreign.index
                 )
-            log.info("  Predicted fantavoto for %d cross-league fallback row(s)", len(df_foreign))
+            log.info(
+                "  Predicted fantavoto for %d cross-league fallback row(s)",
+                len(df_foreign),
+            )
 
         # ── 9. Backtest ───────────────────────────────────────────────────────
         log.info("Step 9/12 — Walk-forward backtesting")
         from sklearn.base import clone
+
         bt_result = backtest(
             pipeline=clone(best_pipe),
             df=df_core,
@@ -704,7 +776,7 @@ class Trainer:
             drift_path = self._artifact("residual_drift.png")
             if drift_path.exists():
                 self._artifact_store.save_binary(drift_path, "residual_drift.png")
-        except Exception as _drift_exc:  # noqa: BLE001
+        except Exception as _drift_exc:
             log.warning("residual_drift.png upload skipped: %s", _drift_exc)
 
         # Persist walk-forward residuals for optimizer Monte Carlo (local + R2)
@@ -713,6 +785,7 @@ class Trainer:
                 build_residuals_payload,
                 summarize_residuals,
             )
+
             residual_rows = list(getattr(bt_result, "residuals", None) or [])
             payload = build_residuals_payload(
                 residual_rows,
@@ -722,19 +795,19 @@ class Trainer:
                 extra_meta={
                     "mean_rmse": getattr(bt_result, "mean_rmse", None),
                     "mean_mae": getattr(bt_result, "mean_mae", None),
-                    "n_seasons_tested": len(getattr(bt_result, "season_metrics", []) or []),
+                    "n_seasons_tested": len(
+                        getattr(bt_result, "season_metrics", []) or []
+                    ),
                 },
             )
             self._artifact_store.save_json(payload, "residuals.json")
             # Also versioned copy for audit
-            self._artifact_store.save_json(
-                payload, f"residuals_{self._run_id}.json"
-            )
+            self._artifact_store.save_json(payload, f"residuals_{self._run_id}.json")
             log.info(
                 "Residuals exported: %s",
                 summarize_residuals(residual_rows),
             )
-        except Exception as _res_exc:  # noqa: BLE001 - never fail the pipeline
+        except Exception as _res_exc:
             log.warning("residuals.json export failed (non-critical): %s", _res_exc)
 
         # ── 10. Explainability ────────────────────────────────────────────────
@@ -743,15 +816,21 @@ class Trainer:
             best_pipe.named_steps["preprocessor"]
         )
 
-        feat_imp_df: Optional[pd.DataFrame] = None
+        feat_imp_df: pd.DataFrame | None = None
         model = best_pipe.named_steps["model"]
         if hasattr(model, "feature_importances_"):
-            feat_imp_df = compute_tree_feature_importance(best_pipe, feat_names_transformed)
+            feat_imp_df = compute_tree_feature_importance(
+                best_pipe, feat_names_transformed
+            )
         else:
             feat_imp_df = compute_permutation_importance(
                 best_pipe,
-                df_test.loc[~gk_mask_test, feature_cols] if role_partitioned else df_test[feature_cols],
-                df_test.loc[~gk_mask_test, "fantavoto_medio"] if role_partitioned else df_test["fantavoto_medio"],
+                df_test.loc[~gk_mask_test, feature_cols]
+                if role_partitioned
+                else df_test[feature_cols],
+                df_test.loc[~gk_mask_test, "fantavoto_medio"]
+                if role_partitioned
+                else df_test["fantavoto_medio"],
                 feature_names=feat_names_transformed,
                 random_seed=cfg.random_seed,
             )
@@ -764,7 +843,9 @@ class Trainer:
 
         shap_result = compute_shap_values(
             best_pipe,
-            df_train.loc[~gk_mask_train, feature_cols] if role_partitioned else df_train[feature_cols],
+            df_train.loc[~gk_mask_train, feature_cols]
+            if role_partitioned
+            else df_train[feature_cols],
             feature_names=feat_names_transformed,
             sample_size=cfg.shap_sample_size,
             random_seed=cfg.random_seed,
@@ -783,9 +864,7 @@ class Trainer:
         log.info("Step 11/12 — Running player clustering")
         latest_season = df["season_start"].max()
         df_latest = df[df["season_start"] == latest_season].copy()
-        df_latest["predicted_fantavoto"] = best_pipe.predict(
-            df_latest[feature_cols]
-        )
+        df_latest["predicted_fantavoto"] = best_pipe.predict(df_latest[feature_cols])
 
         # Prediction std: cross-model disagreement for each player in df_latest.
         # Uses all fitted pipelines for the primary partition; wrapped in try/except
@@ -794,7 +873,11 @@ class Trainer:
             if role_partitioned:
                 _all_pipes_latest = out_all_pipes
                 _feat_cols_latest = out_feature_cols
-                _latest_mask = ~df_latest["canonical_role"].isin(["GK"]) if "canonical_role" in df_latest.columns else pd.Series(True, index=df_latest.index)
+                _latest_mask = (
+                    ~df_latest["canonical_role"].isin(["GK"])
+                    if "canonical_role" in df_latest.columns
+                    else pd.Series(True, index=df_latest.index)
+                )
             else:
                 _all_pipes_latest = fitted_pipelines  # type: ignore[possibly-undefined]
                 _feat_cols_latest = feature_cols
@@ -802,18 +885,22 @@ class Trainer:
 
             _x_latest = df_latest.loc[_latest_mask, _feat_cols_latest]
             if len(_all_pipes_latest) > 1 and not _x_latest.empty:
-                _preds_matrix = np.column_stack([
-                    pipe.predict(_x_latest) for pipe in _all_pipes_latest.values()
-                ])
+                _preds_matrix = np.column_stack(
+                    [pipe.predict(_x_latest) for pipe in _all_pipes_latest.values()]
+                )
                 _std_series = pd.Series(
                     np.std(_preds_matrix, axis=1, ddof=0),
-                    index=_X_latest.index,
+                    index=_x_latest.index,
                 )
-                df_latest["prediction_std"] = _std_series.reindex(df_latest.index).fillna(0.0)
+                df_latest["prediction_std"] = _std_series.reindex(
+                    df_latest.index
+                ).fillna(0.0)
             else:
                 df_latest["prediction_std"] = 0.0
         except Exception as _std_exc:
-            log.warning("prediction_std computation failed (non-critical): %s", _std_exc)
+            log.warning(
+                "prediction_std computation failed (non-critical): %s", _std_exc
+            )
             df_latest["prediction_std"] = 0.0
 
         cluster_result = run_clustering(df_latest, cfg)
@@ -828,9 +915,12 @@ class Trainer:
         log.info("Step 11b — Computing VAR / Expected Surplus Value")
         var_results: list[dict] = []
         try:
-            from ml.auction.var import DemandCurve, ReplacementLevel, VAR, VarEngine
+            from ml.auction.var import VAR, DemandCurve, ReplacementLevel
+
             _fc_role_map = {"GK": "P", "DEF": "D", "MID": "C", "FWD": "A"}
-            _role_col = "canonical_role" if "canonical_role" in df_latest.columns else None
+            _role_col = (
+                "canonical_role" if "canonical_role" in df_latest.columns else None
+            )
 
             # Build player list with Fantacalcio role codes
             var_players: list[dict] = []
@@ -838,51 +928,68 @@ class Trainer:
                 raw_role = str(row[_role_col] if _role_col else "MID")
                 _sv = row.get("fantapunti_totali")
                 _sp = row.get("probabilita_titolarita")
-                var_players.append({
-                    "player_id": str(row.get("player_fotmob_id", row.get("player_name", "unknown"))),
-                    "player_name": str(row.get("player_name", "")),
-                    "role": _fc_role_map.get(raw_role, "C"),
-                    "projected_score": float(row["predicted_fantavoto"]),
-                    "season_value": float(_sv) if pd.notna(_sv) else None,
-                    "start_probability": float(_sp) if pd.notna(_sp) else None,
-                })
+                var_players.append(
+                    {
+                        "player_id": str(
+                            row.get(
+                                "player_fotmob_id", row.get("player_name", "unknown")
+                            )
+                        ),
+                        "player_name": str(row.get("player_name", "")),
+                        "role": _fc_role_map.get(raw_role, "C"),
+                        "projected_score": float(row["predicted_fantavoto"]),
+                        "season_value": float(_sv) if pd.notna(_sv) else None,
+                        "start_probability": float(_sp) if pd.notna(_sp) else None,
+                    }
+                )
 
             # Group by role to compute replacement level, then produce VAR + ESV
             from collections import defaultdict as _dd
+
             by_role: dict[str, list[dict]] = _dd(list)
             for p in var_players:
                 by_role[p["role"]].append(p)
 
             demand = DemandCurve()  # calibrated=False by design
-            role_slots = dict(ROLE_QUOTAS)
 
             for role, role_ps in by_role.items():
                 scores = [p["projected_score"] for p in role_ps]
                 rl = ReplacementLevel.from_player_pool(role, scores)
                 positive_vars = [s - rl.score for s in scores if s > rl.score]
-                baseline_var = sum(positive_vars) / len(positive_vars) if positive_vars else 1.0
+                baseline_var = (
+                    sum(positive_vars) / len(positive_vars) if positive_vars else 1.0
+                )
                 budget_per_slot = float(DEFAULT_BUDGET) / TOTAL_SQUAD_SIZE
 
                 for p in role_ps:
                     v = VAR.compute(p["player_id"], role, p["projected_score"], rl)
                     esv_val = (
-                        (v.var_score / baseline_var) * budget_per_slot - demand.expected_price(v.var_score)
+                        (v.var_score / baseline_var) * budget_per_slot
+                        - demand.expected_price(v.var_score)
                         if baseline_var > 0 and v.var_score > 0
                         else demand.base_price - demand.expected_price(v.var_score)
                     )
-                    var_results.append({
-                        "player_id": p["player_id"],
-                        "player_name": p["player_name"],
-                        "role": role,
-                        "projected_score": round(p["projected_score"], 3),
-                        "season_value": round(p["season_value"], 3) if p.get("season_value") is not None else None,
-                        "start_probability": round(p["start_probability"], 4) if p.get("start_probability") is not None else None,
-                        "replacement_level_score": round(rl.score, 3),
-                        "var_score": round(v.var_score, 3),
-                        "expected_price": round(demand.expected_price(v.var_score), 2),
-                        "esv": round(esv_val, 3),
-                        "calibrated": demand.calibrated,
-                    })
+                    var_results.append(
+                        {
+                            "player_id": p["player_id"],
+                            "player_name": p["player_name"],
+                            "role": role,
+                            "projected_score": round(p["projected_score"], 3),
+                            "season_value": round(p["season_value"], 3)
+                            if p.get("season_value") is not None
+                            else None,
+                            "start_probability": round(p["start_probability"], 4)
+                            if p.get("start_probability") is not None
+                            else None,
+                            "replacement_level_score": round(rl.score, 3),
+                            "var_score": round(v.var_score, 3),
+                            "expected_price": round(
+                                demand.expected_price(v.var_score), 2
+                            ),
+                            "esv": round(esv_val, 3),
+                            "calibrated": demand.calibrated,
+                        }
+                    )
 
             var_results.sort(key=lambda r: r["esv"], reverse=True)
             log.info("VAR computed for %d players.", len(var_results))
@@ -894,9 +1001,11 @@ class Trainer:
         if cfg.predict_next:
             log.info(
                 "Predict-next mode: re-fitting %s on all %d rows …",
-                best_name, len(df_core),
+                best_name,
+                len(df_core),
             )
             from sklearn.base import clone as _clone
+
             full_pipe = _clone(best_pipe)
             full_pipe.fit(df_core[feature_cols], df_core["fantavoto_medio"])
 
@@ -906,14 +1015,21 @@ class Trainer:
             )
             next_season_col = (
                 df_next[
-                    ["player_fotmob_id", "player_name", "team_name",
-                     "season_start", "predicted_next_fantavoto"]
+                    [
+                        "player_fotmob_id",
+                        "player_name",
+                        "team_name",
+                        "season_start",
+                        "predicted_next_fantavoto",
+                    ]
                 ]
                 .sort_values("predicted_next_fantavoto", ascending=False)
                 .reset_index(drop=True)
             )
             next_season_predictions = next_season_col.to_dict(orient="records")
-            self._artifact_store.save_json(_json_safe(next_season_predictions), "next_season_predictions.json")
+            self._artifact_store.save_json(
+                _json_safe(next_season_predictions), "next_season_predictions.json"
+            )
             log.info(
                 "Next-season predictions saved: %d players",
                 len(next_season_predictions),
@@ -934,9 +1050,9 @@ class Trainer:
         # Attach expected_minutes from train data (mins_played in test season)
         # as a simple estimate — the last known minutes for each player.
         if "mins_played" in df_test.columns:
-            predictions_df["expected_minutes"] = pd.to_numeric(
-                df_test["mins_played"], errors="coerce"
-            ).fillna(0).values
+            predictions_df["expected_minutes"] = (
+                pd.to_numeric(df_test["mins_played"], errors="coerce").fillna(0).values
+            )
         else:
             predictions_df["expected_minutes"] = 0
 
@@ -950,17 +1066,28 @@ class Trainer:
                 ]:
                     if len(_idx) == 0 or len(_pipes) <= 1:
                         continue
-                    _m = np.column_stack([p.predict(df_test.loc[_idx, _fcols]) for p in _pipes.values()])
+                    _m = np.column_stack(
+                        [p.predict(df_test.loc[_idx, _fcols]) for p in _pipes.values()]
+                    )
                     _pred_std.loc[_idx] = np.std(_m, axis=1, ddof=0)
             else:
                 if len(fitted_pipelines) > 1:  # type: ignore[possibly-undefined]
-                    _m = np.column_stack([p.predict(df_test[feature_cols]) for p in fitted_pipelines.values()])
-                    _pred_std = pd.Series(np.std(_m, axis=1, ddof=0), index=df_test.index)
+                    _m = np.column_stack(
+                        [
+                            p.predict(df_test[feature_cols])
+                            for p in fitted_pipelines.values()
+                        ]
+                    )
+                    _pred_std = pd.Series(
+                        np.std(_m, axis=1, ddof=0), index=df_test.index
+                    )
                 else:
                     _pred_std = pd.Series(0.0, index=df_test.index)
             predictions_df["prediction_std"] = _pred_std.values
         except Exception as _std_exc2:
-            log.warning("prediction_std (test set) failed (non-critical): %s", _std_exc2)
+            log.warning(
+                "prediction_std (test set) failed (non-critical): %s", _std_exc2
+            )
             predictions_df["prediction_std"] = 0.0
 
         # Fold in cross-league fallback predictions (step 8b) so neo-arrivi
@@ -969,15 +1096,25 @@ class Trainer:
         # disagreement (prediction_std=0.0: no ensemble computed for this
         # small, low-priority population; a deliberate simplification).
         if len(df_foreign):
-            foreign_cols = ["player_fotmob_id", "player_name", "team_name", "season_start"]
+            foreign_cols = [
+                "player_fotmob_id",
+                "player_name",
+                "team_name",
+                "season_start",
+            ]
             if "canonical_role" in df_foreign.columns:
                 foreign_cols.append("canonical_role")
             foreign_predictions_df = df_foreign[foreign_cols].copy()
-            foreign_predictions_df["fantavoto_medio"] = df_foreign["fantavoto_medio"].values
+            foreign_predictions_df["fantavoto_medio"] = df_foreign[
+                "fantavoto_medio"
+            ].values
             foreign_predictions_df["predicted_fantavoto"] = pred_foreign.values
             foreign_predictions_df["expected_minutes"] = (
-                pd.to_numeric(df_foreign.get("mins_played"), errors="coerce").fillna(0).values
-                if "mins_played" in df_foreign.columns else 0
+                pd.to_numeric(df_foreign.get("mins_played"), errors="coerce")
+                .fillna(0)
+                .values
+                if "mins_played" in df_foreign.columns
+                else 0
             )
             foreign_predictions_df["prediction_std"] = 0.0
             foreign_predictions_df["is_foreign_fallback"] = True
@@ -989,6 +1126,7 @@ class Trainer:
         # The derivation lives in ``ml.domain.predictions`` so the MANTRA runner
         # and the optimizer pool read the same numbers from the same source.
         from ml.domain.predictions import derive_season_value_columns
+
         derive_season_value_columns(predictions_df)
 
         output: dict[str, Any] = {
@@ -998,23 +1136,34 @@ class Trainer:
             "predictions": predictions_df.to_dict(orient="records"),
             "model_comparison": comparison_df.to_dict(orient="records"),
             "role_metrics": role_metrics,
-            "feature_importance": feat_imp_df.to_dict(orient="records") if feat_imp_df is not None else [],
+            "feature_importance": feat_imp_df.to_dict(orient="records")
+            if feat_imp_df is not None
+            else [],
             "backtest": {
                 "mean_rmse": bt_result.mean_rmse,
                 "mean_mae": bt_result.mean_mae,
                 "mean_r2": bt_result.mean_r2,
                 "season_metrics": bt_result.season_metrics,
             },
-            "player_clusters": (
-                lambda df: df.rename(columns={"predicted_fantavoto": "fantavoto_medio"})[
-                    [c for c in ["player_fotmob_id", "player_name", "team_name",
-                                 "canonical_role", "fantavoto_medio", "cluster_id",
-                                 "pca_0", "pca_1"] if c in df.columns]
-                ].to_dict(orient="records")
-            )(cluster_result.df),
-            "low_cost_recommendations": [
-                dataclasses.asdict(a) for a in alternatives
-            ],
+            "player_clusters": cluster_result.df.rename(
+                columns={"predicted_fantavoto": "fantavoto_medio"}
+            )[
+                [
+                    c
+                    for c in [
+                        "player_fotmob_id",
+                        "player_name",
+                        "team_name",
+                        "canonical_role",
+                        "fantavoto_medio",
+                        "cluster_id",
+                        "pca_0",
+                        "pca_1",
+                    ]
+                    if c in cluster_result.df.columns
+                ]
+            ].to_dict(orient="records"),
+            "low_cost_recommendations": [dataclasses.asdict(a) for a in alternatives],
             "clustering_stats": {
                 "n_clusters": cluster_result.n_clusters_used,
                 "silhouette": cluster_result.silhouette,
@@ -1075,16 +1224,15 @@ class Trainer:
             return
 
         # Trainer is sync; normalise asyncpg DSN to plain psycopg2.
-        sync_url = (
-            db_url
-            .replace("postgresql+asyncpg://", "postgresql://")
-            .replace("postgres+asyncpg://", "postgresql://")
+        sync_url = db_url.replace("postgresql+asyncpg://", "postgresql://").replace(
+            "postgres+asyncpg://", "postgresql://"
         )
 
         try:
             engine = sa.create_engine(sync_url, future=True)
             with engine.begin() as conn:
-                conn.execute(sa.text("""
+                conn.execute(
+                    sa.text("""
                     INSERT INTO model_runs
                         (run_id, model_name, trained_at, season_start,
                          training_seasons, hyperparams, dependencies, git_commit)
@@ -1093,50 +1241,77 @@ class Trainer:
                          CAST(:training_seasons AS jsonb), CAST(:hyperparams AS jsonb),
                          CAST(:dependencies AS jsonb), :git_commit)
                     ON CONFLICT (run_id) DO NOTHING
-                """), {
-                    "run_id": output["run_id"],
-                    "model_name": output["best_model"],
-                    "season_start": output.get("metadata", {}).get("config", {}).get("season_start"),
-                    "training_seasons": json.dumps(output.get("config", {}).get("test_seasons", [])),
-                    "hyperparams": json.dumps(output.get("metadata", {}).get("best_params", {})),
-                    "dependencies": json.dumps(output.get("metadata", {}).get("dependencies", {})),
-                    "git_commit": _git_commit(),
-                })
+                """),
+                    {
+                        "run_id": output["run_id"],
+                        "model_name": output["best_model"],
+                        "season_start": output.get("metadata", {})
+                        .get("config", {})
+                        .get("season_start"),
+                        "training_seasons": json.dumps(
+                            output.get("config", {}).get("test_seasons", [])
+                        ),
+                        "hyperparams": json.dumps(
+                            output.get("metadata", {}).get("best_params", {})
+                        ),
+                        "dependencies": json.dumps(
+                            output.get("metadata", {}).get("dependencies", {})
+                        ),
+                        "git_commit": _git_commit(),
+                    },
+                )
 
                 best = next(
-                    (m for m in output.get("model_comparison", [])
-                     if m.get("model") == output["best_model"]),
+                    (
+                        m
+                        for m in output.get("model_comparison", [])
+                        if m.get("model") == output["best_model"]
+                    ),
                     None,
                 )
                 if best:
                     for metric in ("rmse", "mae", "r2"):
                         if best.get(metric) is not None:
-                            conn.execute(sa.text("""
+                            conn.execute(
+                                sa.text("""
                                 INSERT INTO model_metrics
                                     (run_id, metric_name, metric_value, split)
                                 VALUES (:run_id, :metric_name, :metric_value, 'test')
                                 ON CONFLICT DO NOTHING
-                            """), {"run_id": output["run_id"],
-                                   "metric_name": metric,
-                                   "metric_value": best[metric]})
+                            """),
+                                {
+                                    "run_id": output["run_id"],
+                                    "metric_name": metric,
+                                    "metric_value": best[metric],
+                                },
+                            )
 
                 bt = output.get("backtest", {})
-                for metric, col in (("rmse", "mean_rmse"), ("mae", "mean_mae"), ("r2", "mean_r2")):
+                for metric, col in (
+                    ("rmse", "mean_rmse"),
+                    ("mae", "mean_mae"),
+                    ("r2", "mean_r2"),
+                ):
                     if bt.get(col) is not None:
-                        conn.execute(sa.text("""
+                        conn.execute(
+                            sa.text("""
                             INSERT INTO model_metrics
                                 (run_id, metric_name, metric_value, split)
                             VALUES (:run_id, :metric_name, :metric_value, 'backtest')
                             ON CONFLICT DO NOTHING
-                        """), {"run_id": output["run_id"],
-                               "metric_name": metric,
-                               "metric_value": bt[col]})
+                        """),
+                            {
+                                "run_id": output["run_id"],
+                                "metric_name": metric,
+                                "metric_value": bt[col],
+                            },
+                        )
 
                 _check_drift(conn, output["run_id"], output["best_model"])
 
             log.info("Metrics persisted to DB for run %s", output["run_id"])
-        except Exception as exc:
-            log.error("Failed to persist metrics to DB (non-fatal): %s", exc, exc_info=True)
+        except Exception:
+            log.exception("Failed to persist metrics to DB (non-fatal)")
 
 
 # ── Module-level helpers used by Trainer._persist_metrics_to_db ──────────────
@@ -1145,6 +1320,7 @@ class Trainer:
 def _git_commit() -> str | None:
     """Return the short git commit hash, or None if git is unavailable."""
     import subprocess
+
     try:
         return subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"],
@@ -1155,9 +1331,12 @@ def _git_commit() -> str | None:
         return None
 
 
-def _check_drift(conn: sa.Connection, run_id: str, model_name: str, threshold_pct: float = 10.0) -> None:
+def _check_drift(
+    conn: sa.Connection, run_id: str, model_name: str, threshold_pct: float = 10.0
+) -> None:
     """Mark run as 'degraded' if test RMSE exceeds the 5-run moving average by threshold_pct."""
-    baseline_row = conn.execute(sa.text("""
+    baseline_row = conn.execute(
+        sa.text("""
         SELECT AVG(metric_value) AS baseline
         FROM (
             SELECT mm.metric_value
@@ -1170,34 +1349,46 @@ def _check_drift(conn: sa.Connection, run_id: str, model_name: str, threshold_pc
             ORDER BY mr.trained_at DESC
             LIMIT 5
         ) recent
-    """), {"model_name": model_name, "run_id": run_id}).fetchone()
+    """),
+        {"model_name": model_name, "run_id": run_id},
+    ).fetchone()
 
-    current = conn.execute(sa.text("""
+    current = conn.execute(
+        sa.text("""
         SELECT metric_value FROM model_metrics
         WHERE run_id = :run_id AND metric_name = 'rmse' AND split = 'test'
         LIMIT 1
-    """), {"run_id": run_id}).scalar()
+    """),
+        {"run_id": run_id},
+    ).scalar()
 
     if not (baseline_row and baseline_row.baseline and current):
         return
 
     pct_change = (current - baseline_row.baseline) / baseline_row.baseline * 100
     if pct_change > threshold_pct:
-        conn.execute(sa.text(
-            "UPDATE model_runs SET status = 'degraded' WHERE run_id = :run_id"
-        ), {"run_id": run_id})
-        conn.execute(sa.text("""
+        conn.execute(
+            sa.text("UPDATE model_runs SET status = 'degraded' WHERE run_id = :run_id"),
+            {"run_id": run_id},
+        )
+        conn.execute(
+            sa.text("""
             INSERT INTO model_drift_alerts
                 (run_id, metric_name, current_value, baseline_value, pct_change, threshold_pct)
             VALUES (:run_id, 'rmse', :current, :baseline, :pct, :threshold)
-        """), {
-            "run_id": run_id,
-            "current": current,
-            "baseline": baseline_row.baseline,
-            "pct": pct_change,
-            "threshold": threshold_pct,
-        })
+        """),
+            {
+                "run_id": run_id,
+                "current": current,
+                "baseline": baseline_row.baseline,
+                "pct": pct_change,
+                "threshold": threshold_pct,
+            },
+        )
         log.warning(
             "Model drift detected for run %s: RMSE %.4f vs baseline %.4f (+%.1f%%)",
-            run_id, current, baseline_row.baseline, pct_change,
+            run_id,
+            current,
+            baseline_row.baseline,
+            pct_change,
         )

@@ -22,9 +22,12 @@ from ml.optimizer.models import (
     Player,
     StrategyProfile,
 )
-from ml.optimizer.optimizer import deduplicate_players, optimize_multi_strategy, optimize_squad
+from ml.optimizer.optimizer import (
+    deduplicate_players,
+    optimize_multi_strategy,
+    optimize_squad,
+)
 from ml.optimizer.solver import PreFlightError
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -32,7 +35,9 @@ from ml.optimizer.solver import PreFlightError
 
 
 def _balanced() -> StrategyProfile:
-    return StrategyProfile(name="BALANCED", role_weight={"P": 1.0, "D": 1.0, "C": 1.0, "A": 1.0})
+    return StrategyProfile(
+        name="BALANCED", role_weight={"P": 1.0, "D": 1.0, "C": 1.0, "A": 1.0}
+    )
 
 
 def _basic_cfg(**overrides: object) -> OptimizationConfig:
@@ -95,7 +100,10 @@ def test_batch_returns_4_entries_even_if_one_fails() -> None:
     cfg = _basic_cfg(max_players_per_team=1, min_distinct_teams=5)
     res = optimize_multi_strategy(pool, cfg)
     assert len(res.results) == 4
-    assert all(name in res.results for name in ("BALANCED", "SUPER_DEFENSIVE", "SUPER_OFFENSIVE", "MIXED"))
+    assert all(
+        name in res.results
+        for name in ("BALANCED", "SUPER_DEFENSIVE", "SUPER_OFFENSIVE", "MIXED")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -261,11 +269,15 @@ def test_strategy_profile_validation() -> None:
 
 def test_optimization_config_validation() -> None:
     with pytest.raises(ValueError):
-        OptimizationConfig(budget=0, formations=[Formation("3-4-3", 3, 4, 3)], num_participants=4)
+        OptimizationConfig(
+            budget=0, formations=[Formation("3-4-3", 3, 4, 3)], num_participants=4
+        )
     with pytest.raises(ValueError):
         OptimizationConfig(budget=100, formations=[], num_participants=4)
     with pytest.raises(ValueError):
-        OptimizationConfig(budget=100, formations=[Formation("3-4-3", 3, 4, 3)], num_participants=0)
+        OptimizationConfig(
+            budget=100, formations=[Formation("3-4-3", 3, 4, 3)], num_participants=0
+        )
 
 
 # ---------------------------------------------------------------------------

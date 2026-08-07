@@ -28,7 +28,6 @@ from ml.optimizer.optimizer import (
 )
 from ml.optimizer.solver import PreFlightError
 
-
 # ---------------------------------------------------------------------------
 # Fixtures: small synthetic pool with 25 known players
 # ---------------------------------------------------------------------------
@@ -55,7 +54,9 @@ def _cfg(
 ) -> OptimizationConfig:
     return OptimizationConfig(
         budget=budget,
-        formations=list(formations) if formations is not None else list(DEFAULT_FORMATIONS),
+        formations=list(formations)
+        if formations is not None
+        else list(DEFAULT_FORMATIONS),
         num_participants=num_participants,
         max_players_per_team=max_players_per_team,
         big_teams=big_teams,
@@ -149,7 +150,9 @@ def test_preflight_rejects_cheapest_exceeds_budget() -> None:
 
 
 def _balanced_strategy() -> StrategyProfile:
-    return StrategyProfile(name="BALANCED", role_weight={"P": 1.0, "D": 1.0, "C": 1.0, "A": 1.0})
+    return StrategyProfile(
+        name="BALANCED", role_weight={"P": 1.0, "D": 1.0, "C": 1.0, "A": 1.0}
+    )
 
 
 def test_balanced_selects_25_players_with_correct_quota() -> None:
@@ -205,7 +208,9 @@ def test_risk_aversion_avoids_high_std_players() -> None:
     def make(role: str, team: str, score: float, std: float) -> Player:
         nonlocal cid
         cid += 1
-        return Player(f"{role}{cid}", f"{role}{cid}", role, team, 10, score, prediction_std=std)  # type: ignore[arg-type]
+        return Player(
+            f"{role}{cid}", f"{role}{cid}", role, team, 10, score, prediction_std=std
+        )  # type: ignore[arg-type]
 
     # Build pool: use _minimal_feasible_pool() layout but replace P players with
     # 3 risky (score=8, std=5) from teams T10-T12 and 3 safe (score=7, std=0) from T20-T22.
@@ -227,7 +232,8 @@ def test_risk_aversion_avoids_high_std_players() -> None:
         max_players_per_team=4,
     )
     # Use OptimizationConfig directly to pass risk_aversion
-    from ml.optimizer.models import OptimizationConfig, InflationConfig
+    from ml.optimizer.models import OptimizationConfig
+
     risk_cfg = OptimizationConfig(
         budget=cfg.budget,
         formations=cfg.formations,
@@ -241,7 +247,9 @@ def test_risk_aversion_avoids_high_std_players() -> None:
     res = optimize_squad(pool, risk_cfg, _balanced_strategy())
     assert res.status == "OPTIMAL"
     selected_p_ids = {p.player_id for p in res.squad if p.role == "P"}
-    assert not (selected_p_ids & risky_ids), "Risk-averse solver should not select high-std players"
+    assert not (selected_p_ids & risky_ids), (
+        "Risk-averse solver should not select high-std players"
+    )
 
 
 def _spread_pool_9_teams() -> list[Player]:
@@ -319,7 +327,7 @@ def test_big_teams_cap_enforced() -> None:
     # Non-big baseline: exactly 3P+8D+8C+6A across 5 teams (5 players each).
     small_teams = ["Atalanta", "Roma", "Lazio", "Torino", "Fiorentina"]
     pool: list[Player] = []
-    for team in small_teams[:3]:          # 3P, one per team
+    for team in small_teams[:3]:  # 3P, one per team
         pool.append(p("P", team))
     for i, team in enumerate(small_teams):  # 8D: 2+2+2+1+1
         n = 2 if i < 3 else 1
@@ -472,7 +480,12 @@ def test_multi_strategy_returns_all_4_entries() -> None:
     pool = _minimal_feasible_pool()
     cfg = _cfg()
     res = optimize_multi_strategy(pool, cfg)
-    assert set(res.results.keys()) == {"BALANCED", "SUPER_DEFENSIVE", "SUPER_OFFENSIVE", "MIXED"}
+    assert set(res.results.keys()) == {
+        "BALANCED",
+        "SUPER_DEFENSIVE",
+        "SUPER_OFFENSIVE",
+        "MIXED",
+    }
 
 
 def test_multi_strategy_strategies_are_different() -> None:
@@ -535,9 +548,7 @@ def test_multi_strategy_strategies_diverge_with_skewed_pool() -> None:
     # SUPER_OFFENSIVE favours the expensive star attacker; check that
     # offensive strategies include the high-cost A player.
     so = res.results["SUPER_OFFENSIVE"]
-    sd = res.results["SUPER_DEFENSIVE"]
     so_has_star_a = any(p.player_id == "A1" for p in so.squad)
-    sd_has_star_a = any(p.player_id == "A1" for p in sd.squad)
     assert so_has_star_a, "super-offensive should keep the elite attacker"
     # super-defensive may or may not, depending on shares; not strict here.
 
@@ -564,7 +575,9 @@ def test_infeasible_strategy_does_not_block_batch() -> None:
         pool.append(Player(f"C{cid}", f"C{i}", "C", f"T{i}", 5, 5.0))
     for i in range(6):
         cid += 1
-        pool.append(Player(f"A{cid}", f"A{i}", "A", f"T{i}", 200, 9.0))  # 6×200=1200 >> budget
+        pool.append(
+            Player(f"A{cid}", f"A{i}", "A", f"T{i}", 200, 9.0)
+        )  # 6×200=1200 >> budget
 
     cfg = _cfg(budget=500, min_distinct_teams=5)
     res = optimize_multi_strategy(pool, cfg)

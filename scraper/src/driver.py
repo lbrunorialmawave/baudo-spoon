@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
-from typing import Generator
+from collections.abc import Generator
 from contextlib import contextmanager
 
 from seleniumbase import Driver
@@ -23,9 +23,12 @@ def _safe_quit(driver: Driver) -> None:
                     ["taskkill", "/F", "/T", "/PID", str(pid)],
                     capture_output=True,
                     timeout=5,
+                    check=False,
                 )
-        except Exception:
-            pass
+        except Exception as kill_exc:
+            log.debug(
+                "Force-kill of Chrome process failed (non-critical): %s", kill_exc
+            )
 
 
 @contextmanager

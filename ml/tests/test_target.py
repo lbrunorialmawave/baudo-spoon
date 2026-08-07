@@ -1,9 +1,14 @@
 from __future__ import annotations
 
-import pytest
 import pandas as pd
+import pytest
 
-from ml.data.target import WEIGHTS_BY_ROLE, _BASE_RATING, attach_target, compute_approx_fantavoto
+from ml.data.target import (
+    _BASE_RATING,
+    WEIGHTS_BY_ROLE,
+    attach_target,
+    compute_approx_fantavoto,
+)
 
 
 def _make_df(**kwargs) -> pd.DataFrame:
@@ -15,6 +20,7 @@ def _make_df(**kwargs) -> pd.DataFrame:
 
 # ── Base rating ───────────────────────────────────────────────────────────────
 
+
 def test_missing_stats_produce_base_rating() -> None:
     """A row with no stat columns (only appearances) should return the base rating."""
     df = _make_df()
@@ -24,25 +30,36 @@ def test_missing_stats_produce_base_rating() -> None:
 
 # ── Role differentiation ──────────────────────────────────────────────────────
 
+
 def test_def_goal_bonus_greater_than_fwd() -> None:
     df_def = _make_df(goals=10, canonical_role="DEF")
     df_fwd = _make_df(goals=10, canonical_role="FWD")
-    assert compute_approx_fantavoto(df_def).iloc[0] > compute_approx_fantavoto(df_fwd).iloc[0]
+    assert (
+        compute_approx_fantavoto(df_def).iloc[0]
+        > compute_approx_fantavoto(df_fwd).iloc[0]
+    )
 
 
 def test_mid_goal_bonus_greater_than_fwd() -> None:
     df_mid = _make_df(goals=10, canonical_role="MID")
     df_fwd = _make_df(goals=10, canonical_role="FWD")
-    assert compute_approx_fantavoto(df_mid).iloc[0] > compute_approx_fantavoto(df_fwd).iloc[0]
+    assert (
+        compute_approx_fantavoto(df_mid).iloc[0]
+        > compute_approx_fantavoto(df_fwd).iloc[0]
+    )
 
 
 def test_def_goal_bonus_greater_than_mid() -> None:
     df_def = _make_df(goals=10, canonical_role="DEF")
     df_mid = _make_df(goals=10, canonical_role="MID")
-    assert compute_approx_fantavoto(df_def).iloc[0] > compute_approx_fantavoto(df_mid).iloc[0]
+    assert (
+        compute_approx_fantavoto(df_def).iloc[0]
+        > compute_approx_fantavoto(df_mid).iloc[0]
+    )
 
 
 # ── GK specific ───────────────────────────────────────────────────────────────
+
 
 def test_gk_clean_sheet_raises_rating() -> None:
     """GK with 10 clean sheets in 10 games (rate = 1.0) and 30 saves."""
@@ -60,6 +77,7 @@ def test_gk_goals_prevented_bonus() -> None:
 
 # ── Clip ─────────────────────────────────────────────────────────────────────
 
+
 def test_rating_clipped_at_upper_10() -> None:
     df = _make_df(goals=100, canonical_role="FWD")
     assert compute_approx_fantavoto(df).iloc[0] == pytest.approx(10.0)
@@ -71,6 +89,7 @@ def test_rating_clipped_at_lower_1() -> None:
 
 
 # ── Correct column names (regression against old bugs) ───────────────────────
+
 
 def test_penalty_scored_uses_correct_column_name() -> None:
     """penalty_scored (not penalties_scored) must produce a non-zero contribution."""
@@ -96,6 +115,7 @@ def test_clean_sheet_uses_correct_column_name() -> None:
 
 # ── Missing canonical_role falls back to FWD ─────────────────────────────────
 
+
 def test_missing_role_column_falls_back_to_fwd(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -115,6 +135,7 @@ def test_missing_role_column_falls_back_to_fwd(
 # (ml/data/loader.py::_append_foreign_fallback_rows — inference-only neo-arrivi
 # rows must survive the noisy-target floor that real low-sample Serie A rows
 # are still correctly dropped by.)
+
 
 def _make_season_df(**overrides) -> pd.DataFrame:
     base = {
@@ -148,6 +169,7 @@ def test_row_without_flag_column_still_dropped() -> None:
 
 
 # ── WEIGHTS_BY_ROLE completeness ──────────────────────────────────────────────
+
 
 def test_all_roles_present_in_weights() -> None:
     assert set(WEIGHTS_BY_ROLE.keys()) == {"GK", "DEF", "MID", "FWD"}

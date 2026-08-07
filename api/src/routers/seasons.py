@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +14,9 @@ router = APIRouter(prefix="/seasons", tags=["seasons"])
 
 @router.get("/", response_model=list[SeasonSchema], summary="List available seasons")
 async def list_seasons(
-    league: Optional[str] = Query(None, description="Filter by league name (partial match)"),
+    league: str | None = Query(
+        None, description="Filter by league name (partial match)"
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> list[SeasonSchema]:
     q = select(Season).options(joinedload(Season.league))
@@ -28,11 +28,11 @@ async def list_seasons(
 
 
 @router.get("/{season_id}", response_model=SeasonSchema, summary="Get a season by ID")
-async def get_season(season_id: int, db: AsyncSession = Depends(get_db)) -> SeasonSchema:
+async def get_season(
+    season_id: int, db: AsyncSession = Depends(get_db)
+) -> SeasonSchema:
     result = await db.execute(
-        select(Season)
-        .options(joinedload(Season.league))
-        .where(Season.id == season_id)
+        select(Season).options(joinedload(Season.league)).where(Season.id == season_id)
     )
     season = result.scalar_one_or_none()
     if season is None:

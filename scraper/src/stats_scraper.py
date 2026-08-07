@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import logging
 import re
 import time
@@ -8,6 +9,9 @@ from collections.abc import Generator
 from typing import Any
 
 import httpx
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 
 from .driver import get_managed_driver
 from .models import FOTMOB_BASE_URL, LEAGUE_CATALOG, LeagueMeta
@@ -16,6 +20,42 @@ log = logging.getLogger(__name__)
 
 _API_BASE = "https://www.fotmob.com"
 _CDN_BASE = "https://data.fotmob.com"
+
+# Matches a FotMob stats page path: /stats/season/{fotmob_season_id}/{stat_type}/{stat_category}/...
+# (stat_type is "players" or "teams" — see _scrape_category's URL construction below).
+_STAT_PATH_RE = re.compile(r"/stats/season/(\d+)/([a-zA-Z]+)/([a-zA-Z0-9_-]+)")
+
+# Last-resort category list used only when live link-discovery in _bootstrap()
+# finds zero /stats/season/ links (page didn't render, bot detection, layout
+# change). Sourced from the snake_case "deep stats API" slugs already known
+# to be real FotMob values (see CANONICAL_STAT_NAMES in ml/data/stat_names.py)
+# rather than invented — but this fallback path is rarely exercised, so treat
+# it as a best-effort reconstruction and verify against a live FotMob stats
+# page if this branch ever actually triggers.
+_FALLBACK_PLAYER_CATEGORIES: tuple[str, ...] = (
+    "goals",
+    "goal_assists",
+    "expected_goals_per90",
+    "expected_assists_per90",
+    "total_scoring_attempts",
+    "accurate_passes",
+    "key_passes",
+    "big_chances_created",
+    "successful_dribbles",
+    "total_tackles",
+    "interceptions",
+    "yellow_cards",
+    "red_cards",
+)
+_FALLBACK_TEAM_CATEGORIES: tuple[str, ...] = (
+    "goals",
+    "goals_conceded",
+    "clean_sheets",
+    "accurate_passes",
+    "total_tackles",
+    "yellow_cards",
+    "red_cards",
+)
 
 # JavaScript that extracts ranked rows from a rendered FotMob stats page.
 # arguments[0]: "players" | "teams"
@@ -101,7 +141,7 @@ def _norm_season(raw: str) -> str:
 
 def _infer_current_season() -> str:
     """Best-guess current football season from today's date."""
-    today = datetime.date.today()
+    today = datetime.date.today()  # noqa: DTZ011 — local calendar date, not a comparable timestamp
     year = today.year
     return f"{year}-{year + 1}" if today.month >= 7 else f"{year - 1}-{year}"
 
@@ -242,7 +282,11 @@ class _LegacyFotMobLeagueStatsScraper:
                     "   [%d/%d] %s/%s", idx, len(categories), stat_type, stat_category
                 )
                 rows = self._scrape_category(
-                    driver, meta, fotmob_season_id, stat_type, stat_category,
+                    driver,
+                    meta,
+                    fotmob_season_id,
+                    stat_type,
+                    stat_category,
                     build_id=build_id,
                 )
                 if rows:
@@ -305,11 +349,15 @@ class _LegacyFotMobLeagueStatsScraper:
         # â”€â”€ categories â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         categories = self._categories_from_links(driver, current_id)
         if not categories:
-            n_defaults = len(_FALLBACK_PLAYER_CATEGORIES) + len(_FALLBACK_TEAM_CATEGORIES)
+            n_defaults = len(_FALLBACK_PLAYER_CATEGORIES) + len(
+                _FALLBACK_TEAM_CATEGORIES
+            )
             log.warning(
                 "Bootstrap: 0 category links for %s (fotmob_season_id=%d) -- "
                 "using %d hardcoded defaults",
-                meta.display_name, current_id, n_defaults,
+                meta.display_name,
+                current_id,
+                n_defaults,
             )
             categories = [
                 *[("players", c) for c in _FALLBACK_PLAYER_CATEGORIES],
@@ -338,7 +386,9 @@ class _LegacyFotMobLeagueStatsScraper:
         if build_id:
             log.info("Bootstrap: Next.js buildId=%s", build_id)
         else:
-            log.warning("Bootstrap: could not extract __NEXT_DATA__.buildId -- JSON API unavailable")
+            log.warning(
+                "Bootstrap: could not extract __NEXT_DATA__.buildId -- JSON API unavailable"
+            )
 
         return season_map, categories, build_id
 
@@ -375,7 +425,8 @@ class _LegacyFotMobLeagueStatsScraper:
         if self.seasons is not None:
             log.info(
                 "Season map: --seasons filter active, resolving %d label(s): %s",
-                len(self.seasons), self.seasons,
+                len(self.seasons),
+                self.seasons,
             )
             return self._resolve_requested(
                 driver, meta, stats_base, current_id, current_label
@@ -395,18 +446,26 @@ class _LegacyFotMobLeagueStatsScraper:
             if result:
                 log.info(
                     "Season map: %d seasons from __NEXT_DATA__ for %s: %s",
-                    len(result), meta.display_name, sorted(result.keys(), reverse=True),
+                    len(result),
+                    meta.display_name,
+                    sorted(result.keys(), reverse=True),
                 )
                 return dict(sorted(result.items(), reverse=True))
         else:
-            log.debug("Season map: allSeasons absent from __NEXT_DATA__, trying switcher links")
+            log.debug(
+                "Season map: allSeasons absent from __NEXT_DATA__, trying switcher links"
+            )
 
         # Strategy 3: ?season= switcher links on the current page
-        result = self._seasons_from_switcher(driver, stats_base, current_id, current_label)
+        result = self._seasons_from_switcher(
+            driver, stats_base, current_id, current_label
+        )
         if result:
             log.info(
                 "Season map: %d seasons from switcher links for %s: %s",
-                len(result), meta.display_name, sorted(result.keys(), reverse=True),
+                len(result),
+                meta.display_name,
+                sorted(result.keys(), reverse=True),
             )
             return result
 
@@ -415,7 +474,8 @@ class _LegacyFotMobLeagueStatsScraper:
         log.warning(
             "Season map: all strategies exhausted for %s -- "
             "falling back to current season only (%s)",
-            meta.display_name, label,
+            meta.display_name,
+            label,
         )
         return {label: current_id}
 
@@ -443,7 +503,8 @@ class _LegacyFotMobLeagueStatsScraper:
             else:
                 log.warning(
                     "Resolve: could not find fotmob_id for %s / %s",
-                    meta.display_name, label,
+                    meta.display_name,
+                    label,
                 )
         return result
 
@@ -469,7 +530,11 @@ class _LegacyFotMobLeagueStatsScraper:
             if m:
                 seen.add(m.group(1))
 
-        log.debug("Switcher: found %d season label(s) in page links: %s", len(seen), sorted(seen))
+        log.debug(
+            "Switcher: found %d season label(s) in page links: %s",
+            len(seen),
+            sorted(seen),
+        )
 
         for label in sorted(seen, reverse=True):
             if label == current_label:
@@ -481,7 +546,9 @@ class _LegacyFotMobLeagueStatsScraper:
                 log.info("Switcher: %s -> fotmob_id=%d", label, sid)
                 result[label] = sid
             else:
-                log.warning("Switcher: could not resolve fotmob_id for season %s", label)
+                log.warning(
+                    "Switcher: could not resolve fotmob_id for season %s", label
+                )
 
         return dict(sorted(result.items(), reverse=True))
 
@@ -498,7 +565,9 @@ class _LegacyFotMobLeagueStatsScraper:
             href = el.get_attribute("href") or ""
             m = _STAT_PATH_RE.search(href)
             if m:
-                log.debug("_season_id_from_links: matched -> id=%s  href=%s", m.group(1), href)
+                log.debug(
+                    "_season_id_from_links: matched -> id=%s  href=%s", m.group(1), href
+                )
                 return int(m.group(1))
         log.debug("_season_id_from_links: no matching link found")
         return None
@@ -533,7 +602,10 @@ class _LegacyFotMobLeagueStatsScraper:
                     len(result.get("allSeasons") or []),
                 )
                 return result
-            log.debug("__NEXT_DATA__: script returned %s (expected dict)", type(result).__name__)
+            log.debug(
+                "__NEXT_DATA__: script returned %s (expected dict)",
+                type(result).__name__,
+            )
         except Exception as exc:
             log.debug("__NEXT_DATA__: JS execution failed -- %s", exc)
         return None
@@ -558,7 +630,11 @@ class _LegacyFotMobLeagueStatsScraper:
                 log.warning("_id_for_season_label: no stat links on %s", url)
             return sid
         except Exception as exc:
-            log.warning("_id_for_season_label: navigation failed for %s -- %s", season_label, exc)
+            log.warning(
+                "_id_for_season_label: navigation failed for %s -- %s",
+                season_label,
+                exc,
+            )
             return None
 
     # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -578,21 +654,29 @@ class _LegacyFotMobLeagueStatsScraper:
             if not entity_id:
                 continue
             team_id_raw = entry.get("tid") or entry.get("teamId")
-            value_raw = entry.get("value") or entry.get("statValue") or entry.get("stat")
-            rows.append({
-                "entity_id": entity_id,
-                "entity_name": str(
-                    entry.get("pn") or entry.get("name") or entry.get("playerName") or ""
-                ),
-                "team_id": int(team_id_raw) if team_id_raw else None,
-                "team_name": str(
-                    entry.get("tn") or entry.get("teamName") or ""
-                ),
-                "rank": int(
-                    entry.get("rankOrder") or entry.get("rank") or entry.get("pos") or seq
-                ),
-                "value": float(value_raw) if value_raw is not None else None,
-            })
+            value_raw = (
+                entry.get("value") or entry.get("statValue") or entry.get("stat")
+            )
+            rows.append(
+                {
+                    "entity_id": entity_id,
+                    "entity_name": str(
+                        entry.get("pn")
+                        or entry.get("name")
+                        or entry.get("playerName")
+                        or ""
+                    ),
+                    "team_id": int(team_id_raw) if team_id_raw else None,
+                    "team_name": str(entry.get("tn") or entry.get("teamName") or ""),
+                    "rank": int(
+                        entry.get("rankOrder")
+                        or entry.get("rank")
+                        or entry.get("pos")
+                        or seq
+                    ),
+                    "value": float(value_raw) if value_raw is not None else None,
+                }
+            )
         return rows
 
     def _scrape_category(
@@ -622,7 +706,9 @@ class _LegacyFotMobLeagueStatsScraper:
             if ssr_rows:
                 log.debug(
                     "_scrape_category: %d rows from __NEXT_DATA__ SSR | %s/%s",
-                    len(ssr_rows), stat_type, stat_category,
+                    len(ssr_rows),
+                    stat_type,
+                    stat_category,
                 )
                 return ssr_rows
 
@@ -634,7 +720,9 @@ class _LegacyFotMobLeagueStatsScraper:
                 if api_rows:
                     log.debug(
                         "_scrape_category: %d rows from _next/data API | %s/%s",
-                        len(api_rows), stat_type, stat_category,
+                        len(api_rows),
+                        stat_type,
+                        stat_category,
                     )
                     return api_rows
 
@@ -650,23 +738,25 @@ class _LegacyFotMobLeagueStatsScraper:
                 )
                 log.debug("_scrape_category: player-profile links present")
             except Exception:
-                log.warning(
-                    "_scrape_category: DOM rendering timed out | url=%s", url
-                )
+                log.warning("_scrape_category: DOM rendering timed out | url=%s", url)
             _scroll_to_bottom(driver)
             raw: list[dict[str, Any]] = driver.execute_script(
                 _JS_EXTRACT_ROWS, stat_type
             )
             log.debug(
                 "_scrape_category: JS returned %d raw row(s) | %s/%s",
-                len(raw), stat_type, stat_category,
+                len(raw),
+                stat_type,
+                stat_category,
             )
             parsed = _parse_raw_rows(raw)
             if parsed:
                 top = parsed[0]
                 log.debug(
                     "_scrape_category: top entry -> #%d %s value=%s",
-                    top["rank"], top["entity_name"], top["value"],
+                    top["rank"],
+                    top["entity_name"],
+                    top["value"],
                 )
             return parsed
         except Exception as exc:
@@ -721,7 +811,8 @@ class _LegacyFotMobLeagueStatsScraper:
         if not rows and table:
             log.warning(
                 "_try_ssr_json: table had %d entries but 0 valid rows; sample=%s",
-                len(table), table[0] if table else "N/A",
+                len(table),
+                table[0] if table else "N/A",
             )
         return rows
 
@@ -791,7 +882,8 @@ class _LegacyFotMobLeagueStatsScraper:
         if not rows:
             log.warning(
                 "_try_next_data_fetch: table had %d entries but 0 valid rows; sample=%s",
-                len(table), table[0] if table else "N/A",
+                len(table),
+                table[0] if table else "N/A",
             )
         return rows
 
@@ -891,7 +983,9 @@ async def _discover_stat_urls(
         return []
 
     jobs: list[tuple[str, str, str]] = []
-    top_lists: list[Any] = (payload.get("TopLists") or []) if isinstance(payload, dict) else []
+    top_lists: list[Any] = (
+        (payload.get("TopLists") or []) if isinstance(payload, dict) else []
+    )
     for top in top_lists:
         if not isinstance(top, dict):
             continue
@@ -1128,7 +1222,9 @@ class FotMobLeagueStatsScraper:
 
             log.info(
                 "[%s] %s (fotmob_id=%d): discover phase",
-                league_name, season_label, fotmob_season_id,
+                league_name,
+                season_label,
+                fotmob_season_id,
             )
             # Il job "__topstats__" triggera una pipeline 2-fasi:
             # 1) discover degli StatLocation da topstats.json
@@ -1140,7 +1236,11 @@ class FotMobLeagueStatsScraper:
                 if rows:
                     log.info(
                         "[%s] %s | %s/%s: %d rows",
-                        league_name, season_label, stat_type, stat_category, len(rows),
+                        league_name,
+                        season_label,
+                        stat_type,
+                        stat_category,
+                        len(rows),
                     )
                     yield (
                         league_name,
@@ -1153,7 +1253,10 @@ class FotMobLeagueStatsScraper:
                 else:
                     log.warning(
                         "[%s] %s | %s/%s: 0 rows",
-                        league_name, season_label, stat_type, stat_category,
+                        league_name,
+                        season_label,
+                        stat_type,
+                        stat_category,
                     )
 
     # ------------------------------------------------------------------
@@ -1166,7 +1269,9 @@ class FotMobLeagueStatsScraper:
         the FotMob league API payload, returning only the minimal fields needed
         for stat planning (avoids serialising the full multi-MB response).
         """
-        url = f"{_API_BASE}/api/data/leagues?id={meta.comp_id}&ccode3={meta.country_code}"
+        url = (
+            f"{_API_BASE}/api/data/leagues?id={meta.comp_id}&ccode3={meta.country_code}"
+        )
         log.debug("Browser fetch: %s", url)
 
         result: dict[str, Any] = driver.execute_async_script(
@@ -1257,7 +1362,8 @@ class FotMobLeagueStatsScraper:
             if not rel_path:
                 log.warning(
                     "Plan | %s | %s: missing RelativePath, skipping.",
-                    meta.display_name, season_label,
+                    meta.display_name,
+                    season_label,
                 )
                 plan.append((season_label, season_id, []))
                 continue
@@ -1275,4 +1381,3 @@ class FotMobLeagueStatsScraper:
             non_empty,
         )
         return plan
-

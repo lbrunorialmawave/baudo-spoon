@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -47,7 +46,11 @@ _artifact_store: ArtifactStore | None = None
 def _get_artifact_store() -> ArtifactStore:
     global _artifact_store
     if _artifact_store is None:
-        artifacts_dir = Path(settings.artifacts_dir) if hasattr(settings, 'artifacts_dir') else Path("artifacts")
+        artifacts_dir = (
+            Path(settings.artifacts_dir)
+            if hasattr(settings, "artifacts_dir")
+            else Path("artifacts")
+        )
         _artifact_store = ArtifactStore(
             local_dir=artifacts_dir,
             r2_config=R2Config(
@@ -60,7 +63,9 @@ def _get_artifact_store() -> ArtifactStore:
     return _artifact_store
 
 
-async def _enrich_with_matchday_status(db: AsyncSession, players: list[dict]) -> list[dict]:
+async def _enrich_with_matchday_status(
+    db: AsyncSession, players: list[dict]
+) -> list[dict]:
     """Add the real scr aped titolarità to each MANTRA player.
 
     Reads ``player_matchday_status`` (populated by the probabili-formazioni
@@ -81,26 +86,32 @@ async def _enrich_with_matchday_status(db: AsyncSession, players: list[dict]) ->
             season = int(p["season_start"])
             break
     if season is None:
-        season = await db.scalar(sa.text("SELECT MAX(season_start) FROM player_quotations"))
+        season = await db.scalar(
+            sa.text("SELECT MAX(season_start) FROM player_quotations")
+        )
     if season is None:
         return players
 
     # Most recent matchday present for that season in the scrape table.
     matchday = await db.scalar(
-        sa.text("SELECT MAX(matchday) FROM player_matchday_status WHERE season_start = :s"),
+        sa.text(
+            "SELECT MAX(matchday) FROM player_matchday_status WHERE season_start = :s"
+        ),
         {"s": season},
     )
     if matchday is None:
         return players
 
-    rows = (await db.execute(
-        sa.text(
-            "SELECT fantacalcio_id, status, probability "
-            "FROM player_matchday_status "
-            "WHERE season_start = :s AND matchday = :m"
-        ),
-        {"s": season, "m": matchday},
-    )).all()
+    rows = (
+        await db.execute(
+            sa.text(
+                "SELECT fantacalcio_id, status, probability "
+                "FROM player_matchday_status "
+                "WHERE season_start = :s AND matchday = :m"
+            ),
+            {"s": season, "m": matchday},
+        )
+    ).all()
     by_id = {r.fantacalcio_id: r for r in rows}
 
     out: list[dict] = []
@@ -125,14 +136,14 @@ async def _load_mantra_results(db: AsyncSession) -> dict:
     """
     store = _get_artifact_store()
     latest = await db.scalar(sa.text("SELECT MAX(season_start) FROM player_quotations"))
-    candidates = [latest - i for i in range(3)] if latest is not None else [2025, 2024, 2023]
+    candidates = (
+        [latest - i for i in range(3)] if latest is not None else [2025, 2024, 2023]
+    )
     for season in candidates:
         data = store.load_json(f"mantra_results_{season}.json")
         if data is not None:
             return data
-    raise FileNotFoundError(
-        "No MANTRA results found. Run POST /mantra/run first."
-    )
+    raise FileNotFoundError("No MANTRA results found. Run POST /mantra/run first.")
 
 
 @router.get(
@@ -142,18 +153,24 @@ async def _load_mantra_results(db: AsyncSession) -> dict:
     description="Returns paginated player list with all pillar scores, FP, VR, Prezzo, and Fase 7 label.",
 )
 async def list_mantra_players(
-    ruolo: Optional[str] = Query(None, description="Filter by MANTRA primary role"),
-    fase7: Optional[str] = Query(None, description="Filter by Fase 7 label (TOP/AFFARE/...)"),
-    team: Optional[str] = Query(None, description="Filter by team name"),
-    search: Optional[str] = Query(None, description="Search by player name"),
-    min_fp: Optional[float] = Query(None, ge=0, le=100, description="Minimum FP_Mantra"),
-    min_price: Optional[float] = Query(None, ge=0, description="Minimum Prezzo_Massimo"),
-    max_price: Optional[float] = Query(None, ge=0, description="Maximum Prezzo_Massimo"),
-    fantacalcio_ids: Optional[str] = Query(
-        None, description="Comma-separated list of fantacalcio_id to include (applied before pagination)"
+    ruolo: str | None = Query(None, description="Filter by MANTRA primary role"),
+    fase7: str | None = Query(
+        None, description="Filter by Fase 7 label (TOP/AFFARE/...)"
     ),
-    sort_by: Optional[str] = Query(None, description="Sort column (player_name, team, FP_Mantra, VR, Prezzo_Massimo, ruolo_primario)"),
-    sort_dir: Optional[str] = Query("asc", description="Sort direction: asc or desc"),
+    team: str | None = Query(None, description="Filter by team name"),
+    search: str | None = Query(None, description="Search by player name"),
+    min_fp: float | None = Query(None, ge=0, le=100, description="Minimum FP_Mantra"),
+    min_price: float | None = Query(None, ge=0, description="Minimum Prezzo_Massimo"),
+    max_price: float | None = Query(None, ge=0, description="Maximum Prezzo_Massimo"),
+    fantacalcio_ids: str | None = Query(
+        None,
+        description="Comma-separated list of fantacalcio_id to include (applied before pagination)",
+    ),
+    sort_by: str | None = Query(
+        None,
+        description="Sort column (player_name, team, FP_Mantra, VR, Prezzo_Massimo, ruolo_primario)",
+    ),
+    sort_dir: str | None = Query("asc", description="Sort direction: asc or desc"),
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
@@ -184,7 +201,9 @@ async def list_mantra_players(
     if team:
         players = [p for p in players if team.lower() in p.get("team", "").lower()]
     if search:
-        players = [p for p in players if search.lower() in p.get("player_name", "").lower()]
+        players = [
+            p for p in players if search.lower() in p.get("player_name", "").lower()
+        ]
     if min_fp is not None:
         players = [p for p in players if (p.get("FP_Mantra") or 0) >= min_fp]
     if fantacalcio_ids is not None:
@@ -201,28 +220,54 @@ async def list_mantra_players(
         reverse = sort_dir == "desc"
         try:
             if sort_by == "ruolo_primario":
-                role_order = {r: i for i, r in enumerate(
-                    ["Por", "Dc", "Dd", "Ds", "B", "E", "M", "C", "T", "W", "A", "Pc"]
-                )}
-                players.sort(key=lambda p: role_order.get(p.get("ruolo_primario", ""), 999), reverse=reverse)
+                role_order = {
+                    r: i
+                    for i, r in enumerate(
+                        [
+                            "Por",
+                            "Dc",
+                            "Dd",
+                            "Ds",
+                            "B",
+                            "E",
+                            "M",
+                            "C",
+                            "T",
+                            "W",
+                            "A",
+                            "Pc",
+                        ]
+                    )
+                }
+                players.sort(
+                    key=lambda p: role_order.get(p.get("ruolo_primario", ""), 999),
+                    reverse=reverse,
+                )
             else:
-                players.sort(key=lambda p: (p.get(sort_by) if p.get(sort_by) is not None else (
-                    "" if sort_by in ("player_name", "team") else -999999
-                )), reverse=reverse)
+                players.sort(
+                    key=lambda p: (
+                        p.get(sort_by)
+                        if p.get(sort_by) is not None
+                        else ("" if sort_by in ("player_name", "team") else -999999)
+                    ),
+                    reverse=reverse,
+                )
         except Exception:
             log.warning("Sort failed for sort_by=%r — skipping", sort_by)
 
     total = len(players)
     start = (page - 1) * size
-    items = players[start:start + size]
+    items = players[start : start + size]
 
-    return ORJSONResponse({
-        "total": total,
-        "page": page,
-        "size": size,
-        "items": items,
-        "meta": data.get("meta"),
-    })
+    return ORJSONResponse(
+        {
+            "total": total,
+            "page": page,
+            "size": size,
+            "items": items,
+            "meta": data.get("meta"),
+        }
+    )
 
 
 @router.get(
@@ -230,7 +275,7 @@ async def list_mantra_players(
     response_class=ORJSONResponse,
     summary="Distinct teams present in the current MANTRA season",
     description="Teams derived from the same resolved season as GET /mantra/players, "
-                "so the list never includes a team with zero players (or omits one that has some).",
+    "so the list never includes a team with zero players (or omits one that has some).",
 )
 async def list_mantra_teams(db: AsyncSession = Depends(get_db)) -> ORJSONResponse:
     try:
@@ -258,16 +303,19 @@ async def get_mantra_player(
 
     for p in data.get("players", []):
         if p.get("fantacalcio_id") == fantacalcio_id:
-            return ORJSONResponse({
-                "player": p,
-                "classifications": {
-                    k: v for k, v in data.get("classifications", {}).items()
-                    if any(
-                        name == p["player_name"]
-                        for name in (v if isinstance(v, list) else [])
-                    )
-                },
-            })
+            return ORJSONResponse(
+                {
+                    "player": p,
+                    "classifications": {
+                        k: v
+                        for k, v in data.get("classifications", {}).items()
+                        if any(
+                            name == p["player_name"]
+                            for name in (v if isinstance(v, list) else [])
+                        )
+                    },
+                }
+            )
 
     raise HTTPException(status_code=404, detail=f"Player {fantacalcio_id} not found")
 
@@ -287,17 +335,16 @@ async def top_per_ruolo(
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
-    players = [
-        p for p in data.get("players", [])
-        if p.get("ruolo_primario") == ruolo
-    ]
+    players = [p for p in data.get("players", []) if p.get("ruolo_primario") == ruolo]
     players.sort(key=lambda p: p.get("FP_Mantra", 0), reverse=True)
 
-    return ORJSONResponse({
-        "ruolo": ruolo,
-        "limit": limit,
-        "items": players[:limit],
-    })
+    return ORJSONResponse(
+        {
+            "ruolo": ruolo,
+            "limit": limit,
+            "items": players[:limit],
+        }
+    )
 
 
 @router.get(
@@ -332,7 +379,9 @@ async def get_low_cost(
     items = data.get("classifications", {}).get(key, [])
     # Return full player objects for low-cost
     player_names = set(items)
-    players = [p for p in data.get("players", []) if p.get("player_name") in player_names]
+    players = [
+        p for p in data.get("players", []) if p.get("player_name") in player_names
+    ]
     players.sort(key=lambda p: p.get("VR", 0), reverse=True)
 
     return ORJSONResponse({"category": key, "count": len(players), "items": players})
@@ -351,7 +400,9 @@ async def get_watchlist(db: AsyncSession = Depends(get_db)) -> ORJSONResponse:
 
     items = data.get("classifications", {}).get("watchlist_giovani", [])
     player_names = set(items)
-    players = [p for p in data.get("players", []) if p.get("player_name") in player_names]
+    players = [
+        p for p in data.get("players", []) if p.get("player_name") in player_names
+    ]
 
     return ORJSONResponse({"count": len(players), "items": players})
 
@@ -363,7 +414,7 @@ async def get_watchlist(db: AsyncSession = Depends(get_db)) -> ORJSONResponse:
     dependencies=[Depends(require_role("admin"))],
 )
 async def run_mantra(
-    season_start: Optional[int] = Query(None, ge=2020, le=2030),
+    season_start: int | None = Query(None, ge=2020, le=2030),
     db: AsyncSession = Depends(get_db),
 ) -> ORJSONResponse:
     """Trigger the MANTRA scoring pipeline for a given season.
@@ -374,13 +425,19 @@ async def run_mantra(
     ``player_quotations`` (DB-driven, not a calendar guess).
     """
     if season_start is None:
-        latest = await db.scalar(sa.text("SELECT MAX(season_start) FROM player_quotations"))
+        latest = await db.scalar(
+            sa.text("SELECT MAX(season_start) FROM player_quotations")
+        )
         if latest is None:
-            raise HTTPException(status_code=400, detail="No quotations imported yet; pass season_start explicitly.")
+            raise HTTPException(
+                status_code=400,
+                detail="No quotations imported yet; pass season_start explicitly.",
+            )
         season_start = latest
 
     try:
         from sqlalchemy import create_engine
+
         from ml.mantra.runner import run_mantra as compute
 
         # Build sync engine URL from settings (avoids URL encoding issues in bind)
@@ -390,15 +447,23 @@ async def run_mantra(
         sync_url = sync_url.replace("?ssl=", "?sslmode=").replace("&ssl=", "&sslmode=")
         sync_engine = create_engine(sync_url)
 
-        artifacts_dir = Path(settings.artifacts_dir) if hasattr(settings, 'artifacts_dir') else Path("artifacts")
-        result = compute(sync_engine, season_start=season_start, output_dir=artifacts_dir)
+        artifacts_dir = (
+            Path(settings.artifacts_dir)
+            if hasattr(settings, "artifacts_dir")
+            else Path("artifacts")
+        )
+        result = compute(
+            sync_engine, season_start=season_start, output_dir=artifacts_dir
+        )
 
-        return ORJSONResponse({
-            "status": "ok",
-            "season_start": season_start,
-            "n_players": result["meta"]["n_players"],
-            "generated_at": result["meta"]["generated_at"],
-        })
+        return ORJSONResponse(
+            {
+                "status": "ok",
+                "season_start": season_start,
+                "n_players": result["meta"]["n_players"],
+                "generated_at": result["meta"]["generated_at"],
+            }
+        )
     except Exception as e:
         log.exception("MANTRA computation failed")
         raise HTTPException(status_code=500, detail=str(e))
@@ -431,17 +496,21 @@ async def get_budget_overview(db: AsyncSession = Depends(get_db)) -> ORJSONRespo
     budget_by_group = {}
     for group_name, roles in role_groups.items():
         group_players = [p for p in players if p.get("ruolo_primario") in roles]
-        avg_price = sum(p.get("Prezzo_Massimo", 0) for p in group_players) / max(len(group_players), 1)
+        avg_price = sum(p.get("Prezzo_Massimo", 0) for p in group_players) / max(
+            len(group_players), 1
+        )
         budget_by_group[group_name] = {
             "count": len(group_players),
             "avg_prezzo_massimo": round(avg_price, 2),
             "estimated_cost": round(avg_price * 3, 2),  # rough estimate for 3 players
         }
 
-    return ORJSONResponse({
-        "budget_totale": total_budget,
-        "by_role_group": budget_by_group,
-    })
+    return ORJSONResponse(
+        {
+            "budget_totale": total_budget,
+            "by_role_group": budget_by_group,
+        }
+    )
 
 
 @router.get(
@@ -468,10 +537,12 @@ async def get_mantra_stats(db: AsyncSession = Depends(get_db)) -> ORJSONResponse
     avg_fp = sum(p.get("FP_Mantra", 0) for p in players) / len(players)
     avg_vr = sum(p.get("VR", 0) for p in players) / len(players)
 
-    return ORJSONResponse({
-        "total_players": len(players),
-        "season_start": data.get("meta", {}).get("season_start"),
-        "avg_fp_mantra": round(avg_fp, 2),
-        "avg_vr": round(avg_vr, 2),
-        "fase7_distribution": fase7_counts,
-    })
+    return ORJSONResponse(
+        {
+            "total_players": len(players),
+            "season_start": data.get("meta", {}).get("season_start"),
+            "avg_fp_mantra": round(avg_fp, 2),
+            "avg_vr": round(avg_vr, 2),
+            "fase7_distribution": fase7_counts,
+        }
+    )

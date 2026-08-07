@@ -9,16 +9,17 @@ The caller can check explanation.is_shap_coherent() before trusting the explanat
 SHAP is an optional dependency. When absent, returns explanations with empty
 shap_values and confidence=0.0 (marked as not coherent by definition).
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from sklearn.pipeline import Pipeline
 
-from ml.domain.predictions import PredictionExplanation, SHAP_TOLERANCE
+from ml.domain.predictions import SHAP_TOLERANCE, PredictionExplanation
 
 log = logging.getLogger(__name__)
 
@@ -55,11 +56,11 @@ class ShapExplainer:
         self.feature_names = feature_names
         self.sample_size = sample_size
         self.random_seed = random_seed
-        self._explainer: Optional[Any] = None
+        self._explainer: Any | None = None
         self._preprocessor = pipeline.named_steps.get("preprocessor")
         self._model = pipeline.named_steps.get("model")
 
-    def fit_explainer(self, X_background: pd.DataFrame) -> "ShapExplainer":
+    def fit_explainer(self, X_background: pd.DataFrame) -> ShapExplainer:
         """Initialise the SHAP explainer on background data.
 
         For tree models: uses TreeExplainer (no background needed, but
@@ -149,8 +150,7 @@ class ShapExplainer:
                 base_val = float(self._explainer.expected_value)
 
             shap_dict = {
-                name: float(v)
-                for name, v in zip(self.feature_names, shap_vals_arr)
+                name: float(v) for name, v in zip(self.feature_names, shap_vals_arr)
             }
 
             # Top 10 by absolute SHAP value
@@ -188,7 +188,9 @@ class ShapExplainer:
             return expl
 
         except Exception as exc:
-            log.warning("ShapExplainer.explain failed: %s — returning empty explanation.", exc)
+            log.warning(
+                "ShapExplainer.explain failed: %s — returning empty explanation.", exc
+            )
             return self._empty_explanation(prediction, variance, prediction_interval)
 
     def _empty_explanation(

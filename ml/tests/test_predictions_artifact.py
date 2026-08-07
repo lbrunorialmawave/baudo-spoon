@@ -29,7 +29,7 @@ from ml.domain.predictions import (
 
 def _json_safe_nan(val):
     """Simulate _json_safe NaN→None conversion for a single value."""
-    if isinstance(val, float) and (val != val):
+    if isinstance(val, float) and np.isnan(val):
         return None
     return val
 

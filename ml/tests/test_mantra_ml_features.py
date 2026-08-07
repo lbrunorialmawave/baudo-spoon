@@ -22,18 +22,20 @@ from ml.preprocessing.mantra_features import (
 @pytest.fixture
 def sample_df():
     """Multi-season, multi-role DataFrame for testing."""
-    return pd.DataFrame({
-        "player_fotmob_id": [1, 1, 1, 2, 2, 3],
-        "season_start": [2021, 2022, 2023, 2022, 2023, 2023],
-        "canonical_role": ["FWD", "FWD", "FWD", "MID", "MID", "GK"],
-        "mantra_vote_avg": [6.5, 6.8, np.nan, 6.0, 6.2, np.nan],
-        "mantra_vote_std": [0.5, 0.4, np.nan, 0.6, 0.5, np.nan],
-        "mantra_minutes_avg": [2500, 2700, np.nan, 2000, 2100, np.nan],
-        "mantra_xg_per90": [0.3, 0.35, np.nan, 0.1, 0.12, np.nan],
-        "mantra_xa_per90": [0.1, 0.12, np.nan, 0.2, 0.22, np.nan],
-        "mantra_presence_rate": [0.85, 0.9, np.nan, 0.7, 0.75, np.nan],
-        "mantra_seasons_it": [1, 2, np.nan, 1, 2, np.nan],
-    })
+    return pd.DataFrame(
+        {
+            "player_fotmob_id": [1, 1, 1, 2, 2, 3],
+            "season_start": [2021, 2022, 2023, 2022, 2023, 2023],
+            "canonical_role": ["FWD", "FWD", "FWD", "MID", "MID", "GK"],
+            "mantra_vote_avg": [6.5, 6.8, np.nan, 6.0, 6.2, np.nan],
+            "mantra_vote_std": [0.5, 0.4, np.nan, 0.6, 0.5, np.nan],
+            "mantra_minutes_avg": [2500, 2700, np.nan, 2000, 2100, np.nan],
+            "mantra_xg_per90": [0.3, 0.35, np.nan, 0.1, 0.12, np.nan],
+            "mantra_xa_per90": [0.1, 0.12, np.nan, 0.2, 0.22, np.nan],
+            "mantra_presence_rate": [0.85, 0.9, np.nan, 0.7, 0.75, np.nan],
+            "mantra_seasons_it": [1, 2, np.nan, 1, 2, np.nan],
+        }
+    )
 
 
 class TestMantraImputer:
@@ -65,28 +67,32 @@ class TestMantraImputer:
 
     def test_pipeline_split_safety(self):
         """Verify imputer learns only from fit() data, not test data."""
-        df_a = pd.DataFrame({
-            "season_start": [2022] * 10,
-            "canonical_role": ["FWD"] * 10,
-            "mantra_vote_avg": [6.0] * 10,
-            "mantra_vote_std": [0.5] * 10,
-            "mantra_minutes_avg": [2000.0] * 10,
-            "mantra_xg_per90": [0.2] * 10,
-            "mantra_xa_per90": [0.1] * 10,
-            "mantra_presence_rate": [0.8] * 10,
-            "mantra_seasons_it": [2.0] * 10,
-        })
-        df_b = pd.DataFrame({
-            "season_start": [2022] * 10,
-            "canonical_role": ["FWD"] * 10,
-            "mantra_vote_avg": [9.0] * 10,
-            "mantra_vote_std": [0.1] * 10,
-            "mantra_minutes_avg": [3000.0] * 10,
-            "mantra_xg_per90": [0.8] * 10,
-            "mantra_xa_per90": [0.5] * 10,
-            "mantra_presence_rate": [0.95] * 10,
-            "mantra_seasons_it": [5.0] * 10,
-        })
+        df_a = pd.DataFrame(
+            {
+                "season_start": [2022] * 10,
+                "canonical_role": ["FWD"] * 10,
+                "mantra_vote_avg": [6.0] * 10,
+                "mantra_vote_std": [0.5] * 10,
+                "mantra_minutes_avg": [2000.0] * 10,
+                "mantra_xg_per90": [0.2] * 10,
+                "mantra_xa_per90": [0.1] * 10,
+                "mantra_presence_rate": [0.8] * 10,
+                "mantra_seasons_it": [2.0] * 10,
+            }
+        )
+        df_b = pd.DataFrame(
+            {
+                "season_start": [2022] * 10,
+                "canonical_role": ["FWD"] * 10,
+                "mantra_vote_avg": [9.0] * 10,
+                "mantra_vote_std": [0.1] * 10,
+                "mantra_minutes_avg": [3000.0] * 10,
+                "mantra_xg_per90": [0.8] * 10,
+                "mantra_xa_per90": [0.5] * 10,
+                "mantra_presence_rate": [0.95] * 10,
+                "mantra_seasons_it": [5.0] * 10,
+            }
+        )
         df_full = pd.concat([df_a, df_b], ignore_index=True)
 
         imp_fold = MantraImputer().fit(df_a)
@@ -105,17 +111,19 @@ class TestMantraImputer:
     def test_unseen_role_uses_global_mean(self, sample_df):
         """Imputer handles unseen roles gracefully via global fallback."""
         imp = MantraImputer().fit(sample_df)
-        test_df = pd.DataFrame({
-            "season_start": [2024],
-            "canonical_role": ["UNKNOWN_ROLE"],
-            "mantra_vote_avg": [np.nan],
-            "mantra_vote_std": [np.nan],
-            "mantra_minutes_avg": [np.nan],
-            "mantra_xg_per90": [np.nan],
-            "mantra_xa_per90": [np.nan],
-            "mantra_presence_rate": [np.nan],
-            "mantra_seasons_it": [np.nan],
-        })
+        test_df = pd.DataFrame(
+            {
+                "season_start": [2024],
+                "canonical_role": ["UNKNOWN_ROLE"],
+                "mantra_vote_avg": [np.nan],
+                "mantra_vote_std": [np.nan],
+                "mantra_minutes_avg": [np.nan],
+                "mantra_xg_per90": [np.nan],
+                "mantra_xa_per90": [np.nan],
+                "mantra_presence_rate": [np.nan],
+                "mantra_seasons_it": [np.nan],
+            }
+        )
         out = imp.transform(test_df)
         # Should get global mean, not crash
         assert out["mantra_vote_avg"].notna().all()
@@ -124,16 +132,18 @@ class TestMantraImputer:
 class TestCumulativeLag:
     def test_no_leakage(self):
         """Cumulative lag must use only prior seasons, never current."""
-        raw = pd.DataFrame({
-            "player_fotmob_id": [1, 1, 1],
-            "season_start": [2021, 2022, 2023],
-            "vote_avg": [6.0, 7.0, 8.0],
-            "vote_std": [0.5, 0.4, 0.3],
-            "minutes_avg": [2000, 2500, 3000],
-            "xg_per90": [0.2, 0.3, 0.4],
-            "xa_per90": [0.1, 0.15, 0.2],
-            "presence_rate": [0.7, 0.8, 0.9],
-        })
+        raw = pd.DataFrame(
+            {
+                "player_fotmob_id": [1, 1, 1],
+                "season_start": [2021, 2022, 2023],
+                "vote_avg": [6.0, 7.0, 8.0],
+                "vote_std": [0.5, 0.4, 0.3],
+                "minutes_avg": [2000, 2500, 3000],
+                "xg_per90": [0.2, 0.3, 0.4],
+                "xa_per90": [0.1, 0.15, 0.2],
+                "presence_rate": [0.7, 0.8, 0.9],
+            }
+        )
         result = _compute_cumulative_lag(raw)
 
         # Season 2021: no prior data → NaN
@@ -153,16 +163,18 @@ class TestCumulativeLag:
 
     def test_current_season_never_included(self):
         """The feature for season N must NOT include season N's own data."""
-        raw = pd.DataFrame({
-            "player_fotmob_id": [1, 1],
-            "season_start": [2022, 2023],
-            "vote_avg": [5.0, 9.0],
-            "vote_std": [1.0, 0.1],
-            "minutes_avg": [1000, 3000],
-            "xg_per90": [0.1, 0.9],
-            "xa_per90": [0.05, 0.5],
-            "presence_rate": [0.5, 0.99],
-        })
+        raw = pd.DataFrame(
+            {
+                "player_fotmob_id": [1, 1],
+                "season_start": [2022, 2023],
+                "vote_avg": [5.0, 9.0],
+                "vote_std": [1.0, 0.1],
+                "minutes_avg": [1000, 3000],
+                "xg_per90": [0.1, 0.9],
+                "xa_per90": [0.05, 0.5],
+                "presence_rate": [0.5, 0.99],
+            }
+        )
         result = _compute_cumulative_lag(raw)
 
         # Season 2023 should only see 2022's data (5.0), NOT 9.0
@@ -173,13 +185,15 @@ class TestCumulativeLag:
 
 class TestDerivedFeatures:
     def test_voto_trend_above_average(self):
-        df = pd.DataFrame({
-            "mantra_vote_avg": [7.0, 6.0, 5.0],
-            "mantra_vote_std": [0.3, 0.5, 0.8],
-            "mantra_xg_per90": [0.4, 0.2, 0.1],
-            "canonical_role": ["FWD", "FWD", "FWD"],
-            "goals_per90": [0.3, 0.2, 0.1],
-        })
+        df = pd.DataFrame(
+            {
+                "mantra_vote_avg": [7.0, 6.0, 5.0],
+                "mantra_vote_std": [0.3, 0.5, 0.8],
+                "mantra_xg_per90": [0.4, 0.2, 0.1],
+                "canonical_role": ["FWD", "FWD", "FWD"],
+                "goals_per90": [0.3, 0.2, 0.1],
+            }
+        )
         out = add_mantra_derived_features(df)
 
         # Player with highest vote should have trend > 1
@@ -188,24 +202,28 @@ class TestDerivedFeatures:
         assert out.loc[2, "mantra_voto_trend"] < 1.0
 
     def test_consistency_higher_for_stable_player(self):
-        df = pd.DataFrame({
-            "mantra_vote_avg": [7.0, 7.0],
-            "mantra_vote_std": [0.2, 1.5],
-            "mantra_xg_per90": [0.3, 0.3],
-            "canonical_role": ["FWD", "FWD"],
-            "goals_per90": [0.3, 0.3],
-        })
+        df = pd.DataFrame(
+            {
+                "mantra_vote_avg": [7.0, 7.0],
+                "mantra_vote_std": [0.2, 1.5],
+                "mantra_xg_per90": [0.3, 0.3],
+                "canonical_role": ["FWD", "FWD"],
+                "goals_per90": [0.3, 0.3],
+            }
+        )
         out = add_mantra_derived_features(df)
         # Lower std → higher consistency
         assert out.loc[0, "mantra_consistency"] > out.loc[1, "mantra_consistency"]
 
     def test_expected_ratio_capped_at_5(self):
-        df = pd.DataFrame({
-            "mantra_vote_avg": [6.5],
-            "mantra_vote_std": [0.5],
-            "mantra_xg_per90": [0.5],
-            "canonical_role": ["FWD"],
-            "goals_per90": [0.0],  # denominator near zero → ratio capped
-        })
+        df = pd.DataFrame(
+            {
+                "mantra_vote_avg": [6.5],
+                "mantra_vote_std": [0.5],
+                "mantra_xg_per90": [0.5],
+                "canonical_role": ["FWD"],
+                "goals_per90": [0.0],  # denominator near zero → ratio capped
+            }
+        )
         out = add_mantra_derived_features(df)
         assert out.loc[0, "mantra_expected_ratio"] <= 5.0

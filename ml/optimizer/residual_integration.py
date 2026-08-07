@@ -1,13 +1,17 @@
 """Helpers to build MC simulator preferring evaluation residuals."""
+
 from __future__ import annotations
 
 import os
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from ml.optimizer.models import Player
-from ml.optimizer.monte_carlo_opt import build_simulator_from_pool, build_simulator_from_residuals
+from ml.optimizer.monte_carlo_opt import (
+    build_simulator_from_pool,
+    build_simulator_from_residuals,
+)
 from ml.optimizer.residual_loader import (
-    load_residuals_from_artifacts,
     load_residuals_preferring_r2,
     merge_with_prediction_std,
 )
@@ -31,7 +35,11 @@ def build_simulator_preferring_residuals(
         for API ``monteCarloSummary`` / result diagnostics.
     """
     warnings: list[str] = []
-    art = artifacts_dir or os.environ.get("API_ARTIFACTS_DIR") or os.environ.get("ARTIFACTS_DIR")
+    art = (
+        artifacts_dir
+        or os.environ.get("API_ARTIFACTS_DIR")
+        or os.environ.get("ARTIFACTS_DIR")
+    )
 
     # Prefer R2-aware loader when credentials might exist
     report = load_residuals_preferring_r2(
@@ -45,7 +53,9 @@ def build_simulator_preferring_residuals(
     meta["residual_source"] = report.source
 
     if report.residuals:
-        merged = merge_with_prediction_std(report.residuals, pool, random_seed=random_seed)
+        merged = merge_with_prediction_std(
+            report.residuals, pool, random_seed=random_seed
+        )
         sim = build_simulator_from_residuals(merged, random_seed=random_seed)
         warnings.extend(report.warnings)
         warnings.append(

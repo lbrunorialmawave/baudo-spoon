@@ -44,8 +44,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-
 # ── Structured JSON logging ───────────────────────────────────────────────────
+
 
 class JsonFormatter(logging.Formatter):
     """Structured JSON log formatter for ELK/Splunk integration.
@@ -96,6 +96,7 @@ def _configure_logging(level: str, json_logs: bool = False) -> None:
 
 # ── Database resiliency ───────────────────────────────────────────────────────
 
+
 def _create_engine_with_retry(
     db_url: str,
     max_attempts: int = 5,
@@ -134,14 +135,17 @@ def _create_engine_with_retry(
                 conn.execute(sa.text("SELECT 1"))
             log.info("Database engine ready (attempt %d/%d).", attempt, max_attempts)
             return engine
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             last_exc = exc
             if attempt == max_attempts:
                 break
             delay = base_delay * math.pow(2, attempt - 1)
             log.warning(
                 "DB connection failed (attempt %d/%d): %s — retrying in %.1f s …",
-                attempt, max_attempts, exc, delay,
+                attempt,
+                max_attempts,
+                exc,
+                delay,
             )
             time.sleep(delay)
 
@@ -151,6 +155,7 @@ def _create_engine_with_retry(
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
+
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -163,9 +168,9 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         metavar="NAME",
         help="Filter to a specific league (partial match, e.g. 'Serie A'). "
-             "Defaults to Serie A (MLConfig.league_name) when unset — set "
-             "the ML_LEAGUE_NAME env var to an empty value to opt into "
-             "multi-league training instead.",
+        "Defaults to Serie A (MLConfig.league_name) when unset — set "
+        "the ML_LEAGUE_NAME env var to an empty value to opt into "
+        "multi-league training instead.",
     )
     parser.add_argument(
         "--fantavoto-csv",
@@ -173,7 +178,7 @@ def _parse_args() -> argparse.Namespace:
         metavar="PATH",
         dest="fantavoto_csv",
         help="Path to external CSV with actual fantavoto_medio values. "
-             "If omitted, the target is approximated from FotMob stats.",
+        "If omitted, the target is approximated from FotMob stats.",
     )
     parser.add_argument(
         "--test-seasons",
@@ -197,7 +202,7 @@ def _parse_args() -> argparse.Namespace:
         default=6,
         metavar="K",
         help="Number of KMedoids clusters.  Pass -1 to auto-select K via "
-             "the Silhouette method (evaluates k ∈ [2, 10]).",
+        "the Silhouette method (evaluates k ∈ [2, 10]).",
     )
     parser.add_argument(
         "--tune",
@@ -235,7 +240,7 @@ def _parse_args() -> argparse.Namespace:
         dest="output_dir",
         metavar="DIR",
         help="Directory for artefacts (models, plots, JSON). "
-             "Defaults to ml/artifacts/.",
+        "Defaults to ml/artifacts/.",
     )
     parser.add_argument(
         "--log-level",
@@ -313,12 +318,13 @@ def main() -> int:
     # ── Evaluate MANTRA (optional) ──────────────────────────────────────────
     if args.evaluate_mantra:
         try:
-            from ml.mantra.runner import run_mantra
             from ml.mantra.evaluate import evaluate_mantra_vs_actuals
+            from ml.mantra.runner import run_mantra
 
-            season_start = results.get("metadata", {}).get("config", {}).get("season_start")
+            season_start = (
+                results.get("metadata", {}).get("config", {}).get("season_start")
+            )
             if season_start is None:
-                latest = results.get("config", {}).get("test_seasons", 1)
                 # Infer from predictions
                 preds = results.get("predictions", [])
                 if preds:
@@ -327,7 +333,9 @@ def main() -> int:
             if season_start:
                 log.info("Running MANTRA evaluation for season_start=%d", season_start)
                 mantra_result = run_mantra(engine, season_start)
-                mantra_metrics = evaluate_mantra_vs_actuals(mantra_result, engine, season_start)
+                mantra_metrics = evaluate_mantra_vs_actuals(
+                    mantra_result, engine, season_start
+                )
                 if mantra_metrics:
                     log.info(
                         "MANTRA FP_Mantra-vs-vote ranking: Spearman ρ=%.4f, "
@@ -350,13 +358,16 @@ def main() -> int:
         "best_model": results["best_model"],
         "role_partitioned": results.get("role_partitioned", False),
         "test_metrics": next(
-            (r for r in results["model_comparison"] if r["model"] == results["best_model"]),
+            (
+                r
+                for r in results["model_comparison"]
+                if r["model"] == results["best_model"]
+            ),
             {},
         ),
         "role_metrics": results.get("role_metrics", {}),
         "backtest": {
-            k: results["backtest"][k]
-            for k in ("mean_rmse", "mean_mae", "mean_r2")
+            k: results["backtest"][k] for k in ("mean_rmse", "mean_mae", "mean_r2")
         },
         "n_predictions": len(results["predictions"]),
         "n_clusters": results["clustering_stats"]["n_clusters"],

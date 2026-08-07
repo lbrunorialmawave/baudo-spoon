@@ -8,7 +8,6 @@ import sqlalchemy as sa
 from sqlalchemy import (
     ARRAY,
     BigInteger,
-    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -19,13 +18,11 @@ from sqlalchemy import (
     PrimaryKeyConstraint,
     SmallInteger,
     String,
-    Text,
     UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-
 
 
 class Base(DeclarativeBase):
@@ -108,7 +105,9 @@ class PlayerSeasonStat(Base):
     __tablename__ = "player_season_stats"
     __table_args__ = (
         UniqueConstraint(
-            "season_id", "stat_category", "player_fotmob_id",
+            "season_id",
+            "stat_category",
+            "player_fotmob_id",
             name="uq_player_season_stat",
         ),
         Index("idx_pss_category", "stat_category"),
@@ -131,14 +130,18 @@ class PlayerSeasonStat(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    season: Mapped[Season] = relationship("Season", back_populates="player_season_stats")
+    season: Mapped[Season] = relationship(
+        "Season", back_populates="player_season_stats"
+    )
 
 
 class TeamSeasonStat(Base):
     __tablename__ = "team_season_stats"
     __table_args__ = (
         UniqueConstraint(
-            "season_id", "stat_category", "team_fotmob_id",
+            "season_id",
+            "stat_category",
+            "team_fotmob_id",
             name="uq_team_season_stat",
         ),
         Index("idx_tss_category", "stat_category"),
@@ -164,8 +167,10 @@ class TeamSeasonStat(Base):
 
 # ── Fantacalcio quotations & ID mapping ──────────────────────────────────────
 
+
 class MatchMethodEnum(str, enum.Enum):
     """Algorithm used to map a Fantacalcio ID to a FotMob player."""
+
     EXACT_NAME_TEAM = "exact_name_team"
     EXACT_NAME_ROLE = "exact_name_role"
     EXACT_NAME_TEAM_ROLE_SEASON = "exact_name_team_role_season"
@@ -181,6 +186,7 @@ class PlayerQuotation(Base):
     Populated by ``ml.data.import_quotations`` from the
     ``Quotazioni_Fantacalcio_Stagione_YYYY_YY.xlsx`` listoni.
     """
+
     __tablename__ = "player_quotations"
     __table_args__ = (
         UniqueConstraint("fantacalcio_id", "season_start", name="uq_player_quotation"),
@@ -246,6 +252,7 @@ class PlayerIdMap(Base):
     One row per (fantacalcio_id, season_start) — the same Fantacalcio ID
     can be re-assigned across years if the operator corrects a mismatch.
     """
+
     __tablename__ = "player_id_map"
     __table_args__ = (
         UniqueConstraint("fantacalcio_id", "season_start", name="uq_id_map"),
@@ -273,7 +280,9 @@ class PlayerIdMap(Base):
         String(50),
         nullable=False,
     )
-    confidence: Mapped[float] = mapped_column(Numeric(4, 3), nullable=False, default=1.0)
+    confidence: Mapped[float] = mapped_column(
+        Numeric(4, 3), nullable=False, default=1.0
+    )
     resolved_from_history: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, default=False
     )
@@ -295,8 +304,12 @@ class PlayerIdMap(Base):
             "team_fantacalcio": self.team_fantacalcio,
             "team_fotmob": self.team_fotmob,
             "canonical_role": self.canonical_role,
-            "match_method": self.match_method.value if isinstance(self.match_method, MatchMethodEnum) else self.match_method,
-            "confidence": float(self.confidence) if self.confidence is not None else None,
+            "match_method": self.match_method.value
+            if isinstance(self.match_method, MatchMethodEnum)
+            else self.match_method,
+            "confidence": float(self.confidence)
+            if self.confidence is not None
+            else None,
             "resolved_from_history": bool(self.resolved_from_history),
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
@@ -313,9 +326,12 @@ class ManualResolution(Base):
 
     See ``db/migrations/013_add_manual_resolutions.sql`` for the schema.
     """
+
     __tablename__ = "manual_resolutions"
     __table_args__ = (
-        UniqueConstraint("fantacalcio_id", "player_fotmob_id", name="uq_mr_association"),
+        UniqueConstraint(
+            "fantacalcio_id", "player_fotmob_id", name="uq_mr_association"
+        ),
         Index("idx_mr_fantacalcio", "fantacalcio_id"),
         Index("idx_mr_fotmob", "player_fotmob_id"),
         Index("idx_mr_season", "season_start"),
@@ -359,6 +375,7 @@ class PlayerMantraRole(Base):
 
     Populated by import_quotations CLI from the ``rm`` column in the listone XLSX.
     """
+
     __tablename__ = "player_mantra_roles"
     __table_args__ = (
         ForeignKeyConstraint(
@@ -376,7 +393,9 @@ class PlayerMantraRole(Base):
     fantacalcio_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     season_start: Mapped[int] = mapped_column(Integer, primary_key=True)
     ruolo_primario: Mapped[str] = mapped_column(String(5), nullable=False)
-    ruoli_mantra: Mapped[list[str]] = mapped_column(ARRAY(String(5)), nullable=False, default=list)
+    ruoli_mantra: Mapped[list[str]] = mapped_column(
+        ARRAY(String(5)), nullable=False, default=list
+    )
 
     def to_dict(self) -> dict:
         return {

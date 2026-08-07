@@ -21,8 +21,6 @@ Design notes:
 """
 
 import logging
-from pathlib import Path
-from typing import Optional
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -36,6 +34,7 @@ log = logging.getLogger(__name__)
 
 try:
     import shap as _shap
+
     _HAS_SHAP = True
 except ImportError:
     _HAS_SHAP = False
@@ -43,6 +42,7 @@ except ImportError:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _get_preprocessor(pipeline: Pipeline):
     """Return the preprocessor step from a Pipeline."""
@@ -68,6 +68,7 @@ def _is_tree_model(model) -> bool:
 
 # ── Permutation importance ────────────────────────────────────────────────────
 
+
 def compute_permutation_importance(
     pipeline: Pipeline,
     X: pd.DataFrame,
@@ -87,15 +88,22 @@ def compute_permutation_importance(
         n_jobs=-1,
     )
     # feature_names here are the *raw* column names (pre-transformation)
-    imp_df = pd.DataFrame({
-        "feature": X.columns.tolist(),
-        "importance_mean": result.importances_mean,
-        "importance_std": result.importances_std,
-    }).sort_values("importance_mean", ascending=False).reset_index(drop=True)
+    imp_df = (
+        pd.DataFrame(
+            {
+                "feature": X.columns.tolist(),
+                "importance_mean": result.importances_mean,
+                "importance_std": result.importances_std,
+            }
+        )
+        .sort_values("importance_mean", ascending=False)
+        .reset_index(drop=True)
+    )
     return imp_df
 
 
 # ── Tree feature importance ───────────────────────────────────────────────────
+
 
 def compute_tree_feature_importance(
     pipeline: Pipeline,
@@ -104,16 +112,25 @@ def compute_tree_feature_importance(
     """Extract built-in feature importances from a tree-based model."""
     model = _get_model(pipeline)
     if not hasattr(model, "feature_importances_"):
-        raise ValueError(f"{type(model).__name__} does not expose feature_importances_.")
+        raise ValueError(
+            f"{type(model).__name__} does not expose feature_importances_."
+        )
 
-    imp_df = pd.DataFrame({
-        "feature": feature_names,
-        "importance": model.feature_importances_,
-    }).sort_values("importance", ascending=False).reset_index(drop=True)
+    imp_df = (
+        pd.DataFrame(
+            {
+                "feature": feature_names,
+                "importance": model.feature_importances_,
+            }
+        )
+        .sort_values("importance", ascending=False)
+        .reset_index(drop=True)
+    )
     return imp_df
 
 
 # ── SHAP ──────────────────────────────────────────────────────────────────────
+
 
 def compute_shap_values(
     pipeline: Pipeline,
@@ -121,7 +138,7 @@ def compute_shap_values(
     feature_names: list[str],
     sample_size: int = 300,
     random_seed: int = 42,
-) -> Optional[tuple[np.ndarray, np.ndarray]]:
+) -> tuple[np.ndarray, np.ndarray] | None:
     """Compute SHAP values for the model.
 
     Args:
@@ -223,8 +240,11 @@ def plot_feature_importance(
     fig, ax = plt.subplots(figsize=(10, max(4, top_n * 0.35)))
     xerr = df[err_col].values if err_col else None
     ax.barh(
-        df["feature"], df[imp_col],
-        xerr=xerr, color="steelblue", alpha=0.8,
+        df["feature"],
+        df[imp_col],
+        xerr=xerr,
+        color="steelblue",
+        alpha=0.8,
     )
     ax.set_xlabel("Importance")
     ax.set_title(f"Top {top_n} Feature Importances — {model_name}")

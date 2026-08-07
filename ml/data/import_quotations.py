@@ -48,7 +48,6 @@ import unicodedata
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 import sqlalchemy as sa
@@ -69,10 +68,19 @@ ROLE_MAP: dict[str, str] = {
 
 #: Expected columns of the 'Tutti' sheet after canonicalisation.
 QUOTATION_COLUMNS: list[str] = [
-    "fantacalcio_id", "r", "rm", "name", "team",
-    "qt_a", "qt_i", "diff_val",
-    "qt_a_m", "qt_i_m", "diff_val_m",
-    "fvm", "fvm_m",
+    "fantacalcio_id",
+    "r",
+    "rm",
+    "name",
+    "team",
+    "qt_a",
+    "qt_i",
+    "diff_val",
+    "qt_a_m",
+    "qt_i_m",
+    "diff_val_m",
+    "fvm",
+    "fvm_m",
 ]
 
 #: Sheet name to load from the workbook.
@@ -94,13 +102,37 @@ FUZZY_CANDIDATE_POOL: int = 0
 
 #: Italian/Spanish/Portuguese/German/Dutch prefix particles that belong to
 #: the *surname* rather than the first name ("De Ketelaere", "Kolo Muani", …).
-_COMPOUND_PREFIXES: frozenset[str] = frozenset({
-    "de", "del", "della", "delle", "di", "da", "dal", "dalla",
-    "do", "dos", "das",
-    "el", "la", "los", "las", "y",
-    "van", "von", "der", "den", "ten", "bin", "al",
-    "st", "st.", "san", "santa",
-})
+_COMPOUND_PREFIXES: frozenset[str] = frozenset(
+    {
+        "de",
+        "del",
+        "della",
+        "delle",
+        "di",
+        "da",
+        "dal",
+        "dalla",
+        "do",
+        "dos",
+        "das",
+        "el",
+        "la",
+        "los",
+        "las",
+        "y",
+        "van",
+        "von",
+        "der",
+        "den",
+        "ten",
+        "bin",
+        "al",
+        "st",
+        "st.",
+        "san",
+        "santa",
+    }
+)
 
 #: Canonical team aliases: Fantacalcio listone side → FotMob side, AFTER
 #: ``normalise_team()`` has run. Keys must be the lowercased, accent-stripped
@@ -112,9 +144,7 @@ TEAM_ALIASES: dict[str, str] = {
 
 # ── Normalisation helpers ───────────────────────────────────────────────────
 
-_SUFFIX_STRIP_RE = re.compile(
-    r"\b(jr|sr|ii|iii|iv)\b\.?$", flags=re.IGNORECASE
-)
+_SUFFIX_STRIP_RE = re.compile(r"\b(jr|sr|ii|iii|iv)\b\.?$", flags=re.IGNORECASE)
 _TEAM_SUFFIX_RE = re.compile(
     r"\b(fc|ss|asd|ac|us|as|calcio|football)\b\.?",
     flags=re.IGNORECASE,
@@ -236,9 +266,11 @@ def last_name_token(name_norm: str) -> str:
 
 # ── Excel loading ────────────────────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class SeasonFile:
     """A single xlsx file with its inferred season_start."""
+
     path: Path
     season_start: int
 
@@ -274,7 +306,7 @@ def load_quotation_dataframe(file: SeasonFile) -> pd.DataFrame:
     # The first column is unnamed in the source. Rename based on position.
     if df.columns[0].startswith("Unnamed"):
         df = df.rename(columns={df.columns[0]: "fantacalcio_id"})
-    df = df.iloc[:, :len(QUOTATION_COLUMNS)]
+    df = df.iloc[:, : len(QUOTATION_COLUMNS)]
     df.columns = QUOTATION_COLUMNS
     df["season_start"] = file.season_start
     df["role"] = df["r"].map(ROLE_MAP)
@@ -289,8 +321,15 @@ def load_quotation_dataframe(file: SeasonFile) -> pd.DataFrame:
     df["ruolo_primario"] = df["ruoli_mantra"].apply(_compute_ruolo_primario)
     # Ensure integer types for IDs and counts.
     int_cols = [
-        "fantacalcio_id", "qt_a", "qt_i", "diff_val",
-        "qt_a_m", "qt_i_m", "diff_val_m", "fvm", "fvm_m",
+        "fantacalcio_id",
+        "qt_a",
+        "qt_i",
+        "diff_val",
+        "qt_a_m",
+        "qt_i_m",
+        "diff_val_m",
+        "fvm",
+        "fvm_m",
     ]
     for c in int_cols:
         if c in df.columns:
@@ -300,23 +339,22 @@ def load_quotation_dataframe(file: SeasonFile) -> pd.DataFrame:
 
 # ── Mapping: Fantacalcio ID → FotMob ID ─────────────────────────────────────
 
+
 @dataclass
 class MapResult:
     fantacalcio_id: int
     season_start: int
-    player_fotmob_id: Optional[int]
+    player_fotmob_id: int | None
     name_fantacalcio: str
-    name_fotmob: Optional[str]
+    name_fotmob: str | None
     team_fantacalcio: str
-    team_fotmob: Optional[str]
+    team_fotmob: str | None
     canonical_role: str
     match_method: str
     confidence: float
 
 
-def _load_fotmob_reference(
-    engine: sa.Engine, league_name: Optional[str]
-) -> pd.DataFrame:
+def _load_fotmob_reference(engine: sa.Engine, league_name: str | None) -> pd.DataFrame:
     """Load the canonical FotMob player index used as the mapping target.
 
     Strategy (preference order):
@@ -376,17 +414,20 @@ def _load_fotmob_reference(
             log.info(
                 "FotMob reference loaded from player_season_roles: "
                 "%d rows across %d seasons.",
-                len(df), df["season_start"].nunique(),
+                len(df),
+                df["season_start"].nunique(),
             )
             df["name_norm"] = df["player_name"].map(normalise_player_name)
-            df["team_norm"] = df["team_fotmob"].map(normalise_team).map(apply_team_alias)
+            df["team_norm"] = (
+                df["team_fotmob"].map(normalise_team).map(apply_team_alias)
+            )
             df["last_name_norm"] = df["name_norm"].map(last_name_token)
             return df
         log.warning(
             "player_season_roles is empty — falling back to player_profiles. "
             "Re-run the scraper with --roles to populate it."
         )
-    except Exception:  # noqa: BLE001
+    except Exception:
         log.warning(
             "player_season_roles not available — falling back to player_profiles. "
             "Apply migration 003_add_player_season_roles.sql and re-run "
@@ -411,7 +452,7 @@ def _load_fotmob_reference(
             FROM player_season_stats pss
             JOIN seasons s ON s.id = pss.season_id
             JOIN leagues l ON l.id = s.league_id
-            {where.replace('AND', 'WHERE', 1) if where else ''}
+            {where.replace("AND", "WHERE", 1) if where else ""}
         )
         SELECT
             pp.player_fotmob_id,
@@ -473,13 +514,20 @@ def _exact_match(
         matched["confidence"] = 1.0
         leftover = merged[merged["player_fotmob_id"].isna()][
             [
-                "fantacalcio_id", "season_start", "name", "team", "name_norm",
-                "last_name_norm", "team_norm", "canonical_role",
+                "fantacalcio_id",
+                "season_start",
+                "name",
+                "team",
+                "name_norm",
+                "last_name_norm",
+                "team_norm",
+                "canonical_role",
             ]
         ].copy()
         log.info(
             "exact_match[season]: %d matched, %d unmatched (strict key).",
-            len(matched), len(leftover),
+            len(matched),
+            len(leftover),
         )
         # Recurse on unmatched with the season-agnostic fallback
         if not leftover.empty:
@@ -509,8 +557,14 @@ def _exact_match_no_season(
     matched["confidence"] = 1.0
     unmatched = merged[merged["player_fotmob_id"].isna()][
         [
-            "fantacalcio_id", "season_start", "name", "team", "name_norm",
-            "last_name_norm", "team_norm", "canonical_role",
+            "fantacalcio_id",
+            "season_start",
+            "name",
+            "team",
+            "name_norm",
+            "last_name_norm",
+            "team_norm",
+            "canonical_role",
         ]
     ].copy()
     return matched, unmatched
@@ -550,21 +604,22 @@ def _exact_match_relaxed_role(
         suffixes=("", "_ref"),
     )
     # Count duplicates by the (fantacalcio_id, season_start) join key.
-    counts = (
-        merged.groupby(["fantacalcio_id", "season_start"])
-        ["player_fotmob_id"].transform("count")
-    )
-    matched = merged[
-        merged["player_fotmob_id"].notna() & (counts == 1)
-    ].copy()
+    counts = merged.groupby(["fantacalcio_id", "season_start"])[
+        "player_fotmob_id"
+    ].transform("count")
+    matched = merged[merged["player_fotmob_id"].notna() & (counts == 1)].copy()
     matched["match_method"] = "exact_relaxed_role"
     matched["confidence"] = 0.95
-    unmatched = merged[
-        merged["player_fotmob_id"].isna() | (counts > 1)
-    ][
+    unmatched = merged[merged["player_fotmob_id"].isna() | (counts > 1)][
         [
-            "fantacalcio_id", "season_start", "name", "team", "name_norm",
-            "last_name_norm", "team_norm", "canonical_role",
+            "fantacalcio_id",
+            "season_start",
+            "name",
+            "team",
+            "name_norm",
+            "last_name_norm",
+            "team_norm",
+            "canonical_role",
         ]
     ].copy()
     return matched, unmatched
@@ -575,7 +630,7 @@ def _fuzzy_match_one(
     team_norm: str,
     canonical_role: str,
     candidates: pd.DataFrame,
-) -> Optional[tuple[int, str, str, float]]:
+) -> tuple[int, str, str, float] | None:
     """Find the best fuzzy match for one (surname, team, role) tuple.
 
     The query side has already been reduced to a *surname* token, so the
@@ -603,7 +658,7 @@ def _fuzzy_match_one(
     if FUZZY_CANDIDATE_POOL > 0:
         pool = pool.head(FUZZY_CANDIDATE_POOL)
 
-    best_id: Optional[int] = None
+    best_id: int | None = None
     best_name: str = ""
     best_team: str = ""
     best_score: float = 0.0
@@ -628,9 +683,7 @@ def _fuzzy_match_one(
             best_id = int(cand["player_fotmob_id"])
             best_name = str(cand["player_name"])
             best_team = (
-                str(cand["team_fotmob"])
-                if pd.notna(cand.get("team_fotmob"))
-                else ""
+                str(cand["team_fotmob"]) if pd.notna(cand.get("team_fotmob")) else ""
             )
 
     if best_id is None:
@@ -657,7 +710,7 @@ def _load_manual_resolutions(engine: sa.Engine) -> pd.DataFrame:
         )
         log.info("  loaded %d historical manual resolutions", len(df))
         return df
-    except Exception:  # noqa: BLE001
+    except Exception:
         log.warning(
             "manual_resolutions table not available — skipping Pass 0. "
             "Apply migration 013_add_manual_resolutions.sql."
@@ -675,8 +728,8 @@ def _fotmob_suggest_api(term: str, hits: int = 5) -> list[dict]:
     ``team_name``, ``score``. Returns an empty list on any error.
     """
     import json
-    import urllib.request
     import urllib.parse
+    import urllib.request
 
     url = (
         "https://www.fotmob.com/api/data/search/suggest"
@@ -706,18 +759,20 @@ def _fotmob_suggest_api(term: str, hits: int = 5) -> list[dict]:
             if pid in seen_ids:
                 continue
             seen_ids.add(pid)
-            players.append({
-                "id": pid,
-                "name": s["name"],
-                "team_id": s.get("teamId"),
-                "team_name": s.get("teamName"),
-                "score": s.get("score", 0),
-            })
+            players.append(
+                {
+                    "id": pid,
+                    "name": s["name"],
+                    "team_id": s.get("teamId"),
+                    "team_name": s.get("teamName"),
+                    "score": s.get("score", 0),
+                }
+            )
     return players
 
 
 def build_player_id_map(
-    quotazioni: pd.DataFrame, engine: sa.Engine, league_name: Optional[str]
+    quotazioni: pd.DataFrame, engine: sa.Engine, league_name: str | None
 ) -> pd.DataFrame:
     """Build the fantacalcio_id → player_fotmob_id mapping for all rows."""
     ref = _load_fotmob_reference(engine, league_name=league_name)
@@ -727,7 +782,8 @@ def build_player_id_map(
         )
     log.info(
         "  FotMob reference: %d players, %d with a canonical role.",
-        len(ref), int(ref["canonical_role"].notna().sum()),
+        len(ref),
+        int(ref["canonical_role"].notna().sum()),
     )
 
     results: list[dict] = []
@@ -749,37 +805,44 @@ def build_player_id_map(
 
         # Join with quotazioni on fantacalcio_id
         merged = quotazioni.merge(
-            latest_per_id[["fantacalcio_id", "player_fotmob_id",
-                           "name_fotmob", "team_fotmob",
-                           "canonical_role"]],
+            latest_per_id[
+                [
+                    "fantacalcio_id",
+                    "player_fotmob_id",
+                    "name_fotmob",
+                    "team_fotmob",
+                    "canonical_role",
+                ]
+            ],
             on="fantacalcio_id",
             how="inner",
             suffixes=("", "_hist"),
         )
         # Use the canonical_role from the resolution if the quotation has none
-        merged["canonical_role"] = merged["canonical_role"].fillna(
-            merged.get("role")
-        )
+        merged["canonical_role"] = merged["canonical_role"].fillna(merged.get("role"))
 
         for _, row in merged.iterrows():
             key = (int(row["fantacalcio_id"]), int(row["season_start"]))
             matched_keys.add(key)
-            results.append({
-                "fantacalcio_id": key[0],
-                "season_start": key[1],
-                "player_fotmob_id": int(row["player_fotmob_id"]),
-                "name_fantacalcio": row["name"],
-                "name_fotmob": row.get("name_fotmob"),
-                "team_fantacalcio": row["team"],
-                "team_fotmob": row.get("team_fotmob"),
-                "canonical_role": row.get("canonical_role"),
-                "match_method": "manual",
-                "confidence": 1.0,
-                "resolved_from_history": True,
-            })
+            results.append(
+                {
+                    "fantacalcio_id": key[0],
+                    "season_start": key[1],
+                    "player_fotmob_id": int(row["player_fotmob_id"]),
+                    "name_fantacalcio": row["name"],
+                    "name_fotmob": row.get("name_fotmob"),
+                    "team_fantacalcio": row["team"],
+                    "team_fotmob": row.get("team_fotmob"),
+                    "canonical_role": row.get("canonical_role"),
+                    "match_method": "manual",
+                    "confidence": 1.0,
+                    "resolved_from_history": True,
+                }
+            )
         log.info(
             "  historical matches applied: %d (from %d resolutions)",
-            len(results), len(historical),
+            len(results),
+            len(historical),
         )
 
     # ── Pass 0.5: propagate high-confidence mappings across seasons ──────
@@ -789,21 +852,25 @@ def build_player_id_map(
     # Exclude fuzzy_name and unmatched since they're not reliable enough.
     remaining = quotazioni[
         ~quotazioni.apply(
-            lambda r: (int(r["fantacalcio_id"]), int(r["season_start"])) in matched_keys,
+            lambda r: (
+                (int(r["fantacalcio_id"]), int(r["season_start"])) in matched_keys
+            ),
             axis=1,
         )
     ].copy()
 
     log.info(
         "Pass 0.5: propagating high-confidence mappings across seasons …"
-        " (%d already matched)", len(matched_keys),
+        " (%d already matched)",
+        len(matched_keys),
     )
     propagated = 0
     still_remaining_mask = [True] * len(remaining)
     for idx, (_, row) in enumerate(remaining.iterrows()):
         fc_id = int(row["fantacalcio_id"])
         existing = [
-            r for r in results
+            r
+            for r in results
             if r["fantacalcio_id"] == fc_id
             and r["match_method"] not in ("unmatched", "fuzzy_name")
         ]
@@ -815,43 +882,49 @@ def build_player_id_map(
             continue
         matched_keys.add(season_key)
         still_remaining_mask[idx] = False
-        results.append({
-            "fantacalcio_id": fc_id,
-            "season_start": int(row["season_start"]),
-            "player_fotmob_id": best["player_fotmob_id"],
-            "name_fantacalcio": row["name"],
-            "name_fotmob": best["name_fotmob"],
-            "team_fantacalcio": row["team"],
-            "team_fotmob": best.get("team_fotmob"),
-            "canonical_role": row["canonical_role"],
-            "match_method": "propagated",
-            "confidence": round(min(best["confidence"] * 0.95, 0.99), 3),
-            "resolved_from_history": best.get("resolved_from_history", False),
-        })
+        results.append(
+            {
+                "fantacalcio_id": fc_id,
+                "season_start": int(row["season_start"]),
+                "player_fotmob_id": best["player_fotmob_id"],
+                "name_fantacalcio": row["name"],
+                "name_fotmob": best["name_fotmob"],
+                "team_fantacalcio": row["team"],
+                "team_fotmob": best.get("team_fotmob"),
+                "canonical_role": row["canonical_role"],
+                "match_method": "propagated",
+                "confidence": round(min(best["confidence"] * 0.95, 0.99), 3),
+                "resolved_from_history": best.get("resolved_from_history", False),
+            }
+        )
         propagated += 1
     log.info("  propagated: %d", propagated)
     remaining = remaining[still_remaining_mask].copy()
 
     # ── Pass 1: exact match on (last_name, team, role) ──────────────────
-    log.info("Pass 1: exact match on (surname, team, role) … (%d remaining)", len(remaining))
+    log.info(
+        "Pass 1: exact match on (surname, team, role) … (%d remaining)", len(remaining)
+    )
     quotazioni_with_role = remaining.rename(columns={"role": "canonical_role"})
     matched, unmatched = _exact_match(quotazioni_with_role, ref)
     log.info("  matched: %d, unmatched: %d", len(matched), len(unmatched))
 
     for _, row in matched.iterrows():
-        results.append({
-            "fantacalcio_id": int(row["fantacalcio_id"]),
-            "season_start": int(row["season_start"]),
-            "player_fotmob_id": int(row["player_fotmob_id"]),
-            "name_fantacalcio": row["name"],
-            "name_fotmob": row["player_name"],
-            "team_fantacalcio": row["team"],
-            "team_fotmob": row["team_fotmob"],
-            "canonical_role": row["canonical_role"],
-            "match_method": "exact_name_team",
-            "confidence": 1.0,
-            "resolved_from_history": False,
-        })
+        results.append(
+            {
+                "fantacalcio_id": int(row["fantacalcio_id"]),
+                "season_start": int(row["season_start"]),
+                "player_fotmob_id": int(row["player_fotmob_id"]),
+                "name_fantacalcio": row["name"],
+                "name_fotmob": row["player_name"],
+                "team_fantacalcio": row["team"],
+                "team_fotmob": row["team_fotmob"],
+                "canonical_role": row["canonical_role"],
+                "match_method": "exact_name_team",
+                "confidence": 1.0,
+                "resolved_from_history": False,
+            }
+        )
 
     # ── Pass 1b: exact match relaxed on (surname, team), role ignored ──
     # Recovers the common case where the player is classified differently
@@ -860,22 +933,25 @@ def build_player_id_map(
     relaxed_matched, unmatched = _exact_match_relaxed_role(unmatched, ref)
     log.info(
         "  matched: %d, still unmatched: %d",
-        len(relaxed_matched), len(unmatched),
+        len(relaxed_matched),
+        len(unmatched),
     )
     for _, row in relaxed_matched.iterrows():
-        results.append({
-            "fantacalcio_id": int(row["fantacalcio_id"]),
-            "season_start": int(row["season_start"]),
-            "player_fotmob_id": int(row["player_fotmob_id"]),
-            "name_fantacalcio": row["name"],
-            "name_fotmob": row["player_name"],
-            "team_fantacalcio": row["team"],
-            "team_fotmob": row["team_fotmob"],
-            "canonical_role": row["canonical_role"],
-            "match_method": "exact_relaxed_role",
-            "confidence": 0.95,
-            "resolved_from_history": False,
-        })
+        results.append(
+            {
+                "fantacalcio_id": int(row["fantacalcio_id"]),
+                "season_start": int(row["season_start"]),
+                "player_fotmob_id": int(row["player_fotmob_id"]),
+                "name_fantacalcio": row["name"],
+                "name_fotmob": row["player_name"],
+                "team_fantacalcio": row["team"],
+                "team_fotmob": row["team_fotmob"],
+                "canonical_role": row["canonical_role"],
+                "match_method": "exact_relaxed_role",
+                "confidence": 0.95,
+                "resolved_from_history": False,
+            }
+        )
 
     # ── Pass 2: fuzzy match on (surname, role) ───────────────────────────
     log.info("Pass 2: fuzzy match on (surname, role) …")
@@ -889,31 +965,36 @@ def build_player_id_map(
             candidates=ref,
         )
         if best is None:
-            still_unmatched.append({
-                "fantacalcio_id": int(row["fantacalcio_id"]),
-                "season_start": int(row["season_start"]),
-                "name": row["name"],
-                "team": row["team"],
-                "canonical_role": row["canonical_role"],
-            })
+            still_unmatched.append(
+                {
+                    "fantacalcio_id": int(row["fantacalcio_id"]),
+                    "season_start": int(row["season_start"]),
+                    "name": row["name"],
+                    "team": row["team"],
+                    "canonical_role": row["canonical_role"],
+                }
+            )
             continue
         fotmob_id, name_fotmob, team_fotmob, score = best
-        results.append({
-            "fantacalcio_id": int(row["fantacalcio_id"]),
-            "season_start": int(row["season_start"]),
-            "player_fotmob_id": fotmob_id,
-            "name_fantacalcio": row["name"],
-            "name_fotmob": name_fotmob,
-            "team_fantacalcio": row["team"],
-            "team_fotmob": team_fotmob,
-            "canonical_role": row["canonical_role"],
-            "match_method": "fuzzy_name",
-            "confidence": round(score, 3),
-            "resolved_from_history": False,
-        })
+        results.append(
+            {
+                "fantacalcio_id": int(row["fantacalcio_id"]),
+                "season_start": int(row["season_start"]),
+                "player_fotmob_id": fotmob_id,
+                "name_fantacalcio": row["name"],
+                "name_fotmob": name_fotmob,
+                "team_fantacalcio": row["team"],
+                "team_fotmob": team_fotmob,
+                "canonical_role": row["canonical_role"],
+                "match_method": "fuzzy_name",
+                "confidence": round(score, 3),
+                "resolved_from_history": False,
+            }
+        )
         fuzzy_hits += 1
-    log.info("  fuzzy hits: %d, still unmatched: %d",
-             fuzzy_hits, len(unmatched) - fuzzy_hits)
+    log.info(
+        "  fuzzy hits: %d, still unmatched: %d", fuzzy_hits, len(unmatched) - fuzzy_hits
+    )
 
     # Surface a handful of the hardest cases so the operator can audit
     # the matching without grepping the log. Capped at 15 per season.
@@ -923,7 +1004,9 @@ def build_player_id_map(
         for case in sample:
             log.info(
                 "    [%s @ %s] %r  (surname=%r)",
-                case["canonical_role"], case["team"], case["name"],
+                case["canonical_role"],
+                case["team"],
+                case["name"],
                 last_name_token(normalise_player_name(case["name"])),
             )
 
@@ -933,7 +1016,9 @@ def build_player_id_map(
     #   player name, accept it as a high-confidence match.
     #   When multiple candidates are returned, leave the row unmatched so
     #   the operator can decide via the ID mapping UI.
-    log.info("Pass 3: FotMob suggest API for %d still-unmatched …", len(still_unmatched))
+    log.info(
+        "Pass 3: FotMob suggest API for %d still-unmatched …", len(still_unmatched)
+    )
     suggest_hits = 0
     for case in still_unmatched:
         name = case["name"]
@@ -949,46 +1034,51 @@ def build_player_id_map(
             key = (case["fantacalcio_id"], case["season_start"])
             if key in {(r["fantacalcio_id"], r["season_start"]) for r in results}:
                 continue
-            results.append({
-                "fantacalcio_id": key[0],
-                "season_start": key[1],
-                "player_fotmob_id": c["id"],
-                "name_fantacalcio": case["name"],
-                "name_fotmob": c["name"],
-                "team_fantacalcio": case["team"],
-                "team_fotmob": c.get("team_name"),
-                "canonical_role": case["canonical_role"],
-                "match_method": "fotmob_suggest",
-                "confidence": 0.85,
-                "resolved_from_history": False,
-            })
+            results.append(
+                {
+                    "fantacalcio_id": key[0],
+                    "season_start": key[1],
+                    "player_fotmob_id": c["id"],
+                    "name_fantacalcio": case["name"],
+                    "name_fotmob": c["name"],
+                    "team_fantacalcio": case["team"],
+                    "team_fotmob": c.get("team_name"),
+                    "canonical_role": case["canonical_role"],
+                    "match_method": "fotmob_suggest",
+                    "confidence": 0.85,
+                    "resolved_from_history": False,
+                }
+            )
             suggest_hits += 1
         # else: multiple candidates → leave for manual resolution
 
-    log.info("  suggest API hits: %d, still unmatched: %d",
-             suggest_hits, len(still_unmatched) - suggest_hits)
+    log.info(
+        "  suggest API hits: %d, still unmatched: %d",
+        suggest_hits,
+        len(still_unmatched) - suggest_hits,
+    )
 
     # ── Pass 4: record unmatched rows (operator will resolve manually) ──
-    matched_keys = {
-        (r["fantacalcio_id"], r["season_start"]) for r in results
-    }
+    matched_keys = {(r["fantacalcio_id"], r["season_start"]) for r in results}
     for case in still_unmatched:
         key = (case["fantacalcio_id"], case["season_start"])
         if key in matched_keys:
             continue
-        results.append({
-            "fantacalcio_id": key[0],
-            "season_start": key[1],
-            "player_fotmob_id": None,
-            "name_fantacalcio": case["name"],
-            "name_fotmob": None,
-            "team_fantacalcio": case["team"],
-            "team_fotmob": None,
-            "canonical_role": case["canonical_role"],
-            "match_method": "unmatched",
-            "confidence": 0.0,
-            "resolved_from_history": False,
-        })
+        results.append(
+            {
+                "fantacalcio_id": key[0],
+                "season_start": key[1],
+                "player_fotmob_id": None,
+                "name_fantacalcio": case["name"],
+                "name_fotmob": None,
+                "team_fantacalcio": case["team"],
+                "team_fotmob": None,
+                "canonical_role": case["canonical_role"],
+                "match_method": "unmatched",
+                "confidence": 0.0,
+                "resolved_from_history": False,
+            }
+        )
 
     return pd.DataFrame(results)
 
@@ -1049,6 +1139,7 @@ _UPSERT_MAP_SQL = sa.text("""
 
 # ── MANTRA helpers ─────────────────────────────────────────────────────────
 
+
 def _parse_mantra_rm(raw: object) -> list[str]:
     """Parse a raw rm cell from the XLSX into a list of canonical MANTRA roles."""
     if not raw or pd.isna(raw):
@@ -1056,7 +1147,7 @@ def _parse_mantra_rm(raw: object) -> list[str]:
     return normalizza_rm(str(raw))
 
 
-def _compute_ruolo_primario(ruoli: list[str]) -> Optional[str]:
+def _compute_ruolo_primario(ruoli: list[str]) -> str | None:
     """Compute the primary MANTRA role (most defensive) for a player."""
     return calcola_ruolo_primario(ruoli)
 
@@ -1082,9 +1173,15 @@ def persist_mantra_roles(quotazioni: pd.DataFrame, engine: sa.Engine) -> int:
         log.warning("No MANTRA roles found in the quotation data (rm column empty?)")
         return 0
 
-    payload = quotazioni.loc[has_roles, [
-        "fantacalcio_id", "season_start", "ruolo_primario", "ruoli_mantra",
-    ]].copy()
+    payload = quotazioni.loc[
+        has_roles,
+        [
+            "fantacalcio_id",
+            "season_start",
+            "ruolo_primario",
+            "ruoli_mantra",
+        ],
+    ].copy()
 
     # Convert list to PostgreSQL array literal
     payload["ruoli_mantra"] = payload["ruoli_mantra"].apply(
@@ -1101,16 +1198,26 @@ def persist_mantra_roles(quotazioni: pd.DataFrame, engine: sa.Engine) -> int:
 
 # ── Persistence ──────────────────────────────────────────────────────────────
 
-def persist_quotations(
-    quotazioni: pd.DataFrame, engine: sa.Engine, source: str
-) -> int:
+
+def persist_quotations(quotazioni: pd.DataFrame, engine: sa.Engine, source: str) -> int:
     """Upsert all quotation rows. Returns the number of rows persisted."""
-    payload = quotazioni[[
-        "fantacalcio_id", "season_start", "role", "team", "name",
-        "qt_a", "qt_i", "diff_val",
-        "qt_a_m", "qt_i_m", "diff_val_m",
-        "fvm", "fvm_m",
-    ]].rename(columns={"name": "player_name"})
+    payload = quotazioni[
+        [
+            "fantacalcio_id",
+            "season_start",
+            "role",
+            "team",
+            "name",
+            "qt_a",
+            "qt_i",
+            "diff_val",
+            "qt_a_m",
+            "qt_i_m",
+            "diff_val_m",
+            "fvm",
+            "fvm_m",
+        ]
+    ].rename(columns={"name": "player_name"})
 
     # Replace pandas Int64 NA with None so psycopg binds NULL.
     payload = payload.astype(object).where(pd.notnull(payload), None)
@@ -1124,8 +1231,10 @@ def persist_quotations(
 
 def persist_player_id_map(mapping: pd.DataFrame, engine: sa.Engine) -> int:
     """Upsert the id map. Returns the number of rows persisted."""
-    rows = mapping.astype(object).where(pd.notnull(mapping), None).to_dict(
-        orient="records"
+    rows = (
+        mapping.astype(object)
+        .where(pd.notnull(mapping), None)
+        .to_dict(orient="records")
     )
     with engine.begin() as conn:
         conn.execute(_UPSERT_MAP_SQL, rows)
@@ -1133,6 +1242,7 @@ def persist_player_id_map(mapping: pd.DataFrame, engine: sa.Engine) -> int:
 
 
 # ── CLI ─────────────────────────────────────────────────────────────────────
+
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
@@ -1161,7 +1271,7 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         metavar="CSV",
         help="Path to a match_overrides CSV file for manual ID resolution. "
-             "See ml.data.match_override for the format.",
+        "See ml.data.match_override for the format.",
     )
     p.add_argument(
         "--export-unresolved",
@@ -1169,7 +1279,7 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         metavar="CSV",
         help="Export unmatched / low-confidence rows to this CSV after "
-             "processing, so the operator can review and resolve them.",
+        "processing, so the operator can review and resolve them.",
     )
     p.add_argument(
         "--db-url",
@@ -1200,9 +1310,7 @@ def main() -> int:
         or _os.environ.get("API_DATABASE_URL")
     )
     if not db_url:
-        log.error(
-            "Database URL not set. Pass --db-url or export ML_DATABASE_URL."
-        )
+        log.error("Database URL not set. Pass --db-url or export ML_DATABASE_URL.")
         return 2
 
     # Load manual overrides upfront (shared across all seasons)
@@ -1210,12 +1318,13 @@ def main() -> int:
 
     overrides = load_overrides_csv(args.overrides) if args.overrides else []
     if overrides:
-        log.info("Loaded %d manual override(s) from %s.", len(overrides), args.overrides)
+        log.info(
+            "Loaded %d manual override(s) from %s.", len(overrides), args.overrides
+        )
 
     engine = sa.create_engine(db_url, pool_pre_ping=True)
     files = discover_season_files(args.quotazioni_dir)
-    log.info("Discovered %d season file(s) in %s",
-             len(files), args.quotazioni_dir)
+    log.info("Discovered %d season file(s) in %s", len(files), args.quotazioni_dir)
 
     all_id_maps: list[pd.DataFrame] = []
 
@@ -1223,8 +1332,11 @@ def main() -> int:
         log.info("=" * 60)
         log.info("Processing %s (season_start=%d)", sf.path.name, sf.season_start)
         df = load_quotation_dataframe(sf)
-        log.info("  %d rows, role distribution: %s",
-                 len(df), df["role"].value_counts().to_dict())
+        log.info(
+            "  %d rows, role distribution: %s",
+            len(df),
+            df["role"].value_counts().to_dict(),
+        )
 
         # Persist quotations
         n_q = persist_quotations(df, engine=engine, source=args.source)
@@ -1240,10 +1352,12 @@ def main() -> int:
         # Apply manual overrides (if any) before persisting
         if overrides:
             from .match_override import apply_overrides_to_id_map
+
             id_map = apply_overrides_to_id_map(id_map, overrides)
 
-        log.info("  id map distribution: %s",
-                 id_map["match_method"].value_counts().to_dict())
+        log.info(
+            "  id map distribution: %s", id_map["match_method"].value_counts().to_dict()
+        )
         n_m = persist_player_id_map(id_map, engine=engine)
         log.info("  Persisted %d id map rows.", n_m)
         all_id_maps.append(id_map)
@@ -1251,9 +1365,12 @@ def main() -> int:
     # ── Export unresolved rows (optional) ─────────────────────────────────
     if args.export_unresolved and all_id_maps:
         from .match_override import export_unresolved
+
         combined_map = pd.concat(all_id_maps, ignore_index=True)
         n_exported = export_unresolved(combined_map, args.export_unresolved)
-        log.info("Exported %d unresolved rows to %s.", n_exported, args.export_unresolved)
+        log.info(
+            "Exported %d unresolved rows to %s.", n_exported, args.export_unresolved
+        )
 
     log.info("Done.")
     return 0

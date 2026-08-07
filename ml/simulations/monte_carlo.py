@@ -10,11 +10,12 @@ Sampling method: bootstrap residuals from historical prediction errors.
 
 N_SIMULATIONS default: 1000 (configurable per call).
 """
+
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 from collections import defaultdict
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -33,20 +34,23 @@ class SimulationResult:
     n_simulations: int
     mean_score: float
     std_score: float
-    p10_score: float          # 10th percentile (downside)
+    p10_score: float  # 10th percentile (downside)
     p25_score: float
-    p50_score: float          # median
+    p50_score: float  # median
     p75_score: float
-    p90_score: float          # upside
-    upside_potential: float   # p90 - p50
-    downside_risk: float      # p50 - p10
+    p90_score: float  # upside
+    upside_potential: float  # p90 - p50
+    downside_risk: float  # p50 - p10
     simulated_scores: np.ndarray  # shape (n_simulations,)
-    sampling_method: str      # "bootstrap_player", "bootstrap_role", "parametric"
+    sampling_method: str  # "bootstrap_player", "bootstrap_role", "parametric"
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, SimulationResult):
             return NotImplemented
-        return self.player_id == other.player_id and self.n_simulations == other.n_simulations
+        return (
+            self.player_id == other.player_id
+            and self.n_simulations == other.n_simulations
+        )
 
     def __hash__(self) -> int:
         return hash((self.player_id, self.n_simulations))
@@ -80,7 +84,7 @@ class MonteCarloSimulator:
         self._role_residuals: dict[str, np.ndarray] = {}
         self._is_fitted = False
 
-    def fit(self, residuals: list[dict]) -> "MonteCarloSimulator":
+    def fit(self, residuals: list[dict]) -> MonteCarloSimulator:
         """Build residual distributions from historical prediction errors.
 
         Args:
@@ -173,7 +177,9 @@ class MonteCarloSimulator:
             p50_score=float(np.percentile(scores, 50)),
             p75_score=float(np.percentile(scores, 75)),
             p90_score=float(np.percentile(scores, 90)),
-            upside_potential=float(np.percentile(scores, 90) - np.percentile(scores, 50)),
+            upside_potential=float(
+                np.percentile(scores, 90) - np.percentile(scores, 50)
+            ),
             downside_risk=float(np.percentile(scores, 50) - np.percentile(scores, 10)),
             simulated_scores=scores,
             sampling_method=method,

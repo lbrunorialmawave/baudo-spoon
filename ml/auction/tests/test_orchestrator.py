@@ -20,9 +20,7 @@ from typing import cast
 import pytest
 
 from ml.auction.models import (
-    AlternativesConfig,
     AuctionConfig,
-    MarketDriftConfig,
     ParticipantSetup,
 )
 from ml.auction.orchestrator import (
@@ -36,7 +34,6 @@ from ml.auction.orchestrator import (
 )
 from ml.optimizer.inflation import InflationConfig
 from ml.optimizer.models import Player
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -96,7 +93,9 @@ def mid_pool() -> list[Player]:
 
 class TestInitializeAuction:
     def test_setup_valido(self, mid_pool: list[Player]) -> None:
-        state = initialize_auction(_participants(4), AuctionConfig(num_participants=4), mid_pool)
+        state = initialize_auction(
+            _participants(4), AuctionConfig(num_participants=4), mid_pool
+        )
         assert len(state.participants) == 4
         for ps in state.participants.values():
             assert ps.budget_residual == 500
@@ -114,9 +113,7 @@ class TestInitializeAuction:
         # Mappa percentile popolata
         assert len(state.role_percentile_map) == len(mid_pool)
 
-    def test_numero_partecipanti_non_corrisponde(
-        self, mid_pool: list[Player]
-    ) -> None:
+    def test_numero_partecipanti_non_corrisponde(self, mid_pool: list[Player]) -> None:
         with pytest.raises(ValueError, match="num_participants"):
             initialize_auction(
                 _participants(4), AuctionConfig(num_participants=5), mid_pool
@@ -153,9 +150,7 @@ class TestInitializeAuction:
         with pytest.raises(TypeError, match="InflationConfig"):
             initialize_auction(_participants(4), cfg, mid_pool)
 
-    def test_inflation_baseline_con_config_valido(
-        self, mid_pool: list[Player]
-    ) -> None:
+    def test_inflation_baseline_con_config_valido(self, mid_pool: list[Player]) -> None:
         cfg = AuctionConfig(
             num_participants=4,
             use_inflation_baseline=True,
@@ -278,9 +273,7 @@ class TestRecordAssignmentValidation:
 
 
 class TestRecordAssignmentMutations:
-    def test_assegnazione_valida_scala_budget(
-        self, mid_pool: list[Player]
-    ) -> None:
+    def test_assegnazione_valida_scala_budget(self, mid_pool: list[Player]) -> None:
         state = initialize_auction(
             _participants(4), AuctionConfig(num_participants=4), mid_pool
         )
@@ -316,9 +309,7 @@ class TestRecordAssignmentMutations:
         n_before = len(state.available_pool)
         record_assignment(state, "p1", "u1", 10)
         assert len(state.available_pool) == n_before - 1
-        assert not any(
-            p.player_id == "p1" for p in state.available_pool
-        )
+        assert not any(p.player_id == "p1" for p in state.available_pool)
 
     def test_assegnazioni_multiple_sequenza_corretta(
         self, mid_pool: list[Player]
@@ -395,9 +386,7 @@ class TestUndoLastAssignment:
             assert ps.squad == []
             assert ps.budget_residual == 500
 
-    def test_undo_su_stato_vuoto_solleva_errore(
-        self, mid_pool: list[Player]
-    ) -> None:
+    def test_undo_su_stato_vuoto_solleva_errore(self, mid_pool: list[Player]) -> None:
         state = initialize_auction(
             _participants(4), AuctionConfig(num_participants=4), mid_pool
         )
@@ -445,14 +434,10 @@ class TestSerialization:
         for pid, ps in restored.participants.items():
             orig = state.participants[pid]
             assert ps.budget_residual == orig.budget_residual
-            assert [p.player_id for p in ps.squad] == [
-                p.player_id for p in orig.squad
-            ]
+            assert [p.player_id for p in ps.squad] == [p.player_id for p in orig.squad]
             assert ps.role_breakdown == orig.role_breakdown
         assert len(restored.assignments) == len(state.assignments)
-        for r_restored, r_orig in zip(
-            restored.assignments, state.assignments
-        ):
+        for r_restored, r_orig in zip(restored.assignments, state.assignments):
             assert r_restored.player.player_id == r_orig.player.player_id
             assert r_restored.final_price == r_orig.final_price
             assert r_restored.tier == r_orig.tier

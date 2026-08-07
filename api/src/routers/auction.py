@@ -20,6 +20,24 @@ from typing import cast
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ml.auction.models import (
+    AlternativesConfig,
+    AuctionConfig,
+    MarketDriftConfig,
+    ParticipantSetup,
+    Role,
+    Tier,
+    ValuationMode,
+)
+from ml.auction.orchestrator import (
+    AuctionSession,
+    deserialize_state,
+)
+from ml.auction.price_drift import classify_tier, get_current_projection
+from ml.auction.var import VarEngine
+from ml.optimizer.inflation import InflationConfig
+from ml.optimizer.models import Player, RulesetType
+
 from ..config import settings
 from ..data_repository import DataRepository
 from ..deps import get_db, require_role
@@ -29,9 +47,9 @@ from ..schemas import (
     AssignmentRecordSchema,
     AuctionConfigSchema,
     AuctionParticipantSetupSchema,
+    AuctionParticipantStateSchema,
     AuctionPlayerSchema,
     AuctionPlayerSummarySchema,
-    AuctionParticipantStateSchema,
     AuctionSummarySchema,
     InitializeAuctionRequest,
     InitializeAuctionResponse,
@@ -43,23 +61,6 @@ from ..schemas import (
     VarRankingItemSchema,
     VarRankingResponse,
 )
-from ml.auction.models import (
-    AlternativesConfig,
-    AuctionConfig,
-    MarketDriftConfig,
-    ParticipantSetup,
-    Role,
-    Tier,
-)
-from ml.auction.orchestrator import (
-    AuctionSession,
-    deserialize_state,
-)
-from ml.auction.price_drift import classify_tier, get_current_projection
-from ml.auction.models import ValuationMode
-from ml.auction.var import VarEngine
-from ml.optimizer.inflation import InflationConfig
-from ml.optimizer.models import Player, RulesetType
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +182,10 @@ def _assignment_to_schema(a: object) -> AssignmentRecordSchema:
 def _price_index_to_dict(
     price_index: dict[Role, dict[Tier, float]],
 ) -> dict[str, dict[str, float]]:
-    return {role: {tier: float(v) for tier, v in tiers.items()} for role, tiers in price_index.items()}
+    return {
+        role: {tier: float(v) for tier, v in tiers.items()}
+        for role, tiers in price_index.items()
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -544,8 +548,8 @@ def deserialize_session_endpoint(
     # usare direttamente il constructor: creiamo un'istanza "shell" e
     # sostituiamo lo stato.
     placeholder = AuctionSession.__new__(AuctionSession)
-    placeholder._state = restored_state  # noqa: SLF001 (intentional bypass)
-    placeholder._pool = list(restored_state.available_pool)  # noqa: SLF001
+    placeholder._state = restored_state
+    placeholder._pool = list(restored_state.available_pool)
 
     session_id = uuid.uuid4().hex
     _get_session_store(request)[session_id] = placeholder
@@ -557,6 +561,7 @@ def deserialize_session_endpoint(
 @router.delete(
     "/{session_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
     dependencies=[Depends(require_role("member"))],
 )
 def discard_session_endpoint(
@@ -600,12 +605,13 @@ def get_var_ranking(
     pool = list(state.available_pool)
 
     if not pool:
-        return VarRankingResponse(session_id=session_id, items=[], using_live_prices=True)
+        return VarRankingResponse(
+            session_id=session_id, items=[], using_live_prices=True
+        )
 
     # Build EWMA price overrides for every available player
     price_overrides: dict[str, float] = {
-        p.player_id: get_current_projection(state, p.player_id, pool)
-        for p in pool
+        p.player_id: get_current_projection(state, p.player_id, pool) for p in pool
     }
 
     players_input = [
@@ -654,4 +660,6 @@ def get_var_ranking(
     ]
 
     logger.info("var_ranking session_id=%s n=%d", session_id, len(items))
-    return VarRankingResponse(session_id=session_id, items=items, using_live_prices=True)
+    return VarRankingResponse(
+        session_id=session_id, items=items, using_live_prices=True
+    )

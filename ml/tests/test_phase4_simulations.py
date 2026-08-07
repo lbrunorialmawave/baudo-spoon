@@ -1,11 +1,12 @@
 """Phase 4 tests: Monte Carlo simulations."""
+
 import numpy as np
 import pytest
+
 from ml.simulations.monte_carlo import (
+    N_SIMULATIONS,
     MonteCarloSimulator,
     SimulationResult,
-    N_SIMULATIONS,
-    MIN_RESIDUALS,
 )
 
 
@@ -16,11 +17,19 @@ def fitted_simulator():
     for player_id in ["p1", "p2", "p3"]:
         for _ in range(20):
             residuals.append(
-                {"player_id": player_id, "role": "A", "residual": float(np.random.normal(0, 0.5))}
+                {
+                    "player_id": player_id,
+                    "role": "A",
+                    "residual": float(np.random.normal(0, 0.5)),
+                }
             )
     for _ in range(30):
         residuals.append(
-            {"player_id": "p_other", "role": "D", "residual": float(np.random.normal(0, 0.3))}
+            {
+                "player_id": "p_other",
+                "role": "D",
+                "residual": float(np.random.normal(0, 0.3)),
+            }
         )
     sim = MonteCarloSimulator(random_seed=42)
     sim.fit(residuals)
@@ -57,7 +66,9 @@ class TestMonteCarloSimulator:
         result = fitted_simulator.simulate("p1", predicted_score=6.5, role="A")
         assert result.sampling_method == "bootstrap_player"
 
-    def test_fallback_to_role_when_player_residuals_insufficient(self, fitted_simulator):
+    def test_fallback_to_role_when_player_residuals_insufficient(
+        self, fitted_simulator
+    ):
         # "unknown_p" has no residuals; role "A" has sufficient
         result = fitted_simulator.simulate("unknown_p", predicted_score=6.5, role="A")
         assert result.sampling_method == "bootstrap_role"

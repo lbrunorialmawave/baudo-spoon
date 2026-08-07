@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Final
 
-from ml.optimizer.models import StrategyProfile, StrategyName
+from ml.optimizer.models import StrategyName, StrategyProfile
 
-__all__ = ["default_strategies", "DEFAULT_FOUR_STRATEGIES"]
+__all__ = ["DEFAULT_FOUR_STRATEGIES", "default_strategies"]
 
 #: Default top-tier cost threshold for the MIXED strategy (credits).
 DEFAULT_TOP_TIER_COST_THRESHOLD: Final[int] = 30
@@ -20,7 +20,9 @@ DEFAULT_SUPER_OFFENSIVE_SHARE: Final[float] = 0.65
 
 
 def _balanced() -> StrategyProfile:
-    return StrategyProfile(name="BALANCED", role_weight={"P": 1.0, "D": 1.0, "C": 1.0, "A": 1.0})
+    return StrategyProfile(
+        name="BALANCED", role_weight={"P": 1.0, "D": 1.0, "C": 1.0, "A": 1.0}
+    )
 
 
 def _super_defensive(share: float = DEFAULT_SUPER_DEFENSIVE_SHARE) -> StrategyProfile:

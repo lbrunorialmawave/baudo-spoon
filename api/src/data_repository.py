@@ -7,18 +7,18 @@ A Redis cache layer avoids repeated disk access for the same static file.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from pathlib import Path
-from typing import Any, Final, Optional
+from typing import Any, Final
 
 import sqlalchemy as sa
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import MatchMethodEnum, PlayerIdMap, PlayerMantraRole, PlayerQuotation
 from ml.domain.predictions import resolve_season_value_fields
 from ml.storage.artifact_store import ArtifactStore, R2Config
+
+from .models import MatchMethodEnum, PlayerIdMap, PlayerMantraRole, PlayerQuotation
 
 log = logging.getLogger(__name__)
 
@@ -146,7 +146,9 @@ class DataRepository:
         """Load the full ``results_latest.json`` artifact (cached)."""
         data = await self._cached_artifact(_CACHE_KEY, "results_latest.json")
         if data is None:
-            raise FileNotFoundError(f"No ML artifact found at {self._dir / 'results_latest.json'}")
+            raise FileNotFoundError(
+                f"No ML artifact found at {self._dir / 'results_latest.json'}"
+            )
         return data
 
     async def get_predictions(self) -> list[dict]:
@@ -167,10 +169,16 @@ class DataRepository:
 
     async def get_next_season_predictions(self) -> list[dict]:
         """Return next-season predictions from the companion file if present."""
-        data = await self._cached_artifact(_NEXT_CACHE_KEY, "next_season_predictions.json")
+        data = await self._cached_artifact(
+            _NEXT_CACHE_KEY, "next_season_predictions.json"
+        )
         if data is not None:
             # File may itself be a list or a dict with a list inside.
-            return data if isinstance(data, list) else data.get("next_season_predictions", [])
+            return (
+                data
+                if isinstance(data, list)
+                else data.get("next_season_predictions", [])
+            )
         # Fall back to embedded key in the main artifact.
         data = await self.get_latest_results()
         return data.get("next_season_predictions", [])
@@ -181,7 +189,7 @@ class DataRepository:
 
     async def get_low_cost_recommendations(
         self,
-        top_player_id: Optional[int] = None,
+        top_player_id: int | None = None,
     ) -> list[dict]:
         data = await self.get_latest_results()
         recs: list[dict] = data.get("low_cost_recommendations", [])
@@ -210,7 +218,7 @@ class DataRepository:
     # ── Hybrid MANTRA+ML ─────────────────────────────────────────────────────
 
     async def get_hybrid_predictions(
-        self, season: Optional[int] = None, db: Optional[AsyncSession] = None
+        self, season: int | None = None, db: AsyncSession | None = None
     ) -> dict:
         """Load or lazy-init the hybrid MANTRA+ML artefact.
 
@@ -220,7 +228,9 @@ class DataRepository:
         ``player_quotations``; otherwise falls back to 2025 as a last resort.
         """
         if season is None:
-            season = (await self.get_current_season_start(db)) if db is not None else None
+            season = (
+                (await self.get_current_season_start(db)) if db is not None else None
+            )
             season = season or 2025
         filename = f"mantra_ibrido_results_{season}.json"
         data = await self._artifact_store.load_json_async(filename)
@@ -248,14 +258,14 @@ class DataRepository:
 
     @staticmethod
     def _build_quotation_filters(
-        season_start: Optional[int],
-        role: Optional[str],
-        team: Optional[str],
-        player_fotmob_id: Optional[int],
-        min_qt_a: Optional[int],
-        max_qt_a: Optional[int],
-        ruolo_primario: Optional[str] = None,
-        ruolo_mantra: Optional[str] = None,
+        season_start: int | None,
+        role: str | None,
+        team: str | None,
+        player_fotmob_id: int | None,
+        min_qt_a: int | None,
+        max_qt_a: int | None,
+        ruolo_primario: str | None = None,
+        ruolo_mantra: str | None = None,
     ) -> list:
         """Compose WHERE clauses for ``list_quotations``."""
         filters = []
@@ -280,14 +290,14 @@ class DataRepository:
     async def list_quotations(
         self,
         db: AsyncSession,
-        season_start: Optional[int] = None,
-        role: Optional[str] = None,
-        team: Optional[str] = None,
-        player_fotmob_id: Optional[int] = None,
-        min_qt_a: Optional[int] = None,
-        max_qt_a: Optional[int] = None,
-        ruolo_primario: Optional[str] = None,
-        ruolo_mantra: Optional[str] = None,
+        season_start: int | None = None,
+        role: str | None = None,
+        team: str | None = None,
+        player_fotmob_id: int | None = None,
+        min_qt_a: int | None = None,
+        max_qt_a: int | None = None,
+        ruolo_primario: str | None = None,
+        ruolo_mantra: str | None = None,
         page: int = 1,
         size: int = 50,
     ) -> tuple[list[dict], int]:
@@ -298,8 +308,14 @@ class DataRepository:
         """
         mantra_filter = ruolo_primario is not None or ruolo_mantra is not None
         filters = self._build_quotation_filters(
-            season_start, role, team, player_fotmob_id, min_qt_a, max_qt_a,
-            ruolo_primario=ruolo_primario, ruolo_mantra=ruolo_mantra,
+            season_start,
+            role,
+            team,
+            player_fotmob_id,
+            min_qt_a,
+            max_qt_a,
+            ruolo_primario=ruolo_primario,
+            ruolo_mantra=ruolo_mantra,
         )
 
         # Outer join quotation ↔ id-map on (fantacalcio_id, season_start).
@@ -337,10 +353,12 @@ class DataRepository:
             PlayerIdMap.confidence,
         ]
         if mantra_filter:
-            base_cols.extend([
-                PlayerMantraRole.ruolo_primario,
-                PlayerMantraRole.ruoli_mantra,
-            ])
+            base_cols.extend(
+                [
+                    PlayerMantraRole.ruolo_primario,
+                    PlayerMantraRole.ruoli_mantra,
+                ]
+            )
 
         count_stmt = select(func.count()).select_from(PlayerQuotation)
         if filters:
@@ -369,13 +387,21 @@ class DataRepository:
         rows = [dict(r._mapping) for r in result]
         # Normalise enum → str and confidence → float.
         for r in rows:
-            if r.get("match_method") is not None and not isinstance(r["match_method"], str):
+            if r.get("match_method") is not None and not isinstance(
+                r["match_method"], str
+            ):
                 r["match_method"] = r["match_method"].value
-            if r.get("confidence") is not None and not isinstance(r["confidence"], (int, float)):
+            if r.get("confidence") is not None and not isinstance(
+                r["confidence"], (int, float)
+            ):
                 r["confidence"] = float(r["confidence"])
-            if r.get("imported_at") is not None and not isinstance(r["imported_at"], str):
+            if r.get("imported_at") is not None and not isinstance(
+                r["imported_at"], str
+            ):
                 r["imported_at"] = r["imported_at"].isoformat()
-            if r.get("ruoli_mantra") is not None and isinstance(r["ruoli_mantra"], list):
+            if r.get("ruoli_mantra") is not None and isinstance(
+                r["ruoli_mantra"], list
+            ):
                 r["ruoli_mantra"] = list(r["ruoli_mantra"])
         return rows, total
 
@@ -389,7 +415,7 @@ class DataRepository:
         result = await db.execute(stmt)
         return [row[0] for row in result]
 
-    async def get_current_season_start(self, db: AsyncSession) -> Optional[int]:
+    async def get_current_season_start(self, db: AsyncSession) -> int | None:
         """Most recent ``season_start`` present in ``player_quotations``.
 
         Deliberately DB-driven rather than calendar-based: a "current year"
@@ -400,7 +426,9 @@ class DataRepository:
         stmt = select(func.max(PlayerQuotation.season_start))
         return (await db.execute(stmt)).scalar_one_or_none()
 
-    async def resolve_season_candidates(self, db: AsyncSession, window: int = 3) -> list[int]:
+    async def resolve_season_candidates(
+        self, db: AsyncSession, window: int = 3
+    ) -> list[int]:
         """Ordered season candidates for artifact lookup: DB latest, then N-1 behind.
 
         Used to walk backward through ``mantra_results_{season}.json`` /
@@ -450,7 +478,9 @@ class DataRepository:
                 "n_players": r.n,
                 "avg_qt_a": float(r.avg_qt_a) if r.avg_qt_a is not None else 0.0,
                 "avg_qt_i": float(r.avg_qt_i) if r.avg_qt_i is not None else 0.0,
-                "median_qt_a": float(r.median_qt_a) if r.median_qt_a is not None else 0.0,
+                "median_qt_a": float(r.median_qt_a)
+                if r.median_qt_a is not None
+                else 0.0,
                 "min_qt_a": int(r.min_qt_a) if r.min_qt_a is not None else 0,
                 "max_qt_a": int(r.max_qt_a) if r.max_qt_a is not None else 0,
                 "avg_fvm": float(r.avg_fvm) if r.avg_fvm is not None else None,
@@ -475,7 +505,11 @@ class DataRepository:
         cov_rows = (await db.execute(cov_stmt)).all()
         coverage: dict[str, int] = {}
         for r in cov_rows:
-            method = r.match_method.value if not isinstance(r.match_method, str) else r.match_method
+            method = (
+                r.match_method.value
+                if not isinstance(r.match_method, str)
+                else r.match_method
+            )
             coverage[method] = int(r.n)
 
         return {
@@ -491,11 +525,11 @@ class DataRepository:
     async def list_id_mappings(
         self,
         db: AsyncSession,
-        season_start: Optional[int] = None,
-        match_method: Optional[str] = None,
-        canonical_role: Optional[str] = None,
+        season_start: int | None = None,
+        match_method: str | None = None,
+        canonical_role: str | None = None,
         matched_only: bool = False,
-        mantra_role: Optional[str] = None,
+        mantra_role: str | None = None,
         unresolved_only: bool = False,
         page: int = 1,
         size: int = 50,
@@ -512,9 +546,7 @@ class DataRepository:
         if matched_only:
             filters.append(PlayerIdMap.player_fotmob_id.is_not(None))
         if mantra_role is not None:
-            mantra_filters.append(
-                PlayerMantraRole.ruolo_primario == mantra_role
-            )
+            mantra_filters.append(PlayerMantraRole.ruolo_primario == mantra_role)
         if unresolved_only:
             # A mapping is unresolved when it has no valid FotMob identity:
             # an explicit unmatched/fuzzy match, or a row with no fotmob id.
@@ -537,15 +569,12 @@ class DataRepository:
         total = (await db.execute(count_stmt)).scalar_one()
 
         # Query: left join mantra roles
-        stmt = (
-            select(PlayerIdMap, PlayerMantraRole)
-            .outerjoin(
-                PlayerMantraRole,
-                and_(
-                    PlayerMantraRole.fantacalcio_id == PlayerIdMap.fantacalcio_id,
-                    PlayerMantraRole.season_start == PlayerIdMap.season_start,
-                ),
-            )
+        stmt = select(PlayerIdMap, PlayerMantraRole).outerjoin(
+            PlayerMantraRole,
+            and_(
+                PlayerMantraRole.fantacalcio_id == PlayerIdMap.fantacalcio_id,
+                PlayerMantraRole.season_start == PlayerIdMap.season_start,
+            ),
         )
         if filters:
             stmt = stmt.where(*filters)
@@ -562,7 +591,9 @@ class DataRepository:
         for id_map, mantra in result.all():
             d = id_map.to_dict()
             if mantra:
-                d["ruoli_mantra"] = list(mantra.ruoli_mantra) if mantra.ruoli_mantra else []
+                d["ruoli_mantra"] = (
+                    list(mantra.ruoli_mantra) if mantra.ruoli_mantra else []
+                )
                 d["ruolo_primario"] = mantra.ruolo_primario
             else:
                 d["ruoli_mantra"] = None
@@ -575,7 +606,7 @@ class DataRepository:
         db: AsyncSession,
         fantacalcio_id: int,
         season_start: int,
-    ) -> Optional[dict]:
+    ) -> dict | None:
         stmt = select(PlayerIdMap).where(
             and_(
                 PlayerIdMap.fantacalcio_id == fantacalcio_id,
@@ -591,8 +622,10 @@ class DataRepository:
         total_stmt = select(func.count()).select_from(PlayerIdMap)
         total = (await db.execute(total_stmt)).scalar_one()
 
-        matched_stmt = select(func.count()).select_from(PlayerIdMap).where(
-            PlayerIdMap.player_fotmob_id.is_not(None)
+        matched_stmt = (
+            select(func.count())
+            .select_from(PlayerIdMap)
+            .where(PlayerIdMap.player_fotmob_id.is_not(None))
         )
         matched = (await db.execute(matched_stmt)).scalar_one()
         unmatched = int(total) - int(matched)
@@ -607,7 +640,11 @@ class DataRepository:
         ).all()
         by_method: dict[str, int] = {}
         for r in by_method_rows:
-            method = r.match_method.value if not isinstance(r.match_method, str) else r.match_method
+            method = (
+                r.match_method.value
+                if not isinstance(r.match_method, str)
+                else r.match_method
+            )
             by_method[method] = int(r.n)
 
         # by_season (nested)
@@ -622,7 +659,11 @@ class DataRepository:
         ).all()
         by_season: dict[str, dict[str, int]] = {}
         for r in by_season_rows:
-            method = r.match_method.value if not isinstance(r.match_method, str) else r.match_method
+            method = (
+                r.match_method.value
+                if not isinstance(r.match_method, str)
+                else r.match_method
+            )
             by_season.setdefault(str(r.season_start), {})[method] = int(r.n)
 
         return {
@@ -640,10 +681,10 @@ class DataRepository:
         self,
         db: AsyncSession,
         *,
-        season_start: Optional[int] = None,
-        fantacalcio_id: Optional[int] = None,
-        player_fotmob_id: Optional[int] = None,
-        search: Optional[str] = None,
+        season_start: int | None = None,
+        fantacalcio_id: int | None = None,
+        player_fotmob_id: int | None = None,
+        search: str | None = None,
         page: int = 1,
         size: int = 50,
     ) -> tuple[list[dict], int]:
@@ -679,7 +720,7 @@ class DataRepository:
         self,
         db: AsyncSession,
         resolution_id: int,
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """Get a single resolution by ID."""
         from .models import ManualResolution
 
@@ -696,17 +737,18 @@ class DataRepository:
         player_fotmob_id: int,
         season_start: int,
         name_fantacalcio: str,
-        team_fantacalcio: Optional[str] = None,
-        canonical_role: Optional[str] = None,
-        name_fotmob: Optional[str] = None,
-        team_fotmob: Optional[str] = None,
-        resolved_by: Optional[str] = None,
-        note: Optional[str] = None,
-    ) -> Optional[dict]:
+        team_fantacalcio: str | None = None,
+        canonical_role: str | None = None,
+        name_fotmob: str | None = None,
+        team_fotmob: str | None = None,
+        resolved_by: str | None = None,
+        note: str | None = None,
+    ) -> dict | None:
         """Insert a manual resolution. Returns the created row or ``None`` if
         the (fantacalcio_id, player_fotmob_id) pair already exists (ON CONFLICT
         DO NOTHING)."""
         from sqlalchemy.dialects.postgresql import insert as pg_insert
+
         from .models import ManualResolution
 
         stmt = pg_insert(ManualResolution).values(
@@ -729,7 +771,9 @@ class DataRepository:
 
         # Fetch the row we just inserted (or the existing one)
         return await self.get_manual_resolution_for_fantacalcio(
-            db, fantacalcio_id=fantacalcio_id, player_fotmob_id=player_fotmob_id,
+            db,
+            fantacalcio_id=fantacalcio_id,
+            player_fotmob_id=player_fotmob_id,
         )
 
     async def get_manual_resolution_for_fantacalcio(
@@ -738,16 +782,21 @@ class DataRepository:
         *,
         fantacalcio_id: int,
         player_fotmob_id: int,
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """Lookup a resolution by (fantacalcio_id, player_fotmob_id)."""
         from .models import ManualResolution
 
-        stmt = select(ManualResolution).where(
-            and_(
-                ManualResolution.fantacalcio_id == fantacalcio_id,
-                ManualResolution.player_fotmob_id == player_fotmob_id,
+        stmt = (
+            select(ManualResolution)
+            .where(
+                and_(
+                    ManualResolution.fantacalcio_id == fantacalcio_id,
+                    ManualResolution.player_fotmob_id == player_fotmob_id,
+                )
             )
-        ).order_by(ManualResolution.created_at.desc()).limit(1)
+            .order_by(ManualResolution.created_at.desc())
+            .limit(1)
+        )
         result = await db.execute(stmt)
         row = result.scalar_one_or_none()
         return row.to_dict() if row is not None else None
@@ -773,21 +822,26 @@ class DataRepository:
         """Aggregate statistics for manual resolutions."""
         from .models import ManualResolution
 
-        total = (await db.execute(
-            select(func.count()).select_from(ManualResolution)
-        )).scalar_one()
+        total = (
+            await db.execute(select(func.count()).select_from(ManualResolution))
+        ).scalar_one()
 
-        unique_players = (await db.execute(
-            select(func.count(func.distinct(ManualResolution.fantacalcio_id)))
-            .select_from(ManualResolution)
-        )).scalar_one()
+        unique_players = (
+            await db.execute(
+                select(
+                    func.count(func.distinct(ManualResolution.fantacalcio_id))
+                ).select_from(ManualResolution)
+            )
+        ).scalar_one()
 
-        by_season_rows = (await db.execute(
-            select(ManualResolution.season_start, func.count().label("n"))
-            .select_from(ManualResolution)
-            .group_by(ManualResolution.season_start)
-            .order_by(ManualResolution.season_start.desc())
-        )).all()
+        by_season_rows = (
+            await db.execute(
+                select(ManualResolution.season_start, func.count().label("n"))
+                .select_from(ManualResolution)
+                .group_by(ManualResolution.season_start)
+                .order_by(ManualResolution.season_start.desc())
+            )
+        ).all()
         by_season = {str(r.season_start): int(r.n) for r in by_season_rows}
 
         return {
@@ -802,14 +856,14 @@ class DataRepository:
         fantacalcio_id: int,
         season_start: int,
         *,
-        player_fotmob_id: Optional[int] = None,
-        name_fotmob: Optional[str] = None,
-        team_fotmob: Optional[str] = None,
-        canonical_role: Optional[str] = None,
-        ruoli_mantra: Optional[list[str]] = None,
-        ruolo_primario: Optional[str] = None,
-        data_validated: Optional[bool] = None,
-    ) -> Optional[dict]:
+        player_fotmob_id: int | None = None,
+        name_fotmob: str | None = None,
+        team_fotmob: str | None = None,
+        canonical_role: str | None = None,
+        ruoli_mantra: list[str] | None = None,
+        ruolo_primario: str | None = None,
+        data_validated: bool | None = None,
+    ) -> dict | None:
         """Manually update a single row in ``player_id_map`` and optionally
         ``player_mantra_roles``.
 
@@ -847,7 +901,9 @@ class DataRepository:
 
         # player_fotmob_id: -1 means "explicitly unmatched"
         if player_fotmob_id is not None:
-            mapping.player_fotmob_id = None if player_fotmob_id == -1 else player_fotmob_id
+            mapping.player_fotmob_id = (
+                None if player_fotmob_id == -1 else player_fotmob_id
+            )
         if name_fotmob is not None:
             mapping.name_fotmob = name_fotmob
         if team_fotmob is not None:
@@ -906,7 +962,11 @@ class DataRepository:
 
         # If a valid FotMob ID was assigned, record it in the permanent history.
         final_fotmob_id: int | None = mapping.player_fotmob_id
-        if final_fotmob_id is None and player_fotmob_id is not None and player_fotmob_id != -1:
+        if (
+            final_fotmob_id is None
+            and player_fotmob_id is not None
+            and player_fotmob_id != -1
+        ):
             final_fotmob_id = player_fotmob_id
         if final_fotmob_id is not None:
             try:
@@ -926,7 +986,8 @@ class DataRepository:
                 log.warning(
                     "Failed to record manual resolution for "
                     "fantacalcio_id=%d / fotmob_id=%d",
-                    fantacalcio_id, final_fotmob_id,
+                    fantacalcio_id,
+                    final_fotmob_id,
                 )
 
         return mapping.to_dict()
@@ -957,9 +1018,13 @@ class DataRepository:
             row["name_fotmob"] = pim.name_fotmob
             row["team_fotmob"] = pim.team_fotmob
             row["match_method"] = (
-                pim.match_method.value if not isinstance(pim.match_method, str) else pim.match_method
+                pim.match_method.value
+                if not isinstance(pim.match_method, str)
+                else pim.match_method
             )
-            row["confidence"] = float(pim.confidence) if pim.confidence is not None else None
+            row["confidence"] = (
+                float(pim.confidence) if pim.confidence is not None else None
+            )
             out.append(row)
         return out
 
@@ -975,7 +1040,7 @@ class DataRepository:
         return _TEAM_NAME_NORMALISATION.get(name, name)
 
     @staticmethod
-    def _to_optimizer_role(canonical_role: str) -> Optional[str]:
+    def _to_optimizer_role(canonical_role: str) -> str | None:
         """Map a ML canonical role to an optimizer role code (or ``None``)."""
         return _CANONICAL_ROLE_TO_OPTIMIZER.get(canonical_role)
 
@@ -1061,7 +1126,7 @@ class DataRepository:
         pool: list[dict] = []
         for row in rows:
             pq, pim = row[0], row[1]
-            pmr: Optional[PlayerMantraRole] = row[2] if len(row) > 2 else None
+            pmr: PlayerMantraRole | None = row[2] if len(row) > 2 else None
             optimizer_role = self._to_optimizer_role(pq.role)
             if optimizer_role is None:
                 # Unknown / unsupported role (e.g. outdated enum) — skip.
@@ -1080,8 +1145,8 @@ class DataRepository:
                 name = pq.player_name
 
             # ML prediction: prefer predicted_fantavoto, fallback to mean.
-            predicted_score: Optional[float] = None
-            pred: Optional[dict] = None
+            predicted_score: float | None = None
+            pred: dict | None = None
             if pim is not None and pim.player_fotmob_id is not None:
                 pred = predictions_by_id.get(int(pim.player_fotmob_id))
                 if pred is not None:
@@ -1104,7 +1169,7 @@ class DataRepository:
             else:
                 real_team = self._normalise_team(pq.team or "")
 
-            pred_std: Optional[float] = None
+            pred_std: float | None = None
             if pred is not None:
                 raw_std = pred.get("prediction_std")
                 if isinstance(raw_std, (int, float)) and raw_std >= 0:

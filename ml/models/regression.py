@@ -28,20 +28,18 @@ Design notes:
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
+from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import (
-    GradientBoostingRegressor,
     HistGradientBoostingRegressor,
     RandomForestRegressor,
 )
 from sklearn.linear_model import Ridge
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 from sklearn.pipeline import Pipeline
-
-from sklearn.compose import ColumnTransformer
 
 from ..config import MLConfig
 from .base import ModelSpec
@@ -51,6 +49,7 @@ log = logging.getLogger(__name__)
 # ── Try to import XGBoost (optional dependency) ───────────────────────────────
 try:
     from xgboost import XGBRegressor as _XGB
+
     _HAS_XGB = True
 except ImportError:
     _HAS_XGB = False
@@ -58,6 +57,7 @@ except ImportError:
 
 
 # ── Model registry ─────────────────────────────────────────────────────────────
+
 
 def _build_registry(random_seed: int) -> dict[str, ModelSpec]:
     registry: dict[str, ModelSpec] = {
@@ -136,18 +136,20 @@ def _build_registry(random_seed: int) -> dict[str, ModelSpec]:
 
 # ── Result container ──────────────────────────────────────────────────────────
 
+
 @dataclass
 class TrainedModel:
     """A fitted model with its metadata."""
 
     name: str
-    pipeline: Pipeline          # fitted sklearn Pipeline (preprocessor + estimator)
-    feature_names: list[str]    # feature names after preprocessing
-    metrics: dict[str, float]   # evaluation metrics on the test set
+    pipeline: Pipeline  # fitted sklearn Pipeline (preprocessor + estimator)
+    feature_names: list[str]  # feature names after preprocessing
+    metrics: dict[str, float]  # evaluation metrics on the test set
     cv_metrics: dict[str, float] = field(default_factory=dict)  # mean CV metrics
 
 
 # ── Training ──────────────────────────────────────────────────────────────────
+
 
 def _make_full_pipeline(
     preprocessor: ColumnTransformer,
@@ -211,8 +213,7 @@ def train_all_models(
             pipe = search.best_estimator_
             log.info(
                 "  Best params: %s  CV RMSE: %.4f",
-                {k.replace("model__", ""): v
-                 for k, v in search.best_params_.items()},
+                {k.replace("model__", ""): v for k, v in search.best_params_.items()},
                 -search.best_score_,
             )
         else:
@@ -225,6 +226,7 @@ def train_all_models(
 
 
 # ── Multi-target prediction ────────────────────────────────────────────────────
+
 
 @dataclass
 class MultiTargetResult:
@@ -281,8 +283,8 @@ class MultiTargetPredictor:
     ) -> None:
         self.grade_weight = grade_weight
         self.bonus_weight = bonus_weight
-        self._grade_pipeline: Optional[Pipeline] = None
-        self._bonus_pipeline: Optional[Pipeline] = None
+        self._grade_pipeline: Pipeline | None = None
+        self._bonus_pipeline: Pipeline | None = None
 
     @staticmethod
     def derive_targets(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
@@ -306,14 +308,20 @@ class MultiTargetPredictor:
 
         bonus_component = pd.Series(0.0, index=df.index)
         if "goals_per90" in df.columns and "appearances" in df.columns:
-            goals_total = df["goals_per90"] * (df["appearances"].clip(lower=1) / 90.0 * 90.0)
+            goals_total = df["goals_per90"] * (
+                df["appearances"].clip(lower=1) / 90.0 * 90.0
+            )
             bonus_component += goals_total.fillna(0) * 3.0
         if "goal_assist_per90" in df.columns and "appearances" in df.columns:
-            assists_total = df["goal_assist_per90"] * (df["appearances"].clip(lower=1) / 90.0 * 90.0)
+            assists_total = df["goal_assist_per90"] * (
+                df["appearances"].clip(lower=1) / 90.0 * 90.0
+            )
             bonus_component += assists_total.fillna(0) * 1.0
 
         # Normalise bonus component to a per-match scale for comparability
-        appearances = df.get("appearances", pd.Series(30.0, index=df.index)).clip(lower=1)
+        appearances = df.get("appearances", pd.Series(30.0, index=df.index)).clip(
+            lower=1
+        )
         bonus_per_match = (bonus_component / appearances).clip(lower=0.0, upper=5.0)
 
         pure_grade = (fv - bonus_per_match).clip(lower=3.0)
@@ -326,9 +334,9 @@ class MultiTargetPredictor:
         X_train: pd.DataFrame,
         y_pure_grade: pd.Series,
         y_bonus: pd.Series,
-        preprocessor: "ColumnTransformer",
+        preprocessor: ColumnTransformer,
         cfg: MLConfig,
-    ) -> "MultiTargetPredictor":
+    ) -> MultiTargetPredictor:
         """Train both model chains on the provided targets.
 
         Args:
@@ -346,13 +354,21 @@ class MultiTargetPredictor:
         log.info("MultiTargetPredictor: fitting pure_grade chain …")
         grade_pipelines = train_all_models(X_train, y_pure_grade, preprocessor, cfg)
         # Pick best model by lowest MSE on training data (full-data re-fit; no leakage concern)
-        self._grade_pipeline = _pick_best_pipeline(grade_pipelines, X_train, y_pure_grade)
-        log.info("MultiTargetPredictor: grade chain selected '%s'", self._grade_pipeline_name_)
+        self._grade_pipeline = _pick_best_pipeline(
+            grade_pipelines, X_train, y_pure_grade
+        )
+        log.info(
+            "MultiTargetPredictor: grade chain selected '%s'",
+            self._grade_pipeline_name_,
+        )
 
         log.info("MultiTargetPredictor: fitting bonus_probability chain …")
         bonus_pipelines = train_all_models(X_train, y_bonus, clone(preprocessor), cfg)
         self._bonus_pipeline = _pick_best_pipeline(bonus_pipelines, X_train, y_bonus)
-        log.info("MultiTargetPredictor: bonus chain selected '%s'", self._bonus_pipeline_name_)
+        log.info(
+            "MultiTargetPredictor: bonus chain selected '%s'",
+            self._bonus_pipeline_name_,
+        )
 
         return self
 
@@ -366,13 +382,13 @@ class MultiTargetPredictor:
             :class:`MultiTargetResult` with component and combined predictions.
         """
         if self._grade_pipeline is None or self._bonus_pipeline is None:
-            raise RuntimeError("MultiTargetPredictor must be fitted before calling predict()")
+            raise RuntimeError(
+                "MultiTargetPredictor must be fitted before calling predict()"
+            )
 
         grade_pred = self._grade_pipeline.predict(X)
         bonus_pred = self._bonus_pipeline.predict(X)
-        combined = (
-            self.grade_weight * grade_pred + self.bonus_weight * bonus_pred
-        )
+        combined = self.grade_weight * grade_pred + self.bonus_weight * bonus_pred
         return MultiTargetResult(
             pure_grade_pred=grade_pred,
             bonus_probability_pred=bonus_pred,
@@ -386,7 +402,7 @@ class MultiTargetPredictor:
         X_val: pd.DataFrame,
         y_val: pd.Series,
         n_steps: int = 8,
-    ) -> "MultiTargetPredictor":
+    ) -> MultiTargetPredictor:
         """Find the league-optimal grade/bonus weight ratio via grid search.
 
         Generates predictions from both fitted chains on a held-out validation
@@ -439,7 +455,9 @@ class MultiTargetPredictor:
         log.info(
             "MultiTargetPredictor.optimize_weights: "
             "grade_weight=%.4f  bonus_weight=%.4f  (val RMSE=%.4f)",
-            self.grade_weight, self.bonus_weight, best_rmse,
+            self.grade_weight,
+            self.bonus_weight,
+            best_rmse,
         )
         return self
 
@@ -463,7 +481,7 @@ def _pick_best_pipeline(
         The pipeline with the lowest MSE on *X, y*.
     """
     best_mse = float("inf")
-    best_pipe: Optional[Pipeline] = None
+    best_pipe: Pipeline | None = None
     best_pipe_name_ = ""
 
     for name, pipe in pipelines.items():
@@ -488,8 +506,10 @@ def _pick_best_pipeline(
 def _mp_grade_name(self) -> str:
     return getattr(self._grade_pipeline, "_multi_target_name", "unknown")
 
+
 def _mp_bonus_name(self) -> str:
     return getattr(self._bonus_pipeline, "_multi_target_name", "unknown")
+
 
 MultiTargetPredictor._grade_pipeline_name_ = property(_mp_grade_name)  # type: ignore[attr-defined]
 MultiTargetPredictor._bonus_pipeline_name_ = property(_mp_bonus_name)  # type: ignore[attr-defined]

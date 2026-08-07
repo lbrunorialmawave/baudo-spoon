@@ -1,19 +1,18 @@
 """Phase 3 tests: stacking ensemble, calibration, explainability."""
+
 import numpy as np
 import pandas as pd
 import pytest
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import Ridge
-from sklearn.model_selection import TimeSeriesSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import RobustScaler
 
 from ml.domain.predictions import SHAP_TOLERANCE, PredictionExplanation
 from ml.domain.targets import FANTAPUNTI_TOTALI, FANTAVOTO_MEDIO
-from ml.ensemble.stacking import StackingEnsemble, StackingEnsembleResult
+from ml.ensemble.stacking import StackingEnsemble
 from ml.explainability.shap_explainer import ShapExplainer
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -23,13 +22,15 @@ def synthetic_regression_data():
     """4 seasons × 25 players = 100 rows, 5 numeric features."""
     np.random.seed(42)
     n = 100
-    X = pd.DataFrame({
-        "f1": np.random.normal(0, 1, n),
-        "f2": np.random.normal(0, 1, n),
-        "f3": np.random.uniform(0, 1, n),
-        "f4": np.random.uniform(-1, 1, n),
-        "season_start": np.tile([2021, 2022, 2023, 2024], 25),
-    })
+    X = pd.DataFrame(
+        {
+            "f1": np.random.normal(0, 1, n),
+            "f2": np.random.normal(0, 1, n),
+            "f3": np.random.uniform(0, 1, n),
+            "f4": np.random.uniform(-1, 1, n),
+            "season_start": np.tile([2021, 2022, 2023, 2024], 25),
+        }
+    )
     y = 6.0 + 0.5 * X["f1"] - 0.3 * X["f2"] + np.random.normal(0, 0.2, n)
     y = y.clip(1.0, 10.0)
     return X[["f1", "f2", "f3", "f4"]], pd.Series(y.values, name="fantavoto_medio")
@@ -39,10 +40,16 @@ def synthetic_regression_data():
 def simple_preprocessor():
     return ColumnTransformer(
         transformers=[
-            ("numeric", Pipeline([
-                ("imputer", SimpleImputer(strategy="median")),
-                ("scaler", RobustScaler()),
-            ]), ["f1", "f2", "f3", "f4"]),
+            (
+                "numeric",
+                Pipeline(
+                    [
+                        ("imputer", SimpleImputer(strategy="median")),
+                        ("scaler", RobustScaler()),
+                    ]
+                ),
+                ["f1", "f2", "f3", "f4"],
+            ),
         ],
         remainder="drop",
     )
@@ -91,7 +98,9 @@ class TestTimeSeriesSplitEnforced:
         result = ens.predict(X)
         # Sanity check: predictions should be within reasonable fantavoto range
         assert result.predictions.min() > 0, "Predictions should be positive"
-        assert result.predictions.max() < 15, "Predictions should be < 15 (no leakage artifacts)"
+        assert result.predictions.max() < 15, (
+            "Predictions should be < 15 (no leakage artifacts)"
+        )
 
 
 # ── Test: StackingEnsemble fit/predict ───────────────────────────────────────
@@ -117,24 +126,30 @@ class TestStackingEnsemble:
         ens = StackingEnsemble(FANTAVOTO_MEDIO, n_splits=3, random_seed=42)
         ens.fit(X, y, simple_preprocessor)
         result = ens.predict(X)
-        assert (result.prediction_interval_low <= result.prediction_interval_high).all(), (
-            "prediction_interval_low must always be <= prediction_interval_high"
-        )
+        assert (
+            result.prediction_interval_low <= result.prediction_interval_high
+        ).all(), "prediction_interval_low must always be <= prediction_interval_high"
 
-    def test_variance_non_negative(self, synthetic_regression_data, simple_preprocessor):
+    def test_variance_non_negative(
+        self, synthetic_regression_data, simple_preprocessor
+    ):
         X, y = synthetic_regression_data
         ens = StackingEnsemble(FANTAVOTO_MEDIO, n_splits=3, random_seed=42)
         ens.fit(X, y, simple_preprocessor)
         result = ens.predict(X)
         assert (result.variance >= 0).all()
 
-    def test_predict_before_fit_raises(self, synthetic_regression_data, simple_preprocessor):
+    def test_predict_before_fit_raises(
+        self, synthetic_regression_data, simple_preprocessor
+    ):
         X, _ = synthetic_regression_data
         ens = StackingEnsemble(FANTAVOTO_MEDIO, n_splits=3)
         with pytest.raises(RuntimeError, match="fitted"):
             ens.predict(X)
 
-    def test_base_predictions_dict_keys(self, synthetic_regression_data, simple_preprocessor):
+    def test_base_predictions_dict_keys(
+        self, synthetic_regression_data, simple_preprocessor
+    ):
         X, y = synthetic_regression_data
         ens = StackingEnsemble(FANTAVOTO_MEDIO, n_splits=3, random_seed=42)
         ens.fit(X, y, simple_preprocessor)
@@ -143,7 +158,9 @@ class TestStackingEnsemble:
         assert "hist_gbm" in result.base_predictions
         assert len(result.base_predictions) >= 2
 
-    def test_target_transform_applied(self, synthetic_regression_data, simple_preprocessor):
+    def test_target_transform_applied(
+        self, synthetic_regression_data, simple_preprocessor
+    ):
         """TargetSpec with log1p transform: ensemble should apply it and inverse."""
         X, y = synthetic_regression_data
         y_total = (y * 30).clip(lower=0.1)  # simulate fantapunti_totali
@@ -162,10 +179,12 @@ class TestShapExplainer:
         self, synthetic_regression_data, simple_preprocessor
     ):
         X, y = synthetic_regression_data
-        pipe = Pipeline([
-            ("preprocessor", simple_preprocessor),
-            ("model", Ridge(alpha=1.0)),
-        ])
+        pipe = Pipeline(
+            [
+                ("preprocessor", simple_preprocessor),
+                ("model", Ridge(alpha=1.0)),
+            ]
+        )
         pipe.fit(X, y)
         feature_names = list(pipe.named_steps["preprocessor"].get_feature_names_out())
 
@@ -185,15 +204,17 @@ class TestShapExplainer:
     ):
         """When SHAP is installed, Ridge explanations should be coherent."""
         try:
-            import shap  # noqa: F401
+            import shap  # noqa: F401 — import IS the check (verifies it actually loads, not just findable)
         except ImportError:
             pytest.skip("shap not installed")
 
         X, y = synthetic_regression_data
-        pipe = Pipeline([
-            ("preprocessor", simple_preprocessor),
-            ("model", Ridge(alpha=1.0)),
-        ])
+        pipe = Pipeline(
+            [
+                ("preprocessor", simple_preprocessor),
+                ("model", Ridge(alpha=1.0)),
+            ]
+        )
         pipe.fit(X, y)
         feature_names = list(pipe.named_steps["preprocessor"].get_feature_names_out())
 
@@ -218,13 +239,26 @@ class TestShapExplainer:
         # We test the fallback path by not calling fit_explainer
         from sklearn.linear_model import Ridge as _Ridge
 
-        pipe = Pipeline([
-            ("preprocessor", ColumnTransformer(
-                [("n", Pipeline([("i", SimpleImputer()), ("s", RobustScaler())]), ["f1"])],
-                remainder="drop",
-            )),
-            ("model", _Ridge()),
-        ])
+        pipe = Pipeline(
+            [
+                (
+                    "preprocessor",
+                    ColumnTransformer(
+                        [
+                            (
+                                "n",
+                                Pipeline(
+                                    [("i", SimpleImputer()), ("s", RobustScaler())]
+                                ),
+                                ["f1"],
+                            )
+                        ],
+                        remainder="drop",
+                    ),
+                ),
+                ("model", _Ridge()),
+            ]
+        )
         X = pd.DataFrame({"f1": [1.0, 2.0, 3.0]})
         y = pd.Series([6.0, 6.5, 7.0])
         pipe.fit(X, y)
@@ -272,9 +306,12 @@ class TestShapExplainer:
 
 
 class TestOptunaTuner:
-    def test_tune_ridge_reduces_rmse(self, synthetic_regression_data, simple_preprocessor):
+    def test_tune_ridge_reduces_rmse(
+        self, synthetic_regression_data, simple_preprocessor
+    ):
         try:
-            import optuna  # noqa: F401
+            import optuna  # noqa: F401 — import IS the check (verifies it actually loads, not just findable)
+
             from ml.calibration.optuna_tuner import OptunaTuner
         except ImportError:
             pytest.skip("optuna not installed")

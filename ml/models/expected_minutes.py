@@ -15,17 +15,19 @@ which is one of the inputs to the Phase 3 stacking ensemble.
 Validation: TimeSeriesSplit walk-forward backtest (own metrics, separate from
 the main pipeline's backtest). Never shares CV folds with the main ensemble.
 """
+
 from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
-from typing import Optional
+
 import numpy as np
 import pandas as pd
+from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.impute import SimpleImputer
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import RobustScaler
 
 log = logging.getLogger(__name__)
@@ -34,14 +36,14 @@ log = logging.getLogger(__name__)
 
 # All column names after canonicalize_columns() has been applied.
 _FEATURE_COLS: list[str] = [
-    "mins_played",          # lagged (previous season) — set by _build_features()
-    "appearances",          # lagged appearances
-    "age",                  # player age at season start (if available)
-    "absence_ratio",        # fraction of possible minutes missed (derived)
+    "mins_played",  # lagged (previous season) — set by _build_features()
+    "appearances",  # lagged appearances
+    "age",  # player age at season start (if available)
+    "absence_ratio",  # fraction of possible minutes missed (derived)
     "team_strength_score",  # team context
     "is_top_team",
-    "role_code",            # ordinal role encoding
-    "season_idx",           # temporal trend
+    "role_code",  # ordinal role encoding
+    "season_idx",  # temporal trend
 ]
 
 # Minimum training rows required to fit the model.
@@ -51,10 +53,11 @@ _MIN_TRAIN_ROWS: int = 30
 @dataclass(frozen=True)
 class ExpectedMinutesResult:
     """Output for a single player-season prediction."""
+
     player_fotmob_id: str
     season_start: int
     expected_minutes: float
-    confidence: float   # in [0, 1]; derived from prediction interval width
+    confidence: float  # in [0, 1]; derived from prediction interval width
 
 
 class ExpectedMinutesModel:
@@ -73,7 +76,7 @@ class ExpectedMinutesModel:
 
     def __init__(self, random_seed: int = 42) -> None:
         self.random_seed = random_seed
-        self._pipeline: Optional[Pipeline] = None
+        self._pipeline: Pipeline | None = None
         self._feature_cols_used: list[str] = []
 
     # ── Feature construction ──────────────────────────────────────────────────
@@ -102,7 +105,7 @@ class ExpectedMinutesModel:
 
         # Absence ratio (fraction of possible minutes missed in previous season)
         if "mins_played_lag1" in df.columns and "appearances_lag1" in df.columns:
-            possible = (df["appearances_lag1"].clip(lower=1) * 90.0)
+            possible = df["appearances_lag1"].clip(lower=1) * 90.0
             df["absence_ratio"] = (
                 1.0 - (df["mins_played_lag1"].clip(lower=0) / possible.clip(lower=1))
             ).clip(0.0, 1.0)
@@ -115,8 +118,10 @@ class ExpectedMinutesModel:
     def _resolve_feature_cols(df: pd.DataFrame) -> list[str]:
         """Return the subset of _FEATURE_COLS (+ lagged variants) present in df."""
         lag_variants = [
-            "mins_played_lag1", "appearances_lag1",
-            "team_strength_score_lag1", "is_top_team_lag1",
+            "mins_played_lag1",
+            "appearances_lag1",
+            "team_strength_score_lag1",
+            "is_top_team_lag1",
         ]
         candidates = _FEATURE_COLS + lag_variants
         # Prefer lagged versions when both exist
@@ -137,10 +142,12 @@ class ExpectedMinutesModel:
             transformers=[
                 (
                     "numeric",
-                    Pipeline([
-                        ("imputer", SimpleImputer(strategy="median")),
-                        ("scaler", RobustScaler()),
-                    ]),
+                    Pipeline(
+                        [
+                            ("imputer", SimpleImputer(strategy="median")),
+                            ("scaler", RobustScaler()),
+                        ]
+                    ),
                     feature_cols,
                 )
             ],
@@ -149,7 +156,7 @@ class ExpectedMinutesModel:
 
     # ── Fit / predict ─────────────────────────────────────────────────────────
 
-    def fit(self, df: pd.DataFrame) -> "ExpectedMinutesModel":
+    def fit(self, df: pd.DataFrame) -> ExpectedMinutesModel:
         """Train on historical player-season data.
 
         Target: mins_played (current season).
@@ -166,7 +173,9 @@ class ExpectedMinutesModel:
         feature_cols = self._resolve_feature_cols(df_feat)
 
         if "mins_played" not in df_feat.columns:
-            raise ValueError("ExpectedMinutesModel.fit requires 'mins_played' target column.")
+            raise ValueError(
+                "ExpectedMinutesModel.fit requires 'mins_played' target column."
+            )
 
         # Drop rows without target or without any feature data
         valid_mask = df_feat["mins_played"].notna()
@@ -188,15 +197,18 @@ class ExpectedMinutesModel:
             max_leaf_nodes=15,
             random_state=self.random_seed,
         )
-        self._pipeline = Pipeline([
-            ("preprocessor", preprocessor),
-            ("model", estimator),
-        ])
+        self._pipeline = Pipeline(
+            [
+                ("preprocessor", preprocessor),
+                ("model", estimator),
+            ]
+        )
         self._pipeline.fit(X, y)
         self._feature_cols_used = feature_cols
         log.info(
             "ExpectedMinutesModel fitted on %d rows, %d features.",
-            len(df_feat), len(feature_cols),
+            len(df_feat),
+            len(feature_cols),
         )
         return self
 
@@ -227,12 +239,14 @@ class ExpectedMinutesModel:
 
         results: list[ExpectedMinutesResult] = []
         for i, (_, row) in enumerate(df_feat.iterrows()):
-            results.append(ExpectedMinutesResult(
-                player_fotmob_id=str(row.get("player_fotmob_id", "")),
-                season_start=int(row.get("season_start", 0)),
-                expected_minutes=float(raw_pred[i]),
-                confidence=float(non_null_frac[i]),
-            ))
+            results.append(
+                ExpectedMinutesResult(
+                    player_fotmob_id=str(row.get("player_fotmob_id", "")),
+                    season_start=int(row.get("season_start", 0)),
+                    expected_minutes=float(raw_pred[i]),
+                    confidence=float(non_null_frac[i]),
+                )
+            )
         return results
 
     # ── Backtest ──────────────────────────────────────────────────────────────
@@ -266,10 +280,14 @@ class ExpectedMinutesModel:
 
         if len(df_feat) < _MIN_TRAIN_ROWS * 2:
             log.warning(
-                "Too few rows (%d) for meaningful backtest; "
-                "returning empty metrics.", len(df_feat)
+                "Too few rows (%d) for meaningful backtest; returning empty metrics.",
+                len(df_feat),
             )
-            return {"mean_rmse": float("nan"), "mean_mae": float("nan"), "season_metrics": []}
+            return {
+                "mean_rmse": float("nan"),
+                "mean_mae": float("nan"),
+                "season_metrics": [],
+            }
 
         X = df_feat[feature_cols]
         y = df_feat["mins_played"].clip(lower=0.0).values
@@ -284,17 +302,28 @@ class ExpectedMinutesModel:
             y_train, y_test = y[train_idx], y[test_idx]
 
             if len(X_train) < _MIN_TRAIN_ROWS:
-                log.debug("Fold %d: too few training rows (%d); skipping.", fold_idx, len(X_train))
+                log.debug(
+                    "Fold %d: too few training rows (%d); skipping.",
+                    fold_idx,
+                    len(X_train),
+                )
                 continue
 
             preprocessor = self._build_preprocessor(feature_cols)
-            pipe = Pipeline([
-                ("preprocessor", preprocessor),
-                ("model", HistGradientBoostingRegressor(
-                    max_iter=200, learning_rate=0.05,
-                    max_leaf_nodes=15, random_state=self.random_seed,
-                )),
-            ])
+            pipe = Pipeline(
+                [
+                    ("preprocessor", preprocessor),
+                    (
+                        "model",
+                        HistGradientBoostingRegressor(
+                            max_iter=200,
+                            learning_rate=0.05,
+                            max_leaf_nodes=15,
+                            random_state=self.random_seed,
+                        ),
+                    ),
+                ]
+            )
             pipe.fit(X_train, y_train)
             preds = pipe.predict(X_test).clip(min=0.0)
 
@@ -304,16 +333,20 @@ class ExpectedMinutesModel:
             maes.append(mae)
 
             test_seasons = df_feat.iloc[test_idx]["season_start"].unique().tolist()
-            season_metrics.append({
-                "fold": fold_idx,
-                "test_seasons": test_seasons,
-                "n_test": len(test_idx),
-                "rmse": rmse,
-                "mae": mae,
-            })
+            season_metrics.append(
+                {
+                    "fold": fold_idx,
+                    "test_seasons": test_seasons,
+                    "n_test": len(test_idx),
+                    "rmse": rmse,
+                    "mae": mae,
+                }
+            )
             log.info(
                 "ExpectedMinutesModel backtest fold %d: RMSE=%.1f, MAE=%.1f",
-                fold_idx, rmse, mae,
+                fold_idx,
+                rmse,
+                mae,
             )
 
         return {

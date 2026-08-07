@@ -65,7 +65,9 @@ def build_preprocessor(
     """
     # Split numeric features into event-based (default) and environmental
     if environmental_features:
-        event_features = [f for f in numeric_features if f not in environmental_features]
+        event_features = [
+            f for f in numeric_features if f not in environmental_features
+        ]
     else:
         event_features = list(numeric_features)
 
@@ -105,9 +107,7 @@ def build_preprocessor(
                 ),
             ]
         )
-        transformers.append(
-            ("categorical", categorical_pipeline, categorical_features)
-        )
+        transformers.append(("categorical", categorical_pipeline, categorical_features))
 
     return ColumnTransformer(transformers=transformers, remainder="drop")
 

@@ -8,8 +8,8 @@ from typing import Annotated
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
+from fastapi.security import HTTPBearer
+from jose import jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.exc import IntegrityError
@@ -58,7 +58,9 @@ class AccessTokenResponse(BaseModel):
 
 
 def _create_access_token(user_id: str, email: str, role: str) -> str:
-    expire = datetime.now(UTC) + timedelta(minutes=settings.jwt_access_token_expire_minutes)
+    expire = datetime.now(UTC) + timedelta(
+        minutes=settings.jwt_access_token_expire_minutes
+    )
     return jwt.encode(
         {"sub": user_id, "email": email, "role": role, "exp": expire},
         settings.jwt_secret,
@@ -81,7 +83,9 @@ async def _issue_tokens(
 
     opaque = secrets.token_urlsafe(32)
     token_hash = _hash_token(opaque)
-    expires_at = datetime.now(UTC) + timedelta(days=settings.jwt_refresh_token_expire_days)
+    expires_at = datetime.now(UTC) + timedelta(
+        days=settings.jwt_refresh_token_expire_days
+    )
 
     await db.execute(
         sa.text(
@@ -172,11 +176,13 @@ async def refresh(
     if not record:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
-    access_token = _create_access_token(str(record["user_id"]), record["email"], record["role"])
+    access_token = _create_access_token(
+        str(record["user_id"]), record["email"], record["role"]
+    )
     return AccessTokenResponse(access_token=access_token)
 
 
-@router.post("/logout", status_code=204)
+@router.post("/logout", status_code=204, response_model=None)
 async def logout(
     body: RefreshRequest,
     db: Annotated[AsyncSession, Depends(get_db)],

@@ -6,13 +6,14 @@ Swap config files to compare ensemble versions without code changes.
 # ponytail: weights normalized at runtime; upgrade to per-source weights per
 # role when >3 sources are live and per-role calibration data exists.
 """
+
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
 from pathlib import Path
 
-__all__ = ["EnsembleWeightConfig", "load_config", "DEFAULT_CONFIG"]
+__all__ = ["DEFAULT_CONFIG", "EnsembleWeightConfig", "load_config"]
 
 
 @dataclass(frozen=True)
@@ -22,7 +23,7 @@ class EnsembleWeightConfig:
     bookmaker_weight: float = 0.3
     expert_weight: float = 0.2
 
-    def normalized(self) -> "EnsembleWeightConfig":
+    def normalized(self) -> EnsembleWeightConfig:
         """Return a copy with weights summing to 1.0."""
         total = self.ml_model_weight + self.bookmaker_weight + self.expert_weight
         if total <= 0:

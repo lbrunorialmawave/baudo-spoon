@@ -25,9 +25,7 @@ Assumptions:
 """
 
 import logging
-from typing import Optional
 
-import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.feature_selection import RFE
@@ -43,27 +41,39 @@ log = logging.getLogger(__name__)
 # All names must match canonical output of stat_names.canonicalize_columns().
 _PER_90_CANDIDATES = [
     # Attacking
-    "goals", "goal_assist",
-    "total_scoring_att", "ontarget_scoring_att",
-    "big_chance_created", "big_chance_missed",
+    "goals",
+    "goal_assist",
+    "total_scoring_att",
+    "ontarget_scoring_att",
+    "big_chance_created",
+    "big_chance_missed",
     "total_att_assist",
     "won_contest",
     # Set pieces / disciplinary
-    "yellow_card", "red_card",
-    "penalty_won", "penalty_conceded",
+    "yellow_card",
+    "red_card",
+    "penalty_won",
+    "penalty_conceded",
     # Defensive
-    "outfielder_block", "interception",
-    "total_tackle", "effective_clearance",
+    "outfielder_block",
+    "interception",
+    "total_tackle",
+    "effective_clearance",
     "accurate_pass",
     "fouls",
     # Goalkeeper
-    "saves", "_goals_prevented", "goals_conceded", "clean_sheet",
+    "saves",
+    "_goals_prevented",
+    "goals_conceded",
+    "clean_sheet",
 ]
 
 # Stats used for rolling/delta trend features.
 _TREND_CANDIDATES = [
-    "goals_per90", "goal_assist_per90",
-    "total_scoring_att_per90", "ontarget_scoring_att_per90",
+    "goals_per90",
+    "goal_assist_per90",
+    "total_scoring_att_per90",
+    "ontarget_scoring_att_per90",
     "yellow_card_per90",
     "won_contest_per90",
     "total_att_assist_per90",
@@ -116,14 +126,15 @@ _ENVIRONMENTAL_STAT_COLS: list[str] = [
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _get_minutes(df: pd.DataFrame) -> Optional[pd.Series]:
+
+def _get_minutes(df: pd.DataFrame) -> pd.Series | None:
     for c in ("mins_played", "minutesPlayed"):
         if c in df.columns:
             return pd.to_numeric(df[c], errors="coerce").clip(lower=1)
     return None
 
 
-def _get_appearances(df: pd.DataFrame) -> Optional[pd.Series]:
+def _get_appearances(df: pd.DataFrame) -> pd.Series | None:
     for c in ("appearances", "matchesPlayed"):
         if c in df.columns:
             return pd.to_numeric(df[c], errors="coerce").clip(lower=1)
@@ -137,17 +148,15 @@ def _denominator_per90(df: pd.DataFrame) -> pd.Series:
         return (mins / 90.0).clip(lower=1)
     apps = _get_appearances(df)
     if apps is not None:
-        log.warning(
-            "minutesPlayed not found; using appearances as per-90 denominator."
-        )
+        log.warning("minutesPlayed not found; using appearances as per-90 denominator.")
         return apps
     raise ValueError(
-        "Neither 'mins_played' nor 'appearances' found. "
-        "Cannot compute per-90 features."
+        "Neither 'mins_played' nor 'appearances' found. Cannot compute per-90 features."
     )
 
 
 # ── Differentiated imputation ──────────────────────────────────────────────────
+
 
 def impute_environmental_features(df: pd.DataFrame) -> pd.DataFrame:
     """Fill environmental (contextual) stat NaNs with their per-column median.
@@ -167,11 +176,14 @@ def impute_environmental_features(df: pd.DataFrame) -> pd.DataFrame:
         if col in df.columns and df[col].isna().any():
             med = df[col].median()
             df[col] = df[col].fillna(med)
-            log.debug("impute_environmental_features: filled '%s' with median %.4f", col, med)
+            log.debug(
+                "impute_environmental_features: filled '%s' with median %.4f", col, med
+            )
     return df
 
 
 # ── Per-90 normalisation ──────────────────────────────────────────────────────
+
 
 def add_per90_features(df: pd.DataFrame) -> pd.DataFrame:
     """Append *_per90 columns for each stat in ``_PER_90_CANDIDATES``.
@@ -191,6 +203,7 @@ def add_per90_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ── Rolling / trend features ──────────────────────────────────────────────────
+
 
 class RollingFeatureTransformer(BaseEstimator, TransformerMixin):
     """Sklearn-compatible transformer for rolling temporal features.
@@ -219,7 +232,7 @@ class RollingFeatureTransformer(BaseEstimator, TransformerMixin):
         self.player_col = player_col
         self.season_col = season_col
 
-    def fit(self, X: pd.DataFrame, y=None) -> "RollingFeatureTransformer":  # noqa: ARG002
+    def fit(self, X: pd.DataFrame, y=None) -> RollingFeatureTransformer:
         """No-op: this transformer has no fit-time state."""
         return self
 
@@ -259,7 +272,8 @@ class RollingFeatureTransformer(BaseEstimator, TransformerMixin):
 
         log.info(
             "RollingFeatureTransformer: %d rolling + %d delta features.",
-            rolling_created, delta_created,
+            rolling_created,
+            delta_created,
         )
         return df
 
@@ -278,6 +292,7 @@ def add_trend_features(df: pd.DataFrame, window: int = 2) -> pd.DataFrame:
 
 
 # ── Schedule-Adjusted Performance ─────────────────────────────────────────────
+
 
 class OpponentStrengthAdjuster(BaseEstimator, TransformerMixin):
     """Weight per-90 stats by the mean opponent schedule strength.
@@ -305,7 +320,7 @@ class OpponentStrengthAdjuster(BaseEstimator, TransformerMixin):
     def __init__(self, group_cols: list[str] | None = None) -> None:
         self.group_cols = group_cols or ["season_start", "league_name"]
 
-    def fit(self, X: pd.DataFrame, y=None) -> "OpponentStrengthAdjuster":  # noqa: ARG002
+    def fit(self, X: pd.DataFrame, y=None) -> OpponentStrengthAdjuster:
         """Compute per-(league, season) rank aggregates from training data."""
         group_cols = self.group_cols
         if "team_rank_norm" not in X.columns or not all(
@@ -320,9 +335,8 @@ class OpponentStrengthAdjuster(BaseEstimator, TransformerMixin):
 
         # Deduplicate to one row per (team, season) before aggregation so that
         # teams with many players don't inflate the league totals.
-        dedup = (
-            X[group_cols + ["team_fotmob_id", "team_rank_norm"]]
-            .drop_duplicates(subset=group_cols + ["team_fotmob_id"])
+        dedup = X[group_cols + ["team_fotmob_id", "team_rank_norm"]].drop_duplicates(
+            subset=group_cols + ["team_fotmob_id"]
         )
         self.league_stats_ = (
             dedup.groupby(group_cols)["team_rank_norm"]
@@ -355,9 +369,8 @@ class OpponentStrengthAdjuster(BaseEstimator, TransformerMixin):
         opp_mean = (out["league_sum"] - own_rank) / n_minus_1
 
         # Normalise so that average-schedule → weight 1.0
-        out["sap_weight"] = (
-            (opp_mean / out["league_mean"].clip(lower=1e-6))
-            .clip(lower=0.1, upper=10.0)
+        out["sap_weight"] = (opp_mean / out["league_mean"].clip(lower=1e-6)).clip(
+            lower=0.1, upper=10.0
         )
 
         sap_cols = [c for c in _SAP_STAT_COLS if c in out.columns]
@@ -368,9 +381,7 @@ class OpponentStrengthAdjuster(BaseEstimator, TransformerMixin):
             columns=["league_sum", "n_teams", "league_mean", "sap_weight"],
             errors="ignore",
         )
-        log.info(
-            "OpponentStrengthAdjuster: created %d SAP features.", len(sap_cols)
-        )
+        log.info("OpponentStrengthAdjuster: created %d SAP features.", len(sap_cols))
         return out
 
 
@@ -379,6 +390,7 @@ def add_mantra_derived(df: pd.DataFrame) -> pd.DataFrame:
     if "mantra_vote_avg" not in df.columns:
         return df
     from .mantra_features import add_mantra_derived_features
+
     return add_mantra_derived_features(df)
 
 
@@ -391,12 +403,13 @@ def add_opponent_strength_features(df: pd.DataFrame) -> pd.DataFrame:
     try:
         adjuster = OpponentStrengthAdjuster()
         return adjuster.fit(df).transform(df)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.warning("SAP feature engineering failed: %s — skipping.", exc)
         return df.copy()
 
 
 # ── Outlier handling ──────────────────────────────────────────────────────────
+
 
 def cap_outliers(
     df: pd.DataFrame,
@@ -417,6 +430,7 @@ def cap_outliers(
 
 # ── Role encoding ─────────────────────────────────────────────────────────────
 
+
 def add_role_encoding(df: pd.DataFrame) -> pd.DataFrame:
     """Add ``role_code`` ordinal column from ``canonical_role``.
 
@@ -431,16 +445,12 @@ def add_role_encoding(df: pd.DataFrame) -> pd.DataFrame:
         df["role_code"] = 3
         return df
 
-    df["role_code"] = (
-        df["canonical_role"]
-        .map(_ROLE_ORDINAL)
-        .fillna(3)
-        .astype(int)
-    )
+    df["role_code"] = df["canonical_role"].map(_ROLE_ORDINAL).fillna(3).astype(int)
     return df
 
 
 # ── Season index ──────────────────────────────────────────────────────────────
+
 
 def add_season_index(df: pd.DataFrame) -> pd.DataFrame:
     """Add ``season_idx`` (0-based ordinal of season_start, ascending).
@@ -455,6 +465,7 @@ def add_season_index(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ── Master transform ──────────────────────────────────────────────────────────
+
 
 def engineer_features(
     df: pd.DataFrame,
@@ -503,8 +514,14 @@ def engineer_features(
 
 # Non-feature columns that must be excluded from the model input matrix.
 _META_COLS = {
-    "player_fotmob_id", "player_name", "team_fotmob_id", "team_name",
-    "season_start", "season_label", "league_name", "season_idx",
+    "player_fotmob_id",
+    "player_name",
+    "team_fotmob_id",
+    "team_name",
+    "season_start",
+    "season_label",
+    "league_name",
+    "season_idx",
     "fantavoto_medio",
     # Fantacalcio quotation raw inputs are NOT meta (they are used as
     # features) but the diagnostic `match_method` column is metadata
@@ -524,36 +541,54 @@ NUMERIC_FEATURE_CANDIDATES: list[str] = [
     # ── Role ─────────────────────────────────────────────────────────────────
     "role_code",
     # ── Per-90 attacking ─────────────────────────────────────────────────────
-    "goals_per90", "goal_assist_per90",
-    "total_scoring_att_per90", "ontarget_scoring_att_per90",
-    "big_chance_created_per90", "big_chance_missed_per90",
+    "goals_per90",
+    "goal_assist_per90",
+    "total_scoring_att_per90",
+    "ontarget_scoring_att_per90",
+    "big_chance_created_per90",
+    "big_chance_missed_per90",
     "total_att_assist_per90",
     "won_contest_per90",
     # ── Per-90 disciplinary ───────────────────────────────────────────────────
-    "yellow_card_per90", "red_card_per90",
-    "penalty_scored_per90", "penalty_missed_per90",
+    "yellow_card_per90",
+    "red_card_per90",
+    "penalty_scored_per90",
+    "penalty_missed_per90",
     "own_goals_per90",
     # ── Per-90 defensive ─────────────────────────────────────────────────────
-    "total_tackle_per90", "interception_per90",
-    "effective_clearance_per90", "outfielder_block_per90",
+    "total_tackle_per90",
+    "interception_per90",
+    "effective_clearance_per90",
+    "outfielder_block_per90",
     # ── Per-90 goalkeeper ────────────────────────────────────────────────────
-    "saves_per90", "_goals_prevented_per90",
-    "goals_conceded_per90", "clean_sheet_per90",
+    "saves_per90",
+    "_goals_prevented_per90",
+    "goals_conceded_per90",
+    "clean_sheet_per90",
     # ── Schedule-adjusted performance (SAP) ──────────────────────────────────
-    "goals_per90_sap", "goal_assist_per90_sap",
-    "total_scoring_att_per90_sap", "ontarget_scoring_att_per90_sap",
-    "saves_per90_sap", "_goals_prevented_per90_sap",
+    "goals_per90_sap",
+    "goal_assist_per90_sap",
+    "total_scoring_att_per90_sap",
+    "ontarget_scoring_att_per90_sap",
+    "saves_per90_sap",
+    "_goals_prevented_per90_sap",
     # ── Team context ──────────────────────────────────────────────────────────
-    "team_strength_score", "is_top_team", "team_rank_norm",
+    "team_strength_score",
+    "is_top_team",
+    "team_rank_norm",
     # ── Season / temporal ─────────────────────────────────────────────────────
     "season_idx",
     # ── Raw counts ────────────────────────────────────────────────────────────
-    "appearances", "mins_played",
+    "appearances",
+    "mins_played",
     # ── Trend features (NaN when only 1 season available) ────────────────────
-    "goals_per90_roll2", "goal_assist_per90_roll2",
-    "total_scoring_att_per90_roll2", "saves_per90_roll2",
+    "goals_per90_roll2",
+    "goal_assist_per90_roll2",
+    "total_scoring_att_per90_roll2",
+    "saves_per90_roll2",
     "_goals_prevented_per90_roll2",
-    "goals_per90_delta1", "goal_assist_per90_delta1",
+    "goals_per90_delta1",
+    "goal_assist_per90_delta1",
     "yellow_card_per90_delta1",
     # ── Fantacalcio market features (priority order) ─────────────────────────
     # 1) Normalised current valuation — direct share-of-budget signal.
@@ -586,21 +621,21 @@ def select_features(df: pd.DataFrame) -> tuple[list[str], list[str]]:
     at least one non-NaN value.
     """
     numeric = [
-        c for c in NUMERIC_FEATURE_CANDIDATES
-        if c in df.columns and df[c].notna().any()
+        c for c in NUMERIC_FEATURE_CANDIDATES if c in df.columns and df[c].notna().any()
     ]
     categorical = [
-        c for c in CATEGORICAL_FEATURES
-        if c in df.columns and df[c].notna().any()
+        c for c in CATEGORICAL_FEATURES if c in df.columns and df[c].notna().any()
     ]
     log.info(
         "Feature selection: %d numeric + %d categorical features.",
-        len(numeric), len(categorical),
+        len(numeric),
+        len(categorical),
     )
     return numeric, categorical
 
 
 # ── Recursive Feature Elimination ─────────────────────────────────────────────
+
 
 def select_features_rfe(
     X_train: pd.DataFrame,
@@ -633,14 +668,15 @@ def select_features_rfe(
         subset of *numeric_features*.
     """
     available = [
-        f for f in numeric_features
-        if f in X_train.columns and X_train[f].notna().any()
+        f for f in numeric_features if f in X_train.columns and X_train[f].notna().any()
     ]
     if len(available) < 4:
-        log.debug("select_features_rfe: too few features (%d); skipping RFE.", len(available))
+        log.debug(
+            "select_features_rfe: too few features (%d); skipping RFE.", len(available)
+        )
         return available
 
-    n_to_keep = max(1, int(round(len(available) * n_features_fraction)))
+    n_to_keep = max(1, round(len(available) * n_features_fraction))
     if n_to_keep >= len(available):
         return available
 
@@ -662,6 +698,8 @@ def select_features_rfe(
     selected = [f for f, support in zip(available, rfe.support_) if support]
     log.info(
         "RFE: %d → %d numeric features retained (fraction=%.2f).",
-        len(available), len(selected), n_features_fraction,
+        len(available),
+        len(selected),
+        n_features_fraction,
     )
     return selected

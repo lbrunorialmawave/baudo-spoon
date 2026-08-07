@@ -17,15 +17,25 @@ from ml.auction.completion_probability import (
     estimate_all_completion_probabilities,
     estimate_participant_completion_probability,
 )
-from ml.auction.models import AlternativesConfig, AuctionConfig, ParticipantSetup, ValuationMode
-from ml.auction.orchestrator import get_auction_summary, initialize_auction, record_assignment
+from ml.auction.models import (
+    AlternativesConfig,
+    AuctionConfig,
+    ParticipantSetup,
+)
+from ml.auction.orchestrator import (
+    get_auction_summary,
+    initialize_auction,
+    record_assignment,
+)
 from ml.auction.var import VarEngine
 from ml.optimizer.models import Player
 
 
 def _ps(n: int = 2, budget: int = 500) -> list[ParticipantSetup]:
     return [
-        ParticipantSetup(participant_id=f"u{i}", display_name=f"U{i}", budget_initial=budget)
+        ParticipantSetup(
+            participant_id=f"u{i}", display_name=f"U{i}", budget_initial=budget
+        )
         for i in range(1, n + 1)
     ]
 
@@ -48,7 +58,9 @@ def _p(pid: str, role: str, cost: int = 10, score: float = 6.0, **kw: object) ->
 
 
 def test_completion_probability_full_roster_is_one() -> None:
-    cfg = AuctionConfig(num_participants=2, role_quotas={"P": 1, "D": 1, "C": 1, "A": 1})
+    cfg = AuctionConfig(
+        num_participants=2, role_quotas={"P": 1, "D": 1, "C": 1, "A": 1}
+    )
     pool = [_p("p1", "P"), _p("d1", "D"), _p("c1", "C"), _p("a1", "A")]
     state = initialize_auction(_ps(2, budget=100), cfg, pool)
     # Fill all slots for u1
@@ -125,7 +137,9 @@ def test_pareto_diversify_returns_non_dominated() -> None:
     candidates = [
         _p("cheap_good", "D", cost=5, score=7.0),
         _p("expensive_great", "D", cost=30, score=9.0),
-        _p("dominated", "D", cost=25, score=6.0),  # worse score & higher price than cheap_good
+        _p(
+            "dominated", "D", cost=25, score=6.0
+        ),  # worse score & higher price than cheap_good
         _p("mid", "D", cost=12, score=7.5),
     ]
     prices = {p.player_id: float(p.cost) for p in candidates}
@@ -152,7 +166,10 @@ def test_suggest_alternatives_includes_diversified() -> None:
         config=AlternativesConfig(),
         diversify=True,
     )
-    assert suggestion.low_cost_alternative is not None or suggestion.closest_alternative is not None
+    assert (
+        suggestion.low_cost_alternative is not None
+        or suggestion.closest_alternative is not None
+    )
     # diversified is a tuple (may be empty if pool tiny after exclude)
     assert isinstance(suggestion.diversified_alternatives, tuple)
 

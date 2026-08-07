@@ -12,13 +12,12 @@ POST /experts/ratings                       — Add or update an expert rating (
 from __future__ import annotations
 
 import logging
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import ORJSONResponse
-from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import get_db, require_role
 
@@ -33,29 +32,29 @@ router = APIRouter(
 class ExpertRatingCreate(BaseModel):
     player_id: str
     source: str = "gruppo_esperti"
-    expert_name: Optional[str] = None
-    rating: Optional[int] = None  # 1-5 stars
-    comment: Optional[str] = None
-    matchday: Optional[int] = None
+    expert_name: str | None = None
+    rating: int | None = None  # 1-5 stars
+    comment: str | None = None
+    matchday: int | None = None
     season_start: int
-    url: Optional[str] = None
-    titolarita: Optional[int] = None
-    media_voto: Optional[int] = None
-    salute: Optional[int] = None
-    bonus_label: Optional[str] = None
-    bonus_value: Optional[int] = None
-    totale: Optional[int] = None
-    consiglio_esperti_raw: Optional[int] = None
-    birth_year: Optional[int] = None
-    cross_reference_section: Optional[str] = None
-    cross_reference_text: Optional[str] = None
+    url: str | None = None
+    titolarita: int | None = None
+    media_voto: int | None = None
+    salute: int | None = None
+    bonus_label: str | None = None
+    bonus_value: int | None = None
+    totale: int | None = None
+    consiglio_esperti_raw: int | None = None
+    birth_year: int | None = None
+    cross_reference_section: str | None = None
+    cross_reference_text: str | None = None
 
 
 @router.get("/ratings", summary="List expert ratings")
 async def list_expert_ratings(
-    player_id: Optional[str] = Query(None, description="Filter by player ID"),
-    source: Optional[str] = Query(None, description="Filter by source"),
-    season_start: Optional[int] = Query(None, description="Filter by season"),
+    player_id: str | None = Query(None, description="Filter by player ID"),
+    source: str | None = Query(None, description="Filter by source"),
+    season_start: int | None = Query(None, description="Filter by season"),
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
@@ -91,15 +90,20 @@ async def list_expert_ratings(
     )
     rows = [dict(r._mapping) for r in result.all()]
 
-    return ORJSONResponse({
-        "total": int(count or 0),
-        "page": page,
-        "size": size,
-        "items": rows,
-    })
+    return ORJSONResponse(
+        {
+            "total": int(count or 0),
+            "page": page,
+            "size": size,
+            "items": rows,
+        }
+    )
 
 
-@router.get("/ratings/for-season/{season_start}", summary="All ratings for a season, unpaginated")
+@router.get(
+    "/ratings/for-season/{season_start}",
+    summary="All ratings for a season, unpaginated",
+)
 async def get_all_expert_ratings_for_season(
     season_start: int,
     source: str = Query("gruppo_esperti", description="Filter by source"),
@@ -123,14 +127,18 @@ async def get_all_expert_ratings_for_season(
     )
     rows = [dict(r._mapping) for r in result.all()]
 
-    return ORJSONResponse({
-        "season_start": season_start,
-        "total": len(rows),
-        "items": rows,
-    })
+    return ORJSONResponse(
+        {
+            "season_start": season_start,
+            "total": len(rows),
+            "items": rows,
+        }
+    )
 
 
-@router.get("/ratings/by-fotmob/{player_fotmob_id}", summary="Ratings for a player by FotMob ID")
+@router.get(
+    "/ratings/by-fotmob/{player_fotmob_id}", summary="Ratings for a player by FotMob ID"
+)
 async def get_player_expert_ratings_by_fotmob(
     player_fotmob_id: int,
     db: AsyncSession = Depends(get_db),
@@ -165,12 +173,14 @@ async def get_player_expert_ratings_by_fotmob(
     ratings = [r["rating"] for r in rows if r.get("rating")]
     avg_rating = round(sum(ratings) / len(ratings), 1) if ratings else None
 
-    return ORJSONResponse({
-        "player_fotmob_id": player_fotmob_id,
-        "total_ratings": len(rows),
-        "average_rating": avg_rating,
-        "ratings": rows,
-    })
+    return ORJSONResponse(
+        {
+            "player_fotmob_id": player_fotmob_id,
+            "total_ratings": len(rows),
+            "average_rating": avg_rating,
+            "ratings": rows,
+        }
+    )
 
 
 @router.get("/ratings/{player_id}", summary="Ratings for a specific player")
@@ -194,15 +204,21 @@ async def get_player_expert_ratings(
     ratings = [r["rating"] for r in rows if r.get("rating")]
     avg_rating = round(sum(ratings) / len(ratings), 1) if ratings else None
 
-    return ORJSONResponse({
-        "player_id": player_id,
-        "total_ratings": len(rows),
-        "average_rating": avg_rating,
-        "ratings": rows,
-    })
+    return ORJSONResponse(
+        {
+            "player_id": player_id,
+            "total_ratings": len(rows),
+            "average_rating": avg_rating,
+            "ratings": rows,
+        }
+    )
 
 
-@router.post("/ratings", summary="Add or update an expert rating", dependencies=[Depends(require_role("member"))])
+@router.post(
+    "/ratings",
+    summary="Add or update an expert rating",
+    dependencies=[Depends(require_role("member"))],
+)
 async def create_expert_rating(
     body: ExpertRatingCreate,
     db: AsyncSession = Depends(get_db),
@@ -248,7 +264,7 @@ async def create_expert_rating(
             "matchday": body.matchday,
             "season_start": body.season_start,
             "url": body.url,
-            "scraped_at": datetime.utcnow(),
+            "scraped_at": datetime.now(timezone.utc),
             "titolarita": body.titolarita,
             "media_voto": body.media_voto,
             "salute": body.salute,

@@ -92,7 +92,9 @@ class MLConfig(BaseSettings):
     artifacts_dir: Path = ARTIFACTS_DIR
 
     # ── Artifact storage (Cloudflare R2) ────────────────────────────────────
-    r2_endpoint_url: str | None = Field(default=None, description="https://<account_id>.r2.cloudflarestorage.com")
+    r2_endpoint_url: str | None = Field(
+        default=None, description="https://<account_id>.r2.cloudflarestorage.com"
+    )
     r2_access_key_id: str | None = None
     r2_secret_access_key: str | None = None
     r2_bucket_name: str = Field(default="baudo-spoon-ml-artifacts")

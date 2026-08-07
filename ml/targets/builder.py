@@ -11,15 +11,22 @@ Target derivation logic:
   - probabilita_titolarita: mins_played / (appearances * 90), clipped [0,1]
   - prezzo_atteso: qt_a (Fantacalcio listino) normalised; fallback = role_median
 """
+
 from __future__ import annotations
+
 import logging
-from typing import Optional
+
 import numpy as np
 import pandas as pd
+
 from ml.domain.targets import (
+    BONUS_PREVISTI,
+    FANTAPUNTI_TOTALI,
+    FANTAVOTO_MEDIO,
+    MINUTI_GIOCATI,
+    PREZZO_ATTESO,
+    PROBABILITA_TITOLARITA,
     TargetSpec,
-    FANTAVOTO_MEDIO, FANTAPUNTI_TOTALI, BONUS_PREVISTI,
-    MINUTI_GIOCATI, PROBABILITA_TITOLARITA, PREZZO_ATTESO,
 )
 
 log = logging.getLogger(__name__)
@@ -35,13 +42,13 @@ TARGET_SPECS: list[TargetSpec] = [
 
 # Fantacalcio bonus values per event (classic rules)
 _BONUS_WEIGHTS: dict[str, float] = {
-    "goals":           3.0,
-    "goal_assist":     1.0,
-    "penalty_scored":  3.0,
+    "goals": 3.0,
+    "goal_assist": 1.0,
+    "penalty_scored": 3.0,
     "penalty_missed": -3.0,
-    "own_goals":      -2.0,
-    "yellow_card":    -0.5,
-    "red_card":       -1.0,
+    "own_goals": -2.0,
+    "yellow_card": -0.5,
+    "red_card": -1.0,
 }
 # GK/DEF clean sheet bonus (flat per season, not per-90)
 _CLEAN_SHEET_BONUS: dict[str, float] = {"GK": 1.0, "DEF": 1.5}
@@ -67,7 +74,7 @@ class TargetBuilder:
     def build(
         self,
         df: pd.DataFrame,
-        external_fantavoto_csv: Optional[str] = None,
+        external_fantavoto_csv: str | None = None,
     ) -> pd.DataFrame:
         """Add all 6 target columns to df. Returns a new copy.
 
@@ -108,10 +115,12 @@ class TargetBuilder:
     # ── Private helpers ──────────────────────────────────────────────────────────
 
     def _attach_fantavoto(
-        self, df: pd.DataFrame, external_csv: Optional[str]
+        self, df: pd.DataFrame, external_csv: str | None
     ) -> pd.DataFrame:
         from pathlib import Path
+
         from ml.data.target import attach_target
+
         csv_path = Path(external_csv) if external_csv else None
         return attach_target(df, external_csv=csv_path, min_minutes=0)
         # min_minutes=0 here: TargetBuilder does not apply quality filter itself;
@@ -121,9 +130,9 @@ class TargetBuilder:
         """fantapunti_totali = fantavoto_medio * appearances (approx season total)."""
         apps = self._get_appearances(df)
         if "fantavoto_medio" in df.columns:
-            df["fantapunti_totali"] = (
-                df["fantavoto_medio"].fillna(6.0) * apps
-            ).clip(lower=0.0)
+            df["fantapunti_totali"] = (df["fantavoto_medio"].fillna(6.0) * apps).clip(
+                lower=0.0
+            )
         else:
             log.warning("fantavoto_medio not available; fantapunti_totali set to NaN.")
             df["fantapunti_totali"] = np.nan
@@ -141,7 +150,9 @@ class TargetBuilder:
             for role, cs_bonus in _CLEAN_SHEET_BONUS.items():
                 mask = df["canonical_role"] == role
                 if mask.any():
-                    cs = pd.to_numeric(df.loc[mask, "clean_sheet"], errors="coerce").fillna(0.0)
+                    cs = pd.to_numeric(
+                        df.loc[mask, "clean_sheet"], errors="coerce"
+                    ).fillna(0.0)
                     bonus.loc[mask] += cs * cs_bonus
 
         df["bonus_previsti"] = bonus.clip(lower=0.0)
@@ -156,14 +167,19 @@ class TargetBuilder:
                 .clip(lower=0.0)
             )
         elif "appearances" in df.columns:
-            log.warning("mins_played absent; estimating minuti_giocati as appearances * 90.")
+            log.warning(
+                "mins_played absent; estimating minuti_giocati as appearances * 90."
+            )
             df["minuti_giocati"] = (
                 pd.to_numeric(df["appearances"], errors="coerce")
                 .fillna(0.0)
-                .clip(lower=0.0) * 90.0
+                .clip(lower=0.0)
+                * 90.0
             )
         else:
-            log.warning("Neither mins_played nor appearances found; minuti_giocati = NaN.")
+            log.warning(
+                "Neither mins_played nor appearances found; minuti_giocati = NaN."
+            )
             df["minuti_giocati"] = np.nan
         return df
 
@@ -177,13 +193,15 @@ class TargetBuilder:
         if "mins_played" in df.columns:
             mins = pd.to_numeric(df["mins_played"], errors="coerce").fillna(0.0)
             max_possible = apps * 90.0
-            df["probabilita_titolarita"] = (mins / max_possible.clip(lower=1.0)).clip(0.0, 1.0)
+            df["probabilita_titolarita"] = (mins / max_possible.clip(lower=1.0)).clip(
+                0.0, 1.0
+            )
         else:
             # Without minutes: use appearances / expected_max_appearances (38 for Serie A)
             expected_max = 38.0
-            df["probabilita_titolarita"] = (
-                apps.clip(lower=0.0) / expected_max
-            ).clip(0.0, 1.0)
+            df["probabilita_titolarita"] = (apps.clip(lower=0.0) / expected_max).clip(
+                0.0, 1.0
+            )
             log.warning(
                 "mins_played absent; probabilita_titolarita approximated from appearances / 38."
             )
@@ -214,7 +232,11 @@ class TargetBuilder:
     @staticmethod
     def _get_appearances(df: pd.DataFrame) -> pd.Series:
         if "appearances" in df.columns:
-            return pd.to_numeric(df["appearances"], errors="coerce").fillna(1.0).clip(lower=1.0)
+            return (
+                pd.to_numeric(df["appearances"], errors="coerce")
+                .fillna(1.0)
+                .clip(lower=1.0)
+            )
         if "mins_played" in df.columns:
             return (
                 pd.to_numeric(df["mins_played"], errors="coerce").fillna(90.0) / 90.0

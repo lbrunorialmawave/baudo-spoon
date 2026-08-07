@@ -8,13 +8,14 @@ All subclasses use ``MissingDataPolicy.IMPUTE_ZERO``: missing stat columns
 are filled with 0 before dividing, matching the existing pandas behaviour in
 ``ml/preprocessing/features.py:add_per90_features()``.
 """
+
 from __future__ import annotations
 
 import polars as pl
 
 from ml.domain.features import Feature, MissingDataPolicy
 
-__all__ = ["Per90Feature", "ALL_PER90_FEATURES"]
+__all__ = ["ALL_PER90_FEATURES", "Per90Feature"]
 
 
 class Per90Feature(Feature):
@@ -49,6 +50,7 @@ class Per90Feature(Feature):
 
 
 # ── Concrete subclasses (one per stat in _PER_90_CANDIDATES) ──────────────────
+
 
 class GoalsPer90(Per90Feature):
     stat_col = "goals"

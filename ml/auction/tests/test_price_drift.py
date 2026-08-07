@@ -18,8 +18,8 @@ from ml.auction.orchestrator import (
 )
 from ml.auction.price_drift import (
     build_initial_price_index,
-    classify_tier,
     clamp_index,
+    classify_tier,
     compute_baseline_cost,
     compute_expected_price,
     get_current_projection,
@@ -28,7 +28,6 @@ from ml.auction.price_drift import (
 from ml.optimizer.inflation import InflationConfig
 from ml.optimizer.models import Player
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -36,7 +35,9 @@ from ml.optimizer.models import Player
 
 def _make_participants(n: int = 4) -> list[ParticipantSetup]:
     return [
-        ParticipantSetup(participant_id=f"u{i}", display_name=f"U{i}", budget_initial=500)
+        ParticipantSetup(
+            participant_id=f"u{i}", display_name=f"U{i}", budget_initial=500
+        )
         for i in range(1, n + 1)
     ]
 
@@ -547,9 +548,7 @@ class TestComputeExpectedPrice:
         price = compute_expected_price(p, 0.5, "P", "TOP", idx, auction_config)
         assert price == pytest.approx(20.0)
 
-    def test_expected_cresce_con_indice(
-        self, auction_config: AuctionConfig
-    ) -> None:
+    def test_expected_cresce_con_indice(self, auction_config: AuctionConfig) -> None:
         p = Player(
             player_id="x",
             name="X",

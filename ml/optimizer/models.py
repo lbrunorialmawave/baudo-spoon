@@ -7,30 +7,28 @@ optimizer pipeline is referentially transparent and trivially hashable.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Final, Literal
-
-from ml.mantra.roles import ALL_ROLES as _MANTRA_ALL_ROLES
+from typing import Final, Literal
 
 __all__ = [
+    "DEFAULT_BUDGET",
+    "MANTRA_DEFAULT_QUOTAS",
+    "ROLE_QUOTAS",
+    "SOLVER_STATUS_ERROR",
+    "SOLVER_STATUS_INFEASIBLE",
+    "SOLVER_STATUS_OPTIMAL",
+    "SOLVER_STATUS_TIMEOUT",
+    "SOLVER_STATUS_UNBOUNDED",
+    "TOTAL_SQUAD_SIZE",
+    "Formation",
+    "InflationConfig",
+    "MultiStrategyResult",
+    "OptimizationConfig",
+    "OptimizationResult",
+    "Player",
     "Role",
     "RulesetType",
     "StrategyName",
-    "ROLE_QUOTAS",
-    "MANTRA_DEFAULT_QUOTAS",
-    "TOTAL_SQUAD_SIZE",
-    "DEFAULT_BUDGET",
-    "SOLVER_STATUS_OPTIMAL",
-    "SOLVER_STATUS_INFEASIBLE",
-    "SOLVER_STATUS_TIMEOUT",
-    "SOLVER_STATUS_UNBOUNDED",
-    "SOLVER_STATUS_ERROR",
-    "Player",
-    "Formation",
-    "InflationConfig",
     "StrategyProfile",
-    "OptimizationConfig",
-    "OptimizationResult",
-    "MultiStrategyResult",
 ]
 
 # ---------------------------------------------------------------------------
@@ -43,9 +41,7 @@ Role = Literal["P", "D", "C", "A"]
 RulesetType = Literal["CLASSIC", "MANTRA"]
 """Ruleset: CLASSIC (4 roles, single assignment) or MANTRA (12 roles, multi-slot)."""
 
-StrategyName = Literal[
-    "BALANCED", "SUPER_DEFENSIVE", "SUPER_OFFENSIVE", "MIXED"
-]
+StrategyName = Literal["BALANCED", "SUPER_DEFENSIVE", "SUPER_OFFENSIVE", "MIXED"]
 
 # Quotas in rosa (Fantacalcio classico).
 ROLE_QUOTAS: Final[dict[Role, int]] = {
@@ -62,9 +58,17 @@ ROLE_QUOTAS: Final[dict[Role, int]] = {
 # Por=3, defenders(Dc+B+Dd+Ds)=8, midfield(E+M+C)=8, attack(T+W+A+Pc)=6.
 MANTRA_DEFAULT_QUOTAS: Final[dict[str, int]] = {
     "Por": 3,
-    "Dc": 3, "B": 2, "Dd": 2, "Ds": 1,
-    "E": 1, "M": 2, "C": 5,
-    "T": 1, "W": 1, "A": 2, "Pc": 2,
+    "Dc": 3,
+    "B": 2,
+    "Dd": 2,
+    "Ds": 1,
+    "E": 1,
+    "M": 2,
+    "C": 5,
+    "T": 1,
+    "W": 1,
+    "A": 2,
+    "Pc": 2,
 }
 
 TOTAL_SQUAD_SIZE: Final[int] = 25
@@ -149,7 +153,10 @@ class Player:
                 "Player.prediction_std must be >= 0 if provided, "
                 f"got {self.prediction_std}"
             )
-        if self.historical_overpay_ratio is not None and self.historical_overpay_ratio < 0:
+        if (
+            self.historical_overpay_ratio is not None
+            and self.historical_overpay_ratio < 0
+        ):
             raise ValueError(
                 "Player.historical_overpay_ratio must be >= 0 if provided, "
                 f"got {self.historical_overpay_ratio}"
@@ -174,9 +181,7 @@ class Formation:
         for field_name in ("defenders", "midfielders", "forwards"):
             value = getattr(self, field_name)
             if value < 0:
-                raise ValueError(
-                    f"Formation.{field_name} must be >= 0, got {value}"
-                )
+                raise ValueError(f"Formation.{field_name} must be >= 0, got {value}")
 
 
 @dataclass(frozen=True)
@@ -218,13 +223,11 @@ class InflationConfig:
             )
         if self.base_inflation_rate < 0:
             raise ValueError(
-                "base_inflation_rate must be >= 0, got "
-                f"{self.base_inflation_rate}"
+                f"base_inflation_rate must be >= 0, got {self.base_inflation_rate}"
             )
         if self.baseline_participants < 1:
             raise ValueError(
-                "baseline_participants must be >= 1, got "
-                f"{self.baseline_participants}"
+                f"baseline_participants must be >= 1, got {self.baseline_participants}"
             )
         if self.team_strength_multiplier < 0:
             raise ValueError(
@@ -261,8 +264,7 @@ class StrategyProfile:
                 )
             if not 0.0 <= share <= 1.0:
                 raise ValueError(
-                    "min_budget_share_by_roles share must be in [0,1], "
-                    f"got {share}"
+                    f"min_budget_share_by_roles share must be in [0,1], got {share}"
                 )
             for r in roles:
                 if r not in ROLE_QUOTAS:
@@ -271,18 +273,19 @@ class StrategyProfile:
                     )
         if self.max_top_tier_players is not None and self.max_top_tier_players < 0:
             raise ValueError(
-                "max_top_tier_players must be >= 0, got "
-                f"{self.max_top_tier_players}"
+                f"max_top_tier_players must be >= 0, got {self.max_top_tier_players}"
             )
         if (
             self.max_top_tier_players is not None
             and self.top_tier_cost_threshold is None
         ):
             raise ValueError(
-                "top_tier_cost_threshold is required when max_top_tier_players "
-                "is set"
+                "top_tier_cost_threshold is required when max_top_tier_players is set"
             )
-        if self.top_tier_cost_threshold is not None and self.top_tier_cost_threshold < 0:
+        if (
+            self.top_tier_cost_threshold is not None
+            and self.top_tier_cost_threshold < 0
+        ):
             raise ValueError(
                 "top_tier_cost_threshold must be >= 0, got "
                 f"{self.top_tier_cost_threshold}"
@@ -298,9 +301,7 @@ class OptimizationConfig:
     num_participants: int
     max_players_per_team: int = 4
     big_teams: frozenset[str] = field(
-        default_factory=lambda: frozenset(
-            {"Inter", "Milan", "Juventus", "Napoli"}
-        )
+        default_factory=lambda: frozenset({"Inter", "Milan", "Juventus", "Napoli"})
     )
     big_teams_cap: int = 10
     min_distinct_teams: int = 12
@@ -346,7 +347,9 @@ class OptimizationConfig:
 
     def __post_init__(self) -> None:
         if self.budget <= 0:
-            raise ValueError(f"OptimizationConfig.budget must be > 0, got {self.budget}")
+            raise ValueError(
+                f"OptimizationConfig.budget must be > 0, got {self.budget}"
+            )
         if not self.formations:
             raise ValueError("OptimizationConfig.formations must be non-empty")
         if self.num_participants < 1:
@@ -359,9 +362,7 @@ class OptimizationConfig:
                 f"max_players_per_team must be >= 1, got {self.max_players_per_team}"
             )
         if self.big_teams_cap < 0:
-            raise ValueError(
-                f"big_teams_cap must be >= 0, got {self.big_teams_cap}"
-            )
+            raise ValueError(f"big_teams_cap must be >= 0, got {self.big_teams_cap}")
         if self.min_distinct_teams < 1:
             raise ValueError(
                 f"min_distinct_teams must be >= 1, got {self.min_distinct_teams}"
@@ -380,28 +381,23 @@ class OptimizationConfig:
             raise ValueError(
                 f"player_ids appear in both must_include and exclude: {sorted(conflict)}"
             )
-        if self.ruleset == "MANTRA" and self.mantra_role_quotas is not None:
-            if sum(self.mantra_role_quotas.values()) != TOTAL_SQUAD_SIZE:
-                raise ValueError(
-                    f"mantra_role_quotas must sum to {TOTAL_SQUAD_SIZE}, got "
-                    f"{sum(self.mantra_role_quotas.values())}"
-                )
+        if (
+            self.ruleset == "MANTRA"
+            and self.mantra_role_quotas is not None
+            and sum(self.mantra_role_quotas.values()) != TOTAL_SQUAD_SIZE
+        ):
+            raise ValueError(
+                f"mantra_role_quotas must sum to {TOTAL_SQUAD_SIZE}, got "
+                f"{sum(self.mantra_role_quotas.values())}"
+            )
         if self.risk_aversion < 0:
-            raise ValueError(
-                f"risk_aversion must be >= 0, got {self.risk_aversion}"
-            )
+            raise ValueError(f"risk_aversion must be >= 0, got {self.risk_aversion}")
         if not (0.0 <= self.var_blend <= 1.0):
-            raise ValueError(
-                f"var_blend must be in [0, 1], got {self.var_blend}"
-            )
+            raise ValueError(f"var_blend must be in [0, 1], got {self.var_blend}")
         if self.esv_weight < 0:
-            raise ValueError(
-                f"esv_weight must be >= 0, got {self.esv_weight}"
-            )
+            raise ValueError(f"esv_weight must be >= 0, got {self.esv_weight}")
         if not (0.0 <= self.hybrid_blend <= 1.0):
-            raise ValueError(
-                f"hybrid_blend must be in [0, 1], got {self.hybrid_blend}"
-            )
+            raise ValueError(f"hybrid_blend must be in [0, 1], got {self.hybrid_blend}")
         # Default strategies are injected lazily to avoid circular import
         # between strategies.py and this module.
         if not self.strategies:

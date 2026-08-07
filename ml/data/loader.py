@@ -112,6 +112,7 @@ JOIN player_quotations pq
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _build_where(league_name: str | None) -> str:
     if league_name:
         escaped = league_name.replace("'", "''")
@@ -134,9 +135,7 @@ def _pivot_stats(df_long: pd.DataFrame, index_cols: list[str]) -> pd.DataFrame:
 def _deduplicate_multi_team_players(df: pd.DataFrame) -> pd.DataFrame:
     """When a player appears for >1 team in the same season, keep the row
     for the team with the most minutes (proxy for dominant spell)."""
-    minutes_col = next(
-        (c for c in df.columns if "minute" in c.lower()), None
-    )
+    minutes_col = next((c for c in df.columns if "minute" in c.lower()), None)
     if minutes_col is None:
         # No minutes column: just keep the first occurrence
         return df.drop_duplicates(
@@ -148,9 +147,7 @@ def _deduplicate_multi_team_players(df: pd.DataFrame) -> pd.DataFrame:
         ascending=[True, True, False],
         na_position="last",
     )
-    return df.drop_duplicates(
-        subset=["player_fotmob_id", "season_start"], keep="first"
-    )
+    return df.drop_duplicates(subset=["player_fotmob_id", "season_start"], keep="first")
 
 
 # ── Team-strength features ─────────────────────────────────────────────────────
@@ -158,7 +155,7 @@ def _deduplicate_multi_team_players(df: pd.DataFrame) -> pd.DataFrame:
 # FotMob team stat categories used for strength scoring (use what's available).
 # Keys must match the canonical snake_case names stored in team_season_stats.
 _TEAM_STRENGTH_CATS = {
-    "rating_team":      1.0,  # overall FotMob team rating (best proxy for wins)
+    "rating_team": 1.0,  # overall FotMob team rating (best proxy for wins)
     "goals_team_match": 0.5,  # goals scored
     "clean_sheet_team": 0.3,  # clean sheets
 }
@@ -166,7 +163,7 @@ _TEAM_STRENGTH_CATS = {
 
 def _build_team_strength(df_team_long: pd.DataFrame) -> pd.DataFrame:
     """Return a DataFrame with columns:
-        team_fotmob_id, season_start, team_strength_score, team_rank_norm
+    team_fotmob_id, season_start, team_strength_score, team_rank_norm
     """
     df_wide = df_team_long.pivot_table(
         index=["team_fotmob_id", "team_name", "season_start"],
@@ -182,15 +179,18 @@ def _build_team_strength(df_team_long: pd.DataFrame) -> pd.DataFrame:
         if cat in df_wide.columns:
             col = df_wide[cat].fillna(0)
             # Normalise within season
-            season_max = df_wide.groupby("season_start")[cat].transform("max").replace(0, 1)
+            season_max = (
+                df_wide.groupby("season_start")[cat].transform("max").replace(0, 1)
+            )
             score += (col / season_max) * weight
 
     df_wide["team_strength_score"] = score
 
     # is_top_team: top-3 teams by strength score each season
     df_wide["is_top_team"] = (
-        df_wide.groupby("season_start")["team_strength_score"]
-        .rank(method="min", ascending=False)
+        df_wide.groupby("season_start")["team_strength_score"].rank(
+            method="min", ascending=False
+        )
         <= 3
     ).astype(int)
 
@@ -203,13 +203,17 @@ def _build_team_strength(df_team_long: pd.DataFrame) -> pd.DataFrame:
     )
 
     keep = [
-        "team_fotmob_id", "season_start",
-        "team_strength_score", "is_top_team", "team_rank_norm",
+        "team_fotmob_id",
+        "season_start",
+        "team_strength_score",
+        "is_top_team",
+        "team_rank_norm",
     ]
     return df_wide[[c for c in keep if c in df_wide.columns]].copy()
 
 
 # ── Public interface ──────────────────────────────────────────────────────────
+
 
 def _attach_role(
     df_player: pd.DataFrame,
@@ -227,14 +231,10 @@ def _attach_role(
     """
     # 1. Season-aware source of truth
     try:
-        df_season_roles = pd.read_sql(
-            sa.text(_PLAYER_SEASON_ROLES_SQL), engine
-        )
+        df_season_roles = pd.read_sql(sa.text(_PLAYER_SEASON_ROLES_SQL), engine)
         if not df_season_roles.empty:
             df_player = df_player.merge(
-                df_season_roles[
-                    ["player_fotmob_id", "season_start", "canonical_role"]
-                ],
+                df_season_roles[["player_fotmob_id", "season_start", "canonical_role"]],
                 on=["player_fotmob_id", "season_start"],
                 how="left",
             )
@@ -322,10 +322,11 @@ def _append_foreign_fallback_rows(
     target_season = int(df_player["season_start"].max())
     try:
         df_foreign = pd.read_sql(
-            sa.text(_FOREIGN_FALLBACK_SQL), engine,
+            sa.text(_FOREIGN_FALLBACK_SQL),
+            engine,
             params={"season_start": target_season},
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.warning(
             "Could not load cross-league neo-arrivo fallback (%s). "
             "Apply migration 018 and run POST /admin/scrape/foreign-stats.",
@@ -352,7 +353,13 @@ def _append_foreign_fallback_rows(
     df_foreign["clean_sheet"] = df_foreign["clean_sheet_per90"] * denom
     df_foreign["appearances"] = (df_foreign["mins_played"] / 90.0).round()
     df_foreign = df_foreign.drop(
-        columns=["minutes_avg", "goals_per90", "assists_per90", "saves_per90", "clean_sheet_per90"]
+        columns=[
+            "minutes_avg",
+            "goals_per90",
+            "assists_per90",
+            "saves_per90",
+            "clean_sheet_per90",
+        ]
     )
 
     df_foreign["season_start"] = target_season
@@ -391,13 +398,13 @@ def load_raw_data(engine: sa.Engine, cfg: MLConfig) -> pd.DataFrame:
         engine,
     )
     if df_player_long.empty:
-        raise ValueError(
-            "No player_season_stats rows found. Have you run the scraper?"
-        )
-    log.info("  %d long-format rows for %d distinct players across %d seasons",
-             len(df_player_long),
-             df_player_long["player_fotmob_id"].nunique(),
-             df_player_long["season_start"].nunique())
+        raise ValueError("No player_season_stats rows found. Have you run the scraper?")
+    log.info(
+        "  %d long-format rows for %d distinct players across %d seasons",
+        len(df_player_long),
+        df_player_long["player_fotmob_id"].nunique(),
+        df_player_long["season_start"].nunique(),
+    )
 
     # ── Season continuity check ──────────────────────────────────────────────
     # Rolling / delta features (diff(1)) assume one row per season per player.
@@ -409,7 +416,7 @@ def load_raw_data(engine: sa.Engine, cfg: MLConfig) -> pd.DataFrame:
     for i in range(1, len(_seasons_present)):
         if _seasons_present[i] - _seasons_present[i - 1] > 1:
             _season_gaps.append(
-                f"{_seasons_present[i-1]+1}–{_seasons_present[i]-1}"
+                f"{_seasons_present[i - 1] + 1}–{_seasons_present[i] - 1}"
             )
     if _season_gaps:
         log.warning(
@@ -427,9 +434,13 @@ def load_raw_data(engine: sa.Engine, cfg: MLConfig) -> pd.DataFrame:
         )
 
     index_cols = [
-        "player_fotmob_id", "player_name",
-        "team_fotmob_id", "team_name",
-        "season_start", "season_label", "league_name",
+        "player_fotmob_id",
+        "player_name",
+        "team_fotmob_id",
+        "team_name",
+        "season_start",
+        "season_label",
+        "league_name",
     ]
     df_player = _pivot_stats(df_player_long, index_cols)
     df_player = canonicalize_columns(df_player)
@@ -493,8 +504,9 @@ def load_raw_data(engine: sa.Engine, cfg: MLConfig) -> pd.DataFrame:
         from ..preprocessing.quotation_features import (
             attach_quotation_features as _attach_quot,
         )
+
         df_player = _attach_quot(df_player, engine=engine)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.warning(
             "Could not attach Fantacalcio quotation features (%s). "
             "Run `python -m ml.data.import_quotations` to populate "
@@ -502,9 +514,15 @@ def load_raw_data(engine: sa.Engine, cfg: MLConfig) -> pd.DataFrame:
             exc,
         )
         for col in (
-            "qt_a", "qt_i", "qt_a_norm", "qt_i_norm",
-            "price_delta_pct", "qt_a_vs_role_median",
-            "price_trend_2y", "qt_a_lag1", "match_method",
+            "qt_a",
+            "qt_i",
+            "qt_a_norm",
+            "qt_i_norm",
+            "price_delta_pct",
+            "qt_a_vs_role_median",
+            "price_trend_2y",
+            "qt_a_lag1",
+            "match_method",
         ):
             if col not in df_player.columns:
                 df_player[col] = pd.NA
@@ -513,8 +531,9 @@ def load_raw_data(engine: sa.Engine, cfg: MLConfig) -> pd.DataFrame:
     # Strictly historical: for season N, uses only data from seasons < N.
     try:
         from ..preprocessing.mantra_features import attach_mantra_features
+
         df_player = attach_mantra_features(df_player, engine=engine)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.warning(
             "Could not attach MANTRA ML features (%s). "
             "Apply migration 016 or ensure player_season_stats is populated.",

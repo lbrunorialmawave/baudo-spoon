@@ -24,8 +24,8 @@ from ml.optimizer.win_probability import WinProbabilityConfig
 
 __all__ = [
     "CompletionProbabilityConfig",
-    "estimate_participant_completion_probability",
     "estimate_all_completion_probabilities",
+    "estimate_participant_completion_probability",
 ]
 
 
@@ -43,7 +43,9 @@ class CompletionProbabilityConfig:
         )
 
 
-def _remaining_slots(participant: ParticipantState, role_quotas: dict[str, int]) -> dict[str, int]:
+def _remaining_slots(
+    participant: ParticipantState, role_quotas: dict[str, int]
+) -> dict[str, int]:
     """Residual role quotas still to fill for this participant."""
     out: dict[str, int] = {}
     for role, quota in role_quotas.items():
@@ -81,7 +83,11 @@ def _slot_expected_costs(
 
     for role, n_slots in remaining.items():
         candidates = sorted(
-            (price_by_id[p.player_id] for p in state.available_pool if _covers(p, role)),
+            (
+                price_by_id[p.player_id]
+                for p in state.available_pool
+                if _covers(p, role)
+            ),
         )
         if not candidates:
             costs.extend([1.0] * n_slots)

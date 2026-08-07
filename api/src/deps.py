@@ -59,6 +59,7 @@ def require_role(required: str):
     Role hierarchy: admin > member.
     Raises 401 if token missing/invalid, 403 if role insufficient.
     """
+
     async def _dep(
         credentials: Annotated[
             HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)
@@ -92,7 +93,9 @@ def require_role(required: str):
 
 async def require_admin(
     api_key: Annotated[str | None, Depends(_api_key_scheme)] = None,
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)] = None,
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)
+    ] = None,
 ) -> dict:
     """Accept either a valid API key (machine-to-machine / cron) or an admin JWT.
 
@@ -111,7 +114,10 @@ async def require_admin(
                 settings.jwt_secret,
                 algorithms=[settings.jwt_algorithm],
             )
-            if _ROLE_HIERARCHY.get(payload.get("role", ""), -1) >= _ROLE_HIERARCHY["admin"]:
+            if (
+                _ROLE_HIERARCHY.get(payload.get("role", ""), -1)
+                >= _ROLE_HIERARCHY["admin"]
+            ):
                 return payload
             raise HTTPException(status_code=403, detail="Admin role required")
         except JWTError:
@@ -161,8 +167,8 @@ async def _get_redis_client():  # type: ignore[return]
         if client is not None:
             try:
                 await client.aclose()
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("Redis client close failed (non-critical): %s", exc)
 
 
 async def rate_limit(

@@ -1,4 +1,5 @@
 """Walk-forward residuals export for optimizer Monte Carlo."""
+
 from __future__ import annotations
 
 import json

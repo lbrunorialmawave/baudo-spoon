@@ -28,6 +28,7 @@ log = logging.getLogger(__name__)
 
 # ── Result containers ─────────────────────────────────────────────────────────
 
+
 @dataclass
 class SplitMetrics:
     """Metrics for a single train/test or CV fold."""
@@ -38,7 +39,12 @@ class SplitMetrics:
     n_test: int
 
     def as_dict(self) -> dict[str, float]:
-        return {"rmse": self.rmse, "mae": self.mae, "r2": self.r2, "n_test": float(self.n_test)}
+        return {
+            "rmse": self.rmse,
+            "mae": self.mae,
+            "r2": self.r2,
+            "n_test": float(self.n_test),
+        }
 
 
 @dataclass
@@ -46,7 +52,7 @@ class BacktestResult:
     """Per-season and aggregate backtest results for one model."""
 
     model_name: str
-    season_metrics: list[dict]      # one dict per test season
+    season_metrics: list[dict]  # one dict per test season
     mean_rmse: float
     mean_mae: float
     mean_r2: float
@@ -55,6 +61,7 @@ class BacktestResult:
 
 
 # ── Core metric functions ─────────────────────────────────────────────────────
+
 
 def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> SplitMetrics:
     """Compute RMSE, MAE, R² for a single predictions array."""
@@ -75,7 +82,11 @@ def evaluate_on_test(
     metrics = compute_metrics(y_test.values, y_pred)
     log.info(
         "[%s] Test  RMSE=%.4f  MAE=%.4f  R²=%.4f  (n=%d)",
-        model_name, metrics.rmse, metrics.mae, metrics.r2, metrics.n_test,
+        model_name,
+        metrics.rmse,
+        metrics.mae,
+        metrics.r2,
+        metrics.n_test,
     )
     return metrics
 
@@ -93,6 +104,7 @@ def cv_evaluate(
 
     for fold, (train_idx, val_idx) in enumerate(tscv.split(X), 1):
         from sklearn.base import clone
+
         pipe_clone = clone(pipeline)
         pipe_clone.fit(X.iloc[train_idx], y.iloc[train_idx])
         y_pred = pipe_clone.predict(X.iloc[val_idx])
@@ -110,12 +122,17 @@ def cv_evaluate(
     )
     log.info(
         "[%s] CV(%d-fold)  RMSE=%.4f  MAE=%.4f  R²=%.4f",
-        model_name, n_splits, mean.rmse, mean.mae, mean.r2,
+        model_name,
+        n_splits,
+        mean.rmse,
+        mean.mae,
+        mean.r2,
     )
     return mean
 
 
 # ── Backtesting ───────────────────────────────────────────────────────────────
+
 
 def backtest(
     pipeline: Pipeline,
@@ -176,18 +193,30 @@ def backtest(
 
         log.info(
             "[%s] Backtest season=%d  RMSE=%.4f  MAE=%.4f  R²=%.4f",
-            model_name, test_season, m.rmse, m.mae, m.r2,
+            model_name,
+            test_season,
+            m.rmse,
+            m.mae,
+            m.r2,
         )
-        season_metrics.append({
-            "test_season": test_season,
-            "train_seasons": list(train_seasons) if not isinstance(train_seasons, list) else train_seasons,
-            **m.as_dict(),
-        })
+        season_metrics.append(
+            {
+                "test_season": test_season,
+                "train_seasons": list(train_seasons)
+                if not isinstance(train_seasons, list)
+                else train_seasons,
+                **m.as_dict(),
+            }
+        )
 
         # Collect per-row residuals for optimizer Monte Carlo bootstrap
         test_df = df.loc[test_mask]
         pid_col = next(
-            (c for c in ("player_fotmob_id", "player_id", "playerId") if c in test_df.columns),
+            (
+                c
+                for c in ("player_fotmob_id", "player_id", "playerId")
+                if c in test_df.columns
+            ),
             None,
         )
         role_col = next(
@@ -197,14 +226,18 @@ def backtest(
         if pid_col is not None:
             y_true_arr = y_test.values
             for j, (_, row) in enumerate(test_df.iterrows()):
-                residual_rows.append({
-                    "player_id": str(row[pid_col]),
-                    "role": str(row[role_col]) if role_col else "C",
-                    "residual": float(y_true_arr[j] - y_pred[j]),
-                    "actual": float(y_true_arr[j]),
-                    "predicted": float(y_pred[j]),
-                    "season_start": int(test_season) if test_season is not None else None,
-                })
+                residual_rows.append(
+                    {
+                        "player_id": str(row[pid_col]),
+                        "role": str(row[role_col]) if role_col else "C",
+                        "residual": float(y_true_arr[j] - y_pred[j]),
+                        "actual": float(y_true_arr[j]),
+                        "predicted": float(y_pred[j]),
+                        "season_start": int(test_season)
+                        if test_season is not None
+                        else None,
+                    }
+                )
 
     if not season_metrics:
         return BacktestResult(
@@ -219,22 +252,20 @@ def backtest(
     return BacktestResult(
         model_name=model_name,
         season_metrics=season_metrics,
-        mean_rmse=float(np.mean([s['rmse'] for s in season_metrics])),
-        mean_mae=float(np.mean([s['mae'] for s in season_metrics])),
-        mean_r2=float(np.mean([s['r2'] for s in season_metrics])),
+        mean_rmse=float(np.mean([s["rmse"] for s in season_metrics])),
+        mean_mae=float(np.mean([s["mae"] for s in season_metrics])),
+        mean_r2=float(np.mean([s["r2"] for s in season_metrics])),
         residuals=residual_rows,
     )
 
 
 # ── Comparison table ──────────────────────────────────────────────────────────
 
+
 def build_comparison_table(
     results: dict[str, SplitMetrics],
 ) -> pd.DataFrame:
     """Return a sorted DataFrame comparing all models side-by-side."""
-    rows = [
-        {"model": name, **m.as_dict()}
-        for name, m in results.items()
-    ]
+    rows = [{"model": name, **m.as_dict()} for name, m in results.items()]
     df = pd.DataFrame(rows).sort_values("rmse").reset_index(drop=True)
     return df

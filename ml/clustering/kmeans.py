@@ -30,7 +30,6 @@ Design notes:
 
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -51,6 +50,7 @@ log = logging.getLogger(__name__)
 
 try:
     from sklearn_extra.cluster import KMedoids  # type: ignore[import]
+
     _HAS_KMEDOIDS = True
 except ImportError:
     _HAS_KMEDOIDS = False
@@ -90,6 +90,7 @@ _CROSS_ROLE_PENALTY: float = 5.0
 
 
 # ── Result containers ─────────────────────────────────────────────────────────
+
 
 @dataclass
 class ClusterResult:
@@ -140,8 +141,13 @@ class LowCostAlternative:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _select_cluster_features(df: pd.DataFrame) -> list[str]:
-    return [c for c in _CLUSTER_FEATURE_CANDIDATES if c in df.columns and df[c].notna().any()]
+    return [
+        c
+        for c in _CLUSTER_FEATURE_CANDIDATES
+        if c in df.columns and df[c].notna().any()
+    ]
 
 
 def _make_clusterer(n_clusters: int, random_seed: int):
@@ -152,7 +158,9 @@ def _make_clusterer(n_clusters: int, random_seed: int):
     the PCA-reduced feature spaces encountered in this pipeline).
     """
     if _HAS_KMEDOIDS:
-        return KMedoids(n_clusters=n_clusters, random_state=random_seed, metric="euclidean")
+        return KMedoids(
+            n_clusters=n_clusters, random_state=random_seed, metric="euclidean"
+        )
     return KMeans(n_clusters=n_clusters, random_state=random_seed, n_init=20)
 
 
@@ -212,7 +220,9 @@ def _elbow_suggestor(
     suggested = k_range[int(np.argmin(second_diffs)) + 2]
     log.info(
         "Elbow method suggests K=%d (range %d–%d).",
-        suggested, k_range.start, k_range.stop - 1,
+        suggested,
+        k_range.start,
+        k_range.stop - 1,
     )
     return suggested
 
@@ -245,7 +255,7 @@ def _build_role_aware_distance_matrix(
     """
     # Vectorised pairwise Euclidean distance — O(N² · D)
     diff = X_pca[:, np.newaxis, :] - X_pca[np.newaxis, :, :]  # (N, N, D)
-    dists = np.sqrt(np.sum(diff ** 2, axis=-1))                # (N, N)
+    dists = np.sqrt(np.sum(diff**2, axis=-1))  # (N, N)
 
     # Boolean cross-role mask: True where roles differ
     role_mismatch = role_codes[:, np.newaxis] != role_codes[np.newaxis, :]  # (N, N)
@@ -254,6 +264,7 @@ def _build_role_aware_distance_matrix(
     # Ensure strict symmetry and zero diagonal (numerical safety)
     np.fill_diagonal(dists, 0.0)
     return dists
+
 
 def run_clustering(
     df: pd.DataFrame,
@@ -306,7 +317,8 @@ def run_clustering(
 
     log.info(
         "PCA: retaining %d components (%.1f%% variance).",
-        n_components, cumvar[n_components - 1] * 100,
+        n_components,
+        cumvar[n_components - 1] * 100,
     )
 
     pca = PCA(n_components=n_components, random_state=cfg.random_seed)
@@ -320,12 +332,12 @@ def run_clustering(
         n_clusters = _select_k_by_silhouette(X_pca, k_range, cfg.random_seed)
 
     # ── Extract role codes for soft-role constraint ────────────────────────────
-    role_codes: Optional[np.ndarray] = None
+    role_codes: np.ndarray | None = None
     if "canonical_role" in df.columns:
         role_codes = (
             df["canonical_role"]
             .map(_ROLE_TO_INT)
-            .fillna(2)          # unknown roles default to MID (2)
+            .fillna(2)  # unknown roles default to MID (2)
             .values.astype(np.int32)
         )
         log.info(
@@ -349,7 +361,9 @@ def run_clustering(
         # players together without hard enforcement.
         role_col = (role_codes / 3.0 * _CROSS_ROLE_PENALTY)[:, np.newaxis]
         X_role_aug = np.hstack([X_pca, role_col])
-        clusterer = KMeans(n_clusters=n_clusters, random_state=cfg.random_seed, n_init=20)
+        clusterer = KMeans(
+            n_clusters=n_clusters, random_state=cfg.random_seed, n_init=20
+        )
         labels = clusterer.fit_predict(X_role_aug)
         inertia = float(getattr(clusterer, "inertia_", float("nan")))
         algo = "KMeans+RoleAug (fallback)"
@@ -362,7 +376,10 @@ def run_clustering(
     sil = silhouette_score(X_pca, labels) if len(set(labels)) > 1 else 0.0
     log.info(
         "%s (K=%d): inertia=%.2f, silhouette=%.4f",
-        algo, n_clusters, inertia, sil,
+        algo,
+        n_clusters,
+        inertia,
+        sil,
     )
 
     # ── Build output DataFrame ────────────────────────────────────────────────
@@ -413,11 +430,14 @@ def find_low_cost_alternatives(
     df = result.df.copy().reset_index(drop=True)
 
     rating_col = (
-        "predicted_fantavoto" if "predicted_fantavoto" in df.columns
+        "predicted_fantavoto"
+        if "predicted_fantavoto" in df.columns
         else "fantavoto_medio"
     )
     if rating_col not in df.columns:
-        raise ValueError("DataFrame must contain 'fantavoto_medio' or 'predicted_fantavoto'.")
+        raise ValueError(
+            "DataFrame must contain 'fantavoto_medio' or 'predicted_fantavoto'."
+        )
 
     threshold = df[rating_col].quantile(top_percentile)
     is_top = df[rating_col] >= threshold
@@ -476,6 +496,7 @@ def find_low_cost_alternatives(
 
 
 # ── Visualisation ─────────────────────────────────────────────────────────────
+
 
 def _draw_silhouette_panel(
     ax: plt.Axes,
@@ -537,9 +558,7 @@ def plot_clusters(
 
     # ── Left: PCA scatter ─────────────────────────────────────────────────────
     colors = plt.cm.tab10(np.linspace(0, 1, n_clusters))
-    color_map = {
-        c: colors[i] for i, c in enumerate(sorted(df["cluster_id"].unique()))
-    }
+    color_map = {c: colors[i] for i, c in enumerate(sorted(df["cluster_id"].unique()))}
 
     for cluster_id, color in color_map.items():
         mask = df["cluster_id"] == cluster_id
@@ -563,12 +582,8 @@ def plot_clusters(
                 alpha=0.8,
             )
 
-    ax_scatter.set_xlabel(
-        f"PCA Component 1 ({result.explained_variance[0]:.1%} var)"
-    )
-    ax_scatter.set_ylabel(
-        f"PCA Component 2 ({result.explained_variance[1]:.1%} var)"
-    )
+    ax_scatter.set_xlabel(f"PCA Component 1 ({result.explained_variance[0]:.1%} var)")
+    ax_scatter.set_ylabel(f"PCA Component 2 ({result.explained_variance[1]:.1%} var)")
     ax_scatter.set_title(
         f"Player Clusters — {result.n_clusters_used} clusters (PCA-reduced)"
     )
@@ -579,9 +594,11 @@ def plot_clusters(
         _draw_silhouette_panel(ax_sil, X_pca, labels, result.silhouette)
     else:
         ax_sil.text(
-            0.5, 0.5,
+            0.5,
+            0.5,
             "Silhouette requires ≥ 2 clusters",
-            ha="center", va="center",
+            ha="center",
+            va="center",
             transform=ax_sil.transAxes,
             fontsize=12,
         )

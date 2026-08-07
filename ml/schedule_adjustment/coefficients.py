@@ -29,6 +29,7 @@ across the remaining present components rather than silently zeroed.  Zeroing
 would bias the coefficient toward 1.0 incorrectly when components with high
 weight are missing.
 """
+
 from __future__ import annotations
 
 import logging
@@ -95,7 +96,8 @@ def compute_difficulty_coefficients(
     if missing_cols:
         log.info(
             "compute_difficulty_coefficients: missing columns %s; "
-            "weights redistributed to present components.", missing_cols,
+            "weights redistributed to present components.",
+            missing_cols,
         )
 
     # Build composite score ∈ [0, 1] as weighted sum of per-season normalised components.

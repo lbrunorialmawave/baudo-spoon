@@ -36,21 +36,20 @@ from ml.auction.models import (
 )
 from ml.optimizer.inflation import estimate_effective_cost
 from ml.optimizer.models import Player
-from ml.optimizer.team_strength import load_team_strength_scores
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "classify_tier",
+    "apply_cross_role_spillover",
     "build_initial_price_index",
+    "clamp_index",
+    "classify_tier",
     "compute_baseline_cost",
     "compute_expected_price",
-    "update_price_index",
-    "apply_cross_role_spillover",
-    "clamp_index",
     "get_current_projection",
-    "resolve_pricing_role",
     "project_price_for_player",
+    "resolve_pricing_role",
+    "update_price_index",
 ]
 
 
@@ -128,7 +127,7 @@ def compute_baseline_cost(
             "AuctionConfig.inflation_config must be set when "
             "use_inflation_baseline=True"
         )
-    scaled_player = replace(player, cost=int(round(scaled_cost)))
+    scaled_player = replace(player, cost=round(scaled_cost))
     return estimate_effective_cost(
         player=scaled_player,
         role_percentile=role_percentile,
@@ -148,7 +147,9 @@ def compute_expected_price(
     team_strength_scores: dict[str, float] | None = None,
 ) -> float:
     """Prezzo atteso corrente = ``baseline_cost * price_index[role][tier]``."""
-    baseline = compute_baseline_cost(player, role_percentile, config, team_strength_scores)
+    baseline = compute_baseline_cost(
+        player, role_percentile, config, team_strength_scores
+    )
     idx = price_index[role][tier]
     return baseline * idx
 
@@ -203,9 +204,7 @@ def update_price_index(
       ``spillover_cross_role > 0``.
     """
     if expected_price <= 0.0:
-        raise ValueError(
-            f"expected_price must be > 0 for EWMA, got {expected_price}"
-        )
+        raise ValueError(f"expected_price must be > 0 for EWMA, got {expected_price}")
     if actual_price < 0.0:
         raise ValueError(f"actual_price must be >= 0, got {actual_price}")
     if role not in price_index:

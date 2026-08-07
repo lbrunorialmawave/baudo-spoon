@@ -9,26 +9,29 @@ Risk-based tests verifying:
 6. Feature.safe_compute FAIL policy raises on missing columns
 7. ScheduleAdjustmentConfig weight sum validation
 """
-import pytest
+
 import polars as pl
+import pytest
 
-from ml.optimizer.models import Player, ROLE_QUOTAS
-from ml.domain.features import Feature, MissingDataPolicy
-from ml.domain.targets import (
-    TargetSpec,
-    FANTAVOTO_MEDIO,
-    FANTAPUNTI_TOTALI,
-    BONUS_PREVISTI,
-    MINUTI_GIOCATI,
-    PROBABILITA_TITOLARITA,
-    PREZZO_ATTESO,
+from ml.domain.config import (
+    DEFAULT_SCHEDULE_ADJUSTMENT,
+    ScheduleAdjustmentConfig,
 )
-from ml.domain.predictions import PredictionExplanation, SHAP_TOLERANCE
+from ml.domain.features import Feature, MissingDataPolicy
 from ml.domain.player_versions import PlayerV1, PlayerV2, to_player_v1
-from ml.domain.config import RoleWeightsConfig, ScheduleAdjustmentConfig, DEFAULT_SCHEDULE_ADJUSTMENT
-
+from ml.domain.predictions import SHAP_TOLERANCE, PredictionExplanation
+from ml.domain.targets import (
+    BONUS_PREVISTI,
+    FANTAPUNTI_TOTALI,
+    FANTAVOTO_MEDIO,
+    MINUTI_GIOCATI,
+    PREZZO_ATTESO,
+    PROBABILITA_TITOLARITA,
+)
+from ml.optimizer.models import Player
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def sample_player_v1() -> Player:
@@ -77,6 +80,7 @@ def coherent_explanation() -> PredictionExplanation:
 
 # ── Test 1: Player V1 schema unchanged ───────────────────────────────────────
 
+
 class TestPlayerV1Schema:
     def test_required_fields_present(self, sample_player_v1: Player) -> None:
         assert sample_player_v1.player_id == "12345"
@@ -89,20 +93,48 @@ class TestPlayerV1Schema:
 
     def test_role_validation(self) -> None:
         for valid_role in ("P", "D", "C", "A"):
-            p = Player(player_id="x", name="n", role=valid_role, real_team="t", cost=1, projected_score=6.0)  # type: ignore[arg-type]
+            p = Player(
+                player_id="x",
+                name="n",
+                role=valid_role,
+                real_team="t",
+                cost=1,
+                projected_score=6.0,
+            )  # type: ignore[arg-type]
             assert p.role == valid_role
 
     def test_invalid_role_raises(self) -> None:
         with pytest.raises(ValueError, match="role"):
-            Player(player_id="x", name="n", role="GK", real_team="t", cost=1, projected_score=6.0)  # type: ignore[arg-type]
+            Player(
+                player_id="x",
+                name="n",
+                role="GK",
+                real_team="t",
+                cost=1,
+                projected_score=6.0,
+            )  # type: ignore[arg-type]
 
     def test_negative_cost_raises(self) -> None:
         with pytest.raises(ValueError, match="cost"):
-            Player(player_id="x", name="n", role="A", real_team="t", cost=-1, projected_score=6.0)
+            Player(
+                player_id="x",
+                name="n",
+                role="A",
+                real_team="t",
+                cost=-1,
+                projected_score=6.0,
+            )
 
     def test_negative_score_raises(self) -> None:
         with pytest.raises(ValueError, match="projected_score"):
-            Player(player_id="x", name="n", role="A", real_team="t", cost=1, projected_score=-0.1)
+            Player(
+                player_id="x",
+                name="n",
+                role="A",
+                real_team="t",
+                cost=1,
+                projected_score=-0.1,
+            )
 
     def test_frozen(self, sample_player_v1: Player) -> None:
         with pytest.raises((AttributeError, TypeError)):
@@ -114,6 +146,7 @@ class TestPlayerV1Schema:
 
 
 # ── Test 2: to_player_v1 adapter ─────────────────────────────────────────────
+
 
 class TestPlayerVersionAdapter:
     def test_v2_to_v1_fields(self, sample_player_v2: PlayerV2) -> None:
@@ -139,12 +172,27 @@ class TestPlayerVersionAdapter:
 
     def test_v2_validation_same_as_v1(self) -> None:
         with pytest.raises(ValueError):
-            PlayerV2(player_id="", name="n", role="A", real_team="t", cost=1, projected_score=6.0)
+            PlayerV2(
+                player_id="",
+                name="n",
+                role="A",
+                real_team="t",
+                cost=1,
+                projected_score=6.0,
+            )
         with pytest.raises(ValueError):
-            PlayerV2(player_id="x", name="n", role="GK", real_team="t", cost=1, projected_score=6.0)  # type: ignore[arg-type]
+            PlayerV2(
+                player_id="x",
+                name="n",
+                role="GK",
+                real_team="t",
+                cost=1,
+                projected_score=6.0,
+            )  # type: ignore[arg-type]
 
 
 # ── Test 3: MissingDataPolicy enum ───────────────────────────────────────────
+
 
 class TestMissingDataPolicy:
     def test_all_four_values(self) -> None:
@@ -160,11 +208,16 @@ class TestMissingDataPolicy:
 
 # ── Test 4: TargetSpec instances ─────────────────────────────────────────────
 
+
 class TestTargetSpecs:
-    ALL_SPECS = [
-        FANTAVOTO_MEDIO, FANTAPUNTI_TOTALI, BONUS_PREVISTI,
-        MINUTI_GIOCATI, PROBABILITA_TITOLARITA, PREZZO_ATTESO,
-    ]
+    ALL_SPECS = (
+        FANTAVOTO_MEDIO,
+        FANTAPUNTI_TOTALI,
+        BONUS_PREVISTI,
+        MINUTI_GIOCATI,
+        PROBABILITA_TITOLARITA,
+        PREZZO_ATTESO,
+    )
 
     def test_six_targets_defined(self) -> None:
         assert len(self.ALL_SPECS) == 6
@@ -176,7 +229,9 @@ class TestTargetSpecs:
     def test_target_types_valid(self) -> None:
         valid = {"regression", "classification", "probability"}
         for spec in self.ALL_SPECS:
-            assert spec.target_type in valid, f"{spec.name} has invalid type {spec.target_type}"
+            assert spec.target_type in valid, (
+                f"{spec.name} has invalid type {spec.target_type}"
+            )
 
     def test_fantavoto_medio_is_regression_no_transform(self) -> None:
         assert FANTAVOTO_MEDIO.target_type == "regression"
@@ -193,7 +248,9 @@ class TestTargetSpecs:
             transformed = spec.transform(s)
             recovered = spec.inverse_transform(transformed)
             for orig, rec in zip(s.to_list(), recovered.to_list()):
-                assert abs(orig - rec) < 1e-9, f"Roundtrip failed for {spec.name}: {orig} -> {rec}"
+                assert abs(orig - rec) < 1e-9, (
+                    f"Roundtrip failed for {spec.name}: {orig} -> {rec}"
+                )
 
     def test_target_spec_frozen(self) -> None:
         with pytest.raises((AttributeError, TypeError)):
@@ -202,8 +259,11 @@ class TestTargetSpecs:
 
 # ── Test 5: PredictionExplanation SHAP coherence ─────────────────────────────
 
+
 class TestPredictionExplanation:
-    def test_coherent_explanation_passes(self, coherent_explanation: PredictionExplanation) -> None:
+    def test_coherent_explanation_passes(
+        self, coherent_explanation: PredictionExplanation
+    ) -> None:
         assert coherent_explanation.is_shap_coherent()
         assert coherent_explanation.shap_coherence_error() < SHAP_TOLERANCE
 
@@ -268,6 +328,7 @@ class TestPredictionExplanation:
 
 # ── Test 6: Feature.safe_compute FAIL policy ─────────────────────────────────
 
+
 class TestFeatureSafeCompute:
     def test_fail_policy_raises_on_missing_column(self) -> None:
         class DummyFeature(Feature):
@@ -314,6 +375,7 @@ class TestFeatureSafeCompute:
 
     def test_proxy_feature_name_required_for_proxy_policy(self) -> None:
         with pytest.raises(TypeError, match="proxy_feature_name"):
+
             class BadFeature(Feature):
                 name = "bad"
                 required_columns = frozenset(["xg_per90"])
@@ -341,12 +403,15 @@ class TestFeatureSafeCompute:
 
 # ── Test 7: ScheduleAdjustmentConfig validation ───────────────────────────────
 
+
 class TestScheduleAdjustmentConfig:
     def test_default_weights_sum_to_one(self) -> None:
         cfg = DEFAULT_SCHEDULE_ADJUSTMENT
         total = (
-            cfg.elo_weight + cfg.expected_points_weight
-            + cfg.league_position_weight + cfg.goal_difference_weight
+            cfg.elo_weight
+            + cfg.expected_points_weight
+            + cfg.league_position_weight
+            + cfg.goal_difference_weight
             + cfg.squad_value_weight
         )
         assert abs(total - 1.0) < 1e-9

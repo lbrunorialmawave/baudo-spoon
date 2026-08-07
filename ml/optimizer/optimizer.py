@@ -16,15 +16,15 @@ from __future__ import annotations
 import logging
 import time
 from collections import Counter
-from typing import Sequence
+from collections.abc import Sequence
 
 from ml.optimizer.inflation import compute_role_percentile_map
 from ml.optimizer.models import (
+    SOLVER_STATUS_INFEASIBLE,
     MultiStrategyResult,
     OptimizationConfig,
     OptimizationResult,
     Player,
-    SOLVER_STATUS_INFEASIBLE,
     StrategyProfile,
 )
 from ml.optimizer.solver import (
@@ -36,7 +36,7 @@ from ml.optimizer.solver import (
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["optimize_squad", "optimize_multi_strategy", "deduplicate_players"]
+__all__ = ["deduplicate_players", "optimize_multi_strategy", "optimize_squad"]
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +164,9 @@ def optimize_multi_strategy(
     contratto "4 entry sempre presenti".
     """
     pool_unique = deduplicate_players(pool)
-    selected_strategies = list(strategies) if strategies is not None else list(config.strategies)
+    selected_strategies = (
+        list(strategies) if strategies is not None else list(config.strategies)
+    )
 
     if not selected_strategies:
         raise ValueError("No strategies to run")

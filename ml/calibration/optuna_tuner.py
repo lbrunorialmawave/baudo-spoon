@@ -12,11 +12,13 @@ Nested CV structure:
 This separation ensures the meta-learner's training data (OOF from best
 base models) is not contaminated by the hyperparameter search.
 """
+
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -80,7 +82,7 @@ class OptunaTuner:
         n_trials: int = 50,
         n_splits: int = 4,
         random_seed: int = 42,
-        timeout: Optional[float] = None,
+        timeout: float | None = None,
     ) -> None:
         if not _HAS_OPTUNA:
             raise ImportError(
@@ -121,7 +123,9 @@ class OptunaTuner:
             params = param_space(trial)
             pipeline = pipeline_factory(params)
             rmse = _cv_rmse(pipeline, X, y, self.n_splits)
-            trial_history.append({"trial": trial.number, "params": params, "rmse": rmse})
+            trial_history.append(
+                {"trial": trial.number, "params": params, "rmse": rmse}
+            )
             return rmse
 
         sampler = optuna.samplers.TPESampler(seed=self.random_seed)
@@ -150,7 +154,9 @@ class OptunaTuner:
             trial_history=trial_history,
         )
 
-    def tune_ridge(self, X: pd.DataFrame, y: pd.Series, preprocessor: Any) -> TuningResult:
+    def tune_ridge(
+        self, X: pd.DataFrame, y: pd.Series, preprocessor: Any
+    ) -> TuningResult:
         """Convenience: tune Ridge alpha with TimeSeriesSplit CV."""
         from sklearn.linear_model import Ridge as _Ridge
 
@@ -158,29 +164,37 @@ class OptunaTuner:
             return {"alpha": trial.suggest_float("alpha", 0.01, 100.0, log=True)}
 
         def pipeline_factory(params: dict[str, Any]) -> Pipeline:
-            return Pipeline([
-                ("preprocessor", clone(preprocessor)),
-                ("model", _Ridge(alpha=params["alpha"])),
-            ])
+            return Pipeline(
+                [
+                    ("preprocessor", clone(preprocessor)),
+                    ("model", _Ridge(alpha=params["alpha"])),
+                ]
+            )
 
         return self.tune("ridge", pipeline_factory, param_space, X, y)
 
-    def tune_hist_gbm(self, X: pd.DataFrame, y: pd.Series, preprocessor: Any) -> TuningResult:
+    def tune_hist_gbm(
+        self, X: pd.DataFrame, y: pd.Series, preprocessor: Any
+    ) -> TuningResult:
         """Convenience: tune HistGradientBoosting with TimeSeriesSplit CV."""
         from sklearn.ensemble import HistGradientBoostingRegressor as _HGBM
 
         def param_space(trial: Any) -> dict[str, Any]:
             return {
-                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+                "learning_rate": trial.suggest_float(
+                    "learning_rate", 0.01, 0.3, log=True
+                ),
                 "max_iter": trial.suggest_int("max_iter", 100, 500),
                 "max_leaf_nodes": trial.suggest_int("max_leaf_nodes", 10, 63),
                 "l2_regularization": trial.suggest_float("l2_regularization", 0.0, 1.0),
             }
 
         def pipeline_factory(params: dict[str, Any]) -> Pipeline:
-            return Pipeline([
-                ("preprocessor", clone(preprocessor)),
-                ("model", _HGBM(random_state=self.random_seed, **params)),
-            ])
+            return Pipeline(
+                [
+                    ("preprocessor", clone(preprocessor)),
+                    ("model", _HGBM(random_state=self.random_seed, **params)),
+                ]
+            )
 
         return self.tune("hist_gbm", pipeline_factory, param_space, X, y)

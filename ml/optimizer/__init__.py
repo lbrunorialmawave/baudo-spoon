@@ -42,4 +42,3 @@ __all__ = [
     "optimize_multi_strategy",
     "optimize_squad",
 ]
-

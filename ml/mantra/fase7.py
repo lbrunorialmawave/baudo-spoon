@@ -40,7 +40,6 @@ import pandas as pd
 from ml.mantra.config import MantraConfig
 from ml.mantra.roles import calcola_pool_esteso
 
-
 _LABEL_ORDER: list[str] = [
     "TOP",
     "AFFARE",
@@ -86,7 +85,8 @@ def _pool_thresholds(
         pool_dv = df.loc[pool_mask, "DV"].dropna()
         certezza_dv = (
             float(pool_dv.quantile(cfg.CERTEZZA_DV_PERCENTILE))
-            if len(pool_dv) > 0 else 99.0
+            if len(pool_dv) > 0
+            else 99.0
         )
 
         if pool_size < cfg.SOGLIA_POOL:
@@ -108,11 +108,15 @@ def _pool_thresholds(
         pool_fp = fp[pool_mask].dropna()
         out[ruolo] = {
             "top_fp_mantra": float(pool_fp_mantra.quantile(cfg.TOP_FP_PERCENTILE)),
-            "affare_fp_mantra": float(pool_fp_mantra.quantile(cfg.AFFARE_FP_PERCENTILE)),
+            "affare_fp_mantra": float(
+                pool_fp_mantra.quantile(cfg.AFFARE_FP_PERCENTILE)
+            ),
             "affare_vr": float(pool_vr.quantile(cfg.AFFARE_VR_PERCENTILE)),
             "scommessa_fp": float(pool_fp.quantile(cfg.SCOMMESSA_FP_PERCENTILE)),
             "scommessa_vr": float(pool_vr.quantile(cfg.SCOMMESSA_VR_PERCENTILE)),
-            "sopravalutato_vr": float(pool_vr.quantile(cfg.SOPRAVALUTATO_VR_PERCENTILE)),
+            "sopravalutato_vr": float(
+                pool_vr.quantile(cfg.SOPRAVALUTATO_VR_PERCENTILE)
+            ),
             "giusto_vr_min": float(pool_vr.quantile(cfg.GIUSTO_VR_PERCENTILE_MIN)),
             "giusto_vr_max": float(pool_vr.quantile(cfg.GIUSTO_VR_PERCENTILE_MAX)),
             "certezza_dv": certezza_dv,
@@ -127,16 +131,19 @@ def _absolute_thresholds(
     """Fixed thresholds (FASE7_THRESHOLD_MODE="absolute"): same value for
     every row, except CERTEZZA's DV which stays pool-relative (matching
     historical behavior — this is not new with percentile mode)."""
-    fixed = {k: cfg.__getattribute__(v) for k, v in {
-        "top_fp_mantra": "TOP_FP_SOGLIA",
-        "affare_fp_mantra": "AFFARE_FP_SOGLIA",
-        "affare_vr": "AFFARE_VR_SOGLIA",
-        "scommessa_fp": "SCOMMESSA_FP_SOGLIA",
-        "scommessa_vr": "SCOMMESSA_VR_SOGLIA",
-        "sopravalutato_vr": "SOPRAVALUTATO_VR",
-        "giusto_vr_min": "GIUSTO_VR_MIN",
-        "giusto_vr_max": "GIUSTO_VR_MAX",
-    }.items()}
+    fixed = {
+        k: cfg.__getattribute__(v)
+        for k, v in {
+            "top_fp_mantra": "TOP_FP_SOGLIA",
+            "affare_fp_mantra": "AFFARE_FP_SOGLIA",
+            "affare_vr": "AFFARE_VR_SOGLIA",
+            "scommessa_fp": "SCOMMESSA_FP_SOGLIA",
+            "scommessa_vr": "SCOMMESSA_VR_SOGLIA",
+            "sopravalutato_vr": "SOPRAVALUTATO_VR",
+            "giusto_vr_min": "GIUSTO_VR_MIN",
+            "giusto_vr_max": "GIUSTO_VR_MAX",
+        }.items()
+    }
     th = pd.DataFrame([fixed] * len(df), index=df.index)
 
     dv_mediane: dict[str, float] = {}
@@ -146,7 +153,8 @@ def _absolute_thresholds(
         pool_dv = df.loc[df["ruolo_primario"].isin(pool_roles), "DV"].dropna()
         dv_mediane[ruolo] = (
             float(pool_dv.quantile(cfg.CERTEZZA_DV_PERCENTILE))
-            if len(pool_dv) > 0 else 99.0
+            if len(pool_dv) > 0
+            else 99.0
         )
     th["certezza_dv"] = df["ruolo_primario"].map(dv_mediane)
     return th

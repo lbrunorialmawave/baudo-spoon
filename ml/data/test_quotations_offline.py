@@ -18,14 +18,13 @@ import pandas as pd
 try:
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
-except Exception:  # noqa: BLE001
-    pass
+except Exception as exc:
+    print(f"UTF-8 console reconfigure skipped (non-critical): {exc}", file=sys.stderr)
 
 # Make the project importable.
 sys.path.insert(0, r"c:\Users\L.Brunori\Documents\Progetti\personal\analysis")
 
-from ml.data.import_quotations import (  # noqa: E402
-    ROLE_MAP,
+from ml.data.import_quotations import (
     discover_season_files,
     load_quotation_dataframe,
     normalise_player_name,
@@ -120,9 +119,7 @@ def main() -> int:
 
     # 4) Lagged qt_a + price_trend_2y.
     g = sim.groupby("player_fotmob_id", sort=False)
-    sim["qt_a_lag1"] = pd.to_numeric(
-        g["qt_a"].shift(1), errors="coerce"
-    ).astype(float)
+    sim["qt_a_lag1"] = pd.to_numeric(g["qt_a"].shift(1), errors="coerce").astype(float)
     valid_lag = sim["qt_a_lag1"].gt(0) & qt_a.notna()
     sim["price_trend_2y"] = np.where(
         valid_lag.fillna(False),
@@ -133,15 +130,23 @@ def main() -> int:
 
     # Coverage report.
     n = len(sim)
-    for col in ("qt_a_norm", "price_delta_pct",
-                "qt_a_vs_role_median", "price_trend_2y"):
+    for col in (
+        "qt_a_norm",
+        "price_delta_pct",
+        "qt_a_vs_role_median",
+        "price_trend_2y",
+    ):
         nn = int(sim[col].notna().sum())
         print(f"  {col:25s}  {nn:5d} / {n}  ({100.0 * nn / n:.1f}%)")
 
     # ── TEST 4: value ranges ─────────────────────────────────────────────
     section("TEST 4: VALUE RANGES")
-    for col in ("qt_a_norm", "price_delta_pct",
-                "qt_a_vs_role_median", "price_trend_2y"):
+    for col in (
+        "qt_a_norm",
+        "price_delta_pct",
+        "qt_a_vs_role_median",
+        "price_trend_2y",
+    ):
         s = sim[col]
         print(
             f"  {col:25s}  min={s.min():>7.4f}  "
@@ -154,39 +159,41 @@ def main() -> int:
     if acerbi.empty:
         print("  Acerbi not found in this dataset (only GK/D or transfers).")
     else:
-        cols = ["season_start", "team", "qt_a", "qt_i",
-                "qt_a_norm", "price_delta_pct", "price_trend_2y"]
+        cols = [
+            "season_start",
+            "team",
+            "qt_a",
+            "qt_i",
+            "qt_a_norm",
+            "price_delta_pct",
+            "price_trend_2y",
+        ]
         print(acerbi[cols].to_string(index=False))
 
     # ── TEST 6: top momentum ─────────────────────────────────────────────
     section("TEST 6: Top 5 by price_delta_pct (momentum, season 2024/25)")
-    mom = (
-        sim[sim["season_start"] == 2024]
-        .nlargest(5, "price_delta_pct")
-    )
+    mom = sim[sim["season_start"] == 2024].nlargest(5, "price_delta_pct")
     print(
-        mom[["name", "team", "qt_a", "qt_i", "price_delta_pct"]]
-        .to_string(index=False)
+        mom[["name", "team", "qt_a", "qt_i", "price_delta_pct"]].to_string(index=False)
     )
 
     # ── TEST 7: top z-score ──────────────────────────────────────────────
     section("TEST 7: Top 5 FWD by qt_a_vs_role_median (season 2024/25)")
-    top = (
-        sim[(sim["season_start"] == 2024) & (sim["canonical_role"] == "FWD")]
-        .nlargest(5, "qt_a_vs_role_median")
-    )
-    print(
-        top[["name", "team", "qt_a", "qt_a_vs_role_median"]]
-        .to_string(index=False)
-    )
+    top = sim[
+        (sim["season_start"] == 2024) & (sim["canonical_role"] == "FWD")
+    ].nlargest(5, "qt_a_vs_role_median")
+    print(top[["name", "team", "qt_a", "qt_a_vs_role_median"]].to_string(index=False))
 
     # ── TEST 8: edge cases (qt_i = 0) ────────────────────────────────────
     section("TEST 8: EDGE CASES — qt_i = 0 (rookies)")
     zero_qti = sim[sim["qt_i"] == 0]
     print(f"  Rows with qt_i == 0: {len(zero_qti)}")
     if not zero_qti.empty:
-        print(zero_qti[["name", "qt_a", "qt_i", "price_delta_pct"]]
-              .head(5).to_string(index=False))
+        print(
+            zero_qti[["name", "qt_a", "qt_i", "price_delta_pct"]]
+            .head(5)
+            .to_string(index=False)
+        )
 
     print()
     print("All tests passed.")

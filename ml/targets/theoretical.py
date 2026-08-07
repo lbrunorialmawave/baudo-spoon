@@ -13,11 +13,15 @@ The weights in RoleWeightsConfig are Ridge-calibrated priors. Using them as
 a feature (rather than the output) lets the ensemble correct systematic biases
 in the formula automatically.
 """
+
 from __future__ import annotations
+
 import logging
+
 import polars as pl
+
+from ml.domain.config import DEFAULT_ROLE_WEIGHTS, RoleWeightsConfig
 from ml.domain.features import Feature, MissingDataPolicy
-from ml.domain.config import RoleWeightsConfig, DEFAULT_ROLE_WEIGHTS
 
 log = logging.getLogger(__name__)
 
@@ -25,7 +29,7 @@ _BASE_RATING: float = 6.0
 
 # Map canonical_role values to weight dict keys in RoleWeightsConfig
 _ROLE_MAP: dict[str, str] = {
-    "GK":  "gk_weights",
+    "GK": "gk_weights",
     "DEF": "def_weights",
     "MID": "mid_weights",
     "FWD": "fwd_weights",

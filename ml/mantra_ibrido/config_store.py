@@ -65,12 +65,20 @@ def validate_config(data: dict[str, Any]) -> None:
         if not isinstance(v, (int, float)) or not 0.0 <= v <= 1.0:
             raise ValueError(f"{k} deve essere in [0, 1], got {v!r}")
 
-    for k in ("CONFIDENZA_SOGLIA", "ML_BOOST_SOGLIA", "ML_BOOST_FP_CORR_MAX",
-              "ML_TOP_PRED_MIN", "ML_TOP_BOOST_MIN",
-              "SOGLIA_GAP_ALERT", "EV_SCALE_FACTOR",
-              "SLEEPER_FP_CORR_MAX", "SLEEPER_ML_NORM_MIN",
-              "BEST_VALUE_VR_MIN", "BEST_VALUE_FP_IBRIDO_MIN",
-              "MINUTES_RISK_MAX"):
+    for k in (
+        "CONFIDENZA_SOGLIA",
+        "ML_BOOST_SOGLIA",
+        "ML_BOOST_FP_CORR_MAX",
+        "ML_TOP_PRED_MIN",
+        "ML_TOP_BOOST_MIN",
+        "SOGLIA_GAP_ALERT",
+        "EV_SCALE_FACTOR",
+        "SLEEPER_FP_CORR_MAX",
+        "SLEEPER_ML_NORM_MIN",
+        "BEST_VALUE_VR_MIN",
+        "BEST_VALUE_FP_IBRIDO_MIN",
+        "MINUTES_RISK_MAX",
+    ):
         v = data[k]
         if not isinstance(v, (int, float)) or v <= 0:
             raise ValueError(f"{k} deve essere > 0, got {v!r}")
@@ -128,7 +136,9 @@ def save_config(config: MantraIbridoConfig, path: Path = DEFAULT_CONFIG_PATH) ->
     _atomic_write(data, path)
 
 
-def update_config(partial: dict[str, Any], path: Path = DEFAULT_CONFIG_PATH) -> MantraIbridoConfig:
+def update_config(
+    partial: dict[str, Any], path: Path = DEFAULT_CONFIG_PATH
+) -> MantraIbridoConfig:
     """Merge *partial* into the **currently persisted** config and save.
 
     .. important::

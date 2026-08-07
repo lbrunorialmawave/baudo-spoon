@@ -24,7 +24,6 @@ DELETE /intelligence/id-mapping/resolutions/{id} — Remove a manual resolution 
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import ORJSONResponse
@@ -96,14 +95,30 @@ quotations_router = APIRouter(prefix="/quotations", tags=["quotations"])
     },
 )
 async def list_quotations(
-    season_start: Optional[int] = Query(None, ge=1990, le=2100, description="Filter by season start year"),
-    role: Optional[str] = Query(None, description="Filter by canonical role (GK, DEF, MID, FWD)"),
-    team: Optional[str] = Query(None, description="Filter by team name (exact match)"),
-    player_fotmob_id: Optional[int] = Query(None, ge=1, description="Filter by FotMob player ID"),
-    min_qt_a: Optional[int] = Query(None, ge=0, description="Minimum Qt.A value (inclusive)"),
-    max_qt_a: Optional[int] = Query(None, ge=0, description="Maximum Qt.A value (inclusive)"),
-    ruolo_primario: Optional[str] = Query(None, description="Filter by MANTRA primary role (Por, Dc, Dd, Ds, B, E, M, C, T, W, A, Pc)"),
-    ruolo_mantra: Optional[str] = Query(None, description="Filter by any MANTRA role (primary or secondary; e.g. 'Dd', 'M', 'A')"),
+    season_start: int | None = Query(
+        None, ge=1990, le=2100, description="Filter by season start year"
+    ),
+    role: str | None = Query(
+        None, description="Filter by canonical role (GK, DEF, MID, FWD)"
+    ),
+    team: str | None = Query(None, description="Filter by team name (exact match)"),
+    player_fotmob_id: int | None = Query(
+        None, ge=1, description="Filter by FotMob player ID"
+    ),
+    min_qt_a: int | None = Query(
+        None, ge=0, description="Minimum Qt.A value (inclusive)"
+    ),
+    max_qt_a: int | None = Query(
+        None, ge=0, description="Maximum Qt.A value (inclusive)"
+    ),
+    ruolo_primario: str | None = Query(
+        None,
+        description="Filter by MANTRA primary role (Por, Dc, Dd, Ds, B, E, M, C, T, W, A, Pc)",
+    ),
+    ruolo_mantra: str | None = Query(
+        None,
+        description="Filter by any MANTRA role (primary or secondary; e.g. 'Dd', 'M', 'A')",
+    ),
     page: int = Query(1, ge=1, description="Page number (1-based)"),
     size: int = Query(50, ge=1, le=500, description="Items per page (max 500)"),
     db: AsyncSession = Depends(get_db),
@@ -144,7 +159,9 @@ async def list_quotations(
         size=size,
     )
 
-    items = [PlayerQuotationWithMappingSchema(**r).model_dump(by_alias=True) for r in rows]
+    items = [
+        PlayerQuotationWithMappingSchema(**r).model_dump(by_alias=True) for r in rows
+    ]
     return ORJSONResponse(
         content={"total": total, "page": page, "size": size, "items": items}
     )
@@ -187,8 +204,12 @@ async def list_quotations_by_season(
             status_code=404,
             detail=f"No quotations found for season_start={season_start}",
         )
-    items = [PlayerQuotationWithMappingSchema(**r).model_dump(by_alias=True) for r in rows]
-    return ORJSONResponse(content={"seasonStart": season_start, "total": total, "items": items})
+    items = [
+        PlayerQuotationWithMappingSchema(**r).model_dump(by_alias=True) for r in rows
+    ]
+    return ORJSONResponse(
+        content={"seasonStart": season_start, "total": total, "items": items}
+    )
 
 
 @quotations_router.get(
@@ -210,15 +231,23 @@ async def get_player_fotmob_history(
     db: AsyncSession = Depends(get_db),
     repo: DataRepository = Depends(get_repository),
 ) -> ORJSONResponse:
-    rows = await repo.get_player_fotmob_history(db=db, player_fotmob_id=player_fotmob_id)
+    rows = await repo.get_player_fotmob_history(
+        db=db, player_fotmob_id=player_fotmob_id
+    )
     if not rows:
         raise HTTPException(
             status_code=404,
             detail=f"No quotations found for player_fotmob_id={player_fotmob_id}",
         )
-    items = [PlayerQuotationWithMappingSchema(**r).model_dump(by_alias=True) for r in rows]
+    items = [
+        PlayerQuotationWithMappingSchema(**r).model_dump(by_alias=True) for r in rows
+    ]
     return ORJSONResponse(
-        content={"playerFotmobId": player_fotmob_id, "total": len(items), "items": items}
+        content={
+            "playerFotmobId": player_fotmob_id,
+            "total": len(items),
+            "items": items,
+        }
     )
 
 
@@ -268,15 +297,24 @@ id_mapping_router = APIRouter(
     },
 )
 async def list_id_mappings(
-    season_start: Optional[int] = Query(None, ge=1990, le=2100, description="Filter by season"),
-    match_method: Optional[str] = Query(
+    season_start: int | None = Query(
+        None, ge=1990, le=2100, description="Filter by season"
+    ),
+    match_method: str | None = Query(
         None,
         description="Match algorithm (exact_name_team, exact_name_role, exact_relaxed_role, fuzzy_name, manual, unmatched)",
     ),
-    canonical_role: Optional[str] = Query(None, description="Filter by canonical role (GK, DEF, MID, FWD)"),
-    mantra_role: Optional[str] = Query(None, description="Filter by MANTRA primary role (Por, Dc, Dd, Ds, B, E, M, C, T, W, A, Pc)"),
+    canonical_role: str | None = Query(
+        None, description="Filter by canonical role (GK, DEF, MID, FWD)"
+    ),
+    mantra_role: str | None = Query(
+        None,
+        description="Filter by MANTRA primary role (Por, Dc, Dd, Ds, B, E, M, C, T, W, A, Pc)",
+    ),
     matched_only: bool = Query(False, description="When true, excludes UNMATCHED rows"),
-    unresolved_only: bool = Query(False, description="When true, only rows needing validation"),
+    unresolved_only: bool = Query(
+        False, description="When true, only rows needing validation"
+    ),
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
@@ -351,9 +389,9 @@ async def fotmob_search(
     term: str = Query(..., min_length=1, description="Search term (player name)"),
     hits: int = Query(10, ge=1, le=50, description="Max suggestions per category"),
 ) -> ORJSONResponse:
+    import json as _json
     import urllib.parse
     import urllib.request
-    import json as _json
 
     encoded_term = urllib.parse.quote(term, safe="")
     url = (
@@ -374,8 +412,11 @@ async def fotmob_search(
 
     try:
         import asyncio
+
         loop = asyncio.get_event_loop()
-        resp = await loop.run_in_executor(None, lambda: urllib.request.urlopen(req, timeout=10))
+        resp = await loop.run_in_executor(
+            None, lambda: urllib.request.urlopen(req, timeout=10)
+        )
         data = _json.loads(resp.read().decode("utf-8"))
     except Exception as exc:
         raise HTTPException(
@@ -394,19 +435,23 @@ async def fotmob_search(
             if pid in seen_ids:
                 continue
             seen_ids.add(pid)
-            players.append({
-                "playerFotmobId": pid,
-                "name": s["name"],
-                "teamId": s.get("teamId"),
-                "teamName": s.get("teamName"),
-                "score": s.get("score", 0),
-            })
+            players.append(
+                {
+                    "playerFotmobId": pid,
+                    "name": s["name"],
+                    "teamId": s.get("teamId"),
+                    "teamName": s.get("teamName"),
+                    "score": s.get("score", 0),
+                }
+            )
 
-    return ORJSONResponse(content={
-        "term": term,
-        "total": len(players),
-        "items": players,
-    })
+    return ORJSONResponse(
+        content={
+            "term": term,
+            "total": len(players),
+            "items": players,
+        }
+    )
 
 
 # ── Manual Resolutions endpoints ──────────────────────────────────────────────
@@ -429,10 +474,18 @@ async def fotmob_search(
     },
 )
 async def list_manual_resolutions(
-    season_start: Optional[int] = Query(None, ge=1990, le=2100, description="Filter by season"),
-    fantacalcio_id: Optional[int] = Query(None, ge=1, description="Filter by Fantacalcio ID"),
-    player_fotmob_id: Optional[int] = Query(None, ge=1, description="Filter by FotMob player ID"),
-    search: Optional[str] = Query(None, min_length=2, description="Search by Fantacalcio player name (ILIKE)"),
+    season_start: int | None = Query(
+        None, ge=1990, le=2100, description="Filter by season"
+    ),
+    fantacalcio_id: int | None = Query(
+        None, ge=1, description="Filter by Fantacalcio ID"
+    ),
+    player_fotmob_id: int | None = Query(
+        None, ge=1, description="Filter by FotMob player ID"
+    ),
+    search: str | None = Query(
+        None, min_length=2, description="Search by Fantacalcio player name (ILIKE)"
+    ),
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
@@ -448,7 +501,9 @@ async def list_manual_resolutions(
         size=size,
     )
     items = [ManualResolutionSchema(**r).model_dump(by_alias=True) for r in rows]
-    return ORJSONResponse(content={"total": total, "page": page, "size": size, "items": items})
+    return ORJSONResponse(
+        content={"total": total, "page": page, "size": size, "items": items}
+    )
 
 
 @id_mapping_router.get(
@@ -491,7 +546,9 @@ async def delete_manual_resolution(
 ) -> ORJSONResponse:
     deleted = await repo.delete_manual_resolution(db=db, resolution_id=resolution_id)
     if not deleted:
-        raise HTTPException(status_code=404, detail=f"Resolution {resolution_id} not found")
+        raise HTTPException(
+            status_code=404, detail=f"Resolution {resolution_id} not found"
+        )
     return ORJSONResponse(content={"status": "deleted", "id": resolution_id})
 
 
@@ -532,13 +589,18 @@ async def export_id_mappings(
 )
 async def get_id_mapping(
     fantacalcio_id: int,
-    season_start: Optional[int] = Query(
-        None, ge=1990, le=2100, description="Optional season start (defaults to most recent)"
+    season_start: int | None = Query(
+        None,
+        ge=1990,
+        le=2100,
+        description="Optional season start (defaults to most recent)",
     ),
     db: AsyncSession = Depends(get_db),
     repo: DataRepository = Depends(get_repository),
 ) -> ORJSONResponse:
-    row = await repo.get_id_mapping(db=db, fantacalcio_id=fantacalcio_id, season_start=season_start)
+    row = await repo.get_id_mapping(
+        db=db, fantacalcio_id=fantacalcio_id, season_start=season_start
+    )
     if row is None:
         raise HTTPException(
             status_code=404,
@@ -620,11 +682,13 @@ async def update_id_mapping(
     },
 )
 async def run_id_mapping(
-    season_start: Optional[int] = Query(
-        None, ge=1990, le=2100,
+    season_start: int | None = Query(
+        None,
+        ge=1990,
+        le=2100,
         description="Limit mapping to a single season (default: all seasons)",
     ),
-    league_name: Optional[str] = Query(
+    league_name: str | None = Query(
         None,
         description="FotMob league filter (e.g. 'Serie A')",
     ),
@@ -642,6 +706,7 @@ async def run_id_mapping(
     try:
         import pandas as pd  # type: ignore[import]
         import sqlalchemy as sa  # type: ignore[import]
+
         from ml.data.import_quotations import (  # type: ignore[import]
             apply_team_alias,
             build_player_id_map,
@@ -687,11 +752,13 @@ async def run_id_mapping(
         _log.info("  %d quotations loaded", len(quotes))
 
         if quotes.empty:
-            return ORJSONResponse(content={
-                "status": "ok",
-                "total": 0,
-                "detail": "No quotations found to map",
-            })
+            return ORJSONResponse(
+                content={
+                    "status": "ok",
+                    "total": 0,
+                    "detail": "No quotations found to map",
+                }
+            )
 
         # ── 2. Normalise names and teams ────────────────────────────────
         quotes["name"] = quotes["player_name"]
@@ -703,12 +770,12 @@ async def run_id_mapping(
 
         # ── 3. Preserve existing manual overrides ───────────────────────
         manual_existing = pd.read_sql(
-            sa.text(
-                "SELECT * FROM player_id_map WHERE match_method = 'manual'"
-            ),
+            sa.text("SELECT * FROM player_id_map WHERE match_method = 'manual'"),
             engine,
         )
-        _log.info("  %d existing manual overrides will be preserved", len(manual_existing))
+        _log.info(
+            "  %d existing manual overrides will be preserved", len(manual_existing)
+        )
 
         # ── 4. Run the 3-pass matching pipeline ─────────────────────────
         _log.info("Running 3-pass matching (exact → relaxed-role → fuzzy) …")
@@ -734,14 +801,16 @@ async def run_id_mapping(
         # ── 8. Invalidate Redis cache ───────────────────────────────────
         await repo.invalidate_cache()
 
-        return ORJSONResponse(content={
-            "status": "ok",
-            "total": total,
-            "matched": int(matched),
-            "unmatched": int(total - matched),
-            "matchRatePct": match_rate,
-            "byMethod": {str(k): int(v) for k, v in dist.items()},
-        })
+        return ORJSONResponse(
+            content={
+                "status": "ok",
+                "total": total,
+                "matched": int(matched),
+                "unmatched": int(total - matched),
+                "matchRatePct": match_rate,
+                "byMethod": {str(k): int(v) for k, v in dist.items()},
+            }
+        )
 
     except Exception as exc:
         _log.exception("ID mapping pipeline failed")

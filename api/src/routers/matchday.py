@@ -13,16 +13,15 @@ POST /matchday/scrape                 — Trigger scraper (API key)
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import ORJSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-import sqlalchemy as sa
 
 from ml.storage.artifact_store import ArtifactStore
 
-from ..deps import get_db, require_admin, require_role
+from ..deps import get_db, require_admin
 from .intelligence import get_artifact_store
 
 log = logging.getLogger(__name__)
@@ -51,9 +50,11 @@ def _matchday_placeholder_sql() -> str:
 
 @router.get("/status", summary="All players with matchday status")
 async def list_matchday_status(
-    matchday: Optional[int] = Query(None, description="Filter by matchday"),
-    status_filter: Optional[str] = Query(None, description="Filter by status (starter, bench, injured, ...)"),
-    team: Optional[str] = Query(None, description="Filter by team"),
+    matchday: int | None = Query(None, description="Filter by matchday"),
+    status_filter: str | None = Query(
+        None, description="Filter by status (starter, bench, injured, ...)"
+    ),
+    team: str | None = Query(None, description="Filter by team"),
     db: AsyncSession = Depends(get_db),
 ) -> ORJSONResponse:
     query = sa.text("""
@@ -75,11 +76,14 @@ async def list_matchday_status(
         latest = await db.scalar(sa.text(_matchday_placeholder_sql()))
         matchday = latest or 1
 
-    result = await db.execute(query, {
-        "matchday": matchday,
-        "status_filter": status_filter,
-        "team": team,
-    })
+    result = await db.execute(
+        query,
+        {
+            "matchday": matchday,
+            "status_filter": status_filter,
+            "team": team,
+        },
+    )
     rows = [dict(r._mapping) for r in result.all()]
     return ORJSONResponse({"matchday": matchday, "count": len(rows), "items": rows})
 
@@ -87,7 +91,7 @@ async def list_matchday_status(
 @router.get("/status/{fantacalcio_id}", summary="Single player matchday status")
 async def get_player_status(
     fantacalcio_id: int,
-    matchday: Optional[int] = Query(None),
+    matchday: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ) -> ORJSONResponse:
     if matchday is None:
@@ -107,13 +111,16 @@ async def get_player_status(
     )
     row = result.one_or_none()
     if row is None:
-        raise HTTPException(status_code=404, detail=f"Player {fantacalcio_id} not found for matchday {matchday}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Player {fantacalcio_id} not found for matchday {matchday}",
+        )
     return ORJSONResponse(dict(row._mapping))
 
 
 @router.get("/injured", summary="Only injured players")
 async def list_injured(
-    matchday: Optional[int] = Query(None),
+    matchday: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ) -> ORJSONResponse:
     if matchday is None:
@@ -138,7 +145,7 @@ async def list_injured(
 
 @router.get("/suspended", summary="Only suspended players")
 async def list_suspended(
-    matchday: Optional[int] = Query(None),
+    matchday: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ) -> ORJSONResponse:
     if matchday is None:
@@ -163,7 +170,7 @@ async def list_suspended(
 
 @router.get("/consigliati", summary="Recommended starters")
 async def list_consigliati(
-    matchday: Optional[int] = Query(None),
+    matchday: int | None = Query(None),
     min_probability: int = Query(70, ge=0, le=100),
     db: AsyncSession = Depends(get_db),
     artifact_store: ArtifactStore = Depends(get_artifact_store),
@@ -197,7 +204,9 @@ async def list_consigliati(
     # Try to enrich with MANTRA scores — season resolved from the latest
     # imported quotations, read via ArtifactStore (local disk → R2), same
     # source-of-truth path used by every other MANTRA reader in this repo.
-    season_start = await db.scalar(sa.text("SELECT MAX(season_start) FROM player_quotations"))
+    season_start = await db.scalar(
+        sa.text("SELECT MAX(season_start) FROM player_quotations")
+    )
     mantra_map: dict = {}
     if season_start is not None:
         mantra_data = artifact_store.load_json(f"mantra_results_{season_start}.json")
@@ -213,20 +222,38 @@ async def list_consigliati(
             row["fase7"] = mp.get("Fase7")
 
     # Sort by FP_Mantra descending (if available), else by probability
-    rows.sort(key=lambda r: r.get("fp_mantra", 0) or r.get("probability", 0), reverse=True)
+    rows.sort(
+        key=lambda r: r.get("fp_mantra", 0) or r.get("probability", 0), reverse=True
+    )
 
-    return ORJSONResponse({"matchday": matchday, "min_probability": min_probability, "count": len(rows), "items": rows})
+    return ORJSONResponse(
+        {
+            "matchday": matchday,
+            "min_probability": min_probability,
+            "count": len(rows),
+            "items": rows,
+        }
+    )
 
 
-@router.post("/scrape", summary="Trigger scraper (admin required)", dependencies=[Depends(require_admin)])
+@router.post(
+    "/scrape",
+    summary="Trigger scraper (admin required)",
+    dependencies=[Depends(require_admin)],
+)
 async def trigger_matchday_scrape(
-    matchday: Optional[int] = Query(None),
+    matchday: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ) -> ORJSONResponse:
     """Scrape probabili formazioni and persist to DB."""
     try:
-        sync_url = str(db.bind.url).replace("+asyncpg://", "+psycopg2://").replace("?ssl=", "?sslmode=").replace("&ssl=", "&sslmode=")
-        from scraper.probabili_formazioni import scrape, persist
+        sync_url = (
+            str(db.bind.url)
+            .replace("+asyncpg://", "+psycopg2://")
+            .replace("?ssl=", "?sslmode=")
+            .replace("&ssl=", "&sslmode=")
+        )
+        from scraper.probabili_formazioni import persist, scrape
 
         records = scrape(matchday=matchday)
         n = persist(records, sync_url)

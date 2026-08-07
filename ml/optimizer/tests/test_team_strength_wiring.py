@@ -7,7 +7,6 @@ the parameter.
 
 from __future__ import annotations
 
-from ml.optimizer.inflation import estimate_effective_cost
 from ml.optimizer.models import (
     Formation,
     InflationConfig,
@@ -47,7 +46,6 @@ def _small_pool() -> list[Player]:
     """25-player pool with mix of Inter (high Elo) and Lecce (low Elo)."""
     pool: list[Player] = []
     teams = ["Inter", "Lecce", "Milan", "Napoli", "Roma", "Juventus", "Fiorentina"]
-    roles = ["P", "D", "C", "A"]
     role_counts = {"P": 3, "D": 8, "C": 8, "A": 6}
     idx = 0
     for role, count in role_counts.items():
@@ -98,7 +96,9 @@ class TestSolverUsesTeamStrength:
                 team_strength_multiplier=0.0,
             ),
         )
-        strategy = StrategyProfile(name="balanced", role_weight={"P": 1, "D": 1, "C": 1, "A": 1})
+        strategy = StrategyProfile(
+            name="balanced", role_weight={"P": 1, "D": 1, "C": 1, "A": 1}
+        )
 
         result_elo = solve_strategy(pool, config_with_elo, strategy)
         result_no_elo = solve_strategy(pool, config_no_elo, strategy)
@@ -151,13 +151,18 @@ class TestWinProbabilityUsesTeamStrength:
 
         random.seed(42)
         prob_with_elo = estimate_completion_probability(
-            squad, budget=65, config=wp_config,
-            inflation_config=_ELO_CONFIG, num_participants=10,
+            squad,
+            budget=65,
+            config=wp_config,
+            inflation_config=_ELO_CONFIG,
+            num_participants=10,
             team_strength_scores=ts,
         )
         random.seed(42)
         prob_no_elo = estimate_completion_probability(
-            squad, budget=65, config=wp_config,
+            squad,
+            budget=65,
+            config=wp_config,
             inflation_config=InflationConfig(
                 inflation_percentile_threshold=0.5,
                 max_inflation_multiplier=2.0,

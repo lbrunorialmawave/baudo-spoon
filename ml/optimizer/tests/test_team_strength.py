@@ -48,8 +48,22 @@ def test_inflation_uses_team_strength() -> None:
         baseline_participants=8,
         team_strength_multiplier=0.3,
     )
-    p_inter = Player(player_id="x", name="X", role="A", real_team="Inter", cost=20, projected_score=8.0)
-    p_lecce = Player(player_id="y", name="Y", role="A", real_team="Lecce", cost=20, projected_score=8.0)
+    p_inter = Player(
+        player_id="x",
+        name="X",
+        role="A",
+        real_team="Inter",
+        cost=20,
+        projected_score=8.0,
+    )
+    p_lecce = Player(
+        player_id="y",
+        name="Y",
+        role="A",
+        real_team="Lecce",
+        cost=20,
+        projected_score=8.0,
+    )
 
     ts = load_team_strength_scores(known_teams={"Inter", "Lecce"})
 
@@ -65,7 +79,14 @@ def test_zero_multiplier_no_effect() -> None:
     from ml.optimizer.models import InflationConfig, Player
 
     cfg = InflationConfig(team_strength_multiplier=0.0)
-    p = Player(player_id="x", name="X", role="A", real_team="Inter", cost=20, projected_score=8.0)
+    p = Player(
+        player_id="x",
+        name="X",
+        role="A",
+        real_team="Inter",
+        cost=20,
+        projected_score=8.0,
+    )
 
     ts = load_team_strength_scores()
     cost_with = estimate_effective_cost(p, 0.9, 10, cfg, team_strength_scores=ts)

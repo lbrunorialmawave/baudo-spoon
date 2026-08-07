@@ -31,7 +31,6 @@ All features are nullable: a player without a quotation row simply gets
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -94,16 +93,19 @@ def attach_quotation_features(
             "Run `python -m ml.data.import_quotations` first."
         )
         for col in (
-            "qt_a", "qt_i", "qt_a_norm", "qt_i_norm",
-            "price_delta_pct", "qt_a_vs_role_median",
-            "price_trend_2y", "qt_a_lag1",
+            "qt_a",
+            "qt_i",
+            "qt_a_norm",
+            "qt_i_norm",
+            "price_delta_pct",
+            "qt_a_vs_role_median",
+            "price_trend_2y",
+            "qt_a_lag1",
         ):
             df[col] = np.nan
         return df
 
-    quotes = quotes.drop_duplicates(
-        subset=["player_fotmob_id", "season_start"]
-    )
+    quotes = quotes.drop_duplicates(subset=["player_fotmob_id", "season_start"])
     # Rename role so the merge target is unambiguous.
     quotes = quotes.rename(columns={"role": "quotation_role"})
 
@@ -111,9 +113,16 @@ def attach_quotation_features(
     df = df.merge(
         quotes[
             [
-                "player_fotmob_id", "season_start",
-                "qt_a", "qt_i", "qt_a_norm", "qt_i_norm",
-                "diff_val", "fvm", "quotation_role", "match_method",
+                "player_fotmob_id",
+                "season_start",
+                "qt_a",
+                "qt_i",
+                "qt_a_norm",
+                "qt_i_norm",
+                "diff_val",
+                "fvm",
+                "quotation_role",
+                "match_method",
             ]
         ],
         on=["player_fotmob_id", "season_start"],
@@ -166,12 +175,8 @@ def attach_quotation_features(
     # Must be sorted and grouped by player to keep the temporal order.
     df = df.sort_values(["player_fotmob_id", "season_start"])
     grp = df.groupby("player_fotmob_id", sort=False)
-    df["qt_a_lag1"] = pd.to_numeric(
-        grp["qt_a"].shift(1), errors="coerce"
-    ).astype(float)
-    df["qt_i_lag1"] = pd.to_numeric(
-        grp["qt_i"].shift(1), errors="coerce"
-    ).astype(float)
+    df["qt_a_lag1"] = pd.to_numeric(grp["qt_a"].shift(1), errors="coerce").astype(float)
+    df["qt_i_lag1"] = pd.to_numeric(grp["qt_i"].shift(1), errors="coerce").astype(float)
     # price_trend_2y: relative change vs. previous season.
     valid_lag = df["qt_a_lag1"].gt(0) & qt_a.notna()
     df["price_trend_2y"] = np.where(
@@ -190,18 +195,22 @@ def attach_quotation_features(
     pct = (100.0 * n_with / n_total) if n_total else 0.0
     log.info(
         "Quotation features: %d / %d rows have a matched quotation (%.1f%%).",
-        n_with, n_total, pct,
+        n_with,
+        n_total,
+        pct,
     )
     log.info(
         "  match_method distribution (among non-null): %s",
         df.loc[df["qt_a"].notna(), "match_method"].value_counts().to_dict()
-        if "match_method" in df.columns else "n/a",
+        if "match_method" in df.columns
+        else "n/a",
     )
 
     return df
 
 
 # ── Convenience for ad-hoc inspection ───────────────────────────────────────
+
 
 def quote_coverage_report(df: pd.DataFrame) -> pd.DataFrame:
     """Per-season coverage summary. Used by the import CLI for QA logs."""

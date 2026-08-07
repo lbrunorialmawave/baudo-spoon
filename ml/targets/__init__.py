@@ -5,7 +5,8 @@ Exports:
 - TheoreticalFantavoto: role-aware theoretical score as a feature
 - TARGET_SPECS: all 6 TargetSpec instances
 """
-from ml.targets.builder import TargetBuilder, TARGET_SPECS
+
+from ml.targets.builder import TARGET_SPECS, TargetBuilder
 from ml.targets.theoretical import TheoreticalFantavoto
 
-__all__ = ["TargetBuilder", "TARGET_SPECS", "TheoreticalFantavoto"]
+__all__ = ["TARGET_SPECS", "TargetBuilder", "TheoreticalFantavoto"]

@@ -17,34 +17,42 @@ class RoleWeightsConfig:
 
     calibration_source: str
     last_updated: str
-    gk_weights: dict[str, float] = field(default_factory=lambda: {
-        "saves_per90": 0.30,
-        "_goals_prevented_per90": 0.25,
-        "goals_conceded_per90": -0.20,
-        "clean_sheet_per90": 0.25,
-    })
-    def_weights: dict[str, float] = field(default_factory=lambda: {
-        "goals_per90": 0.20,
-        "goal_assist_per90": 0.15,
-        "total_tackle_per90": 0.15,
-        "interception_per90": 0.15,
-        "effective_clearance_per90": 0.10,
-        "clean_sheet_per90": 0.25,
-    })
-    mid_weights: dict[str, float] = field(default_factory=lambda: {
-        "goals_per90": 0.25,
-        "goal_assist_per90": 0.25,
-        "total_scoring_att_per90": 0.15,
-        "total_att_assist_per90": 0.20,
-        "won_contest_per90": 0.15,
-    })
-    fwd_weights: dict[str, float] = field(default_factory=lambda: {
-        "goals_per90": 0.35,
-        "goal_assist_per90": 0.20,
-        "total_scoring_att_per90": 0.20,
-        "ontarget_scoring_att_per90": 0.15,
-        "won_contest_per90": 0.10,
-    })
+    gk_weights: dict[str, float] = field(
+        default_factory=lambda: {
+            "saves_per90": 0.30,
+            "_goals_prevented_per90": 0.25,
+            "goals_conceded_per90": -0.20,
+            "clean_sheet_per90": 0.25,
+        }
+    )
+    def_weights: dict[str, float] = field(
+        default_factory=lambda: {
+            "goals_per90": 0.20,
+            "goal_assist_per90": 0.15,
+            "total_tackle_per90": 0.15,
+            "interception_per90": 0.15,
+            "effective_clearance_per90": 0.10,
+            "clean_sheet_per90": 0.25,
+        }
+    )
+    mid_weights: dict[str, float] = field(
+        default_factory=lambda: {
+            "goals_per90": 0.25,
+            "goal_assist_per90": 0.25,
+            "total_scoring_att_per90": 0.15,
+            "total_att_assist_per90": 0.20,
+            "won_contest_per90": 0.15,
+        }
+    )
+    fwd_weights: dict[str, float] = field(
+        default_factory=lambda: {
+            "goals_per90": 0.35,
+            "goal_assist_per90": 0.20,
+            "total_scoring_att_per90": 0.20,
+            "ontarget_scoring_att_per90": 0.15,
+            "won_contest_per90": 0.10,
+        }
+    )
 
 
 @dataclass(frozen=True)

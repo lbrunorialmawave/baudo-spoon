@@ -1,12 +1,14 @@
 """Structured diagnostics for optimizer runs."""
+
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any
 
 import numpy as np
 
-from ml.optimizer.models import OptimizationResult, Player
+from ml.optimizer.models import Player
 
 __all__ = ["PoolDiagnostics", "build_pool_diagnostics", "merge_result_diagnostics"]
 
@@ -37,7 +39,9 @@ class PoolDiagnostics:
             "pct_with_esv": round(self.pct_with_esv, 4),
             "pct_with_fp_ibrido": round(self.pct_with_fp_ibrido, 4),
             "mean_prediction_std": (
-                round(self.mean_prediction_std, 4) if self.mean_prediction_std is not None else None
+                round(self.mean_prediction_std, 4)
+                if self.mean_prediction_std is not None
+                else None
             ),
             "cost_p50": self.cost_p50,
             "cost_p90": self.cost_p90,
@@ -69,15 +73,24 @@ def build_pool_diagnostics(pool: Sequence[Player]) -> PoolDiagnostics:
             1 for p in pool if p.season_value is not None and p.season_value > 0
         )
         / n,
-        pct_with_start_probability=sum(1 for p in pool if p.start_probability is not None) / n,
+        pct_with_start_probability=sum(
+            1 for p in pool if p.start_probability is not None
+        )
+        / n,
         cost_p50=float(np.percentile(costs, 50)),
         cost_p90=float(np.percentile(costs, 90)),
         projected_score_p50=float(np.percentile(scores, 50)),
         projected_score_p90=float(np.percentile(scores, 90)),
         roles=roles,
-        pct_with_var_score=sum(1 for p in pool if getattr(p, "var_score", None) is not None) / n,
+        pct_with_var_score=sum(
+            1 for p in pool if getattr(p, "var_score", None) is not None
+        )
+        / n,
         pct_with_esv=sum(1 for p in pool if getattr(p, "esv", None) is not None) / n,
-        pct_with_fp_ibrido=sum(1 for p in pool if getattr(p, "fp_ibrido", None) is not None) / n,
+        pct_with_fp_ibrido=sum(
+            1 for p in pool if getattr(p, "fp_ibrido", None) is not None
+        )
+        / n,
         mean_prediction_std=float(np.mean(stds)) if stds else None,
     )
 

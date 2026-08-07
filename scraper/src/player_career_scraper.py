@@ -28,7 +28,7 @@ import re
 import time
 import unicodedata
 import urllib.request
-from typing import Any, Optional
+from typing import Any
 
 from .models import FOTMOB_BASE_URL, LEAGUE_CATALOG
 
@@ -40,7 +40,7 @@ _USER_AGENT = (
 )
 _REQUEST_TIMEOUT_SECONDS = 15
 _REQUEST_DELAY_SECONDS = 1.0
-_NEXT_DATA_RE = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S)
+_NEXT_DATA_RE = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.DOTALL)
 
 # FotMob's career-history entries give appearances, not minutes played.
 # 70 min/appearance is a rough middle-ground between a full start (~90) and
@@ -57,29 +57,42 @@ def _slugify(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-")
 
 
-def _fetch_next_data(player_fotmob_id: int, player_name: str) -> Optional[dict]:
+def _fetch_next_data(player_fotmob_id: int, player_name: str) -> dict | None:
     slug = _slugify(player_name)
     url = f"{FOTMOB_BASE_URL}/players/{player_fotmob_id}/overview/{slug}"
     req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
     try:
         with urllib.request.urlopen(req, timeout=_REQUEST_TIMEOUT_SECONDS) as resp:
             html = resp.read().decode("utf-8", errors="replace")
-    except Exception as exc:  # noqa: BLE001 — best-effort, caller treats None as "skip"
-        log.warning("player_career: fetch failed for %s (%d): %s", player_name, player_fotmob_id, exc)
+    except Exception as exc:
+        log.warning(
+            "player_career: fetch failed for %s (%d): %s",
+            player_name,
+            player_fotmob_id,
+            exc,
+        )
         return None
 
     m = _NEXT_DATA_RE.search(html)
     if not m:
-        log.warning("player_career: no __NEXT_DATA__ found for %s (%d)", player_name, player_fotmob_id)
+        log.warning(
+            "player_career: no __NEXT_DATA__ found for %s (%d)",
+            player_name,
+            player_fotmob_id,
+        )
         return None
     try:
         return json.loads(m.group(1))
     except json.JSONDecodeError:
-        log.warning("player_career: malformed __NEXT_DATA__ for %s (%d)", player_name, player_fotmob_id)
+        log.warning(
+            "player_career: malformed __NEXT_DATA__ for %s (%d)",
+            player_name,
+            player_fotmob_id,
+        )
         return None
 
 
-def _best_tournament_entry(season_entry: dict) -> Optional[dict]:
+def _best_tournament_entry(season_entry: dict) -> dict | None:
     """Pick the most representative competition within a season entry.
 
     Prefers a top-flight league already in LEAGUE_CATALOG over cups/UCL
@@ -89,7 +102,8 @@ def _best_tournament_entry(season_entry: dict) -> Optional[dict]:
     competition.
     """
     candidates = [
-        t for t in season_entry.get("tournamentStats", []) or []
+        t
+        for t in season_entry.get("tournamentStats", []) or []
         if t.get("leagueName") in LEAGUE_CATALOG
     ]
     if not candidates:
@@ -99,7 +113,7 @@ def _best_tournament_entry(season_entry: dict) -> Optional[dict]:
 
 def fetch_player_career_snapshot(
     player_fotmob_id: int, player_name: str
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Return the player's most recent season snapshot, from any league.
 
     Returns None if the fetch failed, the payload shape was unexpected, or
@@ -114,7 +128,9 @@ def fetch_player_career_snapshot(
         entries = career["careerItems"]["senior"]["seasonEntries"]
     except (KeyError, TypeError):
         log.warning(
-            "player_career: unexpected payload shape for %s (%d)", player_name, player_fotmob_id
+            "player_career: unexpected payload shape for %s (%d)",
+            player_name,
+            player_fotmob_id,
         )
         return None
     if not entries:
@@ -131,7 +147,9 @@ def fetch_player_career_snapshot(
         assists = int(source.get("assists") or 0)
         rating_field = source.get("rating") or {}
         rating_value = (
-            float(rating_field["rating"]) if rating_field.get("rating") is not None else None
+            float(rating_field["rating"])
+            if rating_field.get("rating") is not None
+            else None
         )
     except (TypeError, ValueError):
         log.warning(
@@ -177,7 +195,8 @@ def _persist_one_snapshot(session: Any, snap: dict[str, Any]) -> int:
     if meta is None:
         log.warning(
             "player_career: skipping %s — league %r not in LEAGUE_CATALOG",
-            snap["player_name"], snap["league_name"],
+            snap["player_name"],
+            snap["league_name"],
         )
         return 0
 
@@ -251,5 +270,10 @@ def fetch_and_persist_players(
             if i < total:
                 time.sleep(delay_seconds)
 
-    log.info("player_career: fetched %d/%d players, %d rows persisted", fetched, total, persisted)
+    log.info(
+        "player_career: fetched %d/%d players, %d rows persisted",
+        fetched,
+        total,
+        persisted,
+    )
     return fetched, persisted

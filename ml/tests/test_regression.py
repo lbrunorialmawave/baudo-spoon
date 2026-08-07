@@ -11,8 +11,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 def _make_simple_xy(
     n_rows: int = 50,
@@ -30,32 +30,36 @@ def _make_simple_xy(
 def _make_min_config(**overrides):
     """Minimal MLConfig without a real DB for unit tests."""
     from ml.config import MLConfig
-    defaults = dict(
-        database_url="postgresql://test:t@localhost/test",
-        tune=False,
-        cv_folds=2,
-        random_seed=42,
-        tune_iter=2,
-    )
+
+    defaults = {
+        "database_url": "postgresql://test:t@localhost/test",
+        "tune": False,
+        "cv_folds": 2,
+        "random_seed": 42,
+        "tune_iter": 2,
+    }
     defaults.update(overrides)
     return MLConfig(**defaults)
 
 
 def _make_fitted_predictor():
     """Return a fitted MultiTargetPredictor on a tiny dataset."""
-    from ml.models.regression import MultiTargetPredictor
     from sklearn.compose import ColumnTransformer
     from sklearn.impute import SimpleImputer
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import RobustScaler
 
+    from ml.models.regression import MultiTargetPredictor
+
     X, y = _make_simple_xy(n_rows=60, n_feats=4)
     cfg = _make_min_config()
 
-    num_pipe = Pipeline([
-        ("imp", SimpleImputer(strategy="median")),
-        ("sc", RobustScaler()),
-    ])
+    num_pipe = Pipeline(
+        [
+            ("imp", SimpleImputer(strategy="median")),
+            ("sc", RobustScaler()),
+        ]
+    )
     preprocessor = ColumnTransformer(
         [("num", num_pipe, list(X.columns))],
         remainder="drop",
@@ -72,6 +76,7 @@ def _make_fitted_predictor():
 
 # ── MultiTargetPredictor.optimize_weights ─────────────────────────────────────
 
+
 class TestMultiTargetWeightOptimization:
     """Validation-based weight optimisation replaces static 0.65/0.35 defaults.
 
@@ -86,7 +91,6 @@ class TestMultiTargetWeightOptimization:
     def test_weights_update_in_place(self):
         """After optimize_weights, both weight attributes must be updated."""
         predictor, X, y = _make_fitted_predictor()
-        old_gw = predictor.grade_weight
 
         predictor.optimize_weights(X, y, n_steps=4)
 
@@ -100,9 +104,7 @@ class TestMultiTargetWeightOptimization:
         predictor.optimize_weights(X, y, n_steps=4)
 
         total = predictor.grade_weight + predictor.bonus_weight
-        assert abs(total - 1.0) < 1e-6, (
-            f"Weights must sum to 1.0; got {total:.6f}"
-        )
+        assert abs(total - 1.0) < 1e-6, f"Weights must sum to 1.0; got {total:.6f}"
 
     def test_weights_within_grid_range(self):
         """grade_weight must lie in [0.40, 0.80] — the grid search bounds."""
@@ -130,22 +132,19 @@ class TestMultiTargetWeightOptimization:
         the chosen weight pair is by construction the minimiser — it cannot be
         strictly worse than any fixed pair, including the static defaults.
         """
-        from ml.models.regression import MultiTargetPredictor
 
         predictor, X, y = _make_fitted_predictor()
 
         # Record default-weight RMSE
         result_default = predictor.predict(X)
-        rmse_default = float(np.sqrt(
-            np.mean((result_default.combined_pred - y.values) ** 2)
-        ))
+        rmse_default = float(
+            np.sqrt(np.mean((result_default.combined_pred - y.values) ** 2))
+        )
 
         # Optimise and record new RMSE
         predictor.optimize_weights(X, y, n_steps=8)
         result_opt = predictor.predict(X)
-        rmse_opt = float(np.sqrt(
-            np.mean((result_opt.combined_pred - y.values) ** 2)
-        ))
+        rmse_opt = float(np.sqrt(np.mean((result_opt.combined_pred - y.values) ** 2)))
 
         assert rmse_opt <= rmse_default + 1e-9, (
             f"Optimised RMSE ({rmse_opt:.4f}) must not exceed "
@@ -154,7 +153,6 @@ class TestMultiTargetWeightOptimization:
 
     def test_returns_self(self):
         """optimize_weights must return self for method chaining."""
-        from ml.models.regression import MultiTargetPredictor
 
         predictor, X, y = _make_fitted_predictor()
         returned = predictor.optimize_weights(X, y, n_steps=2)
@@ -163,6 +161,7 @@ class TestMultiTargetWeightOptimization:
 
 
 # ── _create_engine_with_retry ─────────────────────────────────────────────────
+
 
 class TestCreateEngineWithRetry:
     """Exponential backoff retry logic for SQLAlchemy engine creation.
@@ -182,6 +181,7 @@ class TestCreateEngineWithRetry:
 
         with patch("sqlalchemy.create_engine", return_value=mock_engine):
             from ml.run_pipeline import _create_engine_with_retry
+
             result = _create_engine_with_retry("postgresql://fake/db", max_attempts=3)
 
         assert result is mock_engine
@@ -195,16 +195,17 @@ class TestCreateEngineWithRetry:
             side_effect=Exception("connection refused"),
         ):
             from ml.run_pipeline import _create_engine_with_retry
+
             with pytest.raises(RuntimeError, match="Failed to connect"):
                 _create_engine_with_retry(
                     "postgresql://fake/db",
                     max_attempts=3,
-                    base_delay=0.0,   # instant for unit tests
+                    base_delay=0.0,  # instant for unit tests
                 )
 
     def test_succeeds_after_transient_failures(self):
         """Succeeds on the 3rd attempt when first two fail transiently."""
-        from unittest.mock import MagicMock, call, patch
+        from unittest.mock import MagicMock, patch
 
         mock_engine = MagicMock()
         mock_conn = MagicMock()
@@ -216,11 +217,12 @@ class TestCreateEngineWithRetry:
         def side_effect(url, **kwargs):
             call_count["n"] += 1
             if call_count["n"] < 3:
-                raise Exception("transient error")
+                raise RuntimeError("transient error")
             return mock_engine
 
         with patch("sqlalchemy.create_engine", side_effect=side_effect):
             from ml.run_pipeline import _create_engine_with_retry
+
             result = _create_engine_with_retry(
                 "postgresql://fake/db",
                 max_attempts=5,
@@ -232,11 +234,9 @@ class TestCreateEngineWithRetry:
 
     def test_delay_grows_exponentially(self):
         """Retry delays follow base_delay × 2^(attempt-1) schedule."""
-        import time
         from unittest.mock import patch
 
         recorded_delays: list[float] = []
-        original_sleep = time.sleep
 
         def mock_sleep(seconds: float) -> None:
             recorded_delays.append(seconds)
@@ -249,6 +249,7 @@ class TestCreateEngineWithRetry:
             ),
         ):
             from ml.run_pipeline import _create_engine_with_retry
+
             with pytest.raises(RuntimeError):
                 _create_engine_with_retry(
                     "postgresql://fake/db",
@@ -258,6 +259,6 @@ class TestCreateEngineWithRetry:
 
         # Expect 3 sleeps (between attempts 1-2, 2-3, 3-4)
         assert len(recorded_delays) == 3
-        assert abs(recorded_delays[0] - 1.0) < 1e-6   # 1.0 × 2^0
-        assert abs(recorded_delays[1] - 2.0) < 1e-6   # 1.0 × 2^1
-        assert abs(recorded_delays[2] - 4.0) < 1e-6   # 1.0 × 2^2
+        assert abs(recorded_delays[0] - 1.0) < 1e-6  # 1.0 × 2^0
+        assert abs(recorded_delays[1] - 2.0) < 1e-6  # 1.0 × 2^1
+        assert abs(recorded_delays[2] - 4.0) < 1e-6  # 1.0 × 2^2

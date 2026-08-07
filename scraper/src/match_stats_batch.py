@@ -124,7 +124,9 @@ def fetch_matches_batch(
         except Exception as exc:
             log.warning(
                 "match_stats_batch: batch %d-%d failed entirely: %s",
-                start, start + len(chunk), exc,
+                start,
+                start + len(chunk),
+                exc,
             )
             for url in chunk:
                 results[url] = None
@@ -140,12 +142,17 @@ def fetch_matches_batch(
                 results[url] = None
                 failed += 1
                 log.debug(
-                    "match_stats_batch: %s → %s", url, item.get("error") or item.get("status")
+                    "match_stats_batch: %s → %s",
+                    url,
+                    item.get("error") or item.get("status"),
                 )
 
         log.info(
             "match_stats_batch: %d/%d done (ok=%d, failed=%d)",
-            min(start + batch_size, total), total, ok, failed,
+            min(start + batch_size, total),
+            total,
+            ok,
+            failed,
         )
         time.sleep(inter_batch_delay)
 

@@ -41,11 +41,11 @@ Columns:
 from __future__ import annotations
 
 import argparse
-import csv
 import logging
-from dataclasses import dataclass, field
+import sys
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import pandas as pd
 import sqlalchemy as sa
@@ -82,13 +82,13 @@ class MatchOverride:
 
     fantacalcio_id: int
     season_start: int
-    player_fotmob_id: Optional[int]
+    player_fotmob_id: int | None
     name_fantacalcio: str
-    name_fotmob: Optional[str] = None
-    team_fantacalcio: Optional[str] = None
-    team_fotmob: Optional[str] = None
-    canonical_role: Optional[str] = None
-    note: Optional[str] = None
+    name_fotmob: str | None = None
+    team_fantacalcio: str | None = None
+    team_fotmob: str | None = None
+    canonical_role: str | None = None
+    note: str | None = None
 
 
 # ── CSV I/O ──────────────────────────────────────────────────────────────────
@@ -118,36 +118,45 @@ def export_unresolved(
     is_dubious = (
         include_dubious
         & id_map.get("match_method", "").isin({"fuzzy_name", "exact_relaxed_role"})
-        & (pd.to_numeric(id_map.get("confidence", 1.0), errors="coerce") < DUBIOUS_CONFIDENCE_THRESHOLD)
+        & (
+            pd.to_numeric(id_map.get("confidence", 1.0), errors="coerce")
+            < DUBIOUS_CONFIDENCE_THRESHOLD
+        )
     )
     unresolved = id_map[is_unmatched | is_dubious].copy()
 
     if unresolved.empty:
         log.info("No unresolved rows to export.")
         # Write an empty file with headers anyway
-        pd.DataFrame(columns=OVERRIDE_COLUMNS).to_csv(output_path, index=False, encoding="utf-8")
+        pd.DataFrame(columns=OVERRIDE_COLUMNS).to_csv(
+            output_path, index=False, encoding="utf-8"
+        )
         return 0
 
     rows = []
     for _, row in unresolved.iterrows():
-        rows.append({
-            "fantacalcio_id": int(row.get("fantacalcio_id", 0)),
-            "season_start": int(row.get("season_start", 0)),
-            "name": row.get("name_fantacalcio", row.get("name", "")),
-            "team": row.get("team_fantacalcio", row.get("team", "")),
-            "role": row.get("canonical_role", ""),
-            "player_fotmob_id": "",  # blank — operator fills this
-            "canonical_role": "",   # blank — operator can override
-            "team_fotmob": "",      # blank — operator can override
-            "note": "",
-        })
+        rows.append(
+            {
+                "fantacalcio_id": int(row.get("fantacalcio_id", 0)),
+                "season_start": int(row.get("season_start", 0)),
+                "name": row.get("name_fantacalcio", row.get("name", "")),
+                "team": row.get("team_fantacalcio", row.get("team", "")),
+                "role": row.get("canonical_role", ""),
+                "player_fotmob_id": "",  # blank — operator fills this
+                "canonical_role": "",  # blank — operator can override
+                "team_fotmob": "",  # blank — operator can override
+                "note": "",
+            }
+        )
 
     out = pd.DataFrame(rows)
     out.to_csv(output_path, index=False, encoding="utf-8")
     log.info(
         "Exported %d unresolved rows to %s (include_dubious=%s). "
         "Edit the CSV, fill 'player_fotmob_id', then re-run with --overrides.",
-        len(out), output_path, include_dubious,
+        len(out),
+        output_path,
+        include_dubious,
     )
     return len(out)
 
@@ -183,27 +192,30 @@ def load_overrides_csv(override_path: Path) -> list[MatchOverride]:
     overrides: list[MatchOverride] = []
     for _, row in df.iterrows():
         fotmob_raw = row.get("player_fotmob_id")
-        fotmob_id: Optional[int] = None
+        fotmob_id: int | None = None
         if pd.notna(fotmob_raw) and str(fotmob_raw).strip():
             try:
                 fotmob_id = int(float(str(fotmob_raw).strip()))
             except (ValueError, TypeError):
                 log.warning(
                     "Invalid player_fotmob_id=%r in override CSV (row: %s). Skipping.",
-                    fotmob_raw, row.to_dict(),
+                    fotmob_raw,
+                    row.to_dict(),
                 )
                 continue
 
-        overrides.append(MatchOverride(
-            fantacalcio_id=int(row["fantacalcio_id"]),
-            season_start=int(row["season_start"]),
-            player_fotmob_id=fotmob_id,
-            name_fantacalcio=str(row.get("name", "")),
-            team_fantacalcio=str(row.get("team", "")),
-            team_fotmob=str(row.get("team_fotmob", "")) or None,
-            canonical_role=str(row.get("canonical_role", "")) or None,
-            note=str(row.get("note", "")) or None,
-        ))
+        overrides.append(
+            MatchOverride(
+                fantacalcio_id=int(row["fantacalcio_id"]),
+                season_start=int(row["season_start"]),
+                player_fotmob_id=fotmob_id,
+                name_fantacalcio=str(row.get("name", "")),
+                team_fantacalcio=str(row.get("team", "")),
+                team_fotmob=str(row.get("team_fotmob", "")) or None,
+                canonical_role=str(row.get("canonical_role", "")) or None,
+                note=str(row.get("note", "")) or None,
+            )
+        )
 
     log.info("Loaded %d manual overrides from %s.", len(overrides), override_path)
     return overrides
@@ -243,9 +255,8 @@ def apply_overrides_to_id_map(
 
 def _apply_single_override(df: pd.DataFrame, o: MatchOverride) -> pd.DataFrame:
     """Apply one override to the id_map DataFrame — returns a new DataFrame."""
-    mask = (
-        (df["fantacalcio_id"] == o.fantacalcio_id)
-        & (df["season_start"] == o.season_start)
+    mask = (df["fantacalcio_id"] == o.fantacalcio_id) & (
+        df["season_start"] == o.season_start
     )
     if mask.any():
         # Update existing row
@@ -258,7 +269,9 @@ def _apply_single_override(df: pd.DataFrame, o: MatchOverride) -> pd.DataFrame:
             df.loc[mask, "canonical_role"] = o.canonical_role
         log.info(
             "Override applied: fantacalcio_id=%d season=%d → player_fotmob_id=%s",
-            o.fantacalcio_id, o.season_start, o.player_fotmob_id,
+            o.fantacalcio_id,
+            o.season_start,
+            o.player_fotmob_id,
         )
         return df
 
@@ -281,7 +294,9 @@ def _apply_single_override(df: pd.DataFrame, o: MatchOverride) -> pd.DataFrame:
     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
     log.info(
         "Override appended (new row): fantacalcio_id=%d season=%d → player_fotmob_id=%s",
-        o.fantacalcio_id, o.season_start, o.player_fotmob_id,
+        o.fantacalcio_id,
+        o.season_start,
+        o.player_fotmob_id,
     )
     return df
 
@@ -315,12 +330,15 @@ def apply_overrides_to_voti_mapping(
             continue
         # Voti rows don't carry fantacalcio_id directly — we rely on the
         # name+team+season triple to locate the row.
-        mask = (
-            (df.get("season_start", 0) == o.season_start)
-            & (df.get("name", "").astype(str).str.strip() == str(o.name_fantacalcio).strip())
+        mask = (df.get("season_start", 0) == o.season_start) & (
+            df.get("name", "").astype(str).str.strip()
+            == str(o.name_fantacalcio).strip()
         )
         if o.team_fantacalcio:
-            mask = mask & (df.get("team", "").astype(str).str.strip() == str(o.team_fantacalcio).strip())
+            mask = mask & (
+                df.get("team", "").astype(str).str.strip()
+                == str(o.team_fantacalcio).strip()
+            )
 
         if mask.any():
             df.loc[mask, "player_fotmob_id"] = o.player_fotmob_id
@@ -328,12 +346,15 @@ def apply_overrides_to_voti_mapping(
             applied += 1
             log.info(
                 "Voti override: name=%s season=%d → player_fotmob_id=%s",
-                o.name_fantacalcio, o.season_start, o.player_fotmob_id,
+                o.name_fantacalcio,
+                o.season_start,
+                o.player_fotmob_id,
             )
         else:
             log.warning(
                 "Voti override not applied — no matching row found for name=%s season=%d",
-                o.name_fantacalcio, o.season_start,
+                o.name_fantacalcio,
+                o.season_start,
             )
 
     log.info("Applied %d/%d voti override(s).", applied, len(overrides))
@@ -345,7 +366,7 @@ def apply_overrides_to_voti_mapping(
 
 def _list_unmatched_from_db(
     engine: sa.Engine,
-    season_start: Optional[int] = None,
+    season_start: int | None = None,
 ) -> pd.DataFrame:
     """Query the DB for unmatched or low-confidence mapping rows.
 
@@ -381,6 +402,7 @@ def _list_unmatched_from_db(
 
 # ── Standalone CLI ────────────────────────────────────────────────────────────
 
+
 def _build_cli_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="ml.data.match_override",
@@ -394,21 +416,26 @@ def _build_cli_parser() -> argparse.ArgumentParser:
         help="Export unmatched/low-confidence rows to a CSV for manual editing.",
     )
     export_p.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         type=Path,
         default=Path(DEFAULT_OVERRIDE_FILENAME),
         help=f"Output CSV path (default: {DEFAULT_OVERRIDE_FILENAME}).",
     )
     export_p.add_argument(
-        "--season", type=int, default=None,
+        "--season",
+        type=int,
+        default=None,
         help="Filter to a specific season start year.",
     )
     export_p.add_argument(
-        "--no-dubious", action="store_true",
+        "--no-dubious",
+        action="store_true",
         help="Exclude fuzzy/relaxed matches (export only truly unmatched).",
     )
     export_p.add_argument(
-        "--db-url", default=None,
+        "--db-url",
+        default=None,
         help="Database URL. Defaults to ML_DATABASE_URL or API_DATABASE_URL.",
     )
 
@@ -418,17 +445,20 @@ def _build_cli_parser() -> argparse.ArgumentParser:
         help="Apply a manually-edited override CSV to the DB.",
     )
     apply_p.add_argument(
-        "--input", "-i",
+        "--input",
+        "-i",
         type=Path,
         required=True,
         help="CSV file with overrides (see CSV format above).",
     )
     apply_p.add_argument(
-        "--db-url", default=None,
+        "--db-url",
+        default=None,
         help="Database URL. Defaults to ML_DATABASE_URL or API_DATABASE_URL.",
     )
     apply_p.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="Print what would be updated without touching the DB.",
     )
 
@@ -460,18 +490,21 @@ def _cli_export(args: argparse.Namespace) -> int:
     # Build override-format columns
     rows = []
     for _, row in df.iterrows():
-        rows.append({
-            "fantacalcio_id": int(row["fantacalcio_id"]),
-            "season_start": int(row["season_start"]),
-            "name": row.get("name", ""),
-            "team": row.get("team", ""),
-            "role": row.get("role", ""),
-            "player_fotmob_id": int(row["player_fotmob_id"])
-                if pd.notna(row.get("player_fotmob_id")) else "",
-            "canonical_role": "",
-            "team_fotmob": "",
-            "note": "",
-        })
+        rows.append(
+            {
+                "fantacalcio_id": int(row["fantacalcio_id"]),
+                "season_start": int(row["season_start"]),
+                "name": row.get("name", ""),
+                "team": row.get("team", ""),
+                "role": row.get("role", ""),
+                "player_fotmob_id": int(row["player_fotmob_id"])
+                if pd.notna(row.get("player_fotmob_id"))
+                else "",
+                "canonical_role": "",
+                "team_fotmob": "",
+                "note": "",
+            }
+        )
 
     out = pd.DataFrame(rows)
     out.to_csv(args.output, index=False, encoding="utf-8")
@@ -565,25 +598,25 @@ def _cli_apply(args: argparse.Namespace) -> int:
             updated_at       = NOW()
     """)
 
-    payload = updated.astype(object).where(pd.notnull(updated), None).to_dict(
-        orient="records"
+    payload = (
+        updated.astype(object)
+        .where(pd.notnull(updated), None)
+        .to_dict(orient="records")
     )
     with engine.begin() as conn:
         conn.execute(_UPSERT_MANUAL_SQL, payload)
 
-    n_manual = int(
-        (updated["match_method"] == "manual").sum()
-    )
+    n_manual = int((updated["match_method"] == "manual").sum())
     log.info(
         "Persisted %d rows to player_id_map (%d with match_method='manual').",
-        len(payload), n_manual,
+        len(payload),
+        n_manual,
     )
     print(f"\n✅ Applied {len(overrides)} override(s) to player_id_map.")
     return 0
 
 
 def main() -> int:
-    import sys
 
     logging.basicConfig(
         level=logging.INFO,

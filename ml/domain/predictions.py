@@ -24,8 +24,9 @@ Two helpers expose this contract at the appropriate granularity:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional, Tuple
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -40,7 +41,7 @@ _MINUTES_PER_MATCH: int = 90
 _FULL_SEASON_MINUTES: float = float(_MATCHDAYS_PER_SEASON * _MINUTES_PER_MATCH)
 
 
-def _coerce_non_nan_number(value: Any) -> Optional[float]:
+def _coerce_non_nan_number(value: Any) -> float | None:
     """Return ``value`` as a non-NaN float, or ``None`` for NaN/missing.
 
     Booleans are explicitly rejected (``bool`` is a subclass of ``int`` in
@@ -51,16 +52,16 @@ def _coerce_non_nan_number(value: Any) -> Optional[float]:
     if not isinstance(value, (int, float)):
         return None
     result = float(value)
-    if result != result:  # NaN check (NaN is the only float that ≠ itself)
+    if np.isnan(result):
         return None
     return result
 
 
 def resolve_season_value_fields(
-    prediction: Optional[Mapping[str, Any]],
+    prediction: Mapping[str, Any] | None,
     *,
-    fallback_predicted_score: Optional[float] = None,
-) -> Tuple[Optional[float], Optional[float]]:
+    fallback_predicted_score: float | None = None,
+) -> tuple[float | None, float | None]:
     """Extract ``(season_value, start_probability)`` from a prediction record.
 
     The MANTRA artefact and the optimizer pool both expose these two
@@ -111,7 +112,7 @@ def resolve_season_value_fields(
         return None, None
 
     # ── season_value ────────────────────────────────────────────────────────
-    season_value: Optional[float] = None
+    season_value: float | None = None
     fpt = _coerce_non_nan_number(prediction.get("fantapunti_totali"))
     if fpt is not None:
         season_value = fpt
@@ -124,7 +125,7 @@ def resolve_season_value_fields(
                 season_value = float(score) * (em / _MINUTES_PER_MATCH)
 
     # ── start_probability ───────────────────────────────────────────────────
-    start_probability: Optional[float] = None
+    start_probability: float | None = None
     pt = _coerce_non_nan_number(prediction.get("probabilita_titolarita"))
     if pt is not None:
         start_probability = pt
@@ -198,13 +199,9 @@ class PredictionExplanation:
     def __post_init__(self) -> None:
         lo, hi = self.prediction_interval
         if lo > hi:
-            raise ValueError(
-                f"prediction_interval lower bound {lo} > upper bound {hi}"
-            )
+            raise ValueError(f"prediction_interval lower bound {lo} > upper bound {hi}")
         if not 0.0 <= self.confidence <= 1.0:
-            raise ValueError(
-                f"confidence must be in [0.0, 1.0], got {self.confidence}"
-            )
+            raise ValueError(f"confidence must be in [0.0, 1.0], got {self.confidence}")
         if self.variance < 0.0:
             raise ValueError(f"variance must be >= 0, got {self.variance}")
 

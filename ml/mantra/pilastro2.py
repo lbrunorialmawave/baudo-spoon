@@ -21,7 +21,6 @@ Portieri (P2bis):
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
 from ml.mantra.config import MantraConfig
@@ -87,11 +86,7 @@ def compute_p2(
                 gk_pool.get("claims_per90", pd.Series(0, index=gk_pool.index)),
             )
 
-            gk_score = (
-                z_parate * 0.50
-                + z_clean * 0.35
-                + z_uscite * 0.15
-            )
+            gk_score = z_parate * 0.50 + z_clean * 0.35 + z_uscite * 0.15
             # Zero out below-threshold players
             gk_score = gk_score.where(above_threshold, 0.0)
             result = 50 + gk_score * 15
@@ -110,13 +105,10 @@ def compute_p2(
         )
         for ruolo in work.loc[outfield_mask, "ruolo_primario"].unique():
             pool_roles = calcola_pool_esteso(ruolo, role_counts, cfg.SOGLIA_POOL)
-            mask = (work["ruolo_primario"] == ruolo)
+            mask = work["ruolo_primario"] == ruolo
 
             # Statistical pool: same/fused role + above threshold
-            pool_mask = (
-                work["ruolo_primario"].isin(pool_roles)
-                & above_threshold
-            )
+            pool_mask = work["ruolo_primario"].isin(pool_roles) & above_threshold
             pool = work.loc[pool_mask]
 
             if len(pool) < 2:

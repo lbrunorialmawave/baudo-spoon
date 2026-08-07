@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any
 
 import pandas as pd
-from decimal import Decimal
-
 from sqlalchemy import (
     BigInteger,
     DateTime,
@@ -19,7 +18,8 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, insert as pg_insert
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
 
 from .models import LeagueMeta
@@ -27,7 +27,20 @@ from .models import LeagueMeta
 log = logging.getLogger(__name__)
 
 _CORE_COLS: frozenset[str] = frozenset(
-    {"Date", "Round", "Match", "Score", "Status", "Url", "Team", "Side", "Opponent", "Goal scored", "Goal conceded", "points"}
+    {
+        "Date",
+        "Round",
+        "Match",
+        "Score",
+        "Status",
+        "Url",
+        "Team",
+        "Side",
+        "Opponent",
+        "Goal scored",
+        "Goal conceded",
+        "points",
+    }
 )
 
 
@@ -116,7 +129,9 @@ class PlayerSeasonStat(Base):
     __tablename__ = "player_season_stats"
     __table_args__ = (
         UniqueConstraint(
-            "season_id", "stat_category", "player_fotmob_id",
+            "season_id",
+            "stat_category",
+            "player_fotmob_id",
             name="uq_player_season_stat",
         ),
         Index("idx_pss_category", "stat_category"),
@@ -139,14 +154,18 @@ class PlayerSeasonStat(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    season: Mapped[Season] = relationship("Season", back_populates="player_season_stats")
+    season: Mapped[Season] = relationship(
+        "Season", back_populates="player_season_stats"
+    )
 
 
 class TeamSeasonStat(Base):
     __tablename__ = "team_season_stats"
     __table_args__ = (
         UniqueConstraint(
-            "season_id", "stat_category", "team_fotmob_id",
+            "season_id",
+            "stat_category",
+            "team_fotmob_id",
             name="uq_team_season_stat",
         ),
         Index("idx_tss_category", "stat_category"),
@@ -199,7 +218,9 @@ class PlayerSeasonRole(Base):
 
     __tablename__ = "player_season_roles"
     __table_args__ = (
-        UniqueConstraint("player_fotmob_id", "season_start", name="uq_player_season_role"),
+        UniqueConstraint(
+            "player_fotmob_id", "season_start", name="uq_player_season_role"
+        ),
     )
 
     player_fotmob_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -260,7 +281,7 @@ def ingest_dataframe(
 
     # 3. Prepare match stats payload
     records: list[dict[str, Any]] = []
-    
+
     # Pre-calculate which columns are core vs extra (stats)
     df_cols = set(df.columns)
     extra_cols = df_cols - _CORE_COLS
@@ -273,18 +294,34 @@ def ingest_dataframe(
         records.append(
             {
                 "season_id": season_id,
-                "match_date": str(row.get("Date", "")) if pd.notna(row.get("Date")) else None,
-                "round_num": int(row.get("Round", 0)) if pd.notna(row.get("Round")) else None,
+                "match_date": str(row.get("Date", ""))
+                if pd.notna(row.get("Date"))
+                else None,
+                "round_num": int(row.get("Round", 0))
+                if pd.notna(row.get("Round"))
+                else None,
                 "match_name": str(row.get("Match", "")),
-                "score": str(row.get("Score", "")) if pd.notna(row.get("Score")) else None,
-                "status": str(row.get("Status", "")) if pd.notna(row.get("Status")) else None,
+                "score": str(row.get("Score", ""))
+                if pd.notna(row.get("Score"))
+                else None,
+                "status": str(row.get("Status", ""))
+                if pd.notna(row.get("Status"))
+                else None,
                 "url": str(row.get("Url", "")) if pd.notna(row.get("Url")) else None,
                 "team": str(row.get("Team", "")),
                 "side": str(row.get("Side", "")) if pd.notna(row.get("Side")) else None,
-                "opponent": str(row.get("Opponent", "")) if pd.notna(row.get("Opponent")) else None,
-                "goals_scored": int(row.get("Goal scored", 0)) if pd.notna(row.get("Goal scored")) else None,
-                "goals_conceded": int(row.get("Goal conceded", 0)) if pd.notna(row.get("Goal conceded")) else None,
-                "points": int(row.get("points", 0)) if pd.notna(row.get("points")) else None,
+                "opponent": str(row.get("Opponent", ""))
+                if pd.notna(row.get("Opponent"))
+                else None,
+                "goals_scored": int(row.get("Goal scored", 0))
+                if pd.notna(row.get("Goal scored"))
+                else None,
+                "goals_conceded": int(row.get("Goal conceded", 0))
+                if pd.notna(row.get("Goal conceded"))
+                else None,
+                "points": int(row.get("points", 0))
+                if pd.notna(row.get("points"))
+                else None,
                 "stats": stats_dict,
                 "ingested_at": datetime.now(timezone.utc),
             }

@@ -29,12 +29,15 @@ class Feature(ABC):
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         super().__init_subclass__(**kwargs)
-        if getattr(cls, "missing_data_policy", None) == MissingDataPolicy.PROXY_FEATURE:
-            if not getattr(cls, "proxy_feature_name", None):
-                raise TypeError(
-                    f"{cls.__name__}: missing_data_policy=PROXY_FEATURE requires "
-                    "proxy_feature_name to be set at class level"
-                )
+        if getattr(
+            cls, "missing_data_policy", None
+        ) == MissingDataPolicy.PROXY_FEATURE and not getattr(
+            cls, "proxy_feature_name", None
+        ):
+            raise TypeError(
+                f"{cls.__name__}: missing_data_policy=PROXY_FEATURE requires "
+                "proxy_feature_name to be set at class level"
+            )
 
     @abstractmethod
     def compute(self, data: pl.DataFrame) -> pl.Series:

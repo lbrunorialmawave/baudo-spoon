@@ -14,7 +14,10 @@ class APISettings(BaseSettings):
     )
 
     # Required — set via API_DATABASE_URL environment variable.
-    database_url: str = Field(..., description="PostgreSQL connection URL (sync DSN; asyncpg variant derived automatically)")
+    database_url: str = Field(
+        ...,
+        description="PostgreSQL connection URL (sync DSN; asyncpg variant derived automatically)",
+    )
     api_prefix: str = "/api/v1"
     debug: bool = False
     log_level: str = "INFO"
@@ -28,7 +31,9 @@ class APISettings(BaseSettings):
     )
 
     # ── Artifact storage (Cloudflare R2) ────────────────────────────────────
-    r2_endpoint_url: str | None = Field(default=None, description="https://<account_id>.r2.cloudflarestorage.com")
+    r2_endpoint_url: str | None = Field(
+        default=None, description="https://<account_id>.r2.cloudflarestorage.com"
+    )
     r2_access_key_id: str | None = None
     r2_secret_access_key: str | None = None
     r2_bucket_name: str = Field(default="baudo-spoon-ml-artifacts")
@@ -49,9 +54,17 @@ class APISettings(BaseSettings):
     # subprocess in production — this dispatches the existing, already-secrets
     # -configured GitHub Actions workflow instead. Set API_GITHUB_TOKEN to a PAT
     # with `actions:write` on the repo.
-    github_token: str | None = Field(default=None, description="GitHub PAT with actions:write, for triggering ML training")
-    github_repo: str = Field(default="lbrunorialmawave/baudo-spoon", description="owner/repo for the ML training workflow")
-    github_default_branch: str = Field(default="main", description="Branch to dispatch the ML training workflow on")
+    github_token: str | None = Field(
+        default=None,
+        description="GitHub PAT with actions:write, for triggering ML training",
+    )
+    github_repo: str = Field(
+        default="lbrunorialmawave/baudo-spoon",
+        description="owner/repo for the ML training workflow",
+    )
+    github_default_branch: str = Field(
+        default="main", description="Branch to dispatch the ML training workflow on"
+    )
 
     # Security — /v1/intelligence endpoints require this key via X-API-Key header.
     api_key_secret: str = Field(
@@ -113,7 +126,7 @@ class APISettings(BaseSettings):
             "postgres://",
         ):
             if url.startswith(sync_prefix):
-                return "postgresql+asyncpg://" + url[len(sync_prefix):]
+                return "postgresql+asyncpg://" + url[len(sync_prefix) :]
         return url
 
 

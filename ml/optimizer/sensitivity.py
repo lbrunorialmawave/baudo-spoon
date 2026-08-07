@@ -11,11 +11,13 @@ combinatorial grid best done offline); it perturbs one parameter at a time
 around the baseline config, holding everything else fixed — a classic
 one-at-a-time (OAT) sensitivity analysis, cheap enough to run inline.
 """
+
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any, Sequence
+from typing import Any
 
 from ml.optimizer.diversity import _jaccard
 from ml.optimizer.models import OptimizationConfig, Player, StrategyProfile
@@ -24,11 +26,11 @@ from ml.optimizer.optimizer import optimize_squad
 log = logging.getLogger(__name__)
 
 __all__ = [
-    "SensitivityPoint",
+    "DEFAULT_GRIDS",
     "ParameterSensitivity",
+    "SensitivityPoint",
     "SensitivityResult",
     "compute_sensitivity_matrix",
-    "DEFAULT_GRIDS",
 ]
 
 # Default one-at-a-time grids. Each is applied independently on top of the
@@ -71,7 +73,10 @@ class ParameterSensitivity:
     points: list[SensitivityPoint] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"parameter": self.parameter, "points": [p.to_dict() for p in self.points]}
+        return {
+            "parameter": self.parameter,
+            "points": [p.to_dict() for p in self.points],
+        }
 
 
 @dataclass
@@ -116,11 +121,19 @@ def compute_sensitivity_matrix(
 
     try:
         baseline = optimize_squad(list(pool), config, strategy)
-    except Exception as exc:  # noqa: BLE001
-        raise ValueError(f"baseline solve failed, cannot compute sensitivity: {exc}") from exc
+    except Exception as exc:
+        raise ValueError(
+            f"baseline solve failed, cannot compute sensitivity: {exc}"
+        ) from exc
 
     if not baseline.squad:
-        return SensitivityResult(baseline.status, 0.0, frozenset(), [], [f"baseline status={baseline.status}, no squad"])
+        return SensitivityResult(
+            baseline.status,
+            0.0,
+            frozenset(),
+            [],
+            [f"baseline status={baseline.status}, no squad"],
+        )
 
     baseline_ids = frozenset(sp.player_id for sp in baseline.squad)
     baseline_score = baseline.total_projected_score
@@ -135,17 +148,23 @@ def compute_sensitivity_matrix(
     parameters: list[ParameterSensitivity] = []
     for param, values in grids.items():
         if not availability.get(param, True):
-            warnings.append(f"skipped '{param}': no player in pool carries the underlying signal")
+            warnings.append(
+                f"skipped '{param}': no player in pool carries the underlying signal"
+            )
             continue
         points: list[SensitivityPoint] = []
         for value in values:
             variant_cfg = _apply(config, param, value)
             try:
                 res = optimize_squad(list(pool), variant_cfg, strategy)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 warnings.append(f"{param}={value} failed: {exc}")
                 continue
-            ids = frozenset(sp.player_id for sp in res.squad) if res.squad else frozenset()
+            ids = (
+                frozenset(sp.player_id for sp in res.squad)
+                if res.squad
+                else frozenset()
+            )
             score = res.total_projected_score if res.squad else 0.0
             points.append(
                 SensitivityPoint(
@@ -154,11 +173,15 @@ def compute_sensitivity_matrix(
                     squad_ids=ids,
                     total_score=score,
                     score_delta=score - baseline_score,
-                    score_delta_pct=(score - baseline_score) / baseline_score if baseline_score else 0.0,
+                    score_delta_pct=(score - baseline_score) / baseline_score
+                    if baseline_score
+                    else 0.0,
                     jaccard_vs_baseline=_jaccard(ids, baseline_ids),
                     players_changed=len(baseline_ids ^ ids),
                 )
             )
         parameters.append(ParameterSensitivity(param, points))
 
-    return SensitivityResult(baseline.status, baseline_score, baseline_ids, parameters, warnings)
+    return SensitivityResult(
+        baseline.status, baseline_score, baseline_ids, parameters, warnings
+    )

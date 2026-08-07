@@ -15,7 +15,7 @@ from typing import Final
 
 from ml.optimizer.models import InflationConfig, Player
 
-__all__ = ["estimate_effective_cost", "compute_role_percentile_map", "InflationConfig"]
+__all__ = ["InflationConfig", "compute_role_percentile_map", "estimate_effective_cost"]
 
 
 # Sentinel: any non-positive nominal cost has no listino to inflate.
@@ -67,9 +67,7 @@ def estimate_effective_cost(
     True
     """
     if num_participants < 1:
-        raise ValueError(
-            f"num_participants must be >= 1, got {num_participants}"
-        )
+        raise ValueError(f"num_participants must be >= 1, got {num_participants}")
 
     nominal = max(0.0, float(player.cost))
 
@@ -97,7 +95,9 @@ def estimate_effective_cost(
     headroom = (percentile - threshold) / max(1e-9, 1.0 - threshold)
 
     # Number of "extra" participants beyond the baseline (clamped to >= 0).
-    extra_participants = max(0, int(num_participants) - int(config.baseline_participants))
+    extra_participants = max(
+        0, int(num_participants) - int(config.baseline_participants)
+    )
 
     # Inflation multiplier (>= 1) bounded by the cap.
     raw = 1.0 + config.base_inflation_rate * extra_participants * headroom

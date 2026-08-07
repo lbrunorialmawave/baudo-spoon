@@ -59,7 +59,9 @@ class FotMobMatchStatsScraper:
                 # If no season provided, we scrape the current one (e.g. 2023-2024 or 2024-2025).
                 # For simplicity, if not provided we just use a default season string.
                 # FotMob requires the exact season string like "2023-2024".
-                seasons_to_scrape = self.seasons if self.seasons else [self._get_current_season()]
+                seasons_to_scrape = (
+                    self.seasons if self.seasons else [self._get_current_season()]
+                )
 
                 for season in seasons_to_scrape:
                     result = self._scrape_season_fast(
@@ -95,7 +97,12 @@ class FotMobMatchStatsScraper:
         # since it's cheap: 38 page loads regardless of match count).
         rounds_matches: dict[int, list[dict[str, Any]]] = {}
         for round_num in range(1, total_rounds + 1):
-            log.info("Discovering Round %d/%d for %s", round_num, total_rounds, meta.display_name)
+            log.info(
+                "Discovering Round %d/%d for %s",
+                round_num,
+                total_rounds,
+                meta.display_name,
+            )
             try:
                 rounds_matches[round_num] = self._scrape_matches_for_round(
                     driver, meta, season, round_num
@@ -115,14 +122,20 @@ class FotMobMatchStatsScraper:
         total_matches = sum(len(m) for m in rounds_matches.values())
         log.info(
             "[%s %s] fixtures discovered: %d matches (%d finished, need stats)",
-            league_name, season, total_matches, len(finished_urls),
+            league_name,
+            season,
+            total_matches,
+            len(finished_urls),
         )
 
         stats_by_url = fetch_matches_batch(driver, finished_urls)
         ok = sum(1 for v in stats_by_url.values() if v)
         log.info(
             "[%s %s] batch stats fetch complete: %d/%d matches",
-            league_name, season, ok, len(finished_urls),
+            league_name,
+            season,
+            ok,
+            len(finished_urls),
         )
 
         # Phase 3 — assemble rows round by round, preserving the existing
@@ -171,10 +184,17 @@ class FotMobMatchStatsScraper:
         total_rounds = 38  # Defaulting to 38 for major leagues
 
         for round_num in range(1, total_rounds + 1):
-            log.info("Starting Round %d/%d for %s", round_num, total_rounds, meta.display_name)
+            log.info(
+                "Starting Round %d/%d for %s",
+                round_num,
+                total_rounds,
+                meta.display_name,
+            )
 
             try:
-                round_results = self._get_matches_with_stats(driver, meta, season, round_num)
+                round_results = self._get_matches_with_stats(
+                    driver, meta, season, round_num
+                )
                 if not round_results:
                     log.debug("No matches found in round %d.", round_num)
                 yield round_num, round_results
@@ -192,15 +212,21 @@ class FotMobMatchStatsScraper:
         results: list[dict[str, Any]] = []
 
         for i, match in enumerate(matches, 1):
-            log.debug("Scraping match %d/%d: %s vs %s", i, len(matches), match["home"], match["away"])
+            log.debug(
+                "Scraping match %d/%d: %s vs %s",
+                i,
+                len(matches),
+                match["home"],
+                match["away"],
+            )
             home_row, away_row = create_team_rows(match, round_num)
 
             # Only scrape stats if match is finished
             if match["status"] in ("FT", "HT", "AET", "PEN"):
                 stats = self._scrape_match_stats(driver, match["url"])
-                
+
                 # Flatten stats into rows
-                for section, section_stats in stats.items():
+                for section_stats in stats.values():
                     for stat_name, values in section_stats.items():
                         # values[0] is Home, values[1] is Away
                         home_row[stat_name] = values[0]
@@ -217,7 +243,7 @@ class FotMobMatchStatsScraper:
         url_round = round_num - 1
         url = f"{FOTMOB_BASE_URL}/leagues/{meta.comp_id}/fixtures/{meta.slug}?group=by-round&season={season}&round={url_round}"
         log.debug("Navigating to matches URL: %s", url)
-        
+
         try:
             driver.get(url)
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
@@ -234,14 +260,16 @@ class FotMobMatchStatsScraper:
                     match_data = parse_match_link(link, match_url)
                     if match_data:
                         matches.append(match_data)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.debug("Skipping unparseable match link: %s", exc)
 
             self._assign_dates(driver, matches)
             return matches
 
         except Exception as exc:
-            log.warning("Error occurred fetching matches for round %d: %s", round_num, exc)
+            log.warning(
+                "Error occurred fetching matches for round %d: %s", round_num, exc
+            )
             return []
 
     def _scrape_match_stats(self, driver: Any, match_url: str) -> dict[str, Any]:
@@ -264,7 +292,7 @@ class FotMobMatchStatsScraper:
 
             extract_possession(driver, stats_data)
             extract_stat_sections(driver, stats_data)
-            
+
             return {k: v for k, v in stats_data.items() if v}
 
         except Exception as exc:
@@ -273,7 +301,11 @@ class FotMobMatchStatsScraper:
 
     def _click_stats_tab(self, driver: Any, wait: WebDriverWait) -> None:
         try:
-            stats_tab = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Stats')]")))
+            stats_tab = wait.until(
+                EC.element_to_be_clickable(
+                    (By.XPATH, "//button[contains(text(), 'Stats')]")
+                )
+            )
             stats_tab.click()
             time.sleep(1.5)
         except Exception as exc:
@@ -282,24 +314,36 @@ class FotMobMatchStatsScraper:
                 stats_tab = driver.find_element(By.XPATH, "//*[text()='Stats']")
                 stats_tab.click()
                 time.sleep(1.5)
-            except Exception:
-                pass
+            except Exception as fallback_exc:
+                log.debug(
+                    "Could not click Stats tab via fallback selector: %s", fallback_exc
+                )
 
     def _assign_dates(self, driver: Any, matches: list[dict[str, Any]]) -> None:
         try:
-            elements = driver.find_elements(By.XPATH, "//*[self::h3 or self::a[contains(@href, '/matches/')]]")
+            elements = driver.find_elements(
+                By.XPATH, "//*[self::h3 or self::a[contains(@href, '/matches/')]]"
+            )
             current_date = "N/A"
             match_idx = 0
 
             for element in elements:
                 if element.tag_name == "h3":
                     date_text = element.text.strip()
+                    # Intentionally local wall-clock time: resolves the site's own
+                    # relative "today"/"tomorrow"/"yesterday" labels, not an
+                    # absolute/comparable timestamp — UTC would be the wrong
+                    # reference frame here.
                     if date_text.lower() == "today":
-                        current_date = datetime.now().strftime("%A, %B %d, %Y")
+                        current_date = datetime.now().strftime("%A, %B %d, %Y")  # noqa: DTZ005
                     elif date_text.lower() == "tomorrow":
-                        current_date = (datetime.now() + timedelta(days=1)).strftime("%A, %B %d, %Y")
+                        current_date = (
+                            datetime.now() + timedelta(days=1)  # noqa: DTZ005
+                        ).strftime("%A, %B %d, %Y")
                     elif date_text.lower() == "yesterday":
-                        current_date = (datetime.now() - timedelta(days=1)).strftime("%A, %B %d, %Y")
+                        current_date = (
+                            datetime.now() - timedelta(days=1)  # noqa: DTZ005
+                        ).strftime("%A, %B %d, %Y")
                     else:
                         current_date = date_text
                 elif element.tag_name == "a" and match_idx < len(matches):
@@ -326,16 +370,18 @@ class FotMobMatchStatsScraper:
         return normalized
 
     @staticmethod
-    def _normalize_seasons(seasons: str | int | Iterable[str | int] | None) -> list[str]:
+    def _normalize_seasons(
+        seasons: str | int | Iterable[str | int] | None,
+    ) -> list[str]:
         if not seasons:
             return []
-        
+
         values = [seasons] if isinstance(seasons, (str, int)) else list(seasons)
         return [str(v).strip() for v in values if str(v).strip()]
 
     @staticmethod
     def _get_current_season() -> str:
-        now = datetime.now()
+        now = datetime.now()  # noqa: DTZ005 — local calendar date, not a comparable timestamp
         if now.month >= 8:
             return f"{now.year}-{now.year + 1}"
         return f"{now.year - 1}-{now.year}"

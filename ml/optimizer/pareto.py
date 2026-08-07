@@ -18,20 +18,29 @@ Il frontier è generato risolvendo un piccolo grid di ``risk_aversion`` con il
 solver ILP esistente (stesso meccanismo di Fase 0), poi filtrando i punti
 non-dominati.
 """
+
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any, Sequence
+from typing import Any
 
-from ml.optimizer.inflation import InflationConfig
 from ml.optimizer.models import OptimizationConfig, Player, StrategyProfile
 from ml.optimizer.optimizer import optimize_squad
-from ml.optimizer.win_probability import WinProbabilityConfig, estimate_completion_probability
+from ml.optimizer.win_probability import (
+    WinProbabilityConfig,
+    estimate_completion_probability,
+)
 
 log = logging.getLogger(__name__)
 
-__all__ = ["ParetoPoint", "ParetoResult", "compute_pareto_frontier", "DEFAULT_RISK_LAMBDAS"]
+__all__ = [
+    "DEFAULT_RISK_LAMBDAS",
+    "ParetoPoint",
+    "ParetoResult",
+    "compute_pareto_frontier",
+]
 
 DEFAULT_RISK_LAMBDAS: tuple[float, ...] = (0.0, 0.25, 0.5, 1.0, 1.5, 2.0)
 
@@ -52,7 +61,9 @@ class ParetoPoint:
             "status": self.status,
             "score": round(self.score, 3),
             "risk": round(self.risk, 4),
-            "win_probability": round(self.win_probability, 4) if self.win_probability is not None else None,
+            "win_probability": round(self.win_probability, 4)
+            if self.win_probability is not None
+            else None,
             "squad_size": len(self.squad_ids),
             "dominated": self.dominated,
         }
@@ -73,7 +84,11 @@ class ParetoResult:
 
 
 def _portfolio_risk(squad: Sequence[Player]) -> float:
-    stds = [p.prediction_std for p in squad if p.prediction_std is not None and p.prediction_std > 0]
+    stds = [
+        p.prediction_std
+        for p in squad
+        if p.prediction_std is not None and p.prediction_std > 0
+    ]
     if not stds:
         return 0.0
     return sum(s * s for s in stds) ** 0.5
@@ -101,7 +116,9 @@ def compute_pareto_frontier(
     warnings: list[str] = []
     has_std = any(p.prediction_std is not None and p.prediction_std > 0 for p in pool)
     if not has_std:
-        warnings.append("no player carries prediction_std: risk axis will be 0 for every point (no differentiation)")
+        warnings.append(
+            "no player carries prediction_std: risk axis will be 0 for every point (no differentiation)"
+        )
 
     wp_cfg = win_probability_config or WinProbabilityConfig()
     points: list[ParetoPoint] = []
@@ -109,7 +126,7 @@ def compute_pareto_frontier(
         variant_cfg = replace(config, risk_aversion=lam)
         try:
             res = optimize_squad(list(pool), variant_cfg, strategy)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             warnings.append(f"risk_lambda={lam} failed: {exc}")
             continue
         if not res.squad:
@@ -119,9 +136,13 @@ def compute_pareto_frontier(
         if compute_win_probability:
             try:
                 wp = estimate_completion_probability(
-                    res.squad, config.budget, wp_cfg, config.inflation_config, config.num_participants,
+                    res.squad,
+                    config.budget,
+                    wp_cfg,
+                    config.inflation_config,
+                    config.num_participants,
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 warnings.append(f"win_probability failed for risk_lambda={lam}: {exc}")
         points.append(
             ParetoPoint(

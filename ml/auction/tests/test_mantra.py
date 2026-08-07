@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from ml.auction.alternatives import player_role_set, suggest_alternatives
 from ml.auction.models import AlternativesConfig, AuctionConfig, ParticipantSetup
 from ml.auction.orchestrator import (
@@ -19,7 +17,9 @@ from ml.optimizer.models import MANTRA_DEFAULT_QUOTAS, Player
 
 def _participants(n: int = 2, budget: int = 500) -> list[ParticipantSetup]:
     return [
-        ParticipantSetup(participant_id=f"u{i}", display_name=f"User{i}", budget_initial=budget)
+        ParticipantSetup(
+            participant_id=f"u{i}", display_name=f"User{i}", budget_initial=budget
+        )
         for i in range(1, n + 1)
     ]
 
@@ -71,7 +71,12 @@ def _small_mantra_pool() -> list[Player]:
 
 def test_classic_assignment_sets_assigned_slot_equal_to_role() -> None:
     cfg = AuctionConfig(num_participants=2)
-    pool = [_player("p1", "P"), _player("d1", "D"), _player("c1", "C"), _player("a1", "A")]
+    pool = [
+        _player("p1", "P"),
+        _player("d1", "D"),
+        _player("c1", "C"),
+        _player("a1", "A"),
+    ]
     state = initialize_auction(_participants(2), cfg, pool)
     result = record_assignment(state, "d1", "u1", 20)
     assert result.success
@@ -90,7 +95,10 @@ def test_classic_alternatives_still_filter_by_scalar_role() -> None:
     ]
     state = initialize_auction(_participants(2), cfg, pool)
     suggestion = suggest_alternatives(
-        target=pool[0], available_pool=state.available_pool, state=state, config=AlternativesConfig()
+        target=pool[0],
+        available_pool=state.available_pool,
+        state=state,
+        config=AlternativesConfig(),
     )
     assert suggestion.closest_alternative is not None
     assert suggestion.closest_alternative.player_id == "d2"
@@ -193,7 +201,10 @@ def test_mantra_alternatives_include_multi_role_players() -> None:
     state = initialize_auction(_participants(2), cfg, pool)
     target = next(p for p in pool if p.player_id == "dd1")
     suggestion = suggest_alternatives(
-        target=target, available_pool=state.available_pool, state=state, config=AlternativesConfig()
+        target=target,
+        available_pool=state.available_pool,
+        state=state,
+        config=AlternativesConfig(),
     )
     ids = set()
     if suggestion.low_cost_alternative:

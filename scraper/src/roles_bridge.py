@@ -17,14 +17,14 @@ _FOTMOB_TO_ROLE: dict[str, str] = {
     "leftback": "DEF",
     "centerback": "DEF",
     "right_wing_back": "DEF",
-    "left_wing_back": "DEF", 
+    "left_wing_back": "DEF",
     "defender": "DEF",
     # ── Midfielders ───────────────────────────────────────────────────────────
     "centerdefensivemidfielder": "MID",
     "rightmidfielder": "MID",
     "leftmidfielder": "MID",
     "midfielder": "MID",
-    "centermidfielder": "MID", 
+    "centermidfielder": "MID",
     # ── Forwards ──────────────────────────────────────────────────────────────
     "striker": "FWD",
     "centerattackingmidfielder": "FWD",
@@ -32,6 +32,7 @@ _FOTMOB_TO_ROLE: dict[str, str] = {
     "rightwinger": "FWD",
     "leftwinger": "FWD",
 }
+
 
 def _normalize(key: str) -> str:
     return key.replace("-", "").replace(" ", "").lower()
@@ -43,7 +44,9 @@ def _resolve_role(key: str | None) -> str | None:
     return _FOTMOB_TO_ROLE.get(_normalize(key))
 
 
-def _find_role_in_list(entries: list[Any], key_path: tuple[str, ...]) -> tuple[str | None, str | None]:
+def _find_role_in_list(
+    entries: list[Any], key_path: tuple[str, ...]
+) -> tuple[str | None, str | None]:
     """Walk a list of dicts, extract a key via key_path, return (raw_key, role) or (None, None)."""
     for entry in entries or []:
         obj: Any = entry
@@ -81,7 +84,8 @@ def extract_profile_from_player_data(
     # 3. positions[isMainPosition]
     if not canonical_role:
         main_positions = [
-            p for p in (position_desc.get("positions") or [])
+            p
+            for p in (position_desc.get("positions") or [])
             if (p or {}).get("isMainPosition")
         ]
         role_key, canonical_role = _find_role_in_list(main_positions, ("strPos", "key"))

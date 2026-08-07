@@ -19,6 +19,7 @@ that ``projected_score`` already uses (same formula ``compute_hybrid_scores``
 itself applies for ``expectedValue``), so the blend in the solver is a
 straightforward convex combination.
 """
+
 from __future__ import annotations
 
 import logging
@@ -61,7 +62,13 @@ def _rows_to_map(payload: Any) -> dict[str, float]:
 
 
 class HybridLoadReport:
-    def __init__(self, scores: dict[str, float], source: str, season: int | None, warnings: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        scores: dict[str, float],
+        source: str,
+        season: int | None,
+        warnings: list[str] | None = None,
+    ) -> None:
         self.scores = scores
         self.source = source
         self.season = season
@@ -76,7 +83,9 @@ class HybridLoadReport:
         }
 
 
-def load_fp_ibrido_map_from_artifacts(artifacts_dir: str | Path | None) -> HybridLoadReport:
+def load_fp_ibrido_map_from_artifacts(
+    artifacts_dir: str | Path | None,
+) -> HybridLoadReport:
     """Try local ``mantra_ibrido_results_{season}.json`` files under *artifacts_dir*."""
     if not artifacts_dir:
         return HybridLoadReport({}, "none", None, ["artifacts_dir not set"])
@@ -93,9 +102,11 @@ def load_fp_ibrido_map_from_artifacts(artifacts_dir: str | Path | None) -> Hybri
             scores = _rows_to_map(payload)
             if scores:
                 return HybridLoadReport(scores, f"local:{path.name}", season)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.warning("hybrid_loader_local_parse_failed path=%s err=%s", path, exc)
-    return HybridLoadReport({}, "not_found", None, [f"no mantra_ibrido_results_*.json under {root}"])
+    return HybridLoadReport(
+        {}, "not_found", None, [f"no mantra_ibrido_results_*.json under {root}"]
+    )
 
 
 def load_fp_ibrido_map_preferring_r2(
@@ -107,27 +118,57 @@ def load_fp_ibrido_map_preferring_r2(
     r2_bucket_name: str | None = None,
 ) -> HybridLoadReport:
     """Local disk first, then R2 via ArtifactStore, else empty map with warnings."""
-    art = artifacts_dir or os.environ.get("API_ARTIFACTS_DIR") or os.environ.get("ARTIFACTS_DIR")
+    art = (
+        artifacts_dir
+        or os.environ.get("API_ARTIFACTS_DIR")
+        or os.environ.get("ARTIFACTS_DIR")
+    )
     local = load_fp_ibrido_map_from_artifacts(art)
     if local.scores:
         return local
 
     try:
         from ml.storage.artifact_store import ArtifactStore, R2Config
-    except Exception as exc:  # noqa: BLE001
-        return HybridLoadReport({}, "r2_unavailable", None, local.warnings + [f"ArtifactStore import failed: {exc}"])
+    except Exception as exc:
+        return HybridLoadReport(
+            {},
+            "r2_unavailable",
+            None,
+            local.warnings + [f"ArtifactStore import failed: {exc}"],
+        )
 
     root = Path(art) if art else Path("artifacts")
     root.mkdir(parents=True, exist_ok=True)
 
-    endpoint = r2_endpoint_url or os.environ.get("API_R2_ENDPOINT_URL") or os.environ.get("ML_R2_ENDPOINT_URL")
-    key_id = r2_access_key_id or os.environ.get("API_R2_ACCESS_KEY_ID") or os.environ.get("ML_R2_ACCESS_KEY_ID")
-    secret = r2_secret_access_key or os.environ.get("API_R2_SECRET_ACCESS_KEY") or os.environ.get("ML_R2_SECRET_ACCESS_KEY")
-    bucket = r2_bucket_name or os.environ.get("API_R2_BUCKET_NAME") or os.environ.get("ML_R2_BUCKET_NAME")
+    endpoint = (
+        r2_endpoint_url
+        or os.environ.get("API_R2_ENDPOINT_URL")
+        or os.environ.get("ML_R2_ENDPOINT_URL")
+    )
+    key_id = (
+        r2_access_key_id
+        or os.environ.get("API_R2_ACCESS_KEY_ID")
+        or os.environ.get("ML_R2_ACCESS_KEY_ID")
+    )
+    secret = (
+        r2_secret_access_key
+        or os.environ.get("API_R2_SECRET_ACCESS_KEY")
+        or os.environ.get("ML_R2_SECRET_ACCESS_KEY")
+    )
+    bucket = (
+        r2_bucket_name
+        or os.environ.get("API_R2_BUCKET_NAME")
+        or os.environ.get("ML_R2_BUCKET_NAME")
+    )
 
     r2_cfg = None
     if endpoint and key_id and secret and bucket:
-        r2_cfg = R2Config(endpoint_url=endpoint, access_key_id=key_id, secret_access_key=secret, bucket_name=bucket)
+        r2_cfg = R2Config(
+            endpoint_url=endpoint,
+            access_key_id=key_id,
+            secret_access_key=secret,
+            bucket_name=bucket,
+        )
 
     store = ArtifactStore(local_dir=root, r2_config=r2_cfg)
     for season in _SEASONS:
@@ -137,6 +178,13 @@ def load_fp_ibrido_map_preferring_r2(
             continue
         scores = _rows_to_map(data)
         if scores:
-            return HybridLoadReport(scores, f"r2_or_local:{filename}", season, local.warnings)
+            return HybridLoadReport(
+                scores, f"r2_or_local:{filename}", season, local.warnings
+            )
 
-    return HybridLoadReport({}, "not_found_local_or_r2", None, local.warnings + ["no mantra_ibrido_results_*.json found locally or on R2"])
+    return HybridLoadReport(
+        {},
+        "not_found_local_or_r2",
+        None,
+        local.warnings + ["no mantra_ibrido_results_*.json found locally or on R2"],
+    )

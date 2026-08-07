@@ -1,13 +1,31 @@
 """Inter-strategy diversity metrics and near-optimal squad alternatives."""
+
 from __future__ import annotations
+
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from typing import Sequence
-from ml.optimizer.models import OptimizationConfig, OptimizationResult, Player, StrategyProfile
+
+from ml.optimizer.models import (
+    OptimizationConfig,
+    OptimizationResult,
+    Player,
+    StrategyProfile,
+)
 from ml.optimizer.optimizer import optimize_squad
+
 log = logging.getLogger(__name__)
-__all__ = ["DiversityMetrics", "NearOptimalConfig", "NearOptimalAlternative", "compute_diversity_metrics", "generate_near_optimal_alternatives", "diversify_secondary_strategies", "DEFAULT_LOW_DIVERSITY_THRESHOLD"]
+__all__ = [
+    "DEFAULT_LOW_DIVERSITY_THRESHOLD",
+    "DiversityMetrics",
+    "NearOptimalAlternative",
+    "NearOptimalConfig",
+    "compute_diversity_metrics",
+    "diversify_secondary_strategies",
+    "generate_near_optimal_alternatives",
+]
 DEFAULT_LOW_DIVERSITY_THRESHOLD = 0.85
+
 
 @dataclass(frozen=True)
 class DiversityMetrics:
@@ -18,6 +36,7 @@ class DiversityMetrics:
     max_overlap_count: int
     low_diversity: bool
     pairwise_jaccard: dict[str, float] = field(default_factory=dict)
+
     def to_dict(self) -> dict:
         return {
             "mean_pairwise_jaccard": round(self.mean_pairwise_jaccard, 4),
@@ -26,8 +45,11 @@ class DiversityMetrics:
             "mean_overlap_count": round(self.mean_overlap_count, 2),
             "max_overlap_count": self.max_overlap_count,
             "low_diversity": self.low_diversity,
-            "pairwise_jaccard": {k: round(v, 4) for k, v in self.pairwise_jaccard.items()},
+            "pairwise_jaccard": {
+                k: round(v, 4) for k, v in self.pairwise_jaccard.items()
+            },
         }
+
 
 @dataclass(frozen=True)
 class NearOptimalConfig:
@@ -35,11 +57,13 @@ class NearOptimalConfig:
     n_alternatives: int = 3
     exclude_top_m: int = 2
     max_score_drop_pct: float = 0.15
+
     def __post_init__(self) -> None:
         if self.n_alternatives < 1 or self.exclude_top_m < 1:
             raise ValueError("n_alternatives and exclude_top_m must be >= 1")
         if not 0.0 <= self.max_score_drop_pct <= 1.0:
             raise ValueError("max_score_drop_pct must be in [0, 1]")
+
 
 @dataclass(frozen=True)
 class NearOptimalAlternative:
@@ -48,12 +72,17 @@ class NearOptimalAlternative:
     score_delta_pct: float
     result: OptimizationResult
 
+
 def _jaccard(a, b):
-    if not a and not b: return 1.0
+    if not a and not b:
+        return 1.0
     u = a | b
     return len(a & b) / len(u) if u else 1.0
 
-def compute_diversity_metrics(results, *, low_diversity_threshold=DEFAULT_LOW_DIVERSITY_THRESHOLD):
+
+def compute_diversity_metrics(
+    results, *, low_diversity_threshold=DEFAULT_LOW_DIVERSITY_THRESHOLD
+):
     squads = {n: {p.player_id for p in r.squad} for n, r in results.items() if r.squad}
     names = sorted(squads)
     if len(names) < 2:
@@ -61,12 +90,23 @@ def compute_diversity_metrics(results, *, low_diversity_threshold=DEFAULT_LOW_DI
         return DiversityMetrics(s, s, s, 0.0, 0, False, {})
     jaccards, overlaps, pairwise = [], [], {}
     for i, a in enumerate(names):
-        for b in names[i+1:]:
+        for b in names[i + 1 :]:
             ja = _jaccard(squads[a], squads[b])
             ov = len(squads[a] & squads[b])
-            jaccards.append(ja); overlaps.append(ov); pairwise[f"{a}|{b}"] = ja
+            jaccards.append(ja)
+            overlaps.append(ov)
+            pairwise[f"{a}|{b}"] = ja
     mean_j = sum(jaccards) / len(jaccards)
-    return DiversityMetrics(mean_j, max(jaccards), min(jaccards), sum(overlaps)/len(overlaps), max(overlaps), mean_j > low_diversity_threshold, pairwise)
+    return DiversityMetrics(
+        mean_j,
+        max(jaccards),
+        min(jaccards),
+        sum(overlaps) / len(overlaps),
+        max(overlaps),
+        mean_j > low_diversity_threshold,
+        pairwise,
+    )
+
 
 def generate_near_optimal_alternatives(pool, config, strategy, reference, near_cfg):
     if not near_cfg.enabled or not reference.squad:
@@ -76,7 +116,7 @@ def generate_near_optimal_alternatives(pool, config, strategy, reference, near_c
     out = []
     max_start = max(1, len(ranked) - near_cfg.exclude_top_m + 1)
     for start in range(min(near_cfg.n_alternatives, max_start)):
-        excluded = ranked[start:start + near_cfg.exclude_top_m]
+        excluded = ranked[start : start + near_cfg.exclude_top_m]
         if len(excluded) < near_cfg.exclude_top_m and start > 0:
             break
         exclude_ids = {p.player_id for p in excluded}
@@ -84,11 +124,19 @@ def generate_near_optimal_alternatives(pool, config, strategy, reference, near_c
         # Fase 4.4: warm-start from the reference squad minus the just-excluded
         # players — each alternative differs from the reference by only a handful
         # of players, so this is a close incumbent for CBC.
-        warm_start = {p.player_id: (p.player_id not in exclude_ids) for p in reference.squad}
+        warm_start = {
+            p.player_id: (p.player_id not in exclude_ids) for p in reference.squad
+        }
         try:
-            alt = optimize_squad(list(pool), replace(config, exclude=frozenset(new_ex)), strategy, warm_start=warm_start)
+            alt = optimize_squad(
+                list(pool),
+                replace(config, exclude=frozenset(new_ex)),
+                strategy,
+                warm_start=warm_start,
+            )
         except Exception as exc:
-            log.warning("near_optimal failed: %s", exc); continue
+            log.warning("near_optimal failed: %s", exc)
+            continue
         if not alt.squad:
             continue
         delta = alt.total_projected_score - base
@@ -125,7 +173,7 @@ def diversify_secondary_strategies(
         return results
 
     ranked = sorted(primary.squad, key=lambda p: p.projected_score, reverse=True)
-    n_core = max(1, min(max_exclude, int(round(len(ranked) * core_fraction))))
+    n_core = max(1, min(max_exclude, round(len(ranked) * core_fraction)))
     core_ids = {p.player_id for p in ranked[:n_core]}
 
     out = dict(results)
@@ -139,6 +187,10 @@ def diversify_secondary_strategies(
             alt = optimize_squad(pool, cfg2, strat)
             if alt.squad:
                 out[name] = alt
-        except Exception as exc:  # noqa: BLE001
-            log.warning("diversify_secondary_strategies: %s failed (%s); keep original", name, exc)
+        except Exception as exc:
+            log.warning(
+                "diversify_secondary_strategies: %s failed (%s); keep original",
+                name,
+                exc,
+            )
     return out

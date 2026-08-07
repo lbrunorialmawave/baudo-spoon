@@ -19,50 +19,53 @@ from sklearn.preprocessing import StandardScaler
 from ml.clustering.kmeans import _make_clusterer, run_clustering
 from ml.config import MLConfig
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 def _make_cluster_df(n_players: int = 40, seed: int = 42) -> pd.DataFrame:
     """Minimal feature-engineered DataFrame suitable for run_clustering."""
     rng = np.random.default_rng(seed)
     rows = []
     for i in range(n_players):
-        rows.append({
-            "player_fotmob_id": i,
-            "player_name": f"Player{i}",
-            "team_name": f"Team{i % 5}",
-            "season_start": 2023,
-            "fantavoto_medio": float(rng.uniform(4.0, 8.0)),
-            "goals_per90": float(rng.uniform(0, 1.0)),
-            "goal_assist_per90": float(rng.uniform(0, 0.8)),
-            "total_scoring_att_per90": float(rng.uniform(0, 3.0)),
-            "ontarget_scoring_att_per90": float(rng.uniform(0, 1.5)),
-            "won_contest_per90": float(rng.uniform(0, 5.0)),
-            "total_att_assist_per90": float(rng.uniform(0, 2.0)),
-            "big_chance_created_per90": float(rng.uniform(0, 0.5)),
-            "yellow_card_per90": float(rng.uniform(0, 0.3)),
-            "interception_per90": float(rng.uniform(0, 2.0)),
-            "total_tackle_per90": float(rng.uniform(0, 3.0)),
-            "effective_clearance_per90": float(rng.uniform(0, 2.0)),
-            "fouls_per90": float(rng.uniform(0, 2.0)),
-            "team_rank_norm": float(rng.uniform(0.1, 1.0)),
-        })
+        rows.append(
+            {
+                "player_fotmob_id": i,
+                "player_name": f"Player{i}",
+                "team_name": f"Team{i % 5}",
+                "season_start": 2023,
+                "fantavoto_medio": float(rng.uniform(4.0, 8.0)),
+                "goals_per90": float(rng.uniform(0, 1.0)),
+                "goal_assist_per90": float(rng.uniform(0, 0.8)),
+                "total_scoring_att_per90": float(rng.uniform(0, 3.0)),
+                "ontarget_scoring_att_per90": float(rng.uniform(0, 1.5)),
+                "won_contest_per90": float(rng.uniform(0, 5.0)),
+                "total_att_assist_per90": float(rng.uniform(0, 2.0)),
+                "big_chance_created_per90": float(rng.uniform(0, 0.5)),
+                "yellow_card_per90": float(rng.uniform(0, 0.3)),
+                "interception_per90": float(rng.uniform(0, 2.0)),
+                "total_tackle_per90": float(rng.uniform(0, 3.0)),
+                "effective_clearance_per90": float(rng.uniform(0, 2.0)),
+                "fouls_per90": float(rng.uniform(0, 2.0)),
+                "team_rank_norm": float(rng.uniform(0.1, 1.0)),
+            }
+        )
     return pd.DataFrame(rows)
 
 
 def _make_minimal_config(**overrides) -> MLConfig:
     """Create a minimal MLConfig with a fake database URL for testing."""
-    defaults = dict(
-        database_url="postgresql://test:test@localhost/test",
-        n_clusters=3,
-        pca_variance_threshold=0.90,
-        random_seed=42,
-    )
+    defaults = {
+        "database_url": "postgresql://test:test@localhost/test",
+        "n_clusters": 3,
+        "pca_variance_threshold": 0.90,
+        "random_seed": 42,
+    }
     defaults.update(overrides)
     return MLConfig(**defaults)
 
 
 # ── Pipeline ordering: StandardScaler must precede PCA ────────────────────────
+
 
 class TestScalerPCAPipelineOrder:
     """Strict enforcement: StandardScaler → PCA sequence.
@@ -162,6 +165,7 @@ class TestScalerPCAPipelineOrder:
 
 # ── n_init stability ──────────────────────────────────────────────────────────
 
+
 class TestKMeansNInit:
     """KMeans fallback must use n_init=20 for convergence stability."""
 
@@ -192,12 +196,14 @@ class TestKMeansNInit:
         labels_b = KMeans(n_clusters=4, random_state=42, n_init=20).fit_predict(X)
 
         np.testing.assert_array_equal(
-            labels_a, labels_b,
+            labels_a,
+            labels_b,
             err_msg="KMeans with n_init=20 and same seed must produce identical labels",
         )
 
 
 # ── ClusterResult contract ────────────────────────────────────────────────────
+
 
 class TestClusterResultContract:
     """ClusterResult fields must have correct types and shapes."""
@@ -231,6 +237,7 @@ class TestClusterResultContract:
 
 # ── Soft-role constraints ─────────────────────────────────────────────────────
 
+
 class TestSoftRoleConstraints:
     """Verify that soft-role constraints reduce cross-role cluster formation.
 
@@ -249,7 +256,9 @@ class TestSoftRoleConstraints:
 
         D = _build_role_aware_distance_matrix(X_pca, role_codes, cross_role_penalty=5.0)
 
-        np.testing.assert_array_equal(D, D.T, err_msg="Distance matrix must be symmetric")
+        np.testing.assert_array_equal(
+            D, D.T, err_msg="Distance matrix must be symmetric"
+        )
         assert np.all(np.diag(D) == 0.0), "Diagonal of distance matrix must be zero"
         assert D.shape == (20, 20)
 
@@ -261,7 +270,9 @@ class TestSoftRoleConstraints:
         X_pca = rng.standard_normal((10, 2))
         role_codes = np.zeros(10, dtype=np.int32)  # all same role → no penalty
 
-        D_role = _build_role_aware_distance_matrix(X_pca, role_codes, cross_role_penalty=99.0)
+        D_role = _build_role_aware_distance_matrix(
+            X_pca, role_codes, cross_role_penalty=99.0
+        )
 
         # Without cross-role pairs, distances must equal Euclidean
         for i in range(10):
@@ -280,7 +291,9 @@ class TestSoftRoleConstraints:
         role_codes = np.array([0, 1], dtype=np.int32)  # two different roles
         penalty = 7.0
 
-        D = _build_role_aware_distance_matrix(X_pca, role_codes, cross_role_penalty=penalty)
+        D = _build_role_aware_distance_matrix(
+            X_pca, role_codes, cross_role_penalty=penalty
+        )
 
         euclidean_dist = 1.0  # ||[0,0] - [1,0]||
         expected_penalised = euclidean_dist + penalty
@@ -291,7 +304,7 @@ class TestSoftRoleConstraints:
     def test_run_clustering_with_canonical_role_does_not_raise(self):
         """run_clustering must succeed when canonical_role column is present."""
         df = _make_cluster_df(n_players=40)
-        roles = (["GK"] * 5 + ["DEF"] * 10 + ["MID"] * 15 + ["FWD"] * 10)
+        roles = ["GK"] * 5 + ["DEF"] * 10 + ["MID"] * 15 + ["FWD"] * 10
         df["canonical_role"] = roles
         cfg = _make_minimal_config(n_clusters=3)
 
@@ -308,39 +321,60 @@ class TestSoftRoleConstraints:
         default penalty (5.0), KMeans/KMedoids should assign them to distinct
         clusters when K ≥ 2.
         """
-        from ml.clustering.kmeans import _HAS_KMEDOIDS
 
         rng = np.random.default_rng(7)
         n = 30
         # GKs concentrate near origin (zero attacking stats)
-        gk_rows = {f: rng.uniform(0.0, 0.05) for f in [
-            "goals_per90", "goal_assist_per90", "total_scoring_att_per90",
-            "ontarget_scoring_att_per90", "won_contest_per90",
-            "total_att_assist_per90", "big_chance_created_per90",
-            "yellow_card_per90", "interception_per90", "total_tackle_per90",
-            "effective_clearance_per90", "fouls_per90",
-        ]}
+        gk_rows = {
+            f: rng.uniform(0.0, 0.05)
+            for f in [
+                "goals_per90",
+                "goal_assist_per90",
+                "total_scoring_att_per90",
+                "ontarget_scoring_att_per90",
+                "won_contest_per90",
+                "total_att_assist_per90",
+                "big_chance_created_per90",
+                "yellow_card_per90",
+                "interception_per90",
+                "total_tackle_per90",
+                "effective_clearance_per90",
+                "fouls_per90",
+            ]
+        }
         # FWDs concentrate far from origin (high attacking stats)
-        fwd_rows = {f: rng.uniform(0.8, 1.5) for f in [
-            "goals_per90", "goal_assist_per90", "total_scoring_att_per90",
-            "ontarget_scoring_att_per90", "won_contest_per90",
-            "total_att_assist_per90", "big_chance_created_per90",
-            "yellow_card_per90", "interception_per90", "total_tackle_per90",
-            "effective_clearance_per90", "fouls_per90",
-        ]}
+        fwd_rows = {
+            f: rng.uniform(0.8, 1.5)
+            for f in [
+                "goals_per90",
+                "goal_assist_per90",
+                "total_scoring_att_per90",
+                "ontarget_scoring_att_per90",
+                "won_contest_per90",
+                "total_att_assist_per90",
+                "big_chance_created_per90",
+                "yellow_card_per90",
+                "interception_per90",
+                "total_tackle_per90",
+                "effective_clearance_per90",
+                "fouls_per90",
+            ]
+        }
         rows = []
         for i in range(n):
             base = gk_rows if i < n // 2 else fwd_rows
             row = {k: float(v) + rng.uniform(-0.01, 0.01) for k, v in base.items()}
-            row.update({
-                "player_fotmob_id": i,
-                "player_name": f"P{i}",
-                "team_name": f"T{i % 5}",
-                "season_start": 2023,
-                "fantavoto_medio": 5.0,
-                "team_rank_norm": 0.5,
-                "canonical_role": "GK" if i < n // 2 else "FWD",
-            })
+            row.update(
+                {
+                    "player_fotmob_id": i,
+                    "player_name": f"P{i}",
+                    "team_name": f"T{i % 5}",
+                    "season_start": 2023,
+                    "fantavoto_medio": 5.0,
+                    "team_rank_norm": 0.5,
+                    "canonical_role": "GK" if i < n // 2 else "FWD",
+                }
+            )
             rows.append(row)
 
         df = pd.DataFrame(rows)
