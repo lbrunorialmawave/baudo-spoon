@@ -55,18 +55,18 @@ on:
         default: "INFO"
 
       output_dir:
-        description: "Directory artefatti (vuoto = default ml/artifacts)"
+        description: "Directory artefatti (vuoto = default /app/artifacts)"
         required: false
         default: ""
 
+      # Se lasciato vuoto → scarica automaticamente fantavoto_real.csv da R2
+      # e lo passa come --fantavoto-csv /app/artifacts/fantavoto_real.csv
       fantavoto_csv:
-        description: "Path al CSV fantavoto nel container (es. /app/artifacts/fantavoto.csv)"
+        description: "Path al CSV fantavoto nel container (vuoto = download automatico da R2)"
         required: false
         default: ""
 
-  # Schedulazione: ogni lunedì alle 06:00 UTC (~08:00 CEST), il giorno dopo
-  # il turno infrasettimanale/domenicale. Il cron di GitHub Actions è
-  # sempre in UTC — aggiusta l'ora se cambia il fuso del campionato.
+  # Schedulazione: ogni lunedì alle 06:00 UTC (~08:00 CEST)
   # schedule:
   #   - cron: "0 6 * * 1"
 
@@ -78,50 +78,150 @@ concurrency:
 jobs:
   train:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
+
+    env:
+      ML_DATABASE_URL: ${{ secrets.ML_DATABASE_URL }}
+      ML_R2_ENDPOINT_URL: ${{ secrets.ML_R2_ENDPOINT_URL }}
+      ML_R2_ACCESS_KEY_ID: ${{ secrets.ML_R2_ACCESS_KEY_ID }}
+      ML_R2_SECRET_ACCESS_KEY: ${{ secrets.ML_R2_SECRET_ACCESS_KEY }}
+      ML_R2_BUCKET_NAME: ${{ secrets.ML_R2_BUCKET_NAME || 'baudo-spoon-ml-artifacts' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Build dal Dockerfile esistente: garantisce le stesse dipendenze/versioni
-      # usate in locale (docker compose --profile ml) e su Render Cron Job.
+      - name: Validate required secrets
+        run: |
+          missing=0
+          for var in ML_DATABASE_URL ML_R2_ENDPOINT_URL ML_R2_ACCESS_KEY_ID ML_R2_SECRET_ACCESS_KEY; do
+            if [ -z "${!var}" ]; then
+              echo "::error::Secret $var is not set"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          echo "All required secrets are present."
+
+      # Scarica fantavoto_real.csv da R2 se l'utente non ha passato un path custom.
+      # Il file finisce in ./artifacts sul runner e viene montato in /app/artifacts
+      # nel container.
+      - name: Download fantavoto_real.csv from R2
+        if: ${{ github.event.inputs.fantavoto_csv == '' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.ML_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.ML_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          mkdir -p artifacts
+          echo "Downloading s3://${ML_R2_BUCKET_NAME}/fantavoto_real.csv ..."
+          # ubuntu-latest ha già awscli; fallback via pip se manca
+          if ! command -v aws >/dev/null 2>&1; then
+            pip install --quiet awscli
+          fi
+          aws s3 cp \
+            "s3://${ML_R2_BUCKET_NAME}/fantavoto_real.csv" \
+            artifacts/fantavoto_real.csv \
+            --endpoint-url "${ML_R2_ENDPOINT_URL}"
+
+          if [ ! -s artifacts/fantavoto_real.csv ]; then
+            echo "::error::Downloaded fantavoto_real.csv is missing or empty"
+            exit 1
+          fi
+
+          echo "Downloaded OK:"
+          ls -lh artifacts/fantavoto_real.csv
+          echo "--- header ---"
+          head -3 artifacts/fantavoto_real.csv
+
+      # Build dal Dockerfile esistente: stesse dipendenze di locale / Render.
       # Contesto = root del repo perché ml/Dockerfile fa `COPY ml/requirements.txt .`
       - name: Build ML image
         run: docker build -f ml/Dockerfile -t ml-runner:latest .
 
       - name: Run training pipeline
-        env:
-          ML_DATABASE_URL: ${{ secrets.ML_DATABASE_URL }}
-          ML_R2_ENDPOINT_URL: ${{ secrets.ML_R2_ENDPOINT_URL }}
-          ML_R2_ACCESS_KEY_ID: ${{ secrets.ML_R2_ACCESS_KEY_ID }}
-          ML_R2_SECRET_ACCESS_KEY: ${{ secrets.ML_R2_SECRET_ACCESS_KEY }}
-          ML_R2_BUCKET_NAME: ${{ secrets.ML_R2_BUCKET_NAME }}
         run: |
+          set -euo pipefail
+
+          # Path fantavoto: input utente oppure quello scaricato da R2
+          FANTAVOTO_FLAG=""
+          if [ -n "${{ github.event.inputs.fantavoto_csv }}" ]; then
+            FANTAVOTO_FLAG='--fantavoto-csv "${{ github.event.inputs.fantavoto_csv }}"'
+          elif [ -f artifacts/fantavoto_real.csv ]; then
+            FANTAVOTO_FLAG="--fantavoto-csv /app/artifacts/fantavoto_real.csv"
+          fi
+
+          OUTPUT_FLAG=""
+          if [ -n "${{ github.event.inputs.output_dir }}" ]; then
+            OUTPUT_FLAG='--output-dir "${{ github.event.inputs.output_dir }}"'
+          fi
+
+          LEAGUE_FLAG=""
+          if [ -n "${{ github.event.inputs.league }}" ]; then
+            LEAGUE_FLAG='--league "${{ github.event.inputs.league }}"'
+          fi
+
+          TUNE_FLAG=""
+          if [ "${{ github.event.inputs.tune }}" = "true" ]; then
+            TUNE_FLAG="--tune"
+          fi
+
+          PREDICT_NEXT_FLAG=""
+          if [ "${{ github.event.inputs.predict_next }}" = "true" ]; then
+            PREDICT_NEXT_FLAG="--predict-next"
+          fi
+
+          EVALUATE_MANTRA_FLAG=""
+          if [ "${{ github.event.inputs.evaluate_mantra }}" = "true" ]; then
+            EVALUATE_MANTRA_FLAG="--evaluate-mantra"
+          fi
+
+          echo "Starting pipeline with fantavoto flag: ${FANTAVOTO_FLAG:-<none>}"
+
+          # Monta ./artifacts → /app/artifacts così il CSV scaricato è visibile
+          # e gli output della pipeline restano sul runner (upload artifact sotto).
           docker run --rm \
             -e ML_DATABASE_URL \
             -e ML_R2_ENDPOINT_URL \
             -e ML_R2_ACCESS_KEY_ID \
             -e ML_R2_SECRET_ACCESS_KEY \
             -e ML_R2_BUCKET_NAME \
+            -e ML_ARTIFACTS_DIR=/app/artifacts \
+            -v "${{ github.workspace }}/artifacts:/app/artifacts" \
             ml-runner:latest \
-            ${{ github.event.inputs.league != '' && format('--league "{0}"', github.event.inputs.league) || '' }} \
+            ${LEAGUE_FLAG} \
             --clusters "${{ github.event.inputs.clusters || '6' }}" \
             --tune-iter "${{ github.event.inputs.tune_iter || '30' }}" \
             --test-seasons "${{ github.event.inputs.test_seasons || '1' }}" \
             --min-minutes "${{ github.event.inputs.min_minutes || '800' }}" \
             --seed "${{ github.event.inputs.seed || '42' }}" \
             --log-level "${{ github.event.inputs.log_level || 'INFO' }}" \
-            ${{ github.event.inputs.tune == 'true' && '--tune' || '' }} \
-            ${{ github.event.inputs.predict_next == 'true' && '--predict-next' || '' }} \
-            ${{ github.event.inputs.evaluate_mantra == 'true' && '--evaluate-mantra' || '' }} \
-            ${{ github.event.inputs.fantavoto_csv != '' && format('--fantavoto-csv "{0}"', github.event.inputs.fantavoto_csv) || '' }} \
-            ${{ github.event.inputs.output_dir != '' && format('--output-dir "{0}"', github.event.inputs.output_dir) || '' }} \
+            ${TUNE_FLAG} \
+            ${PREDICT_NEXT_FLAG} \
+            ${EVALUATE_MANTRA_FLAG} \
+            ${FANTAVOTO_FLAG} \
+            ${OUTPUT_FLAG} \
             --json-logs
 
-      # Fallisce esplicitamente il job (oltre al normale exit code non-zero
-      # di run_pipeline.py) così il tab Actions e le notifiche email di
-      # GitHub sui watcher del repo segnalano il training fallito.
+      - name: List produced artifacts
+        if: always()
+        run: |
+          echo "=== artifacts/ ==="
+          find artifacts -type f 2>/dev/null | head -80 || true
+
+      - name: Upload training artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-run-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 30
+
+      # Fallisce esplicitamente il job così Actions e le notifiche email
+      # segnalano il training fallito.
       - name: Notify on failure
         if: failure()
         run: echo "::error::Training ML fallito — controlla i log sopra. Nessun nuovo run_id è stato promosso."
