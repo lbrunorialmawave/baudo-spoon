@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final, Literal
 
 from ml.mantra.roles import ALL_ROLES as _MANTRA_ALL_ROLES
+from ml.optimizer.formations import FormationCoverage
 
 __all__ = [
     "Role",
@@ -31,6 +32,7 @@ __all__ = [
     "OptimizationConfig",
     "OptimizationResult",
     "MultiStrategyResult",
+    "FormationCoverage",
 ]
 
 # ---------------------------------------------------------------------------
@@ -326,6 +328,12 @@ class OptimizationConfig:
     # If None, no formation constraint is applied — formation_feasibility in the
     # result is purely informational (post-hoc check, not a solver guarantee).
     preferred_formation: Formation | None = None
+    # MANTRA only: label of an official Mantra Experience module (e.g. "3-4-3").
+    # When enforce_preferred_mantra_formation is False (default), coverage is
+    # reported post-hoc only. When True, the ILP adds hard slot constraints so
+    # the selected squad is guaranteed to cover that module.
+    preferred_mantra_formation: str | None = None
+    enforce_preferred_mantra_formation: bool = False
     # Risk-aversion coefficient for the objective: effective_score = projected_score
     # - risk_aversion * prediction_std. Default 0.0 = risk-neutral (backward compat).
     # Meaningful only when Player.prediction_std is populated by the ensemble.
@@ -386,6 +394,20 @@ class OptimizationConfig:
                     f"mantra_role_quotas must sum to {TOTAL_SQUAD_SIZE}, got "
                     f"{sum(self.mantra_role_quotas.values())}"
                 )
+        if self.preferred_mantra_formation is not None:
+            from ml.optimizer.formations import MANTRA_FORMATIONS_BY_LABEL
+
+            if self.preferred_mantra_formation not in MANTRA_FORMATIONS_BY_LABEL:
+                known = ", ".join(sorted(MANTRA_FORMATIONS_BY_LABEL))
+                raise ValueError(
+                    f"preferred_mantra_formation {self.preferred_mantra_formation!r} "
+                    f"not in catalog. Known: {known}"
+                )
+        if self.enforce_preferred_mantra_formation and not self.preferred_mantra_formation:
+            raise ValueError(
+                "enforce_preferred_mantra_formation=True requires "
+                "preferred_mantra_formation to be set"
+            )
         if self.risk_aversion < 0:
             raise ValueError(
                 f"risk_aversion must be >= 0, got {self.risk_aversion}"
@@ -438,6 +460,9 @@ class OptimizationResult:
     big_teams_players_count: int
     formation_feasibility: dict[str, bool]
     diagnostics: dict[str, object] = field(default_factory=dict)
+    # MANTRA only: post-hoc coverage of official Mantra Experience modules.
+    # None when ruleset=CLASSIC or evaluation was skipped (empty squad / error).
+    mantra_formation_feasibility: dict[str, FormationCoverage] | None = None
 
 
 @dataclass(frozen=True)

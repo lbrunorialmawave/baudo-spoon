@@ -14,6 +14,11 @@ from collections import defaultdict
 
 import pulp
 
+from ml.optimizer.formations import (
+    evaluate_all_coverages,
+    evaluate_coverage,
+    get_formation,
+)
 from ml.optimizer.inflation import compute_role_percentile_map, estimate_effective_cost
 from ml.optimizer.team_strength import load_team_strength_scores
 from ml.optimizer.models import (
@@ -64,6 +69,24 @@ def _preflight_mantra(pool: list[Player], config: OptimizationConfig) -> None:
             raise PreFlightError(
                 f"MANTRA pool has {coverage[role]} players eligible for role {role!r}, "
                 f"required quota is {quota}"
+            )
+
+    # Preferred Mantra module: if enforce is on, the pool itself must be able
+    # to cover the module in isolation (ignore quotas / budget for this check).
+    if (
+        config.enforce_preferred_mantra_formation
+        and config.preferred_mantra_formation
+    ):
+        form = get_formation(config.preferred_mantra_formation)
+        cov = evaluate_coverage(pool, form, require_por=True)
+        if not cov.feasible:
+            deficits = ", ".join(
+                f"{k}:{v}" for k, v in sorted(cov.deficits.items())
+            )
+            raise PreFlightError(
+                f"Pool cannot cover preferred Mantra formation "
+                f"{config.preferred_mantra_formation!r} even in isolation; "
+                f"deficits: {deficits or 'unknown'}"
             )
 
 
@@ -193,6 +216,93 @@ def _build_role_constraints_mantra(
 _ROLE_CONSTRAINT_BUILDERS = {
     "CLASSIC": _build_role_constraints_classic,
 }
+
+
+def _add_preferred_mantra_formation_constraints(
+    prob: pulp.LpProblem,
+    x: dict[str, pulp.LpVariable],
+    pool: list[Player],
+    formation_label: str,
+) -> None:
+    """Hard constraints: selected squad must be able to field *formation_label*.
+
+    Uses auxiliary binaries ``y[player_id, slot_instance]`` so that overlapping
+    OR-groups (e.g. Dc and DC/B) cannot double-count the same player.  Linked
+    only to selection variable ``x`` and role eligibility — independent of the
+    exact ``x_ir`` role assignment (which is free as long as quotas are met).
+    """
+    form = get_formation(formation_label)
+
+    # Expand each SlotRequirement into unit instances.
+    instances: list[tuple[int, object]] = []  # (slot_idx, SlotRequirement)
+    for si, slot in enumerate(form.slots):
+        for _ in range(slot.count):
+            instances.append((si, slot))
+
+    # y[(pid, inst)] = 1 iff player pid fills formation slot instance inst
+    y: dict[tuple[str, int], pulp.LpVariable] = {}
+    for inst_idx, (_, slot) in enumerate(instances):
+        for p in pool:
+            if not p.eligible_roles:
+                continue
+            if not (p.eligible_roles & slot.roles):
+                continue
+            # Por never fills outfield slots
+            if p.eligible_roles == frozenset({"Por"}) or (
+                "Por" in p.eligible_roles and len(p.eligible_roles) == 1
+            ):
+                continue
+            key = (p.player_id, inst_idx)
+            y[key] = pulp.LpVariable(
+                name=f"yfm_{p.player_id}_{inst_idx}",
+                cat=pulp.LpBinary,
+            )
+            # Can only fill a slot if selected
+            prob += (
+                y[key] <= x[p.player_id],
+                f"yfm_le_x_{p.player_id}_{inst_idx}",
+            )
+
+    # Each slot instance must be filled by exactly one capable player
+    for inst_idx, (_, slot) in enumerate(instances):
+        fillers = [
+            y[(p.player_id, inst_idx)]
+            for p in pool
+            if (p.player_id, inst_idx) in y
+        ]
+        if not fillers:
+            # No player in the pool can fill this slot → problem is infeasible;
+            # add a contradictory constraint so CBC reports INFEASIBLE cleanly.
+            prob += (0 >= 1, f"yfm_impossible_slot_{inst_idx}")
+            continue
+        prob += (
+            pulp.lpSum(fillers) >= 1,
+            f"yfm_fill_slot_{inst_idx}",
+        )
+
+    # Each player fills at most one formation slot
+    for p in pool:
+        assigned = [
+            y[(p.player_id, inst_idx)]
+            for inst_idx in range(len(instances))
+            if (p.player_id, inst_idx) in y
+        ]
+        if assigned:
+            prob += (
+                pulp.lpSum(assigned) <= 1,
+                f"yfm_one_slot_{p.player_id}",
+            )
+
+    # At least one Por among selected players
+    por_vars = [
+        x[p.player_id]
+        for p in pool
+        if p.eligible_roles and "Por" in p.eligible_roles
+    ]
+    if por_vars:
+        prob += (pulp.lpSum(por_vars) >= 1, "yfm_require_por")
+    else:
+        prob += (0 >= 1, "yfm_no_por_in_pool")
 
 
 # ---------------------------------------------------------------------------
@@ -343,6 +453,13 @@ def solve_strategy(
     # Role quotas — dispatched by ruleset.
     if config.ruleset == "MANTRA":
         _build_role_constraints_mantra(prob, x, pool, config, x_ir)
+        if (
+            config.enforce_preferred_mantra_formation
+            and config.preferred_mantra_formation
+        ):
+            _add_preferred_mantra_formation_constraints(
+                prob, x, pool, config.preferred_mantra_formation
+            )
     else:
         _build_role_constraints_classic(prob, x, pool, config)
 
@@ -607,6 +724,11 @@ def _build_result(
     distinct_teams_count = len(team_breakdown)
     formation_feasibility = _evaluate_formations(selected, config)
 
+    # Post-hoc Mantra module coverage (informational only; no ILP change).
+    mantra_feas: dict | None = None
+    if config.ruleset == "MANTRA":
+        mantra_feas = evaluate_all_coverages(selected)
+
     return OptimizationResult(
         strategy_name=strategy_name,
         status=status,  # type: ignore[arg-type]
@@ -628,6 +750,7 @@ def _build_result(
                 else {}
             ),
         },
+        mantra_formation_feasibility=mantra_feas,
     )
 
 

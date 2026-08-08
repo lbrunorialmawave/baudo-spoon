@@ -130,6 +130,10 @@ export interface OptimizationRequest {
   ruleset?: 'CLASSIC' | 'MANTRA';
   mantraRoleQuotas?: Record<string, number> | null;
   preferredFormation?: FormationConfig | null;
+  /** MANTRA only: official module label (e.g. "3-4-3"). Soft unless enforce is true. */
+  preferredMantraFormation?: string | null;
+  /** When true, ILP hard-constrains preferredMantraFormation. Default false. */
+  enforcePreferredMantraFormation?: boolean;
   riskAversion?: number;
   varBlend?: number;
   esvWeight?: number;
@@ -241,6 +245,14 @@ export interface SquadPlayer {
   predictionStd?: number | null;
 }
 
+/** Squad-level coverage of one official Mantra Experience module. */
+export interface FormationCoverage {
+  label: string;
+  feasible: boolean;
+  deficits: Record<string, number>;
+  assigned?: Record<string, string[]> | null;
+}
+
 export interface OptimizationResult {
   strategyName: string;
   status: string;
@@ -258,6 +270,8 @@ export interface OptimizationResult {
   winProbability: number | null;
   monteCarloSummary?: MonteCarloSummary | null;
   nearOptimal?: NearOptimalAlternative[];
+  /** MANTRA only: post-hoc coverage of the 11 official modules. */
+  mantraFormationFeasibility?: Record<string, FormationCoverage> | null;
 }
 
 export interface MultiStrategyResult {

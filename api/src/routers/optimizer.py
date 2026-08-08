@@ -29,6 +29,7 @@ from ..deps import get_db, rate_limit, require_role
 from ..schemas import (
     DefaultStrategiesResponse,
     DiversityMetricsSchema,
+    FormationCoverageSchema,
     MonteCarloSummarySchema,
     MultiStrategyResultSchema,
     NearOptimalAlternativeSchema,
@@ -120,6 +121,8 @@ def _build_config(req: OptimizationRequest) -> OptimizationConfig:
         ruleset=cast(RulesetType, req.ruleset),
         mantra_role_quotas=req.mantra_role_quotas,
         preferred_formation=preferred_formation,
+        preferred_mantra_formation=req.preferred_mantra_formation,
+        enforce_preferred_mantra_formation=req.enforce_preferred_mantra_formation,
         risk_aversion=req.risk_aversion,
         var_blend=req.var_blend,
         esv_weight=req.esv_weight,
@@ -396,6 +399,18 @@ def _serialize_result(
         )
         for p in result.squad
     ]
+    mantra_feas = None
+    if result.mantra_formation_feasibility is not None:
+        mantra_feas = {
+            label: FormationCoverageSchema(
+                label=cov.label,
+                feasible=cov.feasible,
+                deficits=cov.deficits,
+                assigned=cov.assigned,
+            )
+            for label, cov in result.mantra_formation_feasibility.items()
+        }
+
     return OptimizationResultSchema(
         strategy_name=result.strategy_name,
         status=result.status,
@@ -413,6 +428,7 @@ def _serialize_result(
         win_probability=win_probability,
         monte_carlo_summary=monte_carlo_summary,
         near_optimal=near_optimal or [],
+        mantra_formation_feasibility=mantra_feas,
     )
 
 

@@ -64,6 +64,25 @@ export const DEFAULT_FORMATIONS: FormationConfig[] = [
   { label: '5-3-2', defenders: 5, midfielders: 3, forwards: 2 },
 ] as const;
 
+/**
+ * Official Mantra Experience 2026/27 module labels (11).
+ * Used for preferredMantraFormation selects and coverage badges.
+ * See docs/mantra_formations_2026_27.md.
+ */
+export const MANTRA_MODULE_LABELS: readonly string[] = [
+  '3-4-3',
+  '3-4-1-2',
+  '3-4-2-1',
+  '3-5-2',
+  '3-5-1-1',
+  '4-3-3',
+  '4-3-1-2',
+  '4-4-2',
+  '4-1-4-1',
+  '4-4-1-1',
+  '4-2-3-1',
+] as const;
+
 // ---------------------------------------------------------------------------
 // Empirical Qt.A anchors (pooled 2023/24 – 2025/26)
 // Used by preset authors to keep minQtA / topTierCostThreshold coherent.

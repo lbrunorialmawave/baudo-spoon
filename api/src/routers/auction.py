@@ -37,6 +37,7 @@ from ..schemas import (
     AuctionSummarySchema,
     BidderPolicySchema,
     BidderProfileSchema,
+    FormationCoverageSchema,
     InitializeAuctionRequest,
     InitializeAuctionResponse,
     MarketDriftConfigSchema,
@@ -195,6 +196,38 @@ def _price_index_to_dict(
     price_index: dict[Role, dict[Tier, float]],
 ) -> dict[str, dict[str, float]]:
     return {role: {tier: float(v) for tier, v in tiers.items()} for role, tiers in price_index.items()}
+
+
+def _mantra_coverage_to_schema(
+    coverage: dict[str, dict[str, object]] | None,
+) -> dict[str, dict[str, FormationCoverageSchema]] | None:
+    """Translate domain FormationCoverage map to API schemas."""
+    if coverage is None:
+        return None
+    out: dict[str, dict[str, FormationCoverageSchema]] = {}
+    for pid, modules in coverage.items():
+        out[pid] = {}
+        for label, cov in modules.items():
+            out[pid][label] = FormationCoverageSchema(
+                label=getattr(cov, "label", label),
+                feasible=bool(getattr(cov, "feasible", False)),
+                deficits=dict(getattr(cov, "deficits", {}) or {}),
+                assigned=getattr(cov, "assigned", None),
+            )
+    return out
+
+
+def _summary_to_schema(summary: object) -> AuctionSummarySchema:
+    from ml.auction.models import AuctionSummary
+
+    s = cast(AuctionSummary, summary)
+    return AuctionSummarySchema(
+        participants=[_participant_to_schema(p) for p in s.participants],
+        assignments=[_assignment_to_schema(a) for a in s.assignments],
+        price_index=_price_index_to_dict(s.price_index),
+        completion_probability=s.completion_probability,
+        mantra_module_coverage=_mantra_coverage_to_schema(s.mantra_module_coverage),
+    )
 
 
 
@@ -532,13 +565,7 @@ def undo_last_assignment_endpoint(
             detail="no assignments to undo",
         )
     session.undo()
-    summary = session.summary()
-    return AuctionSummarySchema(
-        participants=[_participant_to_schema(p) for p in summary.participants],
-        assignments=[_assignment_to_schema(a) for a in summary.assignments],
-        price_index=_price_index_to_dict(summary.price_index),
-        completion_probability=summary.completion_probability,
-    )
+    return _summary_to_schema(session.summary())
 
 
 @router.get(
@@ -635,13 +662,7 @@ def get_summary_endpoint(
 ) -> AuctionSummarySchema:
     """Snapshot read-only dello stato corrente dell'asta."""
     session = _get_session(request, session_id)
-    summary = session.summary()
-    return AuctionSummarySchema(
-        participants=[_participant_to_schema(p) for p in summary.participants],
-        assignments=[_assignment_to_schema(a) for a in summary.assignments],
-        price_index=_price_index_to_dict(summary.price_index),
-        completion_probability=summary.completion_probability,
-    )
+    return _summary_to_schema(session.summary())
 
 
 @router.get(

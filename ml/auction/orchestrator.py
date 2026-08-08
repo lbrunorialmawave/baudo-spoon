@@ -523,6 +523,10 @@ def get_auction_summary(
 
     When ``include_completion_probability`` is True (default), attaches
     the WS3 #1 live indicator ``completion_probability`` per participant.
+
+    When ``ruleset=MANTRA``, also attaches per-participant
+    ``mantra_module_coverage`` (informational residual fieldability of
+    the 11 official Mantra Experience modules).
     """
     completion: dict[str, float] | None = None
     if include_completion_probability:
@@ -535,11 +539,26 @@ def get_auction_summary(
         except Exception:  # pragma: no cover - defensive
             logger.exception("completion_probability_failed")
             completion = None
+
+    mantra_cov: dict[str, dict[str, object]] | None = None
+    if state.config.ruleset == "MANTRA":
+        try:
+            from ml.optimizer.formations import evaluate_all_coverages
+
+            mantra_cov = {
+                pid: dict(evaluate_all_coverages(pstate.squad))
+                for pid, pstate in state.participants.items()
+            }
+        except Exception:  # pragma: no cover - defensive
+            logger.exception("mantra_module_coverage_failed")
+            mantra_cov = None
+
     return AuctionSummary(
         participants=list(state.participants.values()),
         assignments=list(state.assignments),
         price_index=copy.deepcopy(state.price_index),
         completion_probability=completion,
+        mantra_module_coverage=mantra_cov,
     )
 
 

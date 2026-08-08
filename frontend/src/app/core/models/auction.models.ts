@@ -200,6 +200,14 @@ export interface AssignmentRecord {
   assignedSlot?: string | null;
 }
 
+/** Squad-level coverage of one official Mantra Experience module (auction). */
+export interface MantraModuleCoverage {
+  label: string;
+  feasible: boolean;
+  deficits: Record<string, number>;
+  assigned?: Record<string, string[]> | null;
+}
+
 export interface AuctionSummary {
   participants: AuctionParticipantState[];
   assignments: AssignmentRecord[];
@@ -210,6 +218,11 @@ export interface AuctionSummary {
    * Absent on older backends / pre-WS3 sessions.
    */
   completionProbability?: Record<string, number> | null;
+  /**
+   * MANTRA only: participantId → module label → coverage.
+   * Informational residual fieldability of the 11 official modules.
+   */
+  mantraModuleCoverage?: Record<string, Record<string, MantraModuleCoverage>> | null;
 }
 
 // ── Live projection ───────────────────────────────────────────────────────

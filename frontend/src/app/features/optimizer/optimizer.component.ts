@@ -30,6 +30,7 @@ import {
   OPTIMIZER_PRESETS,
   OptimizerPreset,
 } from '../../core/constants/optimizer-presets';
+import { MANTRA_MODULE_LABELS } from '../../core/constants/shared-presets';
 import { OptimizerPlayerDrawerComponent } from './optimizer-player-drawer/optimizer-player-drawer.component';
 
 const STRATEGY_META: Record<string, { label: string; icon: string }> = {
@@ -788,7 +789,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                     [examples]="OPTIMIZER_LEGENDS['formations'].examples" />
                 </div>
                 <div class="field-group">
-                  <label class="field-label" for="opt-preferredFormation">Modulo imposto al solver</label>
+                  <label class="field-label" for="opt-preferredFormation">Modulo classico imposto al solver</label>
                   <select id="opt-preferredFormation" class="field-input" [(ngModel)]="preferredFormationLabel"
                           [attr.aria-describedby]="'legend-preferredFormation'">
                     <option value="">Nessuno (solo check)</option>
@@ -800,6 +801,26 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                     [description]="OPTIMIZER_LEGENDS['preferredFormation'].description"
                     [examples]="OPTIMIZER_LEGENDS['preferredFormation'].examples" />
                 </div>
+
+                @if (ruleset() === 'MANTRA') {
+                  <div class="field-group">
+                    <label class="field-label" for="opt-preferredMantra">Modulo Mantra preferito</label>
+                    <select id="opt-preferredMantra" class="field-input"
+                            [ngModel]="preferredMantraFormation()"
+                            (ngModelChange)="preferredMantraFormation.set($event)">
+                      <option value="">Nessuno (solo coverage post-hoc)</option>
+                      @for (lab of mantraModuleLabels; track lab) {
+                        <option [value]="lab">{{ lab }}</option>
+                      }
+                    </select>
+                    <label class="field-label field-label--inline" for="opt-enforceMantra">
+                      <input id="opt-enforceMantra" type="checkbox"
+                             [ngModel]="enforcePreferredMantra()"
+                             (ngModelChange)="enforcePreferredMantra.set($event)" />
+                      Vincolo hard ILP sul modulo Mantra
+                    </label>
+                  </div>
+                }
 
                 <div class="field-row">
                   <div class="field-group">
@@ -978,9 +999,20 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
               </div>
 
               @if (formationEntries(r).length) {
-                <div class="formation-row">
+                <div class="formation-row" aria-label="Schierabilità moduli classici">
                   @for (entry of formationEntries(r); track entry[0]) {
                     <span class="formation-chip" [class.ok]="entry[1]" [class.ko]="!entry[1]">
+                      {{ entry[0] }} {{ entry[1] ? '✓' : '✗' }}
+                    </span>
+                  }
+                </div>
+              }
+              @if (mantraFormationEntries(r).length) {
+                <div class="formation-row formation-row--mantra" aria-label="Schierabilità moduli Mantra">
+                  <span class="formation-row__label">Mantra</span>
+                  @for (entry of mantraFormationEntries(r); track entry[0]) {
+                    <span class="formation-chip" [class.ok]="entry[1]" [class.ko]="!entry[1]"
+                          [title]="mantraDeficitTitle(r, entry[0])">
                       {{ entry[0] }} {{ entry[1] ? '✓' : '✗' }}
                     </span>
                   }
@@ -2032,6 +2064,10 @@ export class OptimizerComponent {
   // ── Formations ────────────────────────────────────────
   readonly selectedFormations = signal(new Set(ALL_FORMATIONS.map(f => f.label)));
   readonly preferredFormationLabel = signal<string>('');
+  /** Official Mantra module preferred (soft unless enforcePreferredMantra). */
+  readonly preferredMantraFormation = signal<string>('');
+  readonly enforcePreferredMantra = signal(false);
+  readonly mantraModuleLabels = MANTRA_MODULE_LABELS;
 
   // ── Ruleset ───────────────────────────────────────────
   readonly ruleset = signal<'CLASSIC' | 'MANTRA'>('CLASSIC');
@@ -2279,6 +2315,14 @@ export class OptimizerComponent {
     } else if (req.preferredFormation === null) {
       this.preferredFormationLabel.set('');
     }
+    if (req.preferredMantraFormation) {
+      this.preferredMantraFormation.set(req.preferredMantraFormation);
+    } else if (req.preferredMantraFormation === null) {
+      this.preferredMantraFormation.set('');
+    }
+    if (typeof req.enforcePreferredMantraFormation === 'boolean') {
+      this.enforcePreferredMantra.set(req.enforcePreferredMantraFormation);
+    }
 
     // Strategies: customStrategies takes precedence over strategyNames (API contract).
     if (req.customStrategies?.length) {
@@ -2456,6 +2500,12 @@ export class OptimizerComponent {
       exclude: exclude.length ? exclude : undefined,
       ruleset: this.ruleset(),
       preferredFormation,
+      preferredMantraFormation:
+        this.ruleset() === 'MANTRA' && this.preferredMantraFormation()
+          ? this.preferredMantraFormation()
+          : null,
+      enforcePreferredMantraFormation:
+        this.ruleset() === 'MANTRA' && this.enforcePreferredMantra(),
       riskAversion: this.riskAversion(),
       monteCarlo: this.monteCarloEnabled()
         ? {
@@ -2621,7 +2671,21 @@ export class OptimizerComponent {
   }
 
   formationEntries(r: OptimizationResult): [string, boolean][] {
-    return Object.entries(r.formationFeasibility);
+    return Object.entries(r.formationFeasibility ?? {});
+  }
+
+  mantraFormationEntries(r: OptimizationResult): [string, boolean][] {
+    const m = r.mantraFormationFeasibility;
+    if (!m) return [];
+    return Object.entries(m).map(([label, cov]) => [label, cov.feasible]);
+  }
+
+  mantraDeficitTitle(r: OptimizationResult, label: string): string {
+    const cov = r.mantraFormationFeasibility?.[label];
+    if (!cov) return label;
+    if (cov.feasible) return `${label}: schierabile`;
+    const parts = Object.entries(cov.deficits ?? {}).map(([k, v]) => `${k} −${v}`);
+    return parts.length ? `${label}: manca ${parts.join(', ')}` : `${label}: non schierabile`;
   }
 
   meta(name: string) {

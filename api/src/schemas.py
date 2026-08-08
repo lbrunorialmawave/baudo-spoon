@@ -447,6 +447,11 @@ class OptimizationRequest(_CamelModel):
     # All formations in `formations` are still evaluated post-hoc and reported
     # in formation_feasibility, but only this one is a hard solver constraint.
     preferred_formation: Optional[FormationSchema] = None
+    # MANTRA only: label of an official Mantra Experience module (e.g. "3-4-3").
+    # With enforce_preferred_mantra_formation=False (default) coverage is
+    # post-hoc only; True adds hard ILP slot constraints.
+    preferred_mantra_formation: Optional[str] = None
+    enforce_preferred_mantra_formation: bool = False
     risk_aversion: float = Field(
         default=0.0, ge=0.0,
         description=(
@@ -667,6 +672,15 @@ class SquadPlayerSchema(_CamelModel):
     effective_cost: float
 
 
+class FormationCoverageSchema(_CamelModel):
+    """Squad-level coverage of one official Mantra Experience module."""
+
+    label: str
+    feasible: bool
+    deficits: dict[str, int]
+    assigned: Optional[dict[str, list[str]]] = None
+
+
 class OptimizationResultSchema(_CamelModel):
     """Output di una singola strategia di ottimizzazione."""
 
@@ -686,6 +700,8 @@ class OptimizationResultSchema(_CamelModel):
     win_probability: Optional[float] = None
     monte_carlo_summary: Optional[MonteCarloSummarySchema] = None
     near_optimal: list[NearOptimalAlternativeSchema] = Field(default_factory=list)
+    # MANTRA only: post-hoc coverage of the 11 official modules. None for CLASSIC.
+    mantra_formation_feasibility: Optional[dict[str, FormationCoverageSchema]] = None
 
 
 class MultiStrategyResultSchema(_CamelModel):
@@ -948,6 +964,9 @@ class AuctionSummarySchema(_CamelModel):
     price_index: dict[str, dict[str, float]]
     completion_probability: Optional[dict[str, float]] = None
     """WS3 #1: participant_id → P(complete roster | residual budget)."""
+    # MANTRA only: participant_id → {module_label → FormationCoverageSchema}.
+    # Informational residual coverage of official Mantra Experience modules.
+    mantra_module_coverage: Optional[dict[str, dict[str, FormationCoverageSchema]]] = None
 
 
 class AlternativesResponse(_CamelModel):

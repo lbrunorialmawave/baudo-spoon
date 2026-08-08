@@ -20,6 +20,7 @@ import {
   AuctionRuleset,
   AuctionSummary,
   AuctionTier,
+  MantraModuleCoverage,
   ProjectionResponse,
   AlternativesResponse,
   ValuationMode,
@@ -419,6 +420,19 @@ function makeParticipants(
                       <span class="completion-value" [style.color]="completionColor(cp)">{{ cp | number: '1.0-0' }}%</span>
                       <div class="completion-bar">
                         <div class="completion-bar-fill" [style.width]="cp + '%'" [style.background]="completionColor(cp)"></div>
+                      </div>
+                    </div>
+                  }
+                  @if (mantraCoverageFor(p.participantId); as mods) {
+                    <div class="mantra-coverage-row" aria-label="Schierabilità moduli Mantra">
+                      <span class="completion-label">Moduli Mantra</span>
+                      <div class="mantra-coverage-chips">
+                        @for (m of mods; track m.label) {
+                          <span class="formation-chip" [class.ok]="m.feasible" [class.ko]="!m.feasible"
+                                [title]="m.feasible ? (m.label + ': ok') : (m.label + ': ' + deficitHint(m))">
+                            {{ m.label }} {{ m.feasible ? '✓' : '✗' }}
+                          </span>
+                        }
                       </div>
                     </div>
                   }
@@ -1737,6 +1751,19 @@ export class AuctionComponent {
     if (pct >= 40) return 'var(--color-accent)';
     return 'var(--color-danger, #ef4444)';
   }
+
+  /** Sorted list of Mantra module coverages for a participant, or null if absent. */
+  mantraCoverageFor(participantId: string): MantraModuleCoverage[] | null {
+    const map = this.summary()?.mantraModuleCoverage?.[participantId];
+    if (!map) return null;
+    return Object.values(map).sort((a, b) => a.label.localeCompare(b.label));
+  }
+
+  deficitHint(m: MantraModuleCoverage): string {
+    const parts = Object.entries(m.deficits ?? {}).map(([k, v]) => `${k}−${v}`);
+    return parts.length ? parts.join(', ') : 'non schierabile';
+  }
+
   readonly allTiers: readonly AuctionTier[] = ['LOW', 'MID', 'TOP'];
 
   /** Legende dei campi del pannello di setup (configurazione iniziale). */

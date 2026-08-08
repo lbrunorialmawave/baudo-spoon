@@ -747,3 +747,33 @@
   font-size: 11px;
   color: var(--color-text-secondary);
 }
+
+/* Mantra module residual coverage chips (Phase 5) */
+.mantra-coverage-row {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mantra-coverage-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.formation-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border, #ccc);
+  font-size: 11px;
+  line-height: 1.2;
+}
+.formation-chip.ok {
+  color: #16a34a;
+  border-color: color-mix(in srgb, #16a34a 40%, transparent);
+}
+.formation-chip.ko {
+  color: #dc2626;
+  border-color: color-mix(in srgb, #dc2626 40%, transparent);
+}

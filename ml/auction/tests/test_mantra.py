@@ -216,3 +216,66 @@ def test_session_record_with_assigned_slot() -> None:
     result = session.record("flex", "u1", 22, assigned_slot="Dd")
     assert result.success
     assert session.state.assignments[-1].assigned_slot == "Dd"
+
+
+# ---------------------------------------------------------------------------
+# Mantra module residual coverage (Phase 4)
+# ---------------------------------------------------------------------------
+
+
+def test_mantra_summary_includes_module_coverage() -> None:
+    from ml.auction.orchestrator import get_auction_summary
+
+    cfg = _mantra_cfg()
+    pool = _small_mantra_pool()
+    state = initialize_auction(_participants(2), cfg, pool)
+    # Assign a few players to u1
+    for pid, price in [("por1", 5), ("dc1", 10), ("e1", 12)]:
+        result = record_assignment(state, pid, "u1", price)
+        assert result.success, result.rejection_reason
+
+    summary = get_auction_summary(state, include_completion_probability=False)
+    assert summary.mantra_module_coverage is not None
+    assert "u1" in summary.mantra_module_coverage
+    assert "u2" in summary.mantra_module_coverage
+    # 11 official modules
+    assert len(summary.mantra_module_coverage["u1"]) == 11
+    for label, cov in summary.mantra_module_coverage["u1"].items():
+        assert cov.label == label
+        assert isinstance(cov.feasible, bool)
+        assert isinstance(cov.deficits, dict)
+
+
+def test_classic_summary_has_no_mantra_coverage() -> None:
+    from ml.auction.orchestrator import get_auction_summary
+
+    cfg = AuctionConfig(num_participants=2)
+    pool = [_player("p1", "P"), _player("d1", "D"), _player("c1", "C"), _player("a1", "A")]
+    state = initialize_auction(_participants(2), cfg, pool)
+    summary = get_auction_summary(state, include_completion_probability=False)
+    assert summary.mantra_module_coverage is None
+
+
+def test_coverage_updates_monotonically_when_adding_players() -> None:
+    """Adding a player never turns a previously-feasible module to False."""
+    from ml.auction.orchestrator import get_auction_summary
+
+    cfg = _mantra_cfg()
+    pool = _small_mantra_pool()
+    state = initialize_auction(_participants(2), cfg, pool)
+
+    prev_feasible: set[str] = set()
+    for pid, price in [("por1", 5), ("dc1", 10), ("dc2", 10), ("e1", 12), ("c1", 10), ("a1", 15)]:
+        result = record_assignment(state, pid, "u1", price)
+        if not result.success:
+            continue
+        summary = get_auction_summary(state, include_completion_probability=False)
+        assert summary.mantra_module_coverage is not None
+        now_feasible = {
+            label
+            for label, cov in summary.mantra_module_coverage["u1"].items()
+            if cov.feasible
+        }
+        # Once feasible, stays feasible
+        assert prev_feasible.issubset(now_feasible)
+        prev_feasible = now_feasible

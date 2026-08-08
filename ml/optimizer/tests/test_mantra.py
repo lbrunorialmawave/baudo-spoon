@@ -225,3 +225,155 @@ def test_mantra_quotas_must_sum_to_squad_size() -> None:
 
 def test_mantra_default_quotas_sum_to_squad_size() -> None:
     assert sum(MANTRA_DEFAULT_QUOTAS.values()) == TOTAL_SQUAD_SIZE
+
+
+# ---------------------------------------------------------------------------
+# Mantra formation catalog post-hoc coverage (Phase 2)
+# ---------------------------------------------------------------------------
+
+
+def test_mantra_result_includes_formation_coverage() -> None:
+    """When ruleset=MANTRA, OptimizationResult carries mantra_formation_feasibility."""
+    pool = _mantra_pool()
+    config = _mantra_cfg()
+    result = optimize_squad(pool, config, _balanced_strategy())
+
+    assert result.status == "OPTIMAL"
+    assert result.mantra_formation_feasibility is not None
+    assert len(result.mantra_formation_feasibility) == 11
+    for label, cov in result.mantra_formation_feasibility.items():
+        assert cov.label == label
+        assert isinstance(cov.feasible, bool)
+        assert isinstance(cov.deficits, dict)
+
+
+def test_classic_result_has_no_mantra_coverage() -> None:
+    """CLASSIC path leaves mantra_formation_feasibility as None."""
+    from ml.optimizer.models import ROLE_QUOTAS
+
+    pool = [
+        Player(
+            player_id=f"p{i}",
+            name=f"p{i}",
+            role=role,  # type: ignore[arg-type]
+            real_team=f"T{i % 5}",
+            cost=10,
+            projected_score=6.0,
+        )
+        for i, role in enumerate(
+            ["P"] * 3 + ["D"] * 8 + ["C"] * 8 + ["A"] * 6
+        )
+    ]
+    config = OptimizationConfig(
+        budget=500,
+        formations=[Formation("4-3-3", 4, 3, 3)],
+        num_participants=8,
+        min_distinct_teams=3,
+        max_players_per_team=25,
+        ruleset="CLASSIC",
+    )
+    result = optimize_squad(pool, config, _balanced_strategy())
+    assert result.status == "OPTIMAL"
+    assert result.mantra_formation_feasibility is None
+    # Classic field still populated
+    assert "4-3-3" in result.formation_feasibility
+
+
+# ---------------------------------------------------------------------------
+# Preferred Mantra formation hard constraint (Phase 3)
+# ---------------------------------------------------------------------------
+
+
+def test_enforce_preferred_mantra_makes_coverage_true() -> None:
+    """Enforce 3-4-3 → selected squad must cover that module."""
+    pool = _mantra_pool()
+    # Enrich with multi-role players so formation slots can be filled without
+    # fighting the exact role quotas (e.g. a second E via a C-quota player).
+    extra = [
+        _make_player("e_extra", "C", "T0", frozenset({"E", "C"}), score=7.0, cost=8),
+        _make_player("w_extra", "A", "T1", frozenset({"W", "A"}), score=7.0, cost=8),
+        _make_player("wa2", "A", "T2", frozenset({"W", "A"}), score=7.0, cost=8),
+        _make_player("b_extra", "D", "T2", frozenset({"B", "Dc"}), score=7.0, cost=8),
+        _make_player("mc_extra", "C", "T3", frozenset({"M", "C"}), score=7.0, cost=8),
+    ]
+    pool = pool + extra
+    config = _mantra_cfg(
+        preferred_mantra_formation="3-4-3",
+        enforce_preferred_mantra_formation=True,
+        max_players_per_team=25,
+        min_distinct_teams=3,
+    )
+    result = optimize_squad(pool, config, _balanced_strategy())
+    assert result.status == "OPTIMAL", result.diagnostics
+    assert result.mantra_formation_feasibility is not None
+    assert result.mantra_formation_feasibility["3-4-3"].feasible is True
+
+
+def test_enforce_infeasible_module_returns_infeasible() -> None:
+    """Enforce a module the pool cannot cover → PreFlightError with clear reason."""
+    from ml.optimizer.solver import PreFlightError
+
+    # Pool that satisfies relaxed quotas but has zero W/A → 3-4-3 impossible.
+    pool = _mantra_pool()
+    stripped = []
+    for p in pool:
+        elig = frozenset(r for r in p.eligible_roles if r not in ("W", "A", "Pc"))
+        if not elig:
+            elig = frozenset({"C"})
+        stripped.append(
+            Player(
+                player_id=p.player_id,
+                name=p.name,
+                role=p.role,
+                real_team=p.real_team,
+                cost=p.cost,
+                projected_score=p.projected_score,
+                eligible_roles=elig,
+            )
+        )
+    # Pad C coverage so quota preflight passes
+    for i in range(5):
+        stripped.append(
+            _make_player(f"c_pad_{i}", "C", f"T{i % 4}", frozenset({"C"}), score=5.0, cost=5)
+        )
+    pool = stripped
+    quotas = {
+        "Por": 3, "Dc": 3, "B": 2, "Dd": 2, "Ds": 1,
+        "E": 1, "M": 2, "C": 11,
+        "T": 0, "W": 0, "A": 0, "Pc": 0,
+    }
+    config = _mantra_cfg(
+        preferred_mantra_formation="3-4-3",
+        enforce_preferred_mantra_formation=True,
+        mantra_role_quotas=quotas,
+        max_players_per_team=25,
+        min_distinct_teams=3,
+    )
+    with pytest.raises(PreFlightError, match="preferred Mantra formation|3-4-3|deficits"):
+        optimize_squad(pool, config, _balanced_strategy())
+
+
+def test_enforce_false_does_not_hard_constrain() -> None:
+    """preferred set but enforce=False → soft only; still OPTIMAL even if coverage false."""
+    pool = _mantra_pool()
+    config = _mantra_cfg(
+        preferred_mantra_formation="3-4-3",
+        enforce_preferred_mantra_formation=False,
+        max_players_per_team=25,
+        min_distinct_teams=3,
+    )
+    result = optimize_squad(pool, config, _balanced_strategy())
+    assert result.status == "OPTIMAL"
+    # Coverage may or may not be True depending on pool; field must exist
+    assert result.mantra_formation_feasibility is not None
+    assert "3-4-3" in result.mantra_formation_feasibility
+
+
+def test_unknown_preferred_mantra_label_raises() -> None:
+    with pytest.raises(ValueError, match="not in catalog"):
+        _mantra_cfg(preferred_mantra_formation="5-3-2")
+
+
+def test_enforce_without_preferred_raises() -> None:
+    with pytest.raises(ValueError, match="requires preferred_mantra_formation"):
+        _mantra_cfg(enforce_preferred_mantra_formation=True)
