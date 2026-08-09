@@ -422,3 +422,6 @@ class AuctionSummary:
     price_index: dict[Role, dict[Tier, float]]
     completion_probability: dict[str, float] | None = None
     """WS3 #1: map participant_id → P(complete roster | residual budget)."""
+    # MANTRA only: participant_id → {module_label → FormationCoverage}.
+    # Informational residual coverage of official Mantra Experience modules.
+    mantra_module_coverage: dict[str, dict[str, object]] | None = None
