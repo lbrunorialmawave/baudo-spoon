@@ -23,6 +23,7 @@ interface LoginResponse {
 
 interface RefreshResponse {
   access_token: string;
+  refresh_token: string;
   token_type: string;
 }
 
@@ -72,14 +73,32 @@ export class AuthService {
     const refreshToken = localStorage.getItem(REFRESH_KEY) ?? '';
     return this.http.post<RefreshResponse>(`${this.endpoint}refresh`, { refresh_token: refreshToken }).pipe(
       tap(res => {
+        // Il backend ruota il refresh token ad ogni chiamata (single-use):
+        // va sempre salvato il nuovo, altrimenti il prossimo /refresh fallisce
+        // (il vecchio token è già stato revocato lato server).
         localStorage.setItem(ACCESS_KEY, res.access_token);
+        localStorage.setItem(REFRESH_KEY, res.refresh_token);
         this._syncFromStorage();
       })
     );
   }
 
+  /** Revoca tutte le sessioni attive dell'utente (tutti i device). */
+  logoutAll(): Observable<void> {
+    const refreshToken = localStorage.getItem(REFRESH_KEY) ?? '';
+    return this.http.post<void>(`${this.endpoint}logout-all`, { refresh_token: refreshToken }).pipe(
+      tap(() => this._clear())
+    );
+  }
+
   getAccessToken(): string | null {
     return isPlatformBrowser(this.platformId) ? localStorage.getItem(ACCESS_KEY) : null;
+  }
+
+  /** Ripulisce lo stato locale senza chiamare il backend — usato quando il
+   *  refresh token risulta ormai invalido lato server (es. reuse detection). */
+  clearSession(): void {
+    this._clear();
   }
 
   private _syncFromStorage(): void {

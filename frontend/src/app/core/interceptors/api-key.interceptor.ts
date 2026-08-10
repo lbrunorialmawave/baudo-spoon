@@ -31,6 +31,9 @@ export const apiKeyInterceptor: HttpInterceptorFn = (req: HttpRequest<unknown>, 
             return next(retried);
           }),
           catchError(() => {
+            // Il refresh token non è più valido (scaduto o reuse detection
+            // lato server): non ha più senso tenerlo in localStorage.
+            auth.clearSession();
             router.navigate(['/setup']);
             return throwError(() => err);
           })

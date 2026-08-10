@@ -1,0 +1,68 @@
+name: Refresh Token Cleanup
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      retention_days:
+        description: "Giorni di retention per i token revocati/scaduti prima dell'eliminazione"
+        required: false
+        default: "7"
+      dry_run:
+        description: "Conta le righe candidate senza eliminarle"
+        type: boolean
+        default: false
+
+  # Pulizia giornaliera, fuori dagli orari di scraping/training.
+  schedule:
+    - cron: "30 3 * * *"
+
+# Non serve mai più di un cleanup in corso: la seconda run non troverebbe
+# comunque nulla di nuovo da eliminare, evitiamo solo lock contention inutile.
+concurrency:
+  group: refresh-token-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      API_DATABASE_URL: ${{ secrets.API_DATABASE_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        run: |
+          if [ -z "${API_DATABASE_URL}" ]; then
+            echo "::error::Secret API_DATABASE_URL is not set"
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Solo la dipendenza minima necessaria allo script: niente build
+      # dell'immagine API completa solo per una query di pulizia.
+      - name: Install dependencies
+        run: pip install --no-cache-dir psycopg2-binary
+
+      - name: Run cleanup
+        working-directory: api
+        run: |
+          ARGS=(--retention-days "${{ github.event.inputs.retention_days || '7' }}")
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS+=(--dry-run)
+          fi
+          python scripts/cleanup_refresh_tokens.py "${ARGS[@]}"
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "::error::Refresh token cleanup fallito — controlla i log sopra."
