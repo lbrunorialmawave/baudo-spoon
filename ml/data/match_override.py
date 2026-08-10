@@ -68,6 +68,7 @@ OVERRIDE_COLUMNS = [
     "player_fotmob_id",
     "canonical_role",
     "team_fotmob",
+    "reason",
     "note",
 ]
 
@@ -120,7 +121,9 @@ def export_unresolved(
         & id_map.get("match_method", "").isin({"fuzzy_name", "exact_relaxed_role"})
         & (pd.to_numeric(id_map.get("confidence", 1.0), errors="coerce") < DUBIOUS_CONFIDENCE_THRESHOLD)
     )
-    unresolved = id_map[is_unmatched | is_dubious].copy()
+    reason_series = id_map["reason"] if "reason" in id_map.columns else pd.Series("", index=id_map.index)
+    is_team_mismatch = reason_series.eq("team_mismatch")
+    unresolved = id_map[is_unmatched | is_dubious | is_team_mismatch].copy()
 
     if unresolved.empty:
         log.info("No unresolved rows to export.")
@@ -139,6 +142,7 @@ def export_unresolved(
             "player_fotmob_id": "",  # blank — operator fills this
             "canonical_role": "",   # blank — operator can override
             "team_fotmob": "",      # blank — operator can override
+            "reason": row.get("reason", ""),
             "note": "",
         })
 
@@ -252,6 +256,8 @@ def _apply_single_override(df: pd.DataFrame, o: MatchOverride) -> pd.DataFrame:
         df.loc[mask, "player_fotmob_id"] = o.player_fotmob_id
         df.loc[mask, "match_method"] = "manual"
         df.loc[mask, "confidence"] = 1.0
+        if "reason" in df.columns:
+            df.loc[mask, "reason"] = None
         if o.team_fotmob:
             df.loc[mask, "team_fotmob"] = o.team_fotmob
         if o.canonical_role:
@@ -470,6 +476,7 @@ def _cli_export(args: argparse.Namespace) -> int:
                 if pd.notna(row.get("player_fotmob_id")) else "",
             "canonical_role": "",
             "team_fotmob": "",
+            "reason": row.get("reason", ""),
             "note": "",
         })
 

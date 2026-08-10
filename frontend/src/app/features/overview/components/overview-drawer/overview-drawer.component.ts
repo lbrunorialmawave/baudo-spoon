@@ -78,7 +78,16 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
       </section>
 
       <section class="mb-5">
-        <h3 class="section-title">Machine Learning</h3>
+        <div class="flex items-center justify-between gap-2 mb-2">
+          <h3 class="section-title mb-0">Machine Learning</h3>
+          @if (player().isForeignFallback) {
+            <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold shrink-0"
+                  style="background:#3B82F622;color:#60A5FA;border:1px solid #3B82F644"
+                  title="La prediction ML usa statistiche storiche da un campionato estero come fallback.">
+              🌍 Foreign fallback
+            </span>
+          }
+        </div>
         <div class="grid grid-cols-2 gap-2">
           @for (row of mlRows(); track row.label) {
             <div class="rounded-lg px-3 py-2" style="background:var(--color-surface)">

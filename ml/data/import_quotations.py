@@ -312,6 +312,7 @@ class MapResult:
     canonical_role: str
     match_method: str
     confidence: float
+    reason: Optional[str] = None
 
 
 def _load_fotmob_reference(
@@ -575,7 +576,7 @@ def _fuzzy_match_one(
     team_norm: str,
     canonical_role: str,
     candidates: pd.DataFrame,
-) -> Optional[tuple[int, str, str, float]]:
+) -> Optional[tuple[int, str, str, float, bool]]:
     """Find the best fuzzy match for one (surname, team, role) tuple.
 
     The query side has already been reduced to a *surname* token, so the
@@ -635,8 +636,19 @@ def _fuzzy_match_one(
 
     if best_id is None:
         return None
-    # Strip the tie-breaker bonus before reporting the score.
-    return best_id, best_name, best_team, float(best_score)
+    # Strip the tie-breaker bonus before reporting the score.  A fuzzy match
+    # that only won because of the surname, while the teams disagree, is
+    # deliberately downgraded so it is exported for manual review.
+    same_team = bool(best_team and normalise_team(best_team) == team_norm)
+    raw_score = float(best_score - (0.01 if same_team else 0.0))
+    if not same_team:
+        raw_score = max(0.0, raw_score - 0.15)
+        log.warning(
+            "Fuzzy match accepted with team mismatch: surname=%r fc_team=%r "
+            "fotmob_team=%r score=%.3f -> %.3f",
+            last_name_norm, team_norm, best_team, raw_score + 0.15, raw_score,
+        )
+    return best_id, best_name, best_team, raw_score, (not same_team)
 
 
 def _load_manual_resolutions(engine: sa.Engine) -> pd.DataFrame:
@@ -895,9 +907,10 @@ def build_player_id_map(
                 "name": row["name"],
                 "team": row["team"],
                 "canonical_role": row["canonical_role"],
+                "reason": "low_fuzzy_score",
             })
             continue
-        fotmob_id, name_fotmob, team_fotmob, score = best
+        fotmob_id, name_fotmob, team_fotmob, score, team_mismatch = best
         results.append({
             "fantacalcio_id": int(row["fantacalcio_id"]),
             "season_start": int(row["season_start"]),
@@ -909,6 +922,7 @@ def build_player_id_map(
             "canonical_role": row["canonical_role"],
             "match_method": "fuzzy_name",
             "confidence": round(score, 3),
+            "reason": "team_mismatch" if team_mismatch else None,
             "resolved_from_history": False,
         })
         fuzzy_hits += 1
@@ -987,10 +1001,14 @@ def build_player_id_map(
             "canonical_role": case["canonical_role"],
             "match_method": "unmatched",
             "confidence": 0.0,
+            "reason": case.get("reason", "no_candidate"),
             "resolved_from_history": False,
         })
 
-    return pd.DataFrame(results)
+    frame = pd.DataFrame(results)
+    if "reason" not in frame.columns:
+        frame["reason"] = None
+    return frame
 
 
 # ── Persistence ──────────────────────────────────────────────────────────────
@@ -1026,14 +1044,14 @@ _UPSERT_MAP_SQL = sa.text("""
         fantacalcio_id, season_start, player_fotmob_id,
         name_fantacalcio, name_fotmob,
         team_fantacalcio, team_fotmob,
-        canonical_role, match_method, confidence,
+        canonical_role, match_method, confidence, reason,
         resolved_from_history
     )
     VALUES (
         :fantacalcio_id, :season_start, :player_fotmob_id,
         :name_fantacalcio, :name_fotmob,
         :team_fantacalcio, :team_fotmob,
-        :canonical_role, :match_method, :confidence,
+        :canonical_role, :match_method, :confidence, :reason,
         :resolved_from_history
     )
     ON CONFLICT (fantacalcio_id, season_start) DO UPDATE SET
@@ -1042,6 +1060,7 @@ _UPSERT_MAP_SQL = sa.text("""
         team_fotmob         = EXCLUDED.team_fotmob,
         match_method        = EXCLUDED.match_method,
         confidence          = EXCLUDED.confidence,
+        reason              = EXCLUDED.reason,
         resolved_from_history = EXCLUDED.resolved_from_history,
         updated_at          = NOW()
 """)

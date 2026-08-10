@@ -19,6 +19,11 @@ class MantraIbridoConfig:
     W_PREDICTION_STD: float = 0.6
     W_MINUTES: float = 0.4
 
+    # Explicit uncertainty penalty for cross-league fallback predictions.
+    # Kept separate from MANTRA/ML weights so the hybrid algorithm itself is
+    # unchanged; this only corrects confidence for a less comparable sample.
+    FOREIGN_FALLBACK_CONFIDENCE_MULTIPLIER: float = 0.75
+
     # ── Expected_Value ───────────────────────────────────────────────────────
     EV_SCALE_FACTOR: float = 1.0
 

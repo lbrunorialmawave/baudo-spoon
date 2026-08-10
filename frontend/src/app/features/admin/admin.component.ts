@@ -28,6 +28,7 @@ export class AdminComponent {
   readonly healthLoading = signal(true);
   readonly healthError = signal<string | null>(null);
   readonly allOk = signal(false);
+  readonly mlCoverage = signal<DataHealthSource | null>(null);
 
   // Latest season derived from /quotations/seasons — avoids hardcoded year.
   readonly currentSeason = signal<number | null>(null);
@@ -55,6 +56,7 @@ export class AdminComponent {
     this.mantraService.getDataHealth().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (res) => {
         this.healthSources.set(res.sources);
+        this.mlCoverage.set(res.sources.find(s => s.name === 'ml_coverage') ?? null);
         this.allOk.set(res.sources.every(s => s.status === 'ok'));
         this.healthLoading.set(false);
       },
@@ -73,11 +75,19 @@ export class AdminComponent {
       expert_ratings: 'Expert Ratings',
       quotations: 'Player Quotations',
       neo_arrivi_coverage: 'Copertura neo-arrivi',
+      ml_coverage: 'Copertura ML',
     };
     return map[name] ?? name;
   };
 
   readonly sourceDetail = (s: DataHealthSource): string => {
+    if (s.name === 'ml_coverage') {
+      if (s.reason === 'no_quotations') return 'Nessuna quotazione importata';
+      const coverage = s.coverage_pct != null ? `${s.coverage_pct}% copertura` : 'Copertura non disponibile';
+      const unresolved = s.n_neo_arrivo_unresolved != null ? `neo-arrivi senza ML: ${s.n_neo_arrivo_unresolved}` : '';
+      const artifact = s.artifact === 'missing' ? 'results_latest.json mancante' : '';
+      return [coverage, unresolved, artifact].filter(Boolean).join(' · ') || 'Nessun dettaglio';
+    }
     if (s.name === 'neo_arrivi_coverage') {
       if (s.reason === 'no_quotations') return 'Nessuna quotazione importata';
       const parts: string[] = [];
@@ -106,6 +116,22 @@ export class AdminComponent {
     if (status === 'ok') return '#22C55E';
     if (status === 'warning') return '#F59E0B';
     return '#EF4444';
+  };
+
+  readonly mlCoveragePercent = (): number => this.mlCoverage()?.coverage_pct ?? 0;
+
+  readonly mlCoverageTone = (): string => {
+    const coverage = this.mlCoverage();
+    if (!coverage) return '#6B7280';
+    return this.statusColor(coverage.status);
+  };
+
+  readonly mlCoverageLabel = (): string => {
+    const coverage = this.mlCoverage();
+    if (!coverage) return 'Non disponibile';
+    if (coverage.status === 'ok') return 'Copertura OK';
+    if (coverage.status === 'warning') return 'Sotto soglia';
+    return 'Copertura non disponibile';
   };
 
   readonly scrapers = [

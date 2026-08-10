@@ -12,22 +12,22 @@ on:
       tune:
         description: "Esegui RandomizedSearchCV (più lento, più preciso)"
         type: boolean
-        default: false
+        default: true
 
       tune_iter:
         description: "Numero di combinazioni RandomizedSearchCV"
         required: false
-        default: "30"
+        default: "120"
 
       clusters:
         description: "Numero di cluster K-Medoids (-1 = auto via silhouette)"
         required: false
-        default: "6"
+        default: "-1"
 
       predict_next:
         description: "Ri-fit su tutti i dati e predici prossima stagione"
         type: boolean
-        default: false
+        default: true
 
       evaluate_mantra:
         description: "Esegui valutazione MANTRA dopo il training"
@@ -42,7 +42,7 @@ on:
       min_minutes:
         description: "Minuti minimi per includere un giocatore"
         required: false
-        default: "800"
+        default: "100"
 
       seed:
         description: "Random seed per riproducibilità"

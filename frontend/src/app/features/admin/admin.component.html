@@ -70,6 +70,88 @@
               }
             </div>
 
+            @if (mlCoverage(); as ml) {
+              <section class="mt-4 card p-4">
+                <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div class="min-w-0">
+                    <div class="flex items-center gap-2">
+                      <h4 class="text-sm font-semibold" style="color:var(--color-text-primary)">Copertura ML</h4>
+                      <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                            [style]="'background:' + mlCoverageTone() + '22;color:' + mlCoverageTone()">
+                        {{ mlCoverageLabel() }}
+                      </span>
+                    </div>
+                    <p class="text-xs mt-1" style="color:var(--color-text-secondary)">
+                      Listino attivo · stagione {{ ml.season_start ?? '—' }} · soglia warning {{ ml.warning_threshold_pct ?? 90 }}%
+                    </p>
+                  </div>
+                  <div class="text-right shrink-0">
+                    <p class="text-2xl font-bold font-mono" [style.color]="mlCoverageTone()">
+                      {{ ml.coverage_pct != null ? (ml.coverage_pct | number:'1.1-1') + '%' : '—' }}
+                    </p>
+                    <p class="text-[10px]" style="color:var(--color-text-secondary)">
+                      {{ ml.n_with_ml_data ?? 0 }} / {{ ml.n_players ?? 0 }} giocatori con ML
+                    </p>
+                  </div>
+                </div>
+
+                <div class="mt-4 h-2 rounded-full overflow-hidden" style="background:var(--color-surface-raised)">
+                  <div class="h-full rounded-full transition-all"
+                       [style.width.%]="mlCoveragePercent()"
+                       [style.background]="mlCoverageTone()">
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 mt-4 sm:grid-cols-3">
+                  <div class="rounded-lg px-3 py-2" style="background:var(--color-surface)">
+                    <p class="text-[10px] uppercase tracking-wider" style="color:var(--color-text-secondary)">Neo-arrivi</p>
+                    <p class="font-mono text-sm font-semibold" style="color:var(--color-text-primary)">{{ ml.n_neo_arrivo ?? 0 }}</p>
+                  </div>
+                  <div class="rounded-lg px-3 py-2" style="background:var(--color-surface)">
+                    <p class="text-[10px] uppercase tracking-wider" style="color:var(--color-text-secondary)">Senza ML</p>
+                    <p class="font-mono text-sm font-semibold" [style.color]="(ml.n_neo_arrivo_unresolved ?? 0) > 0 ? '#F59E0B' : 'var(--color-text-primary)'">
+                      {{ ml.n_neo_arrivo_unresolved ?? 0 }}
+                    </p>
+                  </div>
+                  <div class="rounded-lg px-3 py-2 col-span-2 sm:col-span-1" style="background:var(--color-surface)">
+                    <p class="text-[10px] uppercase tracking-wider" style="color:var(--color-text-secondary)">Artefatto</p>
+                    <p class="text-xs font-medium truncate" [style.color]="ml.artifact === 'missing' ? '#EF4444' : 'var(--color-text-primary)'">
+                      {{ ml.artifact ?? '—' }}
+                    </p>
+                  </div>
+                </div>
+
+                @if ((ml.neo_arrivo_unresolved?.length ?? 0) > 0) {
+                  <div class="mt-4">
+                    <div class="flex items-center justify-between gap-2 mb-2">
+                      <p class="text-xs font-semibold" style="color:var(--color-text-primary)">Neo-arrivi senza ML</p>
+                      <span class="text-[10px]" style="color:var(--color-text-secondary)">review richiesta</span>
+                    </div>
+                    <div class="rounded-lg border overflow-hidden" style="border-color:var(--color-border)">
+                      <div class="divide-y" style="border-color:var(--color-border)">
+                        @for (player of ml.neo_arrivo_unresolved ?? []; track player.fantacalcio_id) {
+                          <div class="px-3 py-2.5 flex items-center justify-between gap-3" style="background:var(--color-surface)">
+                            <div class="min-w-0">
+                              <p class="text-xs font-medium truncate" style="color:var(--color-text-primary)">
+                                {{ player.player_name ?? 'Giocatore senza nome' }}
+                              </p>
+                              <p class="text-[10px] truncate" style="color:var(--color-text-secondary)">
+                                {{ player.team ?? 'Squadra non disponibile' }} · ID {{ player.fantacalcio_id }}
+                              </p>
+                            </div>
+                            <span class="rounded-full px-1.5 py-0.5 text-[10px] font-mono shrink-0"
+                                  style="background:#F59E0B22;color:#F59E0B">
+                              ML —
+                            </span>
+                          </div>
+                        }
+                      </div>
+                    </div>
+                  </div>
+                }
+              </section>
+            }
+
             <!-- Unified readiness row: replaces the old standalone MANTRA banner
                  and the separately-styled Hybrid status chips with one pill vocabulary. -->
             <div class="mt-4 card p-4">

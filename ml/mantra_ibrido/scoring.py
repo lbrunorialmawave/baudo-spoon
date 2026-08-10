@@ -125,6 +125,9 @@ def compute_hybrid_scores(
             std_term * config.W_PREDICTION_STD
             + min_term * config.W_MINUTES
         ) * 100.0
+        if p.get("is_foreign_fallback"):
+            confidence *= config.FOREIGN_FALLBACK_CONFIDENCE_MULTIPLIER
+            p["hybridLabels"].append("foreign_fallback")
 
         # ── ML_Boost (z-score centred at 50, σ=15) ──────────────────────────
         mu = role_mean.get(ruolo, 5.5)
@@ -148,5 +151,21 @@ def compute_hybrid_scores(
         p["mlBoost"] = round(ml_boost, 2)
         p["fpGap"] = round(fp_gap, 2)
         p["expectedValue"] = round(expected_value, 2)
+
+    # Guardrail: foreign fallbacks are explicitly uncertainty-tier estimates.
+    # Keep them out of the top decile even in a temporarily sparse pool.
+    confidences = sorted(
+        float(p.get("confidenceScore", 0.0))
+        for p in players_arricchiti
+        if p.get("has_ml_data") and not p.get("is_foreign_fallback")
+    )
+    if confidences:
+        cutoff_index = max(0, int(np.ceil(len(confidences) * 0.90)) - 1)
+        top_decile_floor = confidences[cutoff_index]
+        for p in players_arricchiti:
+            if p.get("is_foreign_fallback") and p.get("confidenceScore") is not None:
+                p["confidenceScore"] = round(
+                    min(float(p["confidenceScore"]), max(0.0, top_decile_floor - 0.01)), 2
+                )
 
     return players_arricchiti

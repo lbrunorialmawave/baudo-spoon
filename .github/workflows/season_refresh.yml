@@ -1,0 +1,192 @@
+name: Season Refresh
+
+# Single orchestrator for a new season onboarding:
+# quotations -> foreign stats -> MANTRA -> ML training -> hybrid artifact.
+# The underlying scripts remain independently runnable through their existing workflows.
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      quotations_dir:
+        description: "Directory containing Quotazioni_Fantacalcio_Stagione_*.xlsx"
+        required: false
+        default: "quotazioni"
+      overrides:
+        description: "Optional path to player matching overrides"
+        required: false
+        default: ""
+      dry_run:
+        description: "Run only the quotation/DB coherence check; do not write or train"
+        type: boolean
+        default: false
+      poll_seconds:
+        description: "Seconds between ML training status polls"
+        required: false
+        default: "15"
+      timeout_seconds:
+        description: "Maximum seconds to wait for ML training"
+        required: false
+        default: "5400"
+      log_level:
+        description: "Logging level"
+        required: false
+        default: "INFO"
+
+# Never run two season refreshes against the same database/artifact store.
+concurrency:
+  group: season-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Season onboarding
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    env:
+      ML_DATABASE_URL: ${{ secrets.ML_DATABASE_URL }}
+      ML_R2_ENDPOINT_URL: ${{ secrets.ML_R2_ENDPOINT_URL }}
+      ML_R2_ACCESS_KEY_ID: ${{ secrets.ML_R2_ACCESS_KEY_ID }}
+      ML_R2_SECRET_ACCESS_KEY: ${{ secrets.ML_R2_SECRET_ACCESS_KEY }}
+      ML_R2_BUCKET_NAME: ${{ secrets.ML_R2_BUCKET_NAME || 'baudo-spoon-ml-artifacts' }}
+      SEASON_REFRESH_API_URL: ${{ secrets.SEASON_REFRESH_API_URL }}
+      SEASON_REFRESH_API_KEY: ${{ secrets.SEASON_REFRESH_API_KEY }}
+      ML_ARTIFACTS_DIR: ${{ github.workspace }}/artifacts
+      PYTHONPATH: ${{ github.workspace }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          missing=0
+          for var in ML_DATABASE_URL ML_R2_ENDPOINT_URL ML_R2_ACCESS_KEY_ID ML_R2_SECRET_ACCESS_KEY; do
+            if [ -z "${!var:-}" ]; then
+              echo "::error::Secret $var is not set"
+              missing=1
+            fi
+          done
+
+          # Dry-run does not call the training API or R2, so it only needs DB access.
+          if [ "${{ inputs.dry_run }}" != "true" ]; then
+            for var in SEASON_REFRESH_API_URL SEASON_REFRESH_API_KEY; do
+              if [ -z "${!var:-}" ]; then
+                echo "::error::Secret $var is required when dry_run=false"
+                missing=1
+              fi
+            done
+          fi
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          echo "Required secrets are present."
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            ml/requirements.txt
+            scraper/requirements.txt
+
+      - name: Install pipeline dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r ml/requirements.txt
+          pip install -r scraper/requirements.txt
+
+      - name: Validate workflow inputs
+        run: |
+          set -euo pipefail
+          case "${{ inputs.poll_seconds }}" in
+            ''|*[!0-9]*) echo "::error::poll_seconds must be an integer"; exit 1 ;;
+          esac
+          case "${{ inputs.timeout_seconds }}" in
+            ''|*[!0-9]*) echo "::error::timeout_seconds must be an integer"; exit 1 ;;
+          esac
+          if [ ! -d "${{ inputs.quotations_dir }}" ]; then
+            echo "::error::Quotations directory does not exist: ${{ inputs.quotations_dir }}"
+            exit 1
+          fi
+          echo "Workflow inputs OK."
+
+      - name: Prepare artifacts directory
+        run: mkdir -p artifacts
+
+      - name: Run season refresh
+        run: |
+          set -euo pipefail
+
+          ARGS=(
+            --quotazioni-dir "${{ inputs.quotations_dir }}"
+            --db-url "$ML_DATABASE_URL"
+            --api-url "$SEASON_REFRESH_API_URL"
+            --poll-seconds "${{ inputs.poll_seconds }}"
+            --timeout-seconds "${{ inputs.timeout_seconds }}"
+            --export-unresolved "artifacts/season_refresh_unresolved.csv"
+            --log-level "${{ inputs.log_level }}"
+          )
+
+          if [ -n "${{ inputs.overrides }}" ]; then
+            if [ ! -f "${{ inputs.overrides }}" ]; then
+              echo "::error::Overrides file does not exist: ${{ inputs.overrides }}"
+              exit 1
+            fi
+            ARGS+=(--overrides "${{ inputs.overrides }}")
+          fi
+
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS+=(--dry-run)
+          fi
+
+          echo "Running: python scripts/season_refresh.py ${ARGS[*]}"
+          python scripts/season_refresh.py "${ARGS[@]}" 2>&1 | tee artifacts/season_refresh.log
+
+      - name: Data-health summary
+        if: ${{ success() && inputs.dry_run != true }}
+        env:
+          API_BASE_URL: ${{ secrets.SEASON_REFRESH_API_URL }}
+          API_KEY: ${{ secrets.SEASON_REFRESH_API_KEY }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import requests
+
+          url = os.environ["API_BASE_URL"].rstrip("/") + "/admin/data-health"
+          headers = {"X-API-Key": os.environ["API_KEY"]}
+          response = requests.get(url, headers=headers, timeout=30)
+          response.raise_for_status()
+          payload = response.json()
+          with open("artifacts/data_health.json", "w", encoding="utf-8") as fh:
+              json.dump(payload, fh, indent=2, ensure_ascii=False)
+
+          ml = payload.get("ml_coverage", {})
+          print("=== ML coverage ===")
+          print(f"players: {ml.get('n_players', 'n/a')}")
+          print(f"with ML: {ml.get('n_with_ml_data', 'n/a')}")
+          print(f"coverage: {ml.get('coverage_pct', 'n/a')}%")
+          print(f"neo-arrivi: {ml.get('n_neo_arrivo', 'n/a')}")
+          print(f"neo-arrivi unresolved: {ml.get('n_neo_arrivo_unresolved', 'n/a')}")
+          PY
+
+      - name: Upload season refresh artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: season-refresh-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "::error::Season refresh fallito — controlla season_refresh.log e gli step precedenti."

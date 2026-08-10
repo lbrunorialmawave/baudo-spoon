@@ -16,6 +16,7 @@ GET  /admin/data-health/{source}     — Detailed coverage for a specific source
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -420,6 +421,73 @@ async def get_data_health(
             "status": "missing",
             "reason": "no_quotations",
         })
+
+    # ── ML coverage ────────────────────────────────────────────────────────
+    # The active list is DB-authoritative; ML presence is artifact-authoritative.
+    # This keeps the metric directly comparable to a SQL query over
+    # player_id_map + results_latest.json and avoids depending on the frontend.
+    if latest is not None:
+        active_rows = (await db.execute(sa.text("""
+            WITH active AS (
+                SELECT DISTINCT ON (pq.fantacalcio_id)
+                       pq.fantacalcio_id, pim.player_fotmob_id, pq.player_name,
+                       pq.team,
+                       COALESCE(pss.seasons_in_italy, 0) AS stagioni_it
+                FROM player_quotations pq
+                LEFT JOIN player_id_map pim
+                  ON pim.fantacalcio_id = pq.fantacalcio_id
+                 AND pim.season_start = pq.season_start
+                LEFT JOIN player_season_aggregates pss
+                  ON pss.fantacalcio_id = pim.player_fotmob_id::bigint
+                 AND pss.season_start = pq.season_start
+                WHERE pq.season_start = :ss
+                ORDER BY pq.fantacalcio_id
+            )
+            SELECT * FROM active ORDER BY player_name
+        """), {"ss": latest})).mappings().all()
+
+        from ml.storage.artifact_store import ArtifactStore, R2Config
+        store = ArtifactStore(
+            local_dir=Path(settings.artifacts_dir),
+            r2_config=R2Config(
+                endpoint_url=settings.r2_endpoint_url,
+                access_key_id=settings.r2_access_key_id,
+                secret_access_key=settings.r2_secret_access_key,
+                bucket_name=settings.r2_bucket_name,
+            ),
+        )
+        ml_artifact = store.load_json("results_latest.json")
+        predictions = (ml_artifact or {}).get("predictions", [])
+        ml_ids = {int(p["player_fotmob_id"]) for p in predictions if p.get("player_fotmob_id") is not None}
+
+        n_players = len(active_rows)
+        with_ml = sum(1 for r in active_rows if r["player_fotmob_id"] is not None and int(r["player_fotmob_id"]) in ml_ids)
+        neo = [r for r in active_rows if int(r["stagioni_it"] or 0) == 0]
+        neo_unresolved = [r for r in neo if r["player_fotmob_id"] is None or int(r["player_fotmob_id"]) not in ml_ids]
+        coverage = (with_ml / n_players) if n_players else 0.0
+        sources.append({
+            "name": "ml_coverage",
+            "season_start": int(latest),
+            "n_players": n_players,
+            "n_with_ml_data": with_ml,
+            "coverage_pct": round(coverage * 100.0, 1),
+            "n_neo_arrivo": len(neo),
+            "n_neo_arrivo_unresolved": len(neo_unresolved),
+            "neo_arrivo_unresolved": [
+                {
+                    "fantacalcio_id": int(r["fantacalcio_id"]),
+                    "player_name": r["player_name"],
+                    "team": r["team"],
+                    "player_fotmob_id": int(r["player_fotmob_id"]) if r["player_fotmob_id"] is not None else None,
+                }
+                for r in neo_unresolved
+            ],
+            "artifact": "results_latest.json" if ml_artifact is not None else "missing",
+            "warning_threshold_pct": round(settings.ml_coverage_warning_threshold * 100.0, 1),
+            "status": "ok" if coverage >= settings.ml_coverage_warning_threshold else "warning",
+        })
+    else:
+        sources.append({"name": "ml_coverage", "status": "missing", "reason": "no_quotations"})
 
     return ORJSONResponse({"sources": sources})
 

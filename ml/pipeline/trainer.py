@@ -979,7 +979,7 @@ class Trainer:
                 pd.to_numeric(df_foreign.get("mins_played"), errors="coerce").fillna(0).values
                 if "mins_played" in df_foreign.columns else 0
             )
-            foreign_predictions_df["prediction_std"] = 0.0
+            foreign_predictions_df["prediction_std"] = float(os.environ.get("ML_FOREIGN_FALLBACK_PREDICTION_STD", "1.5"))
             foreign_predictions_df["is_foreign_fallback"] = True
             predictions_df = pd.concat(
                 [predictions_df, foreign_predictions_df], ignore_index=True, sort=False

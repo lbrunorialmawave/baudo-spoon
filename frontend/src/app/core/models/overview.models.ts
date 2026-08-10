@@ -45,6 +45,8 @@ export interface OverviewPlayer {
   fpGap: number | null;
   expectedValue: number | null;
   hybridLabels: string[] | null;
+  /** Prediction uses career/foreign-league fallback stats rather than Serie A history. */
+  isForeignFallback?: boolean;
 
   // Titolarità — 3 distinct signals, never merged into one
   statusScraped: string | null;

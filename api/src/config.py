@@ -22,6 +22,11 @@ class APISettings(BaseSettings):
     version: str = "1.0.0"
 
     # ML artifacts
+    ml_coverage_warning_threshold: float = Field(
+        default=0.90, ge=0.0, le=1.0,
+        description="Warning threshold for active-list ML coverage (env: API_ML_COVERAGE_WARNING_THRESHOLD)",
+    )
+
     artifacts_dir: Path = Field(
         default=Path("ml/artifacts"),
         description="Directory containing ML pipeline output JSON artifacts",
