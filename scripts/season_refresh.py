@@ -133,9 +133,9 @@ def _api_url(base: str, path: str) -> str:
 
 def _trigger_training(api_base: str, poll_seconds: int, timeout_seconds: int) -> dict[str, Any]:
     headers = _api_headers()
-    before = requests.get(_api_url(api_base, "/admin/ml/train/status"), headers=headers, timeout=20).json()
+    before = requests.get(_api_url(api_base, "/admin/ml/train/status"),  timeout=20).json()
     triggered_at = time.time()
-    resp = requests.post(_api_url(api_base, "/admin/ml/train"), headers=headers, timeout=30)
+    resp = requests.post(_api_url(api_base, "/admin/ml/train"),  timeout=30)
     if resp.status_code >= 400:
         raise RefreshError(f"ML training trigger failed: HTTP {resp.status_code}: {resp.text[:500]}")
 
@@ -143,7 +143,7 @@ def _trigger_training(api_base: str, poll_seconds: int, timeout_seconds: int) ->
     last: dict[str, Any] = before
     while time.time() < deadline:
         time.sleep(poll_seconds)
-        r = requests.get(_api_url(api_base, "/admin/ml/train/status"), headers=headers, timeout=20)
+        r = requests.get(_api_url(api_base, "/admin/ml/train/status"),  timeout=20)
         if r.status_code >= 400:
             raise RefreshError(f"ML training status failed: HTTP {r.status_code}: {r.text[:500]}")
         last = r.json()

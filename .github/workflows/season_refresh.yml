@@ -163,7 +163,7 @@ jobs:
 
           url = os.environ["API_BASE_URL"].rstrip("/") + "/admin/data-health"
           headers = {"X-API-Key": os.environ["API_KEY"]}
-          response = requests.get(url, headers=headers, timeout=30)
+          response = requests.get(url,  timeout=30)
           response.raise_for_status()
           payload = response.json()
           with open("artifacts/data_health.json", "w", encoding="utf-8") as fh:
