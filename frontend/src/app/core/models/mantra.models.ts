@@ -74,9 +74,6 @@ export interface MatchdayPlayerStatus {
 }
 
 export interface DataHealthSource {
-  artifact: string;
-  n_neo_arrivo_unresolved: null;
-  coverage_pct: null;
   name: string;
   total_rows?: number;
   status: string;
@@ -85,12 +82,27 @@ export interface DataHealthSource {
   unmatched?: number;
   latest_matchday?: number;
   seasons?: number[];
-  /** Present on neo_arrivi_coverage source (P5). */
+  /** Present on neo_arrivi_coverage / ml_coverage sources. */
   season_start?: number;
   unmatched_total?: number;
   resolved_by_retry?: number;
   foreign_stats_candidates?: number;
   reason?: string;
+  /** Present on ml_coverage source (GET /admin/data-health). */
+  coverage_pct?: number;
+  n_players?: number;
+  n_with_ml_data?: number;
+  n_neo_arrivo?: number;
+  n_neo_arrivo_unresolved?: number;
+  /** "results_latest.json" when present, otherwise "missing". */
+  artifact?: string;
+  warning_threshold_pct?: number;
+  neo_arrivo_unresolved?: Array<{
+    fantacalcio_id: number;
+    player_name?: string;
+    team?: string;
+    player_fotmob_id?: number | null;
+  }>;
 }
 
 export interface DataHealthResponse {
