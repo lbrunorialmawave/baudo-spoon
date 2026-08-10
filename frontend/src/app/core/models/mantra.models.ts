@@ -74,6 +74,9 @@ export interface MatchdayPlayerStatus {
 }
 
 export interface DataHealthSource {
+  artifact: string;
+  n_neo_arrivo_unresolved: null;
+  coverage_pct: null;
   name: string;
   total_rows?: number;
   status: string;
