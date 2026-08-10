@@ -1,0 +1,156 @@
+name: FotMob Scraping
+
+# ── Least privilege: il job non tocca né PR né altri repo, quindi solo read.
+permissions:
+  contents: read
+
+on:
+  # Esecuzione manuale da tab "Actions" con parametri custom.
+  workflow_dispatch:
+    inputs:
+      leagues:
+        description: "Leghe da scrapare, comma-separated (es. 'Serie A,Premier League')"
+        required: false
+        default: "Serie A"
+
+      seasons:
+        description: "Stagioni comma-separated (es. '2023-2024,2024-2025'); vuoto = ultima disponibile"
+        required: false
+        default: ""
+
+      start_round:
+        description: "Giornata da cui partire lo scraping match-stats"
+        required: false
+        default: "1"
+
+      stats:
+        description: "Modalità league-stats (ranking player/team) invece di match-stats. Richiede sempre DB."
+        type: boolean
+        default: false
+
+      roles:
+        description: "Dopo lo scraping stats, recupera anche i ruoli giocatore (richiede 'stats')"
+        type: boolean
+        default: false
+
+      output_dir:
+        description: "Directory output relativa nel container (vuoto = default 'downloaded_files/output')"
+        required: false
+        default: ""
+
+      log_level:
+        description: "Livello di logging (SCRAPER_LOG_LEVEL)"
+        required: false
+        default: "INFO"
+
+  # Schedulazione: ogni domenica alle 05:00 UTC, prima del training ML del lunedì.
+  # schedule:
+  #   - cron: "0 5 * * 0"
+
+# Evita run sovrapposte: scraping concorrente sulla stessa fonte rischia rate-limit/ban su FotMob.
+concurrency:
+  group: fotmob-scraping
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    # Selenium + molte leghe/stagioni possono richiedere tempo: margine ampio ma non infinito.
+    timeout-minutes: 180
+
+    env:
+      SCRAPER_DATABASE_URL: ${{ secrets.SCRAPER_DATABASE_URL }}
+      SCRAPER_LOG_LEVEL: ${{ github.event.inputs.log_level || 'INFO' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Fail fast sugli stessi vincoli già applicati da main.py (--roles richiede --stats),
+      # così non sprechiamo tempo a buildare l'immagine se l'input è invalido.
+      - name: Validate inputs
+        run: |
+          if [ "${{ github.event.inputs.roles }}" = "true" ] && [ "${{ github.event.inputs.stats }}" != "true" ]; then
+            echo "::error::'roles' richiede 'stats=true' (vedi main.py --roles)"
+            exit 1
+          fi
+          echo "Input validation OK."
+
+      # DB sempre richiesto: sia la modalità stats sia la modalità match-stats scrivono su Postgres.
+      - name: Validate required secrets
+        run: |
+          if [ -z "${SCRAPER_DATABASE_URL}" ]; then
+            echo "::error::Secret SCRAPER_DATABASE_URL is not set"
+            exit 1
+          fi
+          echo "All required secrets are present."
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build dal Dockerfile esistente: contesto = scraper/ perché COPY requirements.txt .
+      # è relativo alla root dello scraper (stessa convenzione del job docker-build in ci.yml).
+      - name: Build scraper image
+        uses: docker/build-push-action@v6
+        with:
+          context: scraper
+          file: scraper/Dockerfile
+          tags: fotmob-scraper:latest
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run FotMob scraper
+        run: |
+          set -euo pipefail
+
+          OUTPUT_DIR_REL="${{ github.event.inputs.output_dir || 'downloaded_files/output' }}"
+          mkdir -p "output/${OUTPUT_DIR_REL}"
+
+          # Costruisci gli argomenti in un array (gestisce correttamente gli spazi/virgole).
+          ARGS=()
+          ARGS+=(--leagues "${{ github.event.inputs.leagues || 'Serie A' }}")
+
+          if [ -n "${{ github.event.inputs.seasons }}" ]; then
+            ARGS+=(--seasons "${{ github.event.inputs.seasons }}")
+          fi
+
+          if [ "${{ github.event.inputs.stats }}" = "true" ]; then
+            ARGS+=(--stats)
+            if [ "${{ github.event.inputs.roles }}" = "true" ]; then
+              ARGS+=(--roles)
+            fi
+          else
+            ARGS+=(--start-round "${{ github.event.inputs.start_round || '1' }}")
+            ARGS+=(--output-dir "${OUTPUT_DIR_REL}")
+          fi
+
+          echo "Scraper args: ${ARGS[*]}"
+
+          docker run --rm \
+            -e SCRAPER_DATABASE_URL \
+            -e SCRAPER_LOG_LEVEL \
+            -v "${{ github.workspace }}/output/${OUTPUT_DIR_REL}:/app/${OUTPUT_DIR_REL}" \
+            fotmob-scraper:latest \
+            "${ARGS[@]}"
+
+      - name: List produced files
+        if: always()
+        run: |
+          echo "=== output/ ==="
+          find output -type f 2>/dev/null | head -80 || echo "Nessun file prodotto (atteso in modalità --stats, che scrive solo su DB)."
+
+      - name: Upload scraped CSV artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fotmob-scrape-${{ github.run_id }}-${{ github.run_attempt }}
+          path: output/
+          if-no-files-found: warn
+          retention-days: 30
+
+      # Fallisce esplicitamente il job così Actions e le notifiche email
+      # segnalano lo scraping fallito.
+      - name: Notify on failure
+        if: failure()
+        run: echo "::error::Scraping FotMob fallito — controlla i log sopra."
