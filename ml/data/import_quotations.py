@@ -1132,6 +1132,88 @@ def persist_player_id_map(mapping: pd.DataFrame, engine: sa.Engine) -> int:
     return len(rows)
 
 
+def retry_unmatched(engine: sa.Engine, season_start: int) -> pd.DataFrame:
+    """Second-chance resolution for rows left as match_method='unmatched'.
+
+    Re-uses ``_fotmob_suggest_api`` with name variants (full name, surname
+    only). Accepts a candidate only when the API returns exactly one hit
+    (same conservative rule as Pass 3). Does **not** overwrite existing
+    manual / high-confidence matches.
+
+    Returns a DataFrame of newly resolved rows (empty if none).
+    """
+    query = sa.text("""
+        SELECT fantacalcio_id, season_start, name_fantacalcio, team_fantacalcio,
+               canonical_role, match_method
+        FROM player_id_map
+        WHERE season_start = :season_start
+          AND match_method = 'unmatched'
+          AND player_fotmob_id IS NULL
+    """)
+    with engine.connect() as conn:
+        rows = conn.execute(query, {"season_start": season_start}).mappings().all()
+
+    if not rows:
+        log.info("retry_unmatched: no unmatched rows for season_start=%s", season_start)
+        return pd.DataFrame()
+
+    log.info(
+        "retry_unmatched: retrying %d unmatched player(s) for season_start=%s",
+        len(rows),
+        season_start,
+    )
+    resolved: list[dict] = []
+    for row in rows:
+        name = (row["name_fantacalcio"] or "").strip()
+        if not name:
+            continue
+
+        terms = [name]
+        parts = name.split()
+        if len(parts) >= 2:
+            terms.append(parts[-1])
+
+        chosen = None
+        for term in terms:
+            try:
+                candidates = _fotmob_suggest_api(term)
+            except Exception:
+                log.warning("  retry suggest API failed for %r", term)
+                continue
+            if len(candidates) == 1:
+                chosen = candidates[0]
+                break
+
+        if chosen is None:
+            continue
+
+        resolved.append({
+            "fantacalcio_id": row["fantacalcio_id"],
+            "season_start": row["season_start"],
+            "player_fotmob_id": chosen["id"],
+            "name_fantacalcio": name,
+            "name_fotmob": chosen["name"],
+            "team_fantacalcio": row["team_fantacalcio"],
+            "team_fotmob": chosen.get("team_name"),
+            "canonical_role": row["canonical_role"],
+            "match_method": "fotmob_suggest_retry",
+            "confidence": 0.85,
+            "resolved_from_history": False,
+        })
+
+    if not resolved:
+        log.info("retry_unmatched: no new resolutions")
+        return pd.DataFrame()
+
+    df = pd.DataFrame(resolved)
+    n = persist_player_id_map(df, engine)
+    log.info(
+        "retry_unmatched: resolved %d player(s) via fotmob_suggest_retry",
+        n,
+    )
+    return df
+
+
 # ── CLI ─────────────────────────────────────────────────────────────────────
 
 def _parse_args() -> argparse.Namespace:

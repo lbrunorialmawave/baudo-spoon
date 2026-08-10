@@ -986,7 +986,8 @@ class DataRepository:
         season_start: int,
         min_qt_a: int = 1,
         ruleset: str = "CLASSIC",
-    ) -> list[dict]:
+        return_exclusions: bool = False,
+    ) -> list[dict] | tuple[list[dict], list[dict]]:
         """Return optimizer-ready player records joined with ML predictions.
 
         Output schema (one dict per player, suitable for the optimizer
@@ -1009,6 +1010,10 @@ class DataRepository:
         * ``eligible_roles`` — list of MANTRA role codes (only when
           ``ruleset == "MANTRA"`` and the player has a row in
           ``player_mantra_roles``; empty list otherwise).
+
+        When ``return_exclusions=True``, returns
+        ``(pool, excluded_no_projection)`` so callers can surface how many
+        players were dropped solely for lack of a valid projection.
 
         The list is *not* deduplicated; the optimizer orchestrator is
         responsible for that. The repository guarantees deterministic
@@ -1059,6 +1064,7 @@ class DataRepository:
 
         # 3) Project into the optimizer-friendly shape.
         pool: list[dict] = []
+        excluded_no_projection: list[dict] = []
         for row in rows:
             pq, pim = row[0], row[1]
             pmr: Optional[PlayerMantraRole] = row[2] if len(row) > 2 else None
@@ -1095,7 +1101,14 @@ class DataRepository:
                 predicted_score = float(pq.fvm)
             if predicted_score is None or predicted_score <= 0.0:
                 # Without a meaningful projection the optimizer cannot
-                # rank this player — skip.
+                # rank this player — record and skip (observable, not silent).
+                excluded_no_projection.append({
+                    "player_id": player_id,
+                    "name": name,
+                    "role": optimizer_role,
+                    "cost": cost,
+                    "reason": "no_projection",
+                })
                 continue
 
             # Best-effort team name (id-map wins when present).
@@ -1140,4 +1153,15 @@ class DataRepository:
 
         # Deterministic ordering for reproducibility.
         pool.sort(key=lambda r: (r["role"], -r["cost"], r["player_id"]))
+        if excluded_no_projection:
+            import logging as _logging
+            _logging.getLogger(__name__).info(
+                "get_player_pool: excluded %d player(s) for no_projection "
+                "(season_start=%s, min_qt_a=%s)",
+                len(excluded_no_projection),
+                season_start,
+                min_qt_a,
+            )
+        if return_exclusions:
+            return pool, excluded_no_projection
         return pool

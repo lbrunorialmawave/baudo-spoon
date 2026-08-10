@@ -49,11 +49,20 @@
                   <div class="text-right sm:text-right">
                     <span class="text-sm font-mono font-semibold"
                           [style.color]="statusColor(source.status)">
-                      {{ source.total_rows }}
+                      @if (source.name === 'neo_arrivi_coverage') {
+                        {{ source.unmatched_total ?? '—' }} unmatched
+                      } @else {
+                        {{ source.total_rows ?? '—' }}
+                      }
                     </span>
                     @if (source.match_rate_pct != null) {
                       <p class="text-xs" style="color:var(--color-text-secondary)">
                         {{ source.match_rate_pct }}% match rate
+                      </p>
+                    }
+                    @if (source.name === 'neo_arrivi_coverage' && source.foreign_stats_candidates != null) {
+                      <p class="text-xs" style="color:var(--color-text-secondary)">
+                        {{ source.foreign_stats_candidates }} candidati foreign-stats
                       </p>
                     }
                   </div>

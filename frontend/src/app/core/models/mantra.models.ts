@@ -75,11 +75,19 @@ export interface MatchdayPlayerStatus {
 
 export interface DataHealthSource {
   name: string;
-  total_rows: number;
+  total_rows?: number;
   status: string;
   match_rate_pct?: number;
+  matched?: number;
+  unmatched?: number;
   latest_matchday?: number;
   seasons?: number[];
+  /** Present on neo_arrivi_coverage source (P5). */
+  season_start?: number;
+  unmatched_total?: number;
+  resolved_by_retry?: number;
+  foreign_stats_candidates?: number;
+  reason?: string;
 }
 
 export interface DataHealthResponse {

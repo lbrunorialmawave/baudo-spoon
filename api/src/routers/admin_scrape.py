@@ -2,14 +2,15 @@
 
 Endpoints
 ---------
-POST /admin/scrape/probabili      — Trigger probabili formazioni scraper
-POST /admin/scrape/esperti        — Trigger Gruppo Esperti ratings scraper
-POST /admin/scrape/quotazioni     — Re-import listoni XLSX
-POST /admin/scrape/foreign-stats  — Fetch career stats for players missing Serie A history
-GET  /admin/scrape/status         — Status of all scrapers
-GET  /admin/scrape/logs/{name}    — Last execution log
-GET  /admin/data-health           — Data coverage overview for all sources
-GET  /admin/data-health/{source}  — Detailed coverage for a specific source
+POST /admin/scrape/probabili         — Trigger probabili formazioni scraper
+POST /admin/scrape/esperti           — Trigger Gruppo Esperti ratings scraper
+POST /admin/scrape/quotazioni        — Re-import listoni XLSX (+ auto resolve-unmatched + foreign-stats)
+POST /admin/scrape/foreign-stats     — Fetch career stats for players missing Serie A history
+POST /admin/scrape/resolve-unmatched — Retry FotMob resolution for unmatched players
+GET  /admin/scrape/status            — Status of all scrapers
+GET  /admin/scrape/logs/{name}       — Last execution log
+GET  /admin/data-health              — Data coverage overview for all sources
+GET  /admin/data-health/{source}     — Detailed coverage for a specific source
 """
 
 from __future__ import annotations
@@ -51,7 +52,6 @@ async def trigger_probabili(
     matchday: int | None = Query(None, description="Current matchday"),
 ) -> ORJSONResponse:
     try:
-        # Don't use get_db dependency — create sync connection directly for scraper compatibility
         sync_url = _to_sync_url(settings.database_url)
         log.info("[trigger_probabili] Starting scrape")
         from scraper.probabili_formazioni import persist, scrape
@@ -81,8 +81,6 @@ async def trigger_esperti(
         log.info("[trigger_esperti] Starting scrape")
         from scraper.gruppo_esperti import INDEX_URL, persist, scrape
         players = scrape(index_url=index_url or INDEX_URL, team_filter=team)
-        # season_start=None resolves internally to the latest season present
-        # in player_quotations, rather than guessing from the calendar date.
         n, resolved_season = persist(players, sync_url, season_start)
         return ORJSONResponse({
             "scraper": "esperti",
@@ -95,31 +93,6 @@ async def trigger_esperti(
     except Exception:
         log.exception("Gruppo Esperti scraper failed")
         raise HTTPException(status_code=500, detail="Gruppo Esperti scraper failed. Check server logs.")
-
-
-@router.post("/scrape/quotazioni", summary="Re-import listoni XLSX")
-async def trigger_quotazioni(
-    quotazioni_dir: str = Query("./quotazioni", description="Directory with XLSX files"),
-) -> ORJSONResponse:
-    try:
-        sync_url = _to_sync_url(settings.database_url)
-        log.info(f"[trigger_quotazioni] Using sync_url: {sync_url}")
-        import subprocess
-        result = subprocess.run(
-            ["python", "-m", "ml.data.import_quotations",
-             "--quotazioni-dir", quotazioni_dir,
-             "--db-url", sync_url],
-            capture_output=True, text=True, timeout=300,
-        )
-        return ORJSONResponse({
-            "scraper": "quotazioni",
-            "status": "ok" if result.returncode == 0 else "error",
-            "stdout": result.stdout[-500:],
-            "stderr": result.stderr[-500:],
-        })
-    except Exception:
-        log.exception("Quotazioni import failed")
-        raise HTTPException(status_code=500, detail="Quotazioni import failed. Check server logs.")
 
 
 _FOREIGN_STATS_CANDIDATES_SQL = sa.text("""
@@ -144,6 +117,125 @@ _FOREIGN_STATS_CANDIDATES_SQL = sa.text("""
 """)
 
 
+async def _run_foreign_stats(
+    db: AsyncSession,
+    *,
+    force: bool = False,
+) -> dict:
+    """Shared logic for targeted career-stats fetch of neo-arrivi."""
+    latest = await db.scalar(sa.text("SELECT MAX(season_start) FROM player_quotations"))
+    if latest is None:
+        return {
+            "status": "skipped",
+            "reason": "no_quotations",
+            "candidates": 0,
+            "fetched": 0,
+            "persisted": 0,
+        }
+
+    result = await db.execute(
+        _FOREIGN_STATS_CANDIDATES_SQL,
+        {"season_start": latest, "force": force},
+    )
+    candidates = {row.player_fotmob_id: row.player_name for row in result.all()}
+
+    if not candidates:
+        return {
+            "status": "ok",
+            "candidates": 0,
+            "fetched": 0,
+            "persisted": 0,
+        }
+
+    sync_url = _to_sync_url(settings.database_url)
+    log.info(
+        "[_run_foreign_stats] %d candidate(s), force=%s",
+        len(candidates),
+        force,
+    )
+    from scraper.src.player_career_scraper import fetch_and_persist_players
+
+    fetched, persisted = fetch_and_persist_players(candidates, sync_url)
+    return {
+        "status": "ok",
+        "candidates": len(candidates),
+        "fetched": fetched,
+        "persisted": persisted,
+        "unresolved": len(candidates) - fetched,
+    }
+
+
+@router.post("/scrape/quotazioni", summary="Re-import listoni XLSX")
+async def trigger_quotazioni(
+    quotazioni_dir: str = Query("./quotazioni", description="Directory with XLSX files"),
+    db: AsyncSession = Depends(get_db),
+) -> ORJSONResponse:
+    """Re-import listoni and automatically chain neo-arrivo coverage."""
+    try:
+        sync_url = _to_sync_url(settings.database_url)
+        log.info(f"[trigger_quotazioni] Using sync_url: {sync_url}")
+        import subprocess
+        result = subprocess.run(
+            ["python", "-m", "ml.data.import_quotations",
+             "--quotazioni-dir", quotazioni_dir,
+             "--db-url", sync_url],
+            capture_output=True, text=True, timeout=300,
+        )
+        response: dict = {
+            "scraper": "quotazioni",
+            "status": "ok" if result.returncode == 0 else "error",
+            "stdout": result.stdout[-500:],
+            "stderr": result.stderr[-500:],
+        }
+
+        if result.returncode == 0:
+            try:
+                from ml.data.import_quotations import retry_unmatched
+                from sqlalchemy import create_engine
+                engine = create_engine(sync_url)
+                latest = await db.scalar(
+                    sa.text("SELECT MAX(season_start) FROM player_quotations")
+                )
+                if latest is not None:
+                    resolved_df = retry_unmatched(engine, int(latest))
+                    response["resolve_unmatched"] = {
+                        "status": "ok",
+                        "resolved": int(len(resolved_df)) if resolved_df is not None else 0,
+                    }
+                else:
+                    response["resolve_unmatched"] = {
+                        "status": "skipped",
+                        "reason": "no_quotations",
+                    }
+            except Exception as exc:
+                log.warning(
+                    "[trigger_quotazioni] resolve-unmatched failed (non-blocking): %s",
+                    exc,
+                )
+                response["resolve_unmatched"] = {
+                    "status": "error",
+                    "error": str(exc)[:200],
+                }
+
+            try:
+                foreign = await _run_foreign_stats(db, force=False)
+                response["foreign_stats"] = foreign
+            except Exception as exc:
+                log.warning(
+                    "[trigger_quotazioni] foreign-stats fetch failed (non-blocking): %s",
+                    exc,
+                )
+                response["foreign_stats"] = {
+                    "status": "error",
+                    "error": str(exc)[:200],
+                }
+
+        return ORJSONResponse(response)
+    except Exception:
+        log.exception("Quotazioni import failed")
+        raise HTTPException(status_code=500, detail="Quotazioni import failed. Check server logs.")
+
+
 @router.post(
     "/scrape/foreign-stats",
     summary="Fetch career stats for players missing Serie A history",
@@ -155,44 +247,68 @@ async def trigger_foreign_stats(
     ),
     db: AsyncSession = Depends(get_db),
 ) -> ORJSONResponse:
-    """Targeted per-player fallback for MANTRA's neo-arrivo handling.
-
-    Finds players in the current Serie A listino who have no Serie A
-    performance history (current or prior season) and, unless already
-    covered, fetches their most recent season anywhere via a single
-    lightweight HTTP request per player (see
-    scraper/src/player_career_scraper.py) — no bulk league scraping.
-    """
-    latest = await db.scalar(sa.text("SELECT MAX(season_start) FROM player_quotations"))
-    if latest is None:
-        raise HTTPException(status_code=400, detail="No quotations imported yet.")
-
-    result = await db.execute(_FOREIGN_STATS_CANDIDATES_SQL, {"season_start": latest, "force": force})
-    candidates = {row.player_fotmob_id: row.player_name for row in result.all()}
-
-    if not candidates:
-        return ORJSONResponse({
-            "scraper": "foreign-stats", "status": "ok",
-            "candidates": 0, "fetched": 0, "persisted": 0,
-        })
-
+    """Targeted per-player fallback for MANTRA's neo-arrivo handling."""
     try:
-        sync_url = _to_sync_url(settings.database_url)
-        log.info("[trigger_foreign_stats] %d candidate(s), force=%s", len(candidates), force)
-        from scraper.src.player_career_scraper import fetch_and_persist_players
-
-        fetched, persisted = fetch_and_persist_players(candidates, sync_url)
-        return ORJSONResponse({
-            "scraper": "foreign-stats",
-            "status": "ok",
-            "candidates": len(candidates),
-            "fetched": fetched,
-            "persisted": persisted,
-            "unresolved": len(candidates) - fetched,
-        })
+        payload = await _run_foreign_stats(db, force=force)
+        if payload.get("status") == "skipped" and payload.get("reason") == "no_quotations":
+            raise HTTPException(status_code=400, detail="No quotations imported yet.")
+        return ORJSONResponse({"scraper": "foreign-stats", **payload})
+    except HTTPException:
+        raise
     except Exception:
         log.exception("Foreign career-stats fetch failed")
-        raise HTTPException(status_code=500, detail="Foreign career-stats fetch failed. Check server logs.")
+        raise HTTPException(
+            status_code=500,
+            detail="Foreign career-stats fetch failed. Check server logs.",
+        )
+
+
+@router.post(
+    "/scrape/resolve-unmatched",
+    summary="Retry FotMob resolution for unmatched players, then fetch career stats",
+)
+async def trigger_resolve_unmatched(
+    db: AsyncSession = Depends(get_db),
+) -> ORJSONResponse:
+    """P2: second-chance ID resolution for match_method='unmatched' rows."""
+    try:
+        latest = await db.scalar(sa.text("SELECT MAX(season_start) FROM player_quotations"))
+        if latest is None:
+            raise HTTPException(status_code=400, detail="No quotations imported yet.")
+
+        sync_url = _to_sync_url(settings.database_url)
+        from ml.data.import_quotations import retry_unmatched
+        from sqlalchemy import create_engine
+
+        engine = create_engine(sync_url)
+        resolved_df = retry_unmatched(engine, int(latest))
+        n_resolved = int(len(resolved_df)) if resolved_df is not None else 0
+
+        foreign_payload: dict = {"status": "skipped", "reason": "nothing_resolved"}
+        if n_resolved > 0:
+            try:
+                foreign_payload = await _run_foreign_stats(db, force=False)
+            except Exception as exc:
+                log.warning(
+                    "[resolve-unmatched] foreign-stats after resolve failed (non-blocking): %s",
+                    exc,
+                )
+                foreign_payload = {"status": "error", "error": str(exc)[:200]}
+
+        return ORJSONResponse({
+            "scraper": "resolve-unmatched",
+            "status": "ok",
+            "resolved": n_resolved,
+            "foreign_stats": foreign_payload,
+        })
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception("resolve-unmatched failed")
+        raise HTTPException(
+            status_code=500,
+            detail="resolve-unmatched failed. Check server logs.",
+        )
 
 
 # ── Data Health ──────────────────────────────────────────────────────────────
@@ -203,11 +319,8 @@ async def get_data_health(
     db: AsyncSession = Depends(get_db),
 ) -> ORJSONResponse:
     """Return coverage status for all data sources."""
-    import sqlalchemy as sa
-
     sources: list[dict] = []
 
-    # 1. ID Mapping health
     id_total = await db.scalar(sa.text("SELECT COUNT(*) FROM player_id_map"))
     id_matched = await db.scalar(
         sa.text("SELECT COUNT(*) FROM player_id_map WHERE player_fotmob_id IS NOT NULL")
@@ -223,7 +336,6 @@ async def get_data_health(
         "status": "ok" if match_rate >= 95 else "warning",
     })
 
-    # 2. MANTRA roles
     mantra_count = await db.scalar(sa.text("SELECT COUNT(*) FROM player_mantra_roles"))
     sources.append({
         "name": "mantra_roles",
@@ -231,13 +343,9 @@ async def get_data_health(
         "status": "ok" if int(mantra_count or 0) > 0 else "missing",
     })
 
-    # 3. Matchday status
     md_count = await db.scalar(
         sa.text("SELECT COUNT(*) FROM player_matchday_status")
     )
-    # Anchor to the most recent season's matchday — a plain MAX(matchday)
-    # would return a matchday from an older season once multiple seasons
-    # coexist (see matchday.py's identical helper).
     md_latest = await db.scalar(
         sa.text(
             "SELECT matchday FROM player_matchday_status "
@@ -252,7 +360,6 @@ async def get_data_health(
         "status": "ok" if int(md_count or 0) > 0 else "missing",
     })
 
-    # 4. Expert ratings
     exp_count = await db.scalar(sa.text("SELECT COUNT(*) FROM expert_ratings"))
     sources.append({
         "name": "expert_ratings",
@@ -260,7 +367,6 @@ async def get_data_health(
         "status": "ok" if int(exp_count or 0) > 0 else "missing",
     })
 
-    # 5. Quotations
     q_count = await db.scalar(
         sa.text("SELECT COUNT(*) FROM player_quotations")
     )
@@ -274,6 +380,47 @@ async def get_data_health(
         "status": "ok" if int(q_count or 0) > 450 else "warning",
     })
 
+    latest = await db.scalar(sa.text("SELECT MAX(season_start) FROM player_quotations"))
+    if latest is not None:
+        unmatched_total = await db.scalar(
+            sa.text("""
+                SELECT COUNT(*) FROM player_id_map
+                WHERE season_start = :ss AND match_method = 'unmatched'
+                  AND player_fotmob_id IS NULL
+            """),
+            {"ss": latest},
+        )
+        resolved_by_retry = await db.scalar(
+            sa.text("""
+                SELECT COUNT(*) FROM player_id_map
+                WHERE season_start = :ss AND match_method = 'fotmob_suggest_retry'
+            """),
+            {"ss": latest},
+        )
+        fs_result = await db.execute(
+            _FOREIGN_STATS_CANDIDATES_SQL,
+            {"season_start": latest, "force": False},
+        )
+        fs_candidates = len(fs_result.all())
+        sources.append({
+            "name": "neo_arrivi_coverage",
+            "season_start": int(latest),
+            "unmatched_total": int(unmatched_total or 0),
+            "resolved_by_retry": int(resolved_by_retry or 0),
+            "foreign_stats_candidates": fs_candidates,
+            "status": (
+                "ok"
+                if int(unmatched_total or 0) == 0 and fs_candidates == 0
+                else "warning"
+            ),
+        })
+    else:
+        sources.append({
+            "name": "neo_arrivi_coverage",
+            "status": "missing",
+            "reason": "no_quotations",
+        })
+
     return ORJSONResponse({"sources": sources})
 
 
@@ -283,8 +430,6 @@ async def get_source_health(
     db: AsyncSession = Depends(get_db),
 ) -> ORJSONResponse:
     """Return detailed coverage info for a specific data source."""
-    import sqlalchemy as sa
-
     if source == "id_mapping":
         rows = (await db.execute(
             sa.text("""
@@ -348,9 +493,21 @@ async def get_scraper_status() -> ORJSONResponse:
         },
         {
             "name": "quotazioni",
-            "description": "Re-import Fantacalcio listoni XLSX",
+            "description": "Re-import Fantacalcio listoni XLSX (+ auto neo-arrivi chain)",
             "frequency": "Season start",
             "configurable_params": ["quotazioni_dir"],
+        },
+        {
+            "name": "foreign-stats",
+            "description": "Targeted career stats for neo-arrivi missing Serie A history",
+            "frequency": "After listone import / on demand",
+            "configurable_params": ["force"],
+        },
+        {
+            "name": "resolve-unmatched",
+            "description": "Retry FotMob ID resolution for unmatched players",
+            "frequency": "After listone import / on demand",
+            "configurable_params": [],
         },
         {
             "name": "voti",

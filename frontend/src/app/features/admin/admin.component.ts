@@ -72,11 +72,23 @@ export class AdminComponent {
       matchday_status: 'Probabili Formazioni',
       expert_ratings: 'Expert Ratings',
       quotations: 'Player Quotations',
+      neo_arrivi_coverage: 'Copertura neo-arrivi',
     };
     return map[name] ?? name;
   };
 
   readonly sourceDetail = (s: DataHealthSource): string => {
+    if (s.name === 'neo_arrivi_coverage') {
+      if (s.reason === 'no_quotations') return 'Nessuna quotazione importata';
+      const parts: string[] = [];
+      if (s.season_start != null) parts.push('Stagione ' + s.season_start);
+      if (s.unmatched_total != null) parts.push('unmatched: ' + s.unmatched_total);
+      if (s.resolved_by_retry != null) parts.push('retry OK: ' + s.resolved_by_retry);
+      if (s.foreign_stats_candidates != null) {
+        parts.push('foreign-stats candidati: ' + s.foreign_stats_candidates);
+      }
+      return parts.join(' · ') || 'Nessun dettaglio';
+    }
     const parts: string[] = [];
     if (s.latest_matchday != null) parts.push('Matchday ' + s.latest_matchday);
     if (s.seasons?.length) parts.push('Seasons: ' + s.seasons.join(', '));
@@ -135,10 +147,20 @@ export class AdminComponent {
       name: 'foreign-stats',
       label: 'Storico Giocatori Esteri',
       description: 'Recupera lo storico (rating/presenze) per i giocatori del listino senza dati Serie A',
-      frequency: 'Dopo ogni import quotazioni',
+      frequency: 'Dopo ogni import quotazioni (anche automatico)',
       params: [
         { key: 'force', label: 'Forza tutti (true/false)', placeholder: 'false', value: signal('') },
       ],
+      running: signal(false),
+      result: signal<string | null>(null),
+      error: signal<string | null>(null),
+    },
+    {
+      name: 'resolve-unmatched',
+      label: 'Risolvi unmatched',
+      description: 'Secondo tentativo FotMob per giocatori ancora unmatched, poi fetch career stats',
+      frequency: 'Dopo import listone / on demand',
+      params: [],
       running: signal(false),
       result: signal<string | null>(null),
       error: signal<string | null>(null),
@@ -158,6 +180,8 @@ export class AdminComponent {
       obs = this.mantraService.runQuotazioniImport();
     } else if (scraper.name === 'foreign-stats') {
       obs = this.mantraService.runForeignStatsScraper(scraper.params[0].value() === 'true');
+    } else if (scraper.name === 'resolve-unmatched') {
+      obs = this.mantraService.runResolveUnmatched();
     } else {
       obs = this.mantraService.runProbabiliScraper(seasonOrMatchday);
     }
@@ -165,10 +189,43 @@ export class AdminComponent {
     obs.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (res: any) => {
         if (scraper.name === 'quotazioni') {
-          scraper.result.set(res.status === 'ok' ? 'Import completato' : 'Import fallito: ' + (res.stderr || 'vedi log server'));
+          if (res.status !== 'ok') {
+            scraper.result.set('Import fallito: ' + (res.stderr || 'vedi log server'));
+          } else {
+            const parts = ['Import completato'];
+            if (res.resolve_unmatched) {
+              const ru = res.resolve_unmatched;
+              parts.push(
+                ru.status === 'ok'
+                  ? `unmatched risolti: ${ru.resolved ?? 0}`
+                  : `resolve-unmatched: ${ru.status}`
+              );
+            }
+            if (res.foreign_stats) {
+              const fs = res.foreign_stats;
+              if (fs.status === 'ok') {
+                parts.push(
+                  `foreign-stats: ${fs.fetched ?? 0}/${fs.candidates ?? 0} recuperati`
+                );
+              } else {
+                parts.push(`foreign-stats: ${fs.status}`);
+              }
+            }
+            scraper.result.set(parts.join(' · '));
+          }
         } else if (scraper.name === 'foreign-stats') {
           scraper.result.set(
             `Candidati: ${res.candidates}, recuperati: ${res.fetched}, salvati: ${res.persisted}`
+          );
+        } else if (scraper.name === 'resolve-unmatched') {
+          const fs = res.foreign_stats;
+          const fsPart = fs
+            ? (fs.status === 'ok'
+                ? `foreign-stats ${fs.fetched ?? 0}/${fs.candidates ?? 0}`
+                : `foreign-stats ${fs.status}`)
+            : '';
+          scraper.result.set(
+            `Risolti: ${res.resolved ?? 0}` + (fsPart ? ` · ${fsPart}` : '')
           );
         } else {
           scraper.result.set('Scraped ' + (res.records ?? '?') + ' records');

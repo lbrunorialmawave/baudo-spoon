@@ -138,6 +138,9 @@ interface ParticipantRow {
             Completate <strong>{{ res.nCompleted }}</strong> scenari in
             {{ res.wallTimeSeconds | number: '1.1-1' }}s
             @if (res.warnings.length) { · {{ res.warnings.length }} warning }
+            @if ((res.nExcludedNoProjection ?? 0) > 0) {
+              · {{ res.nExcludedNoProjection }} esclusi (no proiezione)
+            }
           </p>
           <p class="hint click-hint">Clicca una card per la rosa tipo (roster rappresentativo per ruolo).</p>
 

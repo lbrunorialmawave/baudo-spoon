@@ -238,6 +238,8 @@ def _attach_role(
                 on=["player_fotmob_id", "season_start"],
                 how="left",
             )
+            missing_mask = df_player["canonical_role"].isna()
+            n_defaulted = int(missing_mask.sum())
             df_player["canonical_role"] = (
                 df_player["canonical_role"].fillna("FWD").astype(str)
             )
@@ -245,6 +247,8 @@ def _attach_role(
                 "Role distribution (season-scoped): %s",
                 df_player["canonical_role"].value_counts().to_dict(),
             )
+            if n_defaulted > 0:
+                _warn_high_cost_role_defaults(df_player, missing_mask, log)
             return df_player
         log.warning(
             "player_season_roles is empty — falling back to player_profiles. "
@@ -271,6 +275,8 @@ def _attach_role(
                 on="player_fotmob_id",
                 how="left",
             )
+            missing_mask = df_player["canonical_role"].isna()
+            n_defaulted = int(missing_mask.sum())
             df_player["canonical_role"] = (
                 df_player["canonical_role"].fillna("FWD").astype(str)
             )
@@ -278,6 +284,8 @@ def _attach_role(
                 "Role distribution (current-role fallback): %s",
                 df_player["canonical_role"].value_counts().to_dict(),
             )
+            if n_defaulted > 0:
+                _warn_high_cost_role_defaults(df_player, missing_mask, log)
         else:
             log.warning(
                 "player_profiles table is empty — defaulting all roles to 'FWD'."
@@ -291,6 +299,62 @@ def _attach_role(
         df_player["canonical_role"] = "FWD"
 
     return df_player
+
+
+def _warn_high_cost_role_defaults(
+    df_player: pd.DataFrame,
+    missing_mask: pd.Series,
+    log: logging.Logger,
+    *,
+    high_cost_quantile: float = 0.5,
+) -> None:
+    """Emit an explicit WARNING for players defaulted to FWD that look expensive.
+
+    Neo-arrivi without a resolved role silently become FWD, which can break
+    formation constraints for GKs/DEFs that are priced like starters.
+    """
+    defaulted = df_player.loc[missing_mask]
+    if defaulted.empty:
+        return
+
+    cost_col = "qt_a" if "qt_a" in defaulted.columns else None
+    name_col = next(
+        (c for c in ("player_name", "name", "name_fantacalcio", "name_fotmob")
+         if c in defaulted.columns),
+        None,
+    )
+    team_col = next(
+        (c for c in ("team", "team_fantacalcio", "team_fotmob", "real_team")
+         if c in defaulted.columns),
+        None,
+    )
+
+    high_cost = defaulted
+    if cost_col is not None and defaulted[cost_col].notna().any():
+        threshold = float(defaulted[cost_col].median())
+        if "qt_a" in df_player.columns and df_player["qt_a"].notna().any():
+            threshold = max(
+                threshold,
+                float(df_player["qt_a"].quantile(high_cost_quantile)),
+            )
+        high_cost = defaulted[defaulted[cost_col] >= threshold]
+
+    sample = high_cost if not high_cost.empty else defaulted
+    sample = sample.head(15)
+    details: list[str] = []
+    for _, r in sample.iterrows():
+        name = r[name_col] if name_col else "?"
+        team = r[team_col] if team_col else "?"
+        cost = r[cost_col] if cost_col else "?"
+        details.append(f"{name} ({team}, qt_a={cost})")
+
+    log.warning(
+        "Role defaulted to 'FWD' for %d player(s) (of which %d high-cost). "
+        "Sample: %s. These may be GKs/DEFs mis-classified in formation constraints.",
+        int(missing_mask.sum()),
+        int(len(high_cost)),
+        "; ".join(details) if details else "(no detail columns)",
+    )
 
 
 def _append_foreign_fallback_rows(

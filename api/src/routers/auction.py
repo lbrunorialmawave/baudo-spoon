@@ -359,6 +359,7 @@ async def init_auction(
     auction_cfg = _auction_config_from_schema(payload.config, inflation)
     participants = [_participant_from_schema(p) for p in payload.participants]
 
+    n_excluded_no_projection = 0
     if payload.player_pool is not None:
         pool: list[Player] = [_player_from_schema(p) for p in payload.player_pool]
     else:
@@ -369,12 +370,14 @@ async def init_auction(
             r2_secret_access_key=settings.r2_secret_access_key,
             r2_bucket_name=settings.r2_bucket_name,
         )
-        rows = await repo.get_player_pool(
+        rows, excluded = await repo.get_player_pool(
             db,
             season_start=payload.season_start,
             min_qt_a=1,
             ruleset=payload.config.ruleset,
+            return_exclusions=True,
         )
+        n_excluded_no_projection = len(excluded)
         pool = [
             Player(
                 player_id=r["player_id"],
@@ -405,12 +408,16 @@ async def init_auction(
     _get_session_store(request)[session_id] = session
 
     logger.info(
-        "auction_session_initialized session_id=%s participants=%d pool=%d",
+        "auction_session_initialized session_id=%s participants=%d pool=%d excluded_no_projection=%d",
         session_id,
         len(participants),
         len(pool),
+        n_excluded_no_projection,
     )
-    return InitializeAuctionResponse(session_id=session_id)
+    return InitializeAuctionResponse(
+        session_id=session_id,
+        n_excluded_no_projection=n_excluded_no_projection,
+    )
 
 
 @router.post(
@@ -431,6 +438,7 @@ async def simulate_auction_endpoint(
     profiles = [_bidder_profile_from_schema(p) for p in payload.bidder_profiles]
     sim_cfg = _sim_config_from_schema(payload.sim_config)
 
+    n_excluded_no_projection = 0
     if payload.player_pool is not None:
         pool: list[Player] = [_player_from_schema(p) for p in payload.player_pool]
     else:
@@ -441,9 +449,14 @@ async def simulate_auction_endpoint(
             r2_secret_access_key=settings.r2_secret_access_key,
             r2_bucket_name=settings.r2_bucket_name,
         )
-        rows = await repo.get_player_pool(
-            db, season_start=payload.season_start, min_qt_a=1, ruleset=payload.config.ruleset,
+        rows, excluded = await repo.get_player_pool(
+            db,
+            season_start=payload.season_start,
+            min_qt_a=1,
+            ruleset=payload.config.ruleset,
+            return_exclusions=True,
         )
+        n_excluded_no_projection = len(excluded)
         pool = [
             Player(
                 player_id=r["player_id"], name=r["name"], role=cast(Role, r["role"]),
@@ -507,6 +520,7 @@ async def simulate_auction_endpoint(
         },
         wall_time_seconds=result.wall_time_seconds,
         warnings=list(result.warnings),
+        n_excluded_no_projection=n_excluded_no_projection,
     )
 
 

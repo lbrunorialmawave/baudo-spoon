@@ -146,4 +146,9 @@ export class MantraService {
     const params = new HttpParams().set('force', force);
     return this.http.post(`${this.baseUrl}/admin/scrape/foreign-stats`, null, { params });
   }
+
+  /** Retry FotMob ID resolution for unmatched players, then chain foreign-stats. */
+  runResolveUnmatched(): Observable<any> {
+    return this.http.post(`${this.baseUrl}/admin/scrape/resolve-unmatched`, null);
+  }
 }

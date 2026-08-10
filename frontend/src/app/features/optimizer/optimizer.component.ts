@@ -966,6 +966,13 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
               }
             </div>
 
+            @if (nExcludedNoProjection() > 0) {
+              <p class="opt-exclusion-banner" role="status">
+                {{ nExcludedNoProjection() }} giocatori esclusi dal pool per mancanza di proiezione
+                (neo-arrivi senza storico / predizione ML).
+              </p>
+            }
+
             @if (resultFor(activeStrategy()); as r) {
               <div class="kpi-grid" aria-label="Indicatori chiave">
                 <div class="kpi">
@@ -1143,6 +1150,11 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                   <div class="kpi"><span class="kpi__label">Score base</span><span class="kpi__value">{{ sens.baselineTotalScore | number:'1.2-2' }}</span></div>
                   <div class="kpi"><span class="kpi__label">Rosa</span><span class="kpi__value">{{ sens.baselineSquadSize }}</span></div>
                 </div>
+                @if ((sens.nExcludedNoProjection ?? 0) > 0) {
+                  <p class="opt-exclusion-banner" role="status">
+                    {{ sens.nExcludedNoProjection }} giocatori esclusi dal pool per mancanza di proiezione.
+                  </p>
+                }
                 @if (sens.warnings?.length) {
                   <ul class="warnings-list">@for (w of sens.warnings; track w) { <li>{{ w }}</li> }</ul>
                 }
@@ -1200,6 +1212,11 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                 <app-error-boundary title="Errore Pareto" [message]="analysisError()!" />
               }
               @if (paretoResult(); as pr) {
+                @if ((pr.nExcludedNoProjection ?? 0) > 0) {
+                  <p class="opt-exclusion-banner" role="status">
+                    {{ pr.nExcludedNoProjection }} giocatori esclusi dal pool per mancanza di proiezione.
+                  </p>
+                }
                 @if (pr.warnings?.length) {
                   <ul class="warnings-list">@for (w of pr.warnings; track w) { <li>{{ w }}</li> }</ul>
                 }
@@ -1343,6 +1360,17 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
       background: var(--color-surface, #14151a);
     }
     .opt-preset-banner.muted { opacity: 0.85; }
+
+    .opt-exclusion-banner {
+      margin: 8px 12px 0;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      line-height: 1.4;
+      color: #92400e;
+      background: #fef3c7;
+      border: 1px solid #f59e0b;
+    }
 
     /* ── Mobile pane nav ─────────────────────────────── */
     .opt-pane-nav {
@@ -2115,6 +2143,17 @@ export class OptimizerComponent {
   readonly results = signal<MultiStrategyResult | null>(null);
   readonly activeStrategy = signal<string>('');
 
+  /** Players excluded from the optimizer pool for missing projection (P3). */
+  readonly nExcludedNoProjection = computed(() => {
+    const res = this.results();
+    if (!res) return 0;
+    if (typeof res.nExcludedNoProjection === 'number') return res.nExcludedNoProjection;
+    return Math.max(
+      0,
+      ...Object.values(res.results).map(r => r.nExcludedNoProjection ?? 0),
+    );
+  });
+
   // ── Analysis tools (Sensitivity / Pareto) ─────────────
   readonly analysisTab = signal<'sensitivity' | 'pareto'>('sensitivity');
   readonly analysisRunning = signal(false);
@@ -2435,6 +2474,7 @@ export class OptimizerComponent {
               monteCarloSummary:
                 job.monteCarloSummary ?? job.result.monteCarloSummary ?? null,
               diversity: null,
+              nExcludedNoProjection: job.result.nExcludedNoProjection ?? 0,
             };
             this.results.set(multi);
             this.activeStrategy.set(name);

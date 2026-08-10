@@ -322,6 +322,9 @@ function makeParticipants(
             <p class="auc-topbar__subtitle">
               Sessione <code class="session-id">{{ sessionId()!.slice(0, 12) }}…</code>
               · registrazione turni, EWMA e alternative in tempo reale
+              @if (nExcludedNoProjection() > 0) {
+                · <span class="auc-exclusion-hint">{{ nExcludedNoProjection() }} esclusi (no proiezione)</span>
+              }
             </p>
           </div>
           <div class="auc-topbar__actions">
@@ -1869,6 +1872,8 @@ export class AuctionComponent {
   readonly participants = signal<AuctionParticipantSetup[]>(makeParticipants(8, 500));
   readonly starting = signal(false);
   readonly initError = signal<string | null>(null);
+  /** Players excluded from server-built pool (missing projection). */
+  readonly nExcludedNoProjection = signal(0);
 
   readonly sessionId = signal<string | null>(null);
   readonly summary = signal<AuctionSummary | null>(null);
@@ -2226,6 +2231,7 @@ export class AuctionComponent {
       .subscribe({
         next: (res) => {
           this.sessionId.set(res.sessionId);
+          this.nExcludedNoProjection.set(res.nExcludedNoProjection ?? 0);
           this.starting.set(false);
           this.refreshSummary();
         },
@@ -2523,6 +2529,7 @@ export class AuctionComponent {
 
   private _resetLiveState(): void {
     this.sessionId.set(null);
+    this.nExcludedNoProjection.set(0);
     this.summary.set(null);
     this.projection.set(null);
     this.altResult.set(null);

@@ -582,6 +582,7 @@ class SensitivityResponseSchema(_CamelModel):
     baseline_squad_size: int
     parameters: list[ParameterSensitivitySchema] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    n_excluded_no_projection: int = 0
 
 
 class ParetoPointSchema(_CamelModel):
@@ -598,6 +599,7 @@ class ParetoResponseSchema(_CamelModel):
     points: list[ParetoPointSchema] = Field(default_factory=list)
     frontier_risk_lambdas: list[float] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    n_excluded_no_projection: int = 0
 
 
 class MonteCarloSummarySchema(_CamelModel):
@@ -702,6 +704,7 @@ class OptimizationResultSchema(_CamelModel):
     near_optimal: list[NearOptimalAlternativeSchema] = Field(default_factory=list)
     # MANTRA only: post-hoc coverage of the 11 official modules. None for CLASSIC.
     mantra_formation_feasibility: Optional[dict[str, FormationCoverageSchema]] = None
+    n_excluded_no_projection: int = 0
 
 
 class MultiStrategyResultSchema(_CamelModel):
@@ -710,6 +713,7 @@ class MultiStrategyResultSchema(_CamelModel):
     results: dict[str, OptimizationResultSchema]
     monte_carlo_summary: Optional[MonteCarloSummarySchema] = None
     diversity: Optional[DiversityMetricsSchema] = None
+    n_excluded_no_projection: int = 0
 
 
 class StrategyProfileSchema(_CamelModel):
@@ -874,6 +878,7 @@ class InitializeAuctionResponse(_CamelModel):
     """Response di ``POST /auction/init``: id di sessione generato lato server."""
 
     session_id: str
+    n_excluded_no_projection: int = 0
 
 
 class RecordAssignmentRequest(_CamelModel):
@@ -1097,3 +1102,4 @@ class AuctionSimulationResponse(_CamelModel):
     player_acquisition_probability: dict[str, PlayerAcquisitionStatsSchema] = Field(default_factory=dict)
     wall_time_seconds: float
     warnings: list[str] = Field(default_factory=list)
+    n_excluded_no_projection: int = 0

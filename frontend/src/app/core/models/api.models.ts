@@ -272,12 +272,16 @@ export interface OptimizationResult {
   nearOptimal?: NearOptimalAlternative[];
   /** MANTRA only: post-hoc coverage of the 11 official modules. */
   mantraFormationFeasibility?: Record<string, FormationCoverage> | null;
+  /** Players with valid cost dropped from the pool for missing projection. */
+  nExcludedNoProjection?: number;
 }
 
 export interface MultiStrategyResult {
   results: Record<string, OptimizationResult>;
   monteCarloSummary?: MonteCarloSummary | null;
   diversity?: DiversityMetrics | null;
+  /** Aggregate exclusions from DB pool build (P3 neo-arrivi observability). */
+  nExcludedNoProjection?: number;
 }
 
 export interface StrategyProfile {
@@ -314,6 +318,7 @@ export interface SensitivityResponse {
   baselineSquadSize: number;
   parameters: ParameterSensitivity[];
   warnings: string[];
+  nExcludedNoProjection?: number;
 }
 
 // ── Pareto frontier (POST /optimize/pareto) ────────────────
@@ -331,6 +336,7 @@ export interface ParetoResponse {
   points: ParetoPoint[];
   frontierRiskLambdas: number[];
   warnings: string[];
+  nExcludedNoProjection?: number;
 }
 
 // ── API Error (RFC 7807 Problem Details) ───────────────────

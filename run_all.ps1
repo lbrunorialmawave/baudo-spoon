@@ -148,10 +148,12 @@ if (Test-Path $quotazioniDir) {
     } else { Log "⏭️  Nessun file .xlsx in ./quotazioni, salto..." }
 } else { Log "⏭️  Cartella ./quotazioni non trovata, salto..." }
 
-# Nota: dopo l'import, i giocatori nuovi in Serie A (senza storico) restano
-# senza dati fino a MANTRA a meno di lanciare anche il fetch mirato via
-# pannello Admin ("Storico Giocatori Esteri") o:
-#   curl -X POST -H "X-API-Key: $env:API_KEY" "http://localhost:8000/api/v1/admin/scrape/foreign-stats"
+# Nota: l'endpoint POST /admin/scrape/quotazioni ora concatena automaticamente
+# resolve-unmatched + foreign-stats (P1/P2). Questo step CLI importa solo via
+# modulo Python; per la catena completa preferire l'endpoint admin, oppure
+# forzare un re-fetch a freddo con:
+#   curl -X POST -H "X-API-Key: $env:API_KEY" "http://localhost:8000/api/v1/admin/scrape/foreign-stats?force=true"
+#   curl -X POST -H "X-API-Key: $env:API_KEY" "http://localhost:8000/api/v1/admin/scrape/resolve-unmatched"
 # Vedi README.md sezione "Season onboarding" per i dettagli.
 
 # ── 7. Generate fantavoto CSV ────────────────────────────────────────────

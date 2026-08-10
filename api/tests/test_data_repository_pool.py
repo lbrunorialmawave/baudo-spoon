@@ -153,3 +153,29 @@ def test_all_pool_entries_have_season_value_keys(repo: DataRepository):
     for p in pool:
         assert "season_value" in p
         assert "start_probability" in p
+
+
+def test_excluded_no_projection_is_observable(repo: DataRepository):
+    """Players with valid cost but no projection appear in excluded list, not silently dropped."""
+    pq = _make_pq(99, "A", 20, None)
+    pq.fvm = None
+    pim = MagicMock()
+    pim.fantacalcio_id = 99
+    pim.player_fotmob_id = None
+    pim.name_fotmob = None
+    pim.team_fotmob = None
+    row = (pq, pim)
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=MagicMock(all=MagicMock(return_value=[row])))
+
+    with patch.object(repo, "get_predictions", new_callable=AsyncMock, return_value=[]):
+        pool, excluded = _run(
+            repo.get_player_pool(db, season_start=2025, return_exclusions=True)
+        )
+
+    assert pool == []
+    assert len(excluded) == 1
+    assert excluded[0]["reason"] == "no_projection"
+    assert excluded[0]["player_id"] == "fc-99"
+    assert excluded[0]["cost"] == 20

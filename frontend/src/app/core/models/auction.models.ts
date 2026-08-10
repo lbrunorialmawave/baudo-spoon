@@ -138,6 +138,8 @@ export interface InitializeAuctionRequest {
 
 export interface InitializeAuctionResponse {
   sessionId: string;
+  /** Players dropped from the server-built pool for missing projection. */
+  nExcludedNoProjection?: number;
 }
 
 // ── Record assignment ─────────────────────────────────────────────────────
@@ -375,4 +377,6 @@ export interface AuctionSimulationResponse {
   playerAcquisitionProbability: Record<string, PlayerAcquisitionStats>;
   wallTimeSeconds: number;
   warnings: string[];
+  /** Players dropped from the server-built pool for missing projection. */
+  nExcludedNoProjection?: number;
 }

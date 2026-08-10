@@ -487,11 +487,19 @@ async def run_multi_strategy(
     )
     config = _build_config(req)
 
+    n_excluded_no_projection = 0
     if req.pool_override is not None:
         pool = _pool_from_override(req)
     else:
-        rows = await repo.get_player_pool(db, season_start=req.season_start, min_qt_a=req.min_qt_a, ruleset=req.ruleset)
+        rows, excluded = await repo.get_player_pool(
+            db,
+            season_start=req.season_start,
+            min_qt_a=req.min_qt_a,
+            ruleset=req.ruleset,
+            return_exclusions=True,
+        )
         pool = _players_from_pool_rows(rows)
+        n_excluded_no_projection = len(excluded)
 
     pool = deduplicate_players(pool)
     # Apply client-supplied start_probability pre-filter (mirrors
@@ -603,7 +611,12 @@ async def run_multi_strategy(
             monte_carlo_summary=top_mc_summary if mc_cfg is not None else None,
             near_optimal=near_schemas,
         )
-    return MultiStrategyResultSchema(results=serialized, monte_carlo_summary=top_mc_summary, diversity=DiversityMetricsSchema(**diversity.to_dict()))
+    return MultiStrategyResultSchema(
+        results=serialized,
+        monte_carlo_summary=top_mc_summary,
+        diversity=DiversityMetricsSchema(**diversity.to_dict()),
+        n_excluded_no_projection=n_excluded_no_projection,
+    )
 
 
 @router.post(
@@ -634,11 +647,19 @@ async def run_single_strategy(
     )
     config = _build_config(req)
 
+    n_excluded_no_projection = 0
     if req.pool_override is not None:
         pool = _pool_from_override(req)
     else:
-        rows = await repo.get_player_pool(db, season_start=req.season_start, min_qt_a=req.min_qt_a, ruleset=req.ruleset)
+        rows, excluded = await repo.get_player_pool(
+            db,
+            season_start=req.season_start,
+            min_qt_a=req.min_qt_a,
+            ruleset=req.ruleset,
+            return_exclusions=True,
+        )
         pool = _players_from_pool_rows(rows)
+        n_excluded_no_projection = len(excluded)
 
     pool = deduplicate_players(pool)
     # Apply client-supplied start_probability pre-filter (mirrors
@@ -692,7 +713,9 @@ async def run_single_strategy(
     wp = await asyncio.to_thread(
         estimate_completion_probability, result.squad, config.budget, WinProbabilityConfig(), config.inflation_config, config.num_participants,
     ) if result.squad else None
-    return _serialize_result(result, effective_lookup, win_probability=wp, monte_carlo_summary=mc_summary_schema, near_optimal=near_schemas)
+    out = _serialize_result(result, effective_lookup, win_probability=wp, monte_carlo_summary=mc_summary_schema, near_optimal=near_schemas)
+    out.n_excluded_no_projection = n_excluded_no_projection
+    return out
 
 
 @router.post(
@@ -732,11 +755,19 @@ async def run_sensitivity(
     )
     config = _build_config(req)
 
+    n_excluded_no_projection = 0
     if req.pool_override is not None:
         pool = _pool_from_override(req)
     else:
-        rows = await repo.get_player_pool(db, season_start=req.season_start, min_qt_a=req.min_qt_a, ruleset=req.ruleset)
+        rows, excluded = await repo.get_player_pool(
+            db,
+            season_start=req.season_start,
+            min_qt_a=req.min_qt_a,
+            ruleset=req.ruleset,
+            return_exclusions=True,
+        )
         pool = _players_from_pool_rows(rows)
+        n_excluded_no_projection = len(excluded)
 
     pool = deduplicate_players(pool)
     pool = _apply_min_start_probability(pool, req.min_start_probability)
@@ -770,6 +801,7 @@ async def run_sensitivity(
             for p in result.parameters
         ],
         warnings=result.warnings,
+        n_excluded_no_projection=n_excluded_no_projection,
     )
 
 
@@ -804,11 +836,19 @@ async def run_pareto(
     )
     config = _build_config(req)
 
+    n_excluded_no_projection = 0
     if req.pool_override is not None:
         pool = _pool_from_override(req)
     else:
-        rows = await repo.get_player_pool(db, season_start=req.season_start, min_qt_a=req.min_qt_a, ruleset=req.ruleset)
+        rows, excluded = await repo.get_player_pool(
+            db,
+            season_start=req.season_start,
+            min_qt_a=req.min_qt_a,
+            ruleset=req.ruleset,
+            return_exclusions=True,
+        )
         pool = _players_from_pool_rows(rows)
+        n_excluded_no_projection = len(excluded)
 
     pool = deduplicate_players(pool)
     pool = _apply_min_start_probability(pool, req.min_start_probability)
@@ -824,6 +864,7 @@ async def run_pareto(
         points=[ParetoPointSchema(**p.to_dict()) for p in result.points],
         frontier_risk_lambdas=[p.risk_lambda for p in result.frontier],
         warnings=result.warnings,
+        n_excluded_no_projection=n_excluded_no_projection,
     )
 
 
@@ -838,7 +879,7 @@ async def get_team_strength() -> dict[str, float]:
 
 # ── Async Monte Carlo jobs (Phase 4) ─────────────────────────────────────────
 
-def _run_mc_job_sync(job_id, pool, config, strategy, mc_cfg):
+def _run_mc_job_sync(job_id, pool, config, strategy, mc_cfg, n_excluded_no_projection=0):
     try:
         job_store.set_running(job_id)
         sim, mc_warn, mc_meta = build_simulator_preferring_residuals(
@@ -881,6 +922,7 @@ def _run_mc_job_sync(job_id, pool, config, strategy, mc_cfg):
                 if w not in summary["warnings"]:
                     summary["warnings"].append(w)
         schema = _serialize_result(result, effective_lookup, monte_carlo_summary=_serialize_mc_summary(summary))
+        schema.n_excluded_no_projection = n_excluded_no_projection
         job_store.set_completed(job_id, result=schema.model_dump(), monte_carlo_summary=summary)
     except Exception as exc:
         log.exception("async MC job %s failed", job_id)
@@ -895,6 +937,7 @@ async def create_optimize_job(req: OptimizationRequest, strategy_name: str = "Bi
         raise HTTPException(status_code=422, detail="monte_carlo.enabled must be true for async jobs")
     strategy = _strategy_by_name(strategy_name) if not req.custom_strategies else _custom_strategies(req.custom_strategies)[0]
     config = _build_config(req)
+    n_excluded_no_projection = 0
     if req.pool_override is not None:
         pool = _pool_from_override(req)
     else:
@@ -903,14 +946,30 @@ async def create_optimize_job(req: OptimizationRequest, strategy_name: str = "Bi
             r2_access_key_id=settings.r2_access_key_id, r2_secret_access_key=settings.r2_secret_access_key,
             r2_bucket_name=settings.r2_bucket_name,
         )
-        rows = await repo.get_player_pool(db, season_start=req.season_start, min_qt_a=req.min_qt_a, ruleset=req.ruleset)
+        rows, excluded = await repo.get_player_pool(
+            db,
+            season_start=req.season_start,
+            min_qt_a=req.min_qt_a,
+            ruleset=req.ruleset,
+            return_exclusions=True,
+        )
         pool = _players_from_pool_rows(rows)
+        n_excluded_no_projection = len(excluded)
     pool = deduplicate_players(pool)
     pool = _apply_min_start_probability(pool, req.min_start_probability)
     if not pool:
         raise HTTPException(status_code=400, detail="Empty player pool")
     job = job_store.create(request_meta={"n_simulations": mc_cfg.n_simulations, "mode": mc_cfg.mode, "strategy": strategy.name})
-    asyncio.get_running_loop().run_in_executor(None, _run_mc_job_sync, job.job_id, pool, config, strategy, mc_cfg)
+    asyncio.get_running_loop().run_in_executor(
+        None,
+        _run_mc_job_sync,
+        job.job_id,
+        pool,
+        config,
+        strategy,
+        mc_cfg,
+        n_excluded_no_projection,
+    )
     return OptimizeJobCreateResponse(job_id=job.job_id, status=job.status)
 
 
