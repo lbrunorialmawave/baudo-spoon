@@ -1,24 +1,24 @@
 /**
  * Shared building blocks for the Optimizer / Auction preset catalogs.
  *
- * Recalibrated on Quotazioni Fantacalcio pooled across 2023/24–2025/26
- * (sheet "Tutti", Qt.A):
+ * Recalibrated on Quotazioni Fantacalcio **2026/27** (primary) with continuity
+ * checks against pooled 2023/24–2025/26 (sheet "Tutti", Qt.A):
  *
- * Overall (pooled ~1.6k rows):
- *   mean≈8.1  median=7  p75≈11–12  p90≈16  p95≈20–21  max 41→40→33
+ * 2026/27 snapshot (n=497):
+ *   mean≈6.54  median=5  p25=3  p75=8  p90≈14  p95≈17.2  max=35
+ *   Qt.A=1 ≈17.3% (noise / pure reserves)
+ *   usable ≥5 → 283 (≈57%)   solid ≥8 → 152 (≈31%)
+ *   premium ≥12 → 73         elite ≥18 → 25
+ *   ultra ≥25 → 13           ≥30 → 4
+ *   full-elite 25-man listino cost (3P/8D/8C/6A top) ≈562 vs budget 500
+ *   → concentration caps remain load-bearing; full-elite squads are over budget
  *
- * By role (pooled medians):
- *   P≈1–3   D≈5–6   C≈8   A≈10–12
+ * Role medians 2026/27: P≈1  D≈5  C≈5  A≈8
+ * Big-team sum Qt.A order: Inter ≫ Milan > Napoli ≈ Como > Juve > Roma ≈ Atalanta
+ *   → Como stays in DEFAULT_BIG_TEAMS (4th by aggregate listino).
  *
- * Structure:
- *   - Qt.A=1 ≈ 13–16% of the list (mostly GK reserves / pure noise)
- *   - usable starters cluster ≥5 (≈63–67% of pool)
- *   - solid core ≥8 (≈44–47%)
- *   - elite ≥18: 49 → 49 → 39 names (market flattened in 2025/26)
- *   - ultra-elite ≥26: 17 → 10 → 7  |  ≥30: 8 → 7 → 3
- *   - corr(Qt.A, FVM) ≈ 0.76–0.81 → higher Qt.A ≈ higher reliability
- *   - top-25 quota-cost (3P/8D/8C/6A) ≈ 553–592 vs budget 500 → full-elite
- *     squads are structurally over budget; presets must not assume it
+ * Structural shift vs 2023–25: lower mean, tighter mid-tier, similar ultra count.
+ * Presets must not assume the old p95≈20–21 market.
  *
  * Everything here is `readonly`/`as const` on purpose: presets must never
  * mutate a shared array in place.
@@ -28,9 +28,8 @@ import { AuctionRole } from '../models/auction.models';
 
 /**
  * "Big teams" for the hard bigTeamsCap constraint.
- * Core six are stable top-sum Qt.A across 2023–25; Como is included because
- * in 2025/26 it jumped into the top-4 by aggregate listino (Paz / Douvikas /
- * Baturina) and is the current-season market reality the UI optimises for.
+ * Core six + Como (still top-4 by aggregate Qt.A in 2026/27: Inter 294,
+ * Milan 239, Napoli 227, Como 224).
  */
 export const DEFAULT_BIG_TEAMS: string[] = [
   'Inter',
@@ -84,19 +83,19 @@ export const MANTRA_MODULE_LABELS: readonly string[] = [
 ] as const;
 
 // ---------------------------------------------------------------------------
-// Empirical Qt.A anchors (pooled 2023/24 – 2025/26)
+// Empirical Qt.A anchors (primary: 2026/27; continuity with 2023–25)
 // Used by preset authors to keep minQtA / topTierCostThreshold coherent.
 // ---------------------------------------------------------------------------
 
 /**
- * Reliability tiers derived from empirical Qt.A:
+ * Reliability tiers derived from empirical Qt.A (2026/27 calibrated):
  * - NOISE (1): pure reserves / listed backups — filter for almost all strategies
- * - FRINGE (2–4): low reliability, rotation-only
- * - USABLE (5–7): rotation / solid mid-tier
- * - SOLID (8–11): good starters / value core  (≈p50–p75)
- * - PREMIUM (12–17): high-quality semi-stars (≈p75–p90)
- * - ELITE (18–24): true top-tier (~40–50 names historically; 39 in 2025/26)
- * - ULTRA (25+): rare superstars (≤17 names/season; ≤7 in 2025/26)
+ * - FRINGE (2–3): low reliability, rotation-only / lottery tickets
+ * - USABLE (4–5): rotation / solid mid-tier (median = 5)
+ * - SOLID (6–8): good starters / value core  (p50–p75)
+ * - PREMIUM (9–14): high-quality semi-stars (≈p75–p90)
+ * - ELITE (15–24): true top-tier (~25 names ≥18 in 2026/27)
+ * - ULTRA (25+): rare superstars (13 names; 4 ≥30)
  */
 export const QT_A_TIERS = {
   noise: 1,
@@ -109,36 +108,35 @@ export const QT_A_TIERS = {
 } as const;
 
 /**
- * Suggested topTierCostThreshold by aggressiveness.
+ * Suggested topTierCostThreshold by aggressiveness (2026/27).
  *
- * Anchored to pooled p95≈20–21 and the observed compression of the ultra band
- * in 2025/26 (max 33, only 3 names ≥30). Caps above 28 are almost never
- * binding on the current listino and only inflate "premium" counts.
+ * Anchored to p95≈17.2 and elite floor ≥18 (25 names). Caps above 26 are
+ * rarely binding; ultra (≥25) is still present but scarce.
  */
 export const TOP_TIER_COST = {
   /** Underdog / pure value — almost no true premiums. */
-  strict: 20,
+  strict: 18,
   /** Floor / safe / anti-injury. */
-  moderate: 24,
+  moderate: 22,
   /** Balanced / tournament / championship. */
-  open: 28,
+  open: 26,
   /** Ceiling / risk-on — no hard cap. */
   free: null as number | null,
 } as const;
 
 /**
- * Empirical budget-share prior from quota-weighted mean Qt.A
- * (3P·5.3 + 8D·6.3 + 8C·8.9 + 6A·11.7 ≈ 208 listino points):
- *   P≈0.08  D≈0.24  C≈0.34  A≈0.34
+ * Empirical budget-share prior from top-quota listino cost 2026/27
+ * (3P·top + 8D·top + 8C·top + 6A·top ≈ 562):
+ *   P≈0.09  D≈0.24  C≈0.35  A≈0.32
  *
  * Auction strategies may deliberately overweight A (scoring leverage) or
  * C (Mantra flexibility); this prior is the neutral reference.
  */
 export const LISTINO_BUDGET_SHARE_PRIOR: Readonly<Record<AuctionRole, number>> = {
-  P: 0.08,
+  P: 0.09,
   D: 0.24,
-  C: 0.34,
-  A: 0.34,
+  C: 0.35,
+  A: 0.32,
 } as const;
 
 // ---------------------------------------------------------------------------
