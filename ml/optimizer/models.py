@@ -137,9 +137,12 @@ class Player:
             raise ValueError("Player.real_team must be non-empty")
         if self.cost < 0:
             raise ValueError(f"Player.cost must be >= 0, got {self.cost}")
-        if self.projected_score < 0:
+        # Plausible single-match Fantacalcio voto range. Upper bound matches the
+        # Monte Carlo clip_high; lower bound leaves room for weak but valid
+        # projections while rejecting clearly non-voto sources (e.g. raw FVM).
+        if self.projected_score < 0 or self.projected_score > 10.0:
             raise ValueError(
-                f"Player.projected_score must be >= 0, got {self.projected_score}"
+                f"Player.projected_score must be in [0, 10], got {self.projected_score}"
             )
         if self.reliability_weight is not None and self.reliability_weight < 0:
             raise ValueError(

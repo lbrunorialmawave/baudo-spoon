@@ -90,3 +90,22 @@ class TestMonteCarloSimulator:
         # not fitted — should fall back to parametric (no crash)
         result = sim.simulate("p1", 6.0, "A")
         assert result.sampling_method == "parametric"
+
+
+    def test_out_of_range_predicted_score_emits_warning(self, fitted_simulator, caplog):
+        """predicted_score outside clip range must log a warning (observability)."""
+        import logging
+        with caplog.at_level(logging.WARNING, logger="ml.simulations.monte_carlo"):
+            result = fitted_simulator.simulate("p1", predicted_score=17.2, role="A")
+        assert result.simulated_scores.max() <= 10.0
+        assert any(
+            "outside clip range" in rec.message and "17.200" in rec.message
+            for rec in caplog.records
+        )
+
+    def test_in_range_predicted_score_no_false_warning(self, fitted_simulator, caplog):
+        """Normal predicted_score must not emit the out-of-range warning."""
+        import logging
+        with caplog.at_level(logging.WARNING, logger="ml.simulations.monte_carlo"):
+            fitted_simulator.simulate("p1", predicted_score=6.5, role="A")
+        assert not any("outside clip range" in rec.message for rec in caplog.records)

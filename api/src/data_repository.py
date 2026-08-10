@@ -1002,7 +1002,10 @@ class DataRepository:
         * ``real_team`` — Fantacalcio canonical team name.
         * ``cost`` — current quotation (``qt_a``).
         * ``projected_score`` — ML ``predicted_fantavoto`` if available,
-          otherwise ``fantavoto_medio`` (historical mean) as fallback.
+          otherwise ``fantavoto_medio`` from the ML prediction artifact.
+          FVM from the quotations listone is **not** used as a fallback
+          (it is a proprietary valuation index on a different scale).
+          Players without a valid in-range projection are excluded.
         * ``season_value`` — predicted season-total fanta-points
           (rating × predicted appearances), or ``None`` when unavailable.
         * ``start_probability`` — estimated probability of starting
@@ -1085,7 +1088,10 @@ class DataRepository:
                 player_id = f"fc-{pq.fantacalcio_id}"
                 name = pq.player_name
 
-            # ML prediction: prefer predicted_fantavoto, fallback to mean.
+            # ML prediction: prefer predicted_fantavoto, fallback to fantavoto_medio
+            # from the same ML artifact. Do NOT fall back to pq.fvm — FVM is a
+            # proprietary Fantagazzetta valuation index on a different scale
+            # (often >> 10) and must never be used as a 1-10 voto proxy.
             predicted_score: Optional[float] = None
             pred: Optional[dict] = None
             if pim is not None and pim.player_fotmob_id is not None:
@@ -1096,18 +1102,43 @@ class DataRepository:
                         predicted_score = float(val)
                     elif isinstance(pred.get("fantavoto_medio"), (int, float)):
                         predicted_score = float(pred["fantavoto_medio"])
-            if predicted_score is None and isinstance(pq.fvm, (int, float)):
-                # Historical fantavoto medio from the quotation itself.
-                predicted_score = float(pq.fvm)
-            if predicted_score is None or predicted_score <= 0.0:
-                # Without a meaningful projection the optimizer cannot
-                # rank this player — record and skip (observable, not silent).
+            # Plausible range for a single-match Fantacalcio voto. Values
+            # outside this band are treated as missing projection (same bucket
+            # as true absences) so they cannot enter the ILP objective.
+            _MIN_PLAUSIBLE_SCORE = 3.0
+            _MAX_PLAUSIBLE_SCORE = 10.0
+            if (
+                predicted_score is None
+                or predicted_score <= 0.0
+                or predicted_score < _MIN_PLAUSIBLE_SCORE
+                or predicted_score > _MAX_PLAUSIBLE_SCORE
+            ):
+                reason = "no_projection"
+                if (
+                    predicted_score is not None
+                    and predicted_score > 0.0
+                    and (
+                        predicted_score < _MIN_PLAUSIBLE_SCORE
+                        or predicted_score > _MAX_PLAUSIBLE_SCORE
+                    )
+                ):
+                    reason = "implausible_projection"
+                    import logging as _logging
+                    _logging.getLogger(__name__).warning(
+                        "get_player_pool: excluding player %s (%s) — "
+                        "projected_score=%.3f outside plausible range [%.1f, %.1f]",
+                        player_id,
+                        name,
+                        predicted_score,
+                        _MIN_PLAUSIBLE_SCORE,
+                        _MAX_PLAUSIBLE_SCORE,
+                    )
                 excluded_no_projection.append({
                     "player_id": player_id,
                     "name": name,
                     "role": optimizer_role,
                     "cost": cost,
-                    "reason": "no_projection",
+                    "reason": reason,
                 })
                 continue
 

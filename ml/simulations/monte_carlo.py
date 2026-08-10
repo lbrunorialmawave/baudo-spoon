@@ -160,6 +160,20 @@ class MonteCarloSimulator:
                 DEFAULT_STD,
             )
 
+        # Observability: flag inputs already outside the clip range. This is a
+        # strong signal that upstream data is on the wrong scale (e.g. raw FVM
+        # used as a voto proxy); clipping would hide the problem.
+        if predicted_score < self.clip_low or predicted_score > self.clip_high:
+            log.warning(
+                "Player '%s': predicted_score=%.3f is outside clip range "
+                "[%.1f, %.1f] before noise is applied — upstream projection "
+                "is likely on the wrong scale; scores will be clipped.",
+                player_id,
+                predicted_score,
+                self.clip_low,
+                self.clip_high,
+            )
+
         sampled = rng.choice(residuals_pool, size=n_simulations, replace=True)
         scores = np.clip(predicted_score + sampled, self.clip_low, self.clip_high)
 

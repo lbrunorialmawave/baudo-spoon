@@ -282,3 +282,14 @@ def test_solver_logs_status_and_elapsed(caplog: pytest.LogCaptureFixture) -> Non
     msgs = " ".join(rec.message for rec in caplog.records)
     assert "solver_done" in msgs
     assert "BALANCED" in msgs
+
+
+def test_player_projected_score_upper_bound() -> None:
+    """projected_score > 10 must be rejected (same structural guard as < 0)."""
+    with pytest.raises(ValueError, match="projected_score"):
+        Player("x", "X", "A", "Roma", 10, 17.2)
+    with pytest.raises(ValueError, match="projected_score"):
+        Player("x", "X", "A", "Roma", 10, -0.1)
+    # Boundary values are accepted.
+    Player("x", "X", "A", "Roma", 10, 0.0)
+    Player("x", "X", "A", "Roma", 10, 10.0)

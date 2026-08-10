@@ -73,9 +73,9 @@ def test_season_value_fields_present_with_expected_minutes(repo: DataRepository)
     assert p["start_probability"] == pytest.approx(2700.0 / 3420.0)
 
 
-def test_season_value_none_when_no_prediction(repo: DataRepository):
-    """When no ML prediction is available, season_value/start_probability are None."""
-    pq = _make_pq(2, "DEF", 15, 6.0)
+def test_no_fvm_fallback_when_no_prediction(repo: DataRepository):
+    """FVM must not be used as projected_score; player without ML is excluded."""
+    pq = _make_pq(2, "DEF", 15, 6.0)  # fvm=6.0 would previously become projected_score
     pim = MagicMock()
     pim.fantacalcio_id = 2
     pim.player_fotmob_id = None
@@ -87,13 +87,14 @@ def test_season_value_none_when_no_prediction(repo: DataRepository):
     db.execute = AsyncMock(return_value=MagicMock(all=MagicMock(return_value=[row])))
 
     with patch.object(repo, "get_predictions", new_callable=AsyncMock, return_value=[]):
-        pool = _run(repo.get_player_pool(db, season_start=2025))
+        pool, excluded = _run(
+            repo.get_player_pool(db, season_start=2025, return_exclusions=True)
+        )
 
-    assert len(pool) == 1
-    p = pool[0]
-    assert p["projected_score"] == pytest.approx(6.0)
-    assert p["season_value"] is None
-    assert p["start_probability"] is None
+    assert pool == []
+    assert len(excluded) == 1
+    assert excluded[0]["reason"] == "no_projection"
+    assert excluded[0]["player_id"] == "fc-2"
 
 
 def test_season_value_prefers_artifact_fantapunti_totali(repo: DataRepository):
@@ -157,7 +158,7 @@ def test_all_pool_entries_have_season_value_keys(repo: DataRepository):
 
 def test_excluded_no_projection_is_observable(repo: DataRepository):
     """Players with valid cost but no projection appear in excluded list, not silently dropped."""
-    pq = _make_pq(99, "A", 20, None)
+    pq = _make_pq(99, "FWD", 20, None)
     pq.fvm = None
     pim = MagicMock()
     pim.fantacalcio_id = 99
@@ -179,3 +180,84 @@ def test_excluded_no_projection_is_observable(repo: DataRepository):
     assert excluded[0]["reason"] == "no_projection"
     assert excluded[0]["player_id"] == "fc-99"
     assert excluded[0]["cost"] == 20
+
+
+def test_fvm_out_of_scale_not_used_as_projected_score(repo: DataRepository):
+    """A player with high FVM (e.g. 17) and no ML prediction must be excluded,
+    not enter the pool with projected_score=17.0."""
+    pq = _make_pq(50, "FWD", 25, 17.2)
+    pim = MagicMock()
+    pim.fantacalcio_id = 50
+    pim.player_fotmob_id = None
+    pim.name_fotmob = None
+    pim.team_fotmob = None
+    row = (pq, pim)
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=MagicMock(all=MagicMock(return_value=[row])))
+
+    with patch.object(repo, "get_predictions", new_callable=AsyncMock, return_value=[]):
+        pool, excluded = _run(
+            repo.get_player_pool(db, season_start=2025, return_exclusions=True)
+        )
+
+    assert pool == []
+    assert len(excluded) == 1
+    assert excluded[0]["reason"] == "no_projection"
+    assert excluded[0]["player_id"] == "fc-50"
+
+
+def test_ml_prediction_still_used_when_present(repo: DataRepository):
+    """Regression: valid ML predicted_fantavoto continues to populate the pool."""
+    pq = _make_pq(10, "MID", 18, 17.2)  # high FVM must be ignored when ML exists
+    pim = _make_pim(10, 1010)
+    row = (pq, pim)
+
+    predictions = [
+        {
+            "player_fotmob_id": 1010,
+            "predicted_fantavoto": 6.8,
+            "fantavoto_medio": 6.5,
+            "expected_minutes": 2000.0,
+            "prediction_std": 0.4,
+        }
+    ]
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=MagicMock(all=MagicMock(return_value=[row])))
+
+    with patch.object(repo, "get_predictions", new_callable=AsyncMock, return_value=predictions):
+        pool = _run(repo.get_player_pool(db, season_start=2025))
+
+    assert len(pool) == 1
+    assert pool[0]["projected_score"] == pytest.approx(6.8)
+
+
+def test_implausible_ml_score_is_excluded(repo: DataRepository):
+    """ML predicted_fantavoto outside the plausible range is treated as no projection."""
+    pq = _make_pq(11, "FWD", 22, 8.0)
+    pim = _make_pim(11, 1111)
+    row = (pq, pim)
+
+    predictions = [
+        {
+            "player_fotmob_id": 1111,
+            "predicted_fantavoto": 17.2,  # out of scale
+            "fantavoto_medio": 6.5,
+            "expected_minutes": 2000.0,
+            "prediction_std": 0.4,
+        }
+    ]
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=MagicMock(all=MagicMock(return_value=[row])))
+
+    with patch.object(repo, "get_predictions", new_callable=AsyncMock, return_value=predictions):
+        pool, excluded = _run(
+            repo.get_player_pool(db, season_start=2025, return_exclusions=True)
+        )
+
+    assert pool == []
+    assert len(excluded) == 1
+    assert excluded[0]["reason"] == "implausible_projection"
+    assert excluded[0]["player_id"] == "fm-1111"

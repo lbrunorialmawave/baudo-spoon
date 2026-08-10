@@ -74,13 +74,23 @@ def build_simulator_from_pool(pool: Sequence[Player], *, random_seed: int = 42, 
     residuals: list[dict] = []
     rng = np.random.default_rng(random_seed)
     n_with_std = 0
+    n_out_of_clip = 0
     for p in pool:
+        # Flag projections already outside the simulator clip range so the
+        # issue is visible in SAAResult.warnings instead of only in logs.
+        if p.projected_score < 1.0 or p.projected_score > 10.0:
+            n_out_of_clip += 1
         if p.prediction_std is not None and p.prediction_std > 0:
             n_with_std += 1
             for val in rng.normal(0.0, float(p.prediction_std), size=n_synthetic):
                 residuals.append({"player_id": p.player_id, "role": p.role, "residual": float(val)})
     if n_with_std == 0:
         warnings.append(f"No prediction_std; parametric fallback DEFAULT_STD={DEFAULT_STD}")
+    if n_out_of_clip > 0:
+        warnings.append(
+            f"{n_out_of_clip} player(s) have projected_score outside [1.0, 10.0] — "
+            "upstream data may be on the wrong scale; scores will be clipped in MC"
+        )
     sim = MonteCarloSimulator(random_seed=random_seed)
     if residuals:
         sim.fit(residuals)
