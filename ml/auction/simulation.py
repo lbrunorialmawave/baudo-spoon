@@ -130,10 +130,27 @@ class ParticipantSimStats:
     top_players: tuple[PlayerAcquisitionDetail, ...] = ()
     """Most frequently acquired players by this participant (desc by frequency)."""
     typical_squad: tuple[PlayerAcquisitionDetail, ...] = ()
-    """Rosa tipo: for each quota role, the most frequent acquisitions observed
-    for that exact assigned slot (balanced across roles). In MANTRA this uses
-    fine-grained slots (Dc/Dd/...); in CLASSIC it coincides with classic roles.
-    Length approaches sum(role_quotas) when completion_probability is high."""
+    """Rosa tipo: unique players only, each attributed to one quota slot.
+    Slot choice = most frequent assigned_slot; ties broken by algoritmo v3.1
+    depth (most backward role wins). Length approaches sum(role_quotas) when
+    completion is high. Never duplicates a player across roles."""
+
+
+# Algoritmo v3.1 — depth hierarchy for Ruolo_Primario / tie-break.
+# Lower depth = more backward = preferred when a multi-role player must be
+# attributed to a single slot in the typical squad.
+_MANTRA_ROLE_DEPTH: dict[str, int] = {
+    "Por": 0,
+    "Dc": 1, "B": 1, "Dd": 1, "Ds": 1,
+    "E": 2, "M": 2,
+    "C": 3,
+    "T": 4, "W": 4,
+    "A": 5, "Pc": 5,
+}
+
+
+def _role_depth(role: str) -> int:
+    return _MANTRA_ROLE_DEPTH.get(role, 99)
 
 
 @dataclass(frozen=True)
@@ -355,16 +372,14 @@ def simulate_auction(
     price_index_samples: list[dict[str, dict[str, float]]] = []
     # global: player_id -> [(winner_id, price)]
     acquisition: dict[str, list[tuple[str, float]]] = defaultdict(list)
-    # per participant: player_id -> list of prices paid when they won (slot-agnostic)
+    # per participant: player_id -> list of prices (slot-agnostic, for top_players)
     per_acq_prices: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
-    # per participant: slot -> player_id -> list of prices (for accurate MANTRA typical_squad)
-    # Keyed by the *assigned* slot so multi-role players contribute to the correct quota.
-    per_slot_acq: dict[str, dict[str, dict[str, list[float]]]] = defaultdict(
+    # per participant: player_id -> slot -> list of prices
+    # Used to attribute each player to exactly one slot for typical_squad.
+    per_player_slot_prices: dict[str, dict[str, dict[str, list[float]]]] = defaultdict(
         lambda: defaultdict(lambda: defaultdict(list))
     )
-    player_names: dict[str, str] = {}  # player_id -> name
-    # Most frequent assigned slot per player (for top_players role label)
-    player_slot_counts: dict[str, Counter[str]] = defaultdict(Counter)
+    player_names: dict[str, str] = {}
     n_completed = 0
 
     for k in range(sim_config.n_simulations):
@@ -400,12 +415,10 @@ def simulate_auction(
             price = float(a.final_price)
             acquisition[pid_pl].append((a.winner_participant_id, price))
             per_acq_prices[a.winner_participant_id][pid_pl].append(price)
-            # Prefer the orchestrator-resolved slot (MANTRA fine-grained or CLASSIC role).
-            # This is the only role that is guaranteed to be a key of role_quotas.
+            # Orchestrator-resolved slot (MANTRA fine-grained or CLASSIC role).
             slot = str(a.assigned_slot or a.role or a.player.role or "?")
-            per_slot_acq[a.winner_participant_id][slot][pid_pl].append(price)
+            per_player_slot_prices[a.winner_participant_id][pid_pl][slot].append(price)
             player_names[pid_pl] = a.player.name
-            player_slot_counts[pid_pl][slot] += 1
 
     per_participant: dict[str, ParticipantSimStats] = {}
     for p in participants:
@@ -416,51 +429,75 @@ def simulate_auction(
         comp = composition_counts.get(pid, Counter())
         mode_comp = {role: int(round(total / max(n_completed, 1))) for role, total in comp.items()}
 
-        # top_players: frequency across all acquisitions (slot-agnostic).
-        # Role label = most common assigned slot for that player (stable for both CLASSIC and MANTRA).
+        # ── top_players: unique by player_id, frequency slot-agnostic ────────
         tops: list[PlayerAcquisitionDetail] = []
         for pl_id, prices in per_acq_prices.get(pid, {}).items():
-            name = player_names.get(pl_id, pl_id)
-            slot_counter = player_slot_counts.get(pl_id, Counter())
-            role = slot_counter.most_common(1)[0][0] if slot_counter else "?"
+            slot_map = per_player_slot_prices.get(pid, {}).get(pl_id, {})
+            # Most frequent slot; ties → most backward role (algoritmo v3.1 depth).
+            best_slot = (
+                min(slot_map.keys(), key=lambda s: (-len(slot_map[s]), _role_depth(s), s))
+                if slot_map
+                else "?"
+            )
             tops.append(
                 PlayerAcquisitionDetail(
                     player_id=pl_id,
-                    name=name,
-                    role=role,
+                    name=player_names.get(pl_id, pl_id),
+                    role=best_slot,
                     frequency=len(prices) / max(n_completed, 1),
                     avg_price=float(np.mean(prices)),
                 )
             )
         tops.sort(key=lambda x: (-x.frequency, x.avg_price))
 
-        # typical_squad ("rosa tipo"): fill each quota role with the most frequent
-        # acquisitions *for that exact slot*. This guarantees:
-        # - CLASSIC: identical to previous behaviour (slot == classic role)
-        # - MANTRA: full balanced rosa when completion is high, using Dc/Dd/... quotas
-        # Multi-role players are attributed only to the slots they actually filled.
+        # ── typical_squad: UNIQUE players, one slot each, fill quotas ────────
+        # Attribute every acquired player to exactly one slot:
+        #   1. most frequent assigned_slot across sims
+        #   2. ties broken by algoritmo v3.1 depth (most backward wins)
+        # Then fill each quota with the highest-frequency candidates for that
+        # slot, never reusing a player_id.
+        attributed: list[PlayerAcquisitionDetail] = []
+        for pl_id, slot_map in per_player_slot_prices.get(pid, {}).items():
+            if not slot_map:
+                continue
+            best_slot = min(
+                slot_map.keys(),
+                key=lambda s: (-len(slot_map[s]), _role_depth(s), s),
+            )
+            prices = slot_map[best_slot]
+            attributed.append(
+                PlayerAcquisitionDetail(
+                    player_id=pl_id,
+                    name=player_names.get(pl_id, pl_id),
+                    role=best_slot,
+                    frequency=len(prices) / max(n_completed, 1),
+                    avg_price=float(np.mean(prices)),
+                )
+            )
+
+        by_role: dict[str, list[PlayerAcquisitionDetail]] = defaultdict(list)
+        for detail in attributed:
+            by_role[detail.role].append(detail)
+        for role_list in by_role.values():
+            role_list.sort(key=lambda x: (-x.frequency, x.avg_price))
+
         typical: list[PlayerAcquisitionDetail] = []
-        role_order = list(config.role_quotas.keys()) or sorted(per_slot_acq.get(pid, {}).keys())
+        used_players: set[str] = set()
+        role_order = list(config.role_quotas.keys()) or sorted(by_role.keys())
         for role in role_order:
             quota = int(config.role_quotas.get(role, 0))
             if quota <= 0:
                 continue
-            slot_players = per_slot_acq.get(pid, {}).get(role, {})
-            candidates: list[PlayerAcquisitionDetail] = []
-            for pl_id, prices in slot_players.items():
-                candidates.append(
-                    PlayerAcquisitionDetail(
-                        player_id=pl_id,
-                        name=player_names.get(pl_id, pl_id),
-                        role=role,
-                        frequency=len(prices) / max(n_completed, 1),
-                        avg_price=float(np.mean(prices)),
-                    )
-                )
-            candidates.sort(key=lambda x: (-x.frequency, x.avg_price))
-            typical.extend(candidates[:quota])
+            taken = 0
+            for cand in by_role.get(role, []):
+                if cand.player_id in used_players:
+                    continue
+                typical.append(cand)
+                used_players.add(cand.player_id)
+                taken += 1
+                if taken >= quota:
+                    break
 
-        # Stable display order: role_order, then frequency within role
         typical.sort(
             key=lambda x: (
                 role_order.index(x.role) if x.role in role_order else 99,
