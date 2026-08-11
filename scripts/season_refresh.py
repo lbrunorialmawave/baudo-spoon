@@ -25,6 +25,7 @@ import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 import sqlalchemy as sa
@@ -137,12 +138,17 @@ def _signing_secret() -> str:
     return secret
 
 
-def _signed_headers(secret: str, method: str, path: str) -> dict[str, str]:
+def _signed_headers(secret: str, method: str, url_path: str) -> dict[str, str]:
     """HMAC-SHA256 request signature: proves possession of the shared secret
     without putting it on the wire, and binds the signature to method+path+time
-    so a captured request can't be replayed against a different endpoint or later."""
+    so a captured request can't be replayed against a different endpoint or later.
+
+    url_path MUST be exactly what the server sees as request.url.path (i.e. the
+    full path including any router prefix such as /api/v1) — not just the
+    relative suffix passed to _api_url — or the signature won't match.
+    """
     timestamp = str(int(time.time()))
-    message = f"{timestamp}:{method.upper()}:{path}".encode()
+    message = f"{timestamp}:{method.upper()}:{url_path}".encode()
     signature = hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()
     return {
         "X-Service-Id": "season-refresh",
@@ -156,11 +162,15 @@ def _api_url(base: str, path: str) -> str:
 
 
 def _signed_get(secret: str, api_base: str, path: str, **kwargs) -> requests.Response:
-    return requests.get(_api_url(api_base, path), headers=_signed_headers(secret, "GET", path), **kwargs)
+    full_url = _api_url(api_base, path)
+    url_path = urlparse(full_url).path  # what the server's request.url.path will actually be
+    return requests.get(full_url, headers=_signed_headers(secret, "GET", url_path), **kwargs)
 
 
 def _signed_post(secret: str, api_base: str, path: str, **kwargs) -> requests.Response:
-    return requests.post(_api_url(api_base, path), headers=_signed_headers(secret, "POST", path), **kwargs)
+    full_url = _api_url(api_base, path)
+    url_path = urlparse(full_url).path
+    return requests.post(full_url, headers=_signed_headers(secret, "POST", url_path), **kwargs)
 
 
 def _trigger_training(api_base: str, poll_seconds: int, timeout_seconds: int) -> dict[str, Any]:
