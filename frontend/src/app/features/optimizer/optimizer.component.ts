@@ -344,7 +344,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
       <header class="opt-topbar">
         <div class="opt-topbar__brand">
           <h1 class="opt-topbar__title">Ottimizzatore rosa</h1>
-          <p class="opt-topbar__subtitle">Trova la rosa migliore entro budget, vincoli e rischio</p>
+          <p class="opt-topbar__subtitle">Scegli un preset o configura in 1 minuto — il resto è opzionale</p>
         </div>
 
         <div class="opt-topbar__actions">
@@ -379,7 +379,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                 }
               </span>
             } @else {
-              Ottimizza rosa
+              Trova la rosa migliore
             }
           </button>
         </div>
@@ -389,7 +389,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
         <p class="opt-preset-banner" id="legend-preset">{{ preset.description }}</p>
       } @else {
         <p class="opt-preset-banner muted" id="legend-preset">
-          Scegli un preset per precompilare vincoli e leve, oppure configura a mano.
+          Non sai da dove iniziare? Scegli un preset: imposta tutto per te. Poi puoi sempre ritoccare.
         </p>
       }
 
@@ -397,7 +397,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
       <nav class="opt-pane-nav" aria-label="Sezioni">
         <button type="button" class="opt-pane-nav__btn"
                 [class.active]="mobilePane() === 'config'"
-                (click)="mobilePane.set('config')">1 · Configura</button>
+                (click)="mobilePane.set('config')">1 · Imposta</button>
         <button type="button" class="opt-pane-nav__btn"
                 [class.active]="mobilePane() === 'results'"
                 (click)="mobilePane.set('results')">
@@ -420,7 +420,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
           <section class="opt-section" [class.open]="isSectionOpen('essentials')">
             <button type="button" class="opt-section__head" (click)="toggleSection('essentials')"
                     [attr.aria-expanded]="isSectionOpen('essentials')">
-              <span class="opt-section__title">Essenziali</span>
+              <span class="opt-section__title">Le basi (obbligatorie)</span>
               <span class="opt-section__hint">stagione, budget, regole</span>
               <span class="opt-section__chev" aria-hidden="true"></span>
             </button>
@@ -605,7 +605,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
           <section class="opt-section" [class.open]="isSectionOpen('objective')">
             <button type="button" class="opt-section__head" (click)="toggleSection('objective')"
                     [attr.aria-expanded]="isSectionOpen('objective')">
-              <span class="opt-section__title">Funzione obiettivo</span>
+              <span class="opt-section__title">Cosa massimizzare</span>
               <span class="opt-section__hint">rischio, VAR, hybrid, ESV</span>
               <span class="opt-section__chev" aria-hidden="true"></span>
             </button>
@@ -689,7 +689,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
           <section class="opt-section" [class.open]="isSectionOpen('robustness')">
             <button type="button" class="opt-section__head" (click)="toggleSection('robustness')"
                     [attr.aria-expanded]="isSectionOpen('robustness')">
-              <span class="opt-section__title">Robustezza</span>
+              <span class="opt-section__title">Quanto vuoi rischiare</span>
               <span class="opt-section__hint">Monte Carlo, near-optimal</span>
               <span class="opt-section__chev" aria-hidden="true"></span>
             </button>
@@ -767,7 +767,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
           <section class="opt-section" [class.open]="isSectionOpen('formations')">
             <button type="button" class="opt-section__head" (click)="toggleSection('formations')"
                     [attr.aria-expanded]="isSectionOpen('formations')">
-              <span class="opt-section__title">Moduli e costi</span>
+              <span class="opt-section__title">Moduli e prezzi di mercato</span>
               <span class="opt-section__hint">formazioni, inflazione</span>
               <span class="opt-section__chev" aria-hidden="true"></span>
             </button>
@@ -890,7 +890,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
           <section class="opt-section" [class.open]="isSectionOpen('filters')">
             <button type="button" class="opt-section__head" (click)="toggleSection('filters')"
                     [attr.aria-expanded]="isSectionOpen('filters')">
-              <span class="opt-section__title">Include / exclude</span>
+              <span class="opt-section__title">Giocatori da forzare o escludere</span>
               <span class="opt-section__hint">player id forzati</span>
               <span class="opt-section__chev" aria-hidden="true"></span>
             </button>
@@ -2041,6 +2041,80 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
       backdrop-filter: blur(10px);
     }
     .opt-mobile-cta .btn { width: 100%; min-height: 44px; }
+
+    /* ── FAANG layout pass (casual-friendly) ─────────────── */
+    .opt-topbar {
+      padding: 14px 16px;
+      gap: 14px;
+    }
+    .opt-topbar__title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+    .opt-topbar__subtitle {
+      font-size: 0.8125rem;
+      max-width: 28rem;
+    }
+    .btn--run {
+      min-height: 48px !important;
+      padding: 0 20px !important;
+      font-size: 0.9375rem !important;
+      font-weight: 700 !important;
+      border-radius: 10px !important;
+    }
+    .opt-preset-banner {
+      margin: 0 16px 8px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 0.8125rem;
+      line-height: 1.4;
+      background: color-mix(in srgb, var(--color-accent, #6366f1) 10%, transparent);
+      border: 1px solid color-mix(in srgb, var(--color-accent, #6366f1) 25%, transparent);
+    }
+    .opt-preset-banner.muted {
+      background: transparent;
+      border-color: var(--color-border, #27272a);
+      color: var(--color-text-secondary, #a1a1aa);
+    }
+    .opt-pane-nav {
+      gap: 6px;
+      padding: 8px 12px;
+    }
+    .opt-pane-nav__btn {
+      min-height: 40px;
+      border-radius: 999px;
+      font-weight: 600;
+      font-size: 0.8125rem;
+    }
+    .opt-section {
+      border-radius: 14px;
+      margin-bottom: 12px;
+    }
+    .opt-section__body {
+      padding: 14px 16px 16px;
+    }
+    .field-input {
+      min-height: 44px;
+      border-radius: 10px;
+      font-size: 0.9375rem;
+    }
+    .field-input--compact {
+      min-height: 40px;
+    }
+    .chip {
+      min-height: 40px;
+      border-radius: 10px;
+      padding: 8px 12px;
+    }
+    .chip-grid {
+      gap: 8px;
+    }
+    /* Results: larger strategy cards feel */
+    .opt-results .card,
+    .opt-results [class*="result"] {
+      border-radius: 14px;
+    }
   `],
 })
 

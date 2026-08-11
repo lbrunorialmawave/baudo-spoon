@@ -782,3 +782,298 @@
   color: #b45309;
   font-weight: 600;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   FAANG layout pass — casual-friendly (progressive disclosure,
+   larger targets, stronger hierarchy, less density)
+   ═══════════════════════════════════════════════════════════ */
+
+/* Larger primary touch targets & breathing room */
+.auction-page {
+  --auc-space: 16px;
+  --auc-space-lg: 24px;
+  --auc-radius: 12px;
+  --auc-radius-lg: 16px;
+}
+
+.auc-topbar {
+  padding: 14px 16px;
+  gap: 14px;
+}
+.auc-topbar__title {
+  font-size: 1.25rem;
+  letter-spacing: -0.03em;
+}
+.auc-topbar__subtitle {
+  font-size: 0.8125rem;
+  max-width: 36rem;
+}
+
+/* Price strip → more scannable, less “spreadsheet” */
+.price-strip {
+  padding: 10px 16px;
+  gap: 12px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.price-strip__title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-secondary);
+  align-self: center;
+}
+.price-chip {
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Participants: larger cards, clearer numbers */
+.participants-panel {
+  min-width: 280px;
+  max-width: 320px;
+}
+.panel-head {
+  padding: 14px 16px 8px;
+}
+.panel-heading {
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+.panel-subheading {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+.participant-card {
+  padding: 14px;
+  border-radius: var(--auc-radius);
+  margin: 0 12px 10px;
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-bg) 60%, #18181b);
+  transition: border-color 150ms, box-shadow 150ms;
+}
+.participant-card:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+}
+.participant-name {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.participant-budget {
+  font-size: 1.125rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.budget-bar {
+  height: 6px;
+  border-radius: 999px;
+  margin-top: 8px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+.budget-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 200ms ease;
+}
+.completion-value {
+  font-size: 0.875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Main action zone: make “Cerca + registra” the hero */
+.auction-main {
+  padding: 12px 16px 24px;
+  gap: 16px;
+}
+.action-row {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+@media (min-width: 960px) {
+  .action-row {
+    flex-direction: row;
+    align-items: stretch;
+  }
+  .action-row > .card--action {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}
+
+.card--action {
+  border-radius: var(--auc-radius-lg);
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-bg) 70%, #18181b);
+}
+.card-head {
+  margin-bottom: 14px;
+}
+.card-section-label {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0 0 2px;
+  letter-spacing: -0.02em;
+}
+.card-section-hint {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+/* Big search input */
+.lookup-row .field-input,
+#lookupQuery {
+  min-height: 48px;
+  font-size: 1rem;
+  padding: 12px 14px;
+  border-radius: 10px;
+}
+
+/* Projection + alternatives more “recommendation card” */
+.projection-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  margin-top: 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+.proj-label {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.proj-price {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-accent);
+}
+.alternatives-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.alt-card {
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+.alt-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-secondary);
+  margin: 0 0 4px;
+}
+.alt-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin: 0 0 2px;
+}
+
+/* Primary record button larger */
+.record-actions .run-btn,
+.record-actions button[type="submit"],
+.record-actions .btn--primary {
+  min-height: 48px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  border-radius: 10px;
+}
+
+/* Setup: clearer sections */
+.setup-body {
+  gap: 20px;
+  padding: 16px;
+}
+.config-panel.card {
+  border-radius: var(--auc-radius-lg);
+  padding: 20px;
+}
+.section-divider {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-secondary);
+  margin: 20px 0 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+.section-divider:first-child {
+  margin-top: 0;
+  border-top: none;
+  padding-top: 0;
+}
+
+/* Advanced toggle more visible but secondary */
+.advanced-toggle {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 16px;
+  border-radius: 10px;
+  border: 1px dashed var(--color-border);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 150ms, color 150ms, background 150ms;
+}
+.advanced-toggle:hover {
+  border-color: var(--color-accent);
+  color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+
+/* Empty / history cards */
+.history-card,
+.card.empty-history {
+  border-radius: var(--auc-radius-lg);
+}
+.empty-history {
+  padding: 32px 20px;
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+/* Mobile: stack participants under main, larger gaps */
+@media (max-width: 899px) {
+  .auction-body {
+    flex-direction: column;
+  }
+  .participants-panel {
+    max-width: none;
+    min-width: 0;
+    order: 2;
+  }
+  .auction-main {
+    order: 1;
+  }
+  .participant-card {
+    margin-left: 0;
+    margin-right: 0;
+  }
+}
+
+/* Reduce field legend visual noise by default (still accessible) */
+.card--action app-field-legend,
+.config-panel app-field-legend {
+  opacity: 0.85;
+}

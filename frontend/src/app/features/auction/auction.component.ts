@@ -320,10 +320,10 @@ function makeParticipants(
           <div class="auc-topbar__brand">
             <h1 class="auc-topbar__title">Tracker Asta</h1>
             <p class="auc-topbar__subtitle">
-              Sessione <code class="session-id">{{ sessionId()!.slice(0, 12) }}…</code>
-              · registrazione turni, EWMA e alternative in tempo reale
+              Sessione attiva · <code class="session-id">{{ sessionId()!.slice(0, 12) }}…</code>
+              · cerca un giocatore e registra l’acquisto in un tap
               @if (nExcludedNoProjection() > 0) {
-                · <span class="auc-exclusion-hint">{{ nExcludedNoProjection() }} esclusi (no proiezione)</span>
+                · <span class="auc-exclusion-hint">{{ nExcludedNoProjection() }} senza proiezione</span>
               }
             </p>
           </div>
@@ -353,7 +353,7 @@ function makeParticipants(
             class="price-strip"
             title="Indice EWMA per ruolo × tier. Valori > 1 = mercato più caro del listino."
           >
-            <span class="price-strip__title">Mercato</span>
+            <span class="price-strip__title">Quanto costa il mercato</span>
             @for (role of displayRoles(); track role) {
               <div class="price-role-group">
                 <span class="price-role-label" [style.color]="roleColor(role)">{{ role }}</span>
@@ -377,8 +377,8 @@ function makeParticipants(
           <!-- ── Left: Participants ──────────────────────── -->
           <aside class="participants-panel">
             <div class="panel-head">
-              <p class="panel-heading">Manager</p>
-              <p class="panel-subheading">Budget residuo e probabilità di completamento</p>
+              <p class="panel-heading">Chi sta giocando</p>
+              <p class="panel-subheading">Soldi rimasti e quanto è completa la rosa</p>
             </div>
 
             @if (summaryLoading() && !summary()) {
@@ -450,8 +450,8 @@ function makeParticipants(
               <!-- Lookup card -->
               <div class="card card--action">
                 <div class="card-head">
-                  <p class="card-section-label">Cerca giocatore</p>
-                  <p class="card-section-hint">projection + alternative + max bid</p>
+                  <p class="card-section-label">1 · Cerca il giocatore</p>
+                  <p class="card-section-hint">Ti diciamo subito quanto spendere e chi prendere al posto suo</p>
                 </div>
                 <div class="field-row field-row--compact">
                   <div class="field-group" style="flex:1">
@@ -591,8 +591,8 @@ function makeParticipants(
               <!-- Record card -->
               <div class="card card--action">
                 <div class="card-head">
-                  <p class="card-section-label">Registra turno</p>
-                  <p class="card-section-hint">vincitore · slot · prezzo</p>
+                  <p class="card-section-label">2 · Registra l’acquisto</p>
+                  <p class="card-section-hint">Chi ha vinto, a quanto, e in quale ruolo</p>
                 </div>
 
                 <div class="field-group">
@@ -994,7 +994,7 @@ function makeParticipants(
           <div>
             <h1 class="page-title">Tracker Asta</h1>
             <p class="page-subtitle">
-              Sessione d'asta live: EWMA ruolo×tier, baseline listino (opz. inflazione) e ranking VAR/ESV
+              Prepara l’asta in 2 minuti. Le opzioni tecniche restano nascoste finché non ti servono.
             </p>
           </div>
         </header>
@@ -1440,7 +1440,7 @@ function makeParticipants(
 
             <!-- Advanced -->
             <button class="advanced-toggle" (click)="showAdvanced = !showAdvanced">
-              Avanzate: EWMA alpha, spillover, alternative, clamp indici, tier {{ showAdvanced ? '▲' : '▼' }}
+              {{ showAdvanced ? 'Nascondi opzioni tecniche' : 'Mostra opzioni tecniche (EWMA, spillover, tier…)' }}
             </button>
 
             @if (showAdvanced) {
