@@ -15,6 +15,8 @@ regenerated.
 from __future__ import annotations
 
 import argparse
+import hmac
+import hashlib
 import logging
 import os
 import subprocess
@@ -122,20 +124,50 @@ def _foreign_stats(engine: sa.Engine) -> dict[str, Any]:
     }
 
 
-def _api_headers() -> dict[str, str]:
-    key = os.environ.get("SEASON_REFRESH_API_KEY") or os.environ.get("API_API_KEY_SECRET")
-    return {"X-API-Key": key} if key else {}
+def _signing_secret() -> str:
+    # Same shared secret as the server's API_API_KEY_SECRET (settings.api_key_secret).
+    # Read here under either name so existing GH Actions secrets keep working
+    # without a rename.
+    secret = os.environ.get("SEASON_REFRESH_API_KEY") or os.environ.get("API_API_KEY_SECRET")
+    if not secret:
+        raise RefreshError(
+            "No service credential configured — set SEASON_REFRESH_API_KEY "
+            "(must match the server's API_API_KEY_SECRET)."
+        )
+    return secret
+
+
+def _signed_headers(secret: str, method: str, path: str) -> dict[str, str]:
+    """HMAC-SHA256 request signature: proves possession of the shared secret
+    without putting it on the wire, and binds the signature to method+path+time
+    so a captured request can't be replayed against a different endpoint or later."""
+    timestamp = str(int(time.time()))
+    message = f"{timestamp}:{method.upper()}:{path}".encode()
+    signature = hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()
+    return {
+        "X-Service-Id": "season-refresh",
+        "X-API-Timestamp": timestamp,
+        "X-API-Signature": signature,
+    }
 
 
 def _api_url(base: str, path: str) -> str:
     return base.rstrip("/") + "/" + path.lstrip("/")
 
 
+def _signed_get(secret: str, api_base: str, path: str, **kwargs) -> requests.Response:
+    return requests.get(_api_url(api_base, path), headers=_signed_headers(secret, "GET", path), **kwargs)
+
+
+def _signed_post(secret: str, api_base: str, path: str, **kwargs) -> requests.Response:
+    return requests.post(_api_url(api_base, path), headers=_signed_headers(secret, "POST", path), **kwargs)
+
+
 def _trigger_training(api_base: str, poll_seconds: int, timeout_seconds: int) -> dict[str, Any]:
-    headers = _api_headers()
-    before = requests.get(_api_url(api_base, "/admin/ml/train/status"),  timeout=20).json()
+    secret = _signing_secret()
+    before = _signed_get(secret, api_base, "/admin/ml/train/status", timeout=20).json()
     triggered_at = time.time()
-    resp = requests.post(_api_url(api_base, "/admin/ml/train"),  timeout=30)
+    resp = _signed_post(secret, api_base, "/admin/ml/train", timeout=30)
     if resp.status_code >= 400:
         raise RefreshError(f"ML training trigger failed: HTTP {resp.status_code}: {resp.text[:500]}")
 
@@ -143,7 +175,7 @@ def _trigger_training(api_base: str, poll_seconds: int, timeout_seconds: int) ->
     last: dict[str, Any] = before
     while time.time() < deadline:
         time.sleep(poll_seconds)
-        r = requests.get(_api_url(api_base, "/admin/ml/train/status"),  timeout=20)
+        r = _signed_get(secret, api_base, "/admin/ml/train/status", timeout=20)
         if r.status_code >= 400:
             raise RefreshError(f"ML training status failed: HTTP {r.status_code}: {r.text[:500]}")
         last = r.json()

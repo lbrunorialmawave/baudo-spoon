@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hmac
+import hashlib
 import logging
 import time
 from collections.abc import AsyncGenerator
@@ -90,18 +92,48 @@ def require_role(required: str):
     return _dep
 
 
+# ── HMAC-signed service requests (M2M, replay-resistant) ─────────────────────
+# Alternative to the static X-API-Key for callers that sign each request
+# instead of putting the raw secret on the wire (e.g. scripts/season_refresh.py).
+# Signature = HMAC-SHA256(shared_secret, f"{timestamp}:{METHOD}:{path}"),
+# sent as X-API-Timestamp / X-API-Signature. Bound to method+path+time so a
+# captured request can't be replayed elsewhere or later.
+_SIGNATURE_WINDOW_SECONDS = 300
+
+
+def _verify_signed_request(request: Request) -> bool:
+    timestamp = request.headers.get("X-API-Timestamp")
+    signature = request.headers.get("X-API-Signature")
+    if not timestamp or not signature or not settings.api_key_secret:
+        return False
+    try:
+        skew = abs(time.time() - int(timestamp))
+    except ValueError:
+        return False
+    if skew > _SIGNATURE_WINDOW_SECONDS:
+        return False
+    message = f"{timestamp}:{request.method.upper()}:{request.url.path}".encode()
+    expected = hmac.new(settings.api_key_secret.encode(), message, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(signature, expected)
+
+
 async def require_admin(
+    request: Request,
     api_key: Annotated[str | None, Depends(_api_key_scheme)] = None,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)] = None,
 ) -> dict:
-    """Accept either a valid API key (machine-to-machine / cron) or an admin JWT.
+    """Accept a valid API key, an HMAC-signed request, or an admin JWT.
 
     Used on scraper-trigger endpoints so scheduled jobs can authenticate with
-    the static API key while human admins use their JWT.
+    the static API key (or a signed request) while human admins use their JWT.
     """
-    # API key path (cron / machine-to-machine)
+    # API key path (legacy cron / machine-to-machine — raw secret in header)
     if api_key and settings.api_key_secret and api_key == settings.api_key_secret:
         return {"role": "admin", "sub": "api-key"}
+
+    # Signed-request path (preferred M2M — no raw secret on the wire, replay-resistant)
+    if _verify_signed_request(request):
+        return {"role": "admin", "sub": request.headers.get("X-Service-Id", "signed-service")}
 
     # JWT path
     if credentials:
