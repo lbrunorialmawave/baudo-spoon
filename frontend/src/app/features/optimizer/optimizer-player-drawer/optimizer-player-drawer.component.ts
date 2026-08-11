@@ -23,6 +23,9 @@ import { SquadPlayer } from '../../../core/models/api.models';
           </h2>
           <p class="text-xs mt-0.5" style="color:var(--color-text-secondary)">
             {{ player().realTeam || '—' }} · {{ player().role || '—' }}
+            @if (mantraRolesLabel(); as mr) {
+              · <span class="mantra-roles">{{ mr }}</span>
+            }
           </p>
         </div>
         <button type="button" class="close-btn" (click)="closed.emit()" aria-label="Chiudi">✕</button>
@@ -119,6 +122,10 @@ import { SquadPlayer } from '../../../core/models/api.models';
       letter-spacing: 0.06em; margin-bottom: 8px;
       color: var(--color-text-secondary);
     }
+    .mantra-roles {
+      color: var(--color-accent, #6366f1);
+      font-weight: 600;
+    }
   `],
 })
 export class OptimizerPlayerDrawerComponent {
@@ -127,12 +134,24 @@ export class OptimizerPlayerDrawerComponent {
 
   identityRows(): { label: string; value: string }[] {
     const p = this.player();
-    return [
+    const rows: { label: string; value: string }[] = [
       { label: 'ID', value: p.playerId || '—' },
       { label: 'Ruolo', value: p.role || '—' },
       { label: 'Squadra', value: p.realTeam || '—' },
       { label: 'Nome', value: p.name || '—' },
     ];
+    const mantra = this.mantraRolesLabel();
+    if (mantra) {
+      rows.splice(2, 0, { label: 'Ruoli Mantra', value: mantra });
+    }
+    return rows;
+  }
+
+  /** Joined eligible Mantra roles, or null when absent/empty (CLASSIC). */
+  mantraRolesLabel(): string | null {
+    const roles = this.player().eligibleRoles;
+    if (!roles || roles.length === 0) return null;
+    return roles.join(' / ');
   }
 
   costRows(): { label: string; value: number | null }[] {

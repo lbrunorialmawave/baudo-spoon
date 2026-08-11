@@ -280,6 +280,8 @@ def _serialize_near_optimal(alts, effective_cost_lookup):
             player_id=p.player_id, name=p.name, role=p.role, real_team=p.real_team,
             cost=p.cost, projected_score=p.projected_score,
             effective_cost=effective_cost_lookup.get(p.player_id, float(p.cost)),
+            eligible_roles=sorted(p.eligible_roles) if p.eligible_roles else [],
+            prediction_std=p.prediction_std,
         ) for p in alt.result.squad]
         out.append(NearOptimalAlternativeSchema(
             excluded_player_ids=list(alt.excluded_player_ids),
@@ -396,6 +398,8 @@ def _serialize_result(
             cost=p.cost,
             projected_score=p.projected_score,
             effective_cost=effective_cost_lookup.get(p.player_id, float(p.cost)),
+            eligible_roles=sorted(p.eligible_roles) if p.eligible_roles else [],
+            prediction_std=p.prediction_std,
         )
         for p in result.squad
     ]

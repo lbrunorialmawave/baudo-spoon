@@ -1091,6 +1091,9 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                           <td>
                             <span class="role-badge" [style.color]="roleColor(p.role)"
                                   [style.border-color]="roleColor(p.role)">{{ roleLabel(p.role) }}</span>
+                            @if (p.eligibleRoles?.length) {
+                              <span class="mantra-role-hint" title="Ruoli Mantra">{{ p.eligibleRoles!.join('/') }}</span>
+                            }
                           </td>
                           <td class="name-cell">{{ p.name }}</td>
                           <td class="hide-sm muted">{{ p.realTeam }}</td>
@@ -2114,6 +2117,13 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
     .opt-results .card,
     .opt-results [class*="result"] {
       border-radius: 14px;
+    }
+    .mantra-role-hint {
+      font-size: 0.65rem;
+      font-weight: 600;
+      color: var(--color-accent, #6366f1);
+      opacity: 0.9;
+      margin-left: 4px;
     }
   `],
 })

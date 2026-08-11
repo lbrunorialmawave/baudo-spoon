@@ -672,6 +672,10 @@ class SquadPlayerSchema(_CamelModel):
     cost: int
     projected_score: float
     effective_cost: float
+    # MANTRA only: roles this player can fill (e.g. ["Dd", "E"]). Empty for CLASSIC.
+    eligible_roles: list[str] = Field(default_factory=list)
+    # Ensemble prediction std; used by risk-adjusted objective and shown in drawer.
+    prediction_std: Optional[float] = None
 
 
 class FormationCoverageSchema(_CamelModel):

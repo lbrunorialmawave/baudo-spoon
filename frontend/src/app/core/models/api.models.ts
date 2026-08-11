@@ -243,6 +243,8 @@ export interface SquadPlayer {
   projectedScore: number;
   effectiveCost: number;
   predictionStd?: number | null;
+  /** MANTRA only: roles this player can fill (e.g. ["Dd", "E"]). Empty/absent for CLASSIC. */
+  eligibleRoles?: string[];
 }
 
 /** Squad-level coverage of one official Mantra Experience module. */
