@@ -1002,31 +1002,6 @@ function makeParticipants(
         <div class="setup-body">
           <!-- Config panel -->
           <aside class="config-panel card">
-            <p class="section-divider">Profilo strategico</p>
-
-            <div class="field-group">
-              <label class="field-label" for="auction-preset">Preset d'asta (precompila EWMA, inflazione, alternative)</label>
-              <select
-                id="auction-preset"
-                class="field-input"
-                [ngModel]="selectedPresetId"
-                (ngModelChange)="onPresetChange($event)"
-                [attr.aria-describedby]="'legend-auction-preset'"
-              >
-                <option [ngValue]="AUCTION_PRESET_NONE">Personalizzato (nessun preset)</option>
-                @for (p of presets; track p.id) {
-                  <option [ngValue]="p.id">{{ p.labelIt }} — {{ p.name }}</option>
-                }
-              </select>
-              @if (activePreset; as preset) {
-                <p class="preset-description" id="legend-auction-preset">{{ preset.description }}</p>
-              } @else {
-                <p class="preset-description muted" id="legend-auction-preset">
-                  Scegli un profilo per precompilare drift EWMA, inflazione, alternative e valuation.
-                  Stagione e partecipanti restano sotto il tuo controllo.
-                </p>
-              }
-            </div>
 
             <p class="section-divider">Pool e sessione</p>
 
@@ -1074,6 +1049,34 @@ function makeParticipants(
                 [examples]="SETUP_LEGENDS['seasonStart'].examples"
               />
             </div>
+            
+            <p class="section-divider">Profilo strategico</p>
+
+            <div class="field-group">
+              <label class="field-label" for="auction-preset">Preset d'asta (precompila EWMA, inflazione, alternative)</label>
+              <select
+                id="auction-preset"
+                class="field-input"
+                [ngModel]="selectedPresetId"
+                (ngModelChange)="onPresetChange($event)"
+                [attr.aria-describedby]="'legend-auction-preset'"
+              >
+                <option [ngValue]="AUCTION_PRESET_NONE">Personalizzato (nessun preset)</option>
+                @for (p of presets; track p.id) {
+                  <option [ngValue]="p.id">{{ p.labelIt }} — {{ p.name }}</option>
+                }
+              </select>
+              @if (activePreset; as preset) {
+                <p class="preset-description" id="legend-auction-preset">{{ preset.description }}</p>
+              } @else {
+                <p class="preset-description muted" id="legend-auction-preset">
+                  Scegli un profilo per precompilare drift EWMA, inflazione, alternative e valuation.
+                  Stagione e partecipanti restano sotto il tuo controllo.
+                </p>
+              }
+            </div>
+
+            
 
             <p class="section-divider">Partecipanti e crediti</p>
 
