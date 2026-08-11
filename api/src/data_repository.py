@@ -1143,7 +1143,9 @@ class DataRepository:
                 continue
 
             # Best-effort team name (id-map wins when present).
-            if pim is not None and pim.team_fotmob:
+            if pq.team:
+                real_team = self._normalise_team(pq.team)
+            elif pim is not None and pim.team_fotmob:
                 real_team = self._normalise_team(pim.team_fotmob)
             else:
                 real_team = self._normalise_team(pq.team or "")
