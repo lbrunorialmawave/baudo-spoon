@@ -48,6 +48,31 @@ class MLConfig(BaseSettings):
     # avoid noisy target estimates from small samples.
     min_minutes: int = 800
 
+    # ── Low-sample / breakout modelling (plan.md, PR1–PR8) ──────────────────
+    # Lower eligibility cutoff for the LIMITED cohort (100..799 minutes).
+    # Training/inference of LIMITED rows is gated by feature flags below;
+    # this value is metadata, not a hard exclusion filter.
+    min_minutes_hard: int = 100
+
+    # Master switch for the low-sample weighting pipeline.  When False the
+    # trainer behaves exactly as before (no row of minutes < ``min_minutes``
+    # reaches training).  When True, LIMITED rows may be included with a
+    # reduced weight and per-90 shrinkage applied.
+    enable_limited_sample_training: bool = False
+    # Master switch for per-90 shrinkage (PR3).  No-op when
+    # ``enable_limited_sample_training`` is False.
+    enable_shrinkage: bool = False
+    # Master switch for the breakout probability model (PR7).  Kept
+    # disabled until offline experiments validate the dataset.
+    enable_breakout_model: bool = False
+
+    # Sample-weighting strategy.  Supported: "constant", "linear", "sqrt",
+    # "bucketed".  See ``ml.sample_reliability.weights.compute_sample_weight``.
+    weighting_strategy: str = "sqrt"
+    # Number of pseudo-observations the population prior contributes
+    # during per-90 shrinkage.  See ``apply_shrinkage``.
+    shrinkage_prior_strength: int = 300
+
     # ── League filter ─────────────────────────────────────────────────────────
     # Defaults to Serie A: once foreign leagues are scraped (for MANTRA's
     # cross-league neo-arrivo fallback, see ml/mantra/runner.py), a training

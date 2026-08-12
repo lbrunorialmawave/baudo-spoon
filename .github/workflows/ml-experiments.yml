@@ -1,0 +1,233 @@
+name: ML Experiments (PR5)
+
+on:
+  # Esecuzione manuale da tab "Actions" con parametri custom.
+  # Niente schedule: gli esperimenti sono costosi (4 varianti × trainer
+  # completo) e vanno lanciati solo su decisione esplicita dell'ML owner.
+  workflow_dispatch:
+    inputs:
+      league:
+        description: "Lega da filtrare (default Serie A — vedi MLConfig.league_name)"
+        required: false
+        default: "Serie A"
+
+      test_seasons:
+        description: "Stagioni di test (hold-out più recenti)"
+        required: false
+        default: "1"
+
+      min_minutes:
+        description: "Minuti minimi per inclusione nel cohort STANDARD (MLConfig.min_minutes)"
+        required: false
+        default: "800"
+
+      min_minutes_hard:
+        description: "Cutoff duro per il cohort LIMITED (PR1, MLConfig.min_minutes_hard)"
+        required: false
+        default: "100"
+
+      weighting_strategy:
+        description: "Strategia di sample weighting (constant|linear|sqrt|bucketed)"
+        type: choice
+        required: false
+        default: "sqrt"
+        options:
+          - constant
+          - linear
+          - sqrt
+          - bucketed
+
+      shrinkage_prior_strength:
+        description: "Peso del prior nella shrinkage bayesiana per-90 (PR3)"
+        required: false
+        default: "300"
+
+      variants:
+        description: >
+          Varianti da eseguire (CSV). Usa 'all' per la matrice completa
+          A_control + B_weighting + C_shrinkage + D_recent_role_features.
+          Esempio smoke-test: 'A_control,B_weighting'.
+        required: false
+        default: "all"
+
+      seed:
+        description: "Random seed per riproducibilità"
+        required: false
+        default: "42"
+
+      log_level:
+        description: "Livello di logging"
+        required: false
+        default: "INFO"
+
+      output_dir:
+        description: "Directory artefatti radice (vuoto = default /app/artifacts)"
+        required: false
+        default: ""
+
+      # Se lasciato vuoto → scarica automaticamente fantavoto_real.csv da R2
+      # e lo passa come --fantavoto-csv /app/artifacts/fantavoto_real.csv
+      fantavoto_csv:
+        description: "Path al CSV fantavoto nel container (vuoto = download automatico da R2)"
+        required: false
+        default: ""
+
+# Evita run sovrapposte se ne parte un'altra mentre gira una precedente.
+# Gruppo separato da 'ml-training' per non bloccare i training schedulati.
+concurrency:
+  group: ml-experiments
+  cancel-in-progress: false
+
+jobs:
+  experiment:
+    runs-on: ubuntu-latest
+    # Timeout generoso: 4 varianti × trainer completo + cluster + backtest
+    # può richiedere fino a ~2h nei run più esosi.
+    timeout-minutes: 180
+
+    env:
+      ML_DATABASE_URL: ${{ secrets.ML_DATABASE_URL }}
+      ML_R2_ENDPOINT_URL: ${{ secrets.ML_R2_ENDPOINT_URL }}
+      ML_R2_ACCESS_KEY_ID: ${{ secrets.ML_R2_ACCESS_KEY_ID }}
+      ML_R2_SECRET_ACCESS_KEY: ${{ secrets.ML_R2_SECRET_ACCESS_KEY }}
+      ML_R2_BUCKET_NAME: ${{ secrets.ML_R2_BUCKET_NAME || 'baudo-spoon-ml-artifacts' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        run: |
+          missing=0
+          for var in ML_DATABASE_URL ML_R2_ENDPOINT_URL ML_R2_ACCESS_KEY_ID ML_R2_SECRET_ACCESS_KEY; do
+            if [ -z "${!var}" ]; then
+              echo "::error::Secret $var is not set"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          echo "All required secrets are present."
+
+      # Scarica fantavoto_real.csv da R2 se l'utente non ha passato un path custom.
+      # Identico al pattern usato in ml-training.yml per coerenza.
+      - name: Download fantavoto_real.csv from R2
+        if: ${{ github.event.inputs.fantavoto_csv == '' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.ML_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.ML_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          mkdir -p artifacts
+          echo "Downloading s3://${ML_R2_BUCKET_NAME}/fantavoto_real.csv ..."
+          if ! command -v aws >/dev/null 2>&1; then
+            pip install --quiet awscli
+          fi
+          aws s3 cp \
+            "s3://${ML_R2_BUCKET_NAME}/fantavoto_real.csv" \
+            artifacts/fantavoto_real.csv \
+            --endpoint-url "${ML_R2_ENDPOINT_URL}"
+
+          if [ ! -s artifacts/fantavoto_real.csv ]; then
+            echo "::error::Downloaded fantavoto_real.csv is missing or empty"
+            exit 1
+          fi
+
+          echo "Downloaded OK:"
+          ls -lh artifacts/fantavoto_real.csv
+          echo "--- header ---"
+          head -3 artifacts/fantavoto_real.csv
+
+      # Build dal Dockerfile esistente (entrypoint originale = training).
+      # Per gli esperimenti usiamo l'override --entrypoint qui sotto per
+      # invocare direttamente `python -m ml.run_experiments` senza dover
+      # modificare il Dockerfile.
+      - name: Build ML image
+        run: docker build -f ml/Dockerfile -t ml-runner:latest .
+
+      - name: Run experiment matrix
+        run: |
+          set -euo pipefail
+
+          ARGS=()
+
+          if [ -n "${{ github.event.inputs.league }}" ]; then
+            ARGS+=(--league "${{ github.event.inputs.league }}")
+          fi
+
+          ARGS+=(--test-seasons "${{ github.event.inputs.test_seasons || '1' }}")
+          ARGS+=(--min-minutes "${{ github.event.inputs.min_minutes || '800' }}")
+          ARGS+=(--min-minutes-hard "${{ github.event.inputs.min_minutes_hard || '100' }}")
+          ARGS+=(--weighting-strategy "${{ github.event.inputs.weighting_strategy || 'sqrt' }}")
+          ARGS+=(--shrinkage-prior-strength "${{ github.event.inputs.shrinkage_prior_strength || '300' }}")
+          ARGS+=(--variants "${{ github.event.inputs.variants || 'all' }}")
+          ARGS+=(--seed "${{ github.event.inputs.seed || '42' }}")
+          ARGS+=(--log-level "${{ github.event.inputs.log_level || 'INFO' }}")
+
+          # Fantavoto: path custom oppure quello scaricato da R2
+          if [ -n "${{ github.event.inputs.fantavoto_csv }}" ]; then
+            ARGS+=(--fantavoto-csv "${{ github.event.inputs.fantavoto_csv }}")
+          elif [ -f artifacts/fantavoto_real.csv ]; then
+            ARGS+=(--fantavoto-csv /app/artifacts/fantavoto_real.csv)
+          fi
+
+          if [ -n "${{ github.event.inputs.output_dir }}" ]; then
+            ARGS+=(--output-dir "${{ github.event.inputs.output_dir }}")
+          fi
+
+          ARGS+=(--json-logs)
+
+          echo "Experiment args: ${ARGS[*]}"
+
+          docker run --rm \
+            --entrypoint python \
+            -e ML_DATABASE_URL \
+            -e ML_R2_ENDPOINT_URL \
+            -e ML_R2_ACCESS_KEY_ID \
+            -e ML_R2_SECRET_ACCESS_KEY \
+            -e ML_R2_BUCKET_NAME \
+            -e ML_ARTIFACTS_DIR=/app/artifacts \
+            -e ML_TEST_SEASONS \
+            -e ML_MIN_MINUTES \
+            -e ML_MIN_MINUTES_HARD \
+            -e ML_WEIGHTING_STRATEGY \
+            -e ML_SHRINKAGE_PRIOR_STRENGTH \
+            -e ML_RANDOM_SEED \
+            -e ML_LOG_LEVEL \
+            -v "${{ github.workspace }}/artifacts:/app/artifacts" \
+            ml-runner:latest \
+            -m ml.run_experiments "${ARGS[@]}"
+
+      - name: List produced artifacts
+        if: always()
+        run: |
+          echo "=== artifacts/ ==="
+          find artifacts -type f 2>/dev/null | head -200 || true
+
+      # Artifact retention più lunga rispetto al training (30 → 90 giorni):
+      # gli esperimenti sono l'input alla decisione di rollout (PR8) e
+      # vanno conservati almeno per un trimestre.
+      - name: Upload experiment artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-experiments-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 90
+
+      # Report side-by-side come artifact dedicato (più scarso,
+      # consultabile senza scaricare l'intera artifacts/).
+      - name: Upload experiment report
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-experiments-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/experiments/**/report.json
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "::error::Esperimenti ML falliti — controlla i log sopra. Le varianti non andate a buon fine sono elencate in report.json."

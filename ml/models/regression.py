@@ -172,6 +172,7 @@ def train_all_models(
     y_train: pd.Series,
     preprocessor: ColumnTransformer,
     cfg: MLConfig,
+    sample_weight: pd.Series | None = None,
 ) -> dict[str, Pipeline]:
     """Train (and optionally tune) all models in the registry.
 
@@ -181,6 +182,11 @@ def train_all_models(
         preprocessor: An **unfitted** ColumnTransformer.  Each model gets
             its own clone to avoid cross-contamination.
         cfg: Pipeline configuration.
+        sample_weight: Optional per-row weight aligned with ``X_train``.
+            When provided, the value is passed to ``fit()`` so estimators
+            that support it (Ridge, RandomForest, HistGradientBoosting,
+            XGBoost) down-weight low-sample observations.  When ``None``
+            the behaviour is unchanged — every row has implicit weight 1.
 
     Returns:
         Dict mapping model name → fitted Pipeline.
@@ -190,6 +196,10 @@ def train_all_models(
     registry = _build_registry(cfg.random_seed)
     tscv = TimeSeriesSplit(n_splits=cfg.cv_folds)
     fitted: dict[str, Pipeline] = {}
+
+    fit_kwargs: dict[str, Any] = (
+        {"sample_weight": sample_weight} if sample_weight is not None else {}
+    )
 
     for name, spec in registry.items():
         log.info("Training model: %s …", name)
@@ -207,7 +217,7 @@ def train_all_models(
                 n_jobs=-1,
                 refit=True,
             )
-            search.fit(X_train, y_train)
+            search.fit(X_train, y_train, **fit_kwargs)
             pipe = search.best_estimator_
             log.info(
                 "  Best params: %s  CV RMSE: %.4f",
@@ -216,7 +226,7 @@ def train_all_models(
                 -search.best_score_,
             )
         else:
-            pipe.fit(X_train, y_train)
+            pipe.fit(X_train, y_train, **fit_kwargs)
 
         fitted[name] = pipe
         log.info("  Done.")

@@ -83,6 +83,19 @@ from ..preprocessing.features import (
 )
 from ..preprocessing.pipeline import build_preprocessor, get_feature_names
 from ..optimizer.models import DEFAULT_BUDGET, ROLE_QUOTAS, TOTAL_SQUAD_SIZE
+from ..sample_reliability import (
+    compute_sample_weight,
+    profile_dataset as profile_sample_dataset,
+)
+from ..sample_reliability.cohort import (
+    COHORT_INSUFFICIENT as _COHORT_INSUFFICIENT,
+)
+from ..sample_reliability.cohort import (
+    COHORT_LIMITED as _COHORT_LIMITED,
+)
+from ..sample_reliability.cohort import (
+    COHORT_STANDARD as _COHORT_STANDARD,
+)
 from ..storage.artifact_store import ArtifactStore, R2Config
 
 log = logging.getLogger(__name__)
@@ -318,6 +331,71 @@ class Trainer:
     def _artifact(self, filename: str) -> Path:
         return self._artifacts_dir / filename
 
+    def _build_sample_weights(
+        self,
+        df: pd.DataFrame,
+    ) -> pd.Series | None:
+        """Return per-row sample weights based on minutes played.
+
+        Behaviour is fully gated by ``cfg.enable_limited_sample_training``.
+        When the flag is ``False`` (production default) the function
+        returns ``None`` and the trainer falls back to the historical
+        uniform-weight behaviour, guaranteeing no behavior change.
+
+        When the flag is ``True`` the function returns a
+        ``pd.Series`` aligned with ``df`` containing the weight for
+        each row, computed by
+        :func:`ml.sample_reliability.weights.compute_sample_weight` with
+        the strategy and thresholds from ``MLConfig``.
+        """
+        if not self.cfg.enable_limited_sample_training:
+            return None
+        if "mins_played" not in df.columns:
+            log.warning(
+                "mins_played missing from training frame; "
+                "falling back to uniform weights (no limited-sample "
+                "down-weighting applied)."
+            )
+            return None
+
+        minutes = pd.to_numeric(df["mins_played"], errors="coerce")
+        weights = minutes.apply(
+            lambda m: compute_sample_weight(
+                m,
+                strategy=self.cfg.weighting_strategy,
+                standard_minutes=self.cfg.min_minutes,
+                min_minutes_hard=self.cfg.min_minutes_hard,
+            )
+        )
+        weights.index = df.index
+        return weights
+
+    def _cohort_profile(self, df: pd.DataFrame) -> dict[str, float | int]:
+        """Return a JSON-serialisable summary of cohort counts.
+
+        The summary is also persisted to the artifact store as
+        ``cohort_profile.json`` for offline drift analysis.  When the
+        ``mins_played`` column is missing the profile is empty.
+        """
+        if "mins_played" not in df.columns:
+            return {
+                "n_total": int(len(df)),
+                "n_insufficient": 0,
+                "n_limited": 0,
+                "n_standard": 0,
+                "share_insufficient": 0.0,
+                "share_limited": 0.0,
+                "share_standard": 0.0,
+                "min_minutes_hard": int(self.cfg.min_minutes_hard),
+                "standard_minutes": int(self.cfg.min_minutes),
+            }
+        return profile_sample_dataset(
+            df,
+            minutes_col="mins_played",
+            min_minutes_hard=self.cfg.min_minutes_hard,
+            standard_minutes=self.cfg.min_minutes,
+        )
+
     def _save_model(
         self,
         pipeline: Any,
@@ -447,7 +525,11 @@ class Trainer:
         # quotation signals) use median; event-based features use 0.
         env_feats = [f for f in num_feats if f in _ENVIRONMENTAL_STAT_COLS]
         preprocessor = build_preprocessor(num_feats, cat_feats, environmental_features=env_feats)
-        fitted_pipelines = train_all_models(X_train, y_train, preprocessor, self.cfg)
+        sample_weight = self._build_sample_weights(df_train)
+        fitted_pipelines = train_all_models(
+            X_train, y_train, preprocessor, self.cfg,
+            sample_weight=sample_weight,
+        )
 
         test_metrics: dict[str, SplitMetrics] = {}
         for name, pipe in fitted_pipelines.items():
@@ -1023,6 +1105,14 @@ class Trainer:
             },
             "next_season_predictions": next_season_predictions,
             "var_results": var_results,
+            "sample_reliability": {
+                "enabled": bool(cfg.enable_limited_sample_training),
+                "weighting_strategy": cfg.weighting_strategy,
+                "shrinkage_enabled": bool(cfg.enable_shrinkage),
+                "shrinkage_prior_strength": int(cfg.shrinkage_prior_strength),
+                "breakout_model_enabled": bool(cfg.enable_breakout_model),
+                "cohort_profile": self._cohort_profile(df_core),
+            },
             "metadata": metadata,
             "config": {
                 "test_seasons": cfg.test_seasons,
