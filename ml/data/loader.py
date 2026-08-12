@@ -379,15 +379,63 @@ def _append_foreign_fallback_rows(
     Missing view/table (migration not applied) degrades to a no-op with a
     warning, matching the other optional-feature try/except blocks in
     :func:`load_raw_data`.
+
+    Two season numbers matter here and must NOT be conflated:
+
+    - ``listino_season`` — the current Fantacalcio listino season
+      (``player_quotations``). This is what ``player_id_map`` /
+      ``player_quotations`` are keyed on, and is the season a neo-arrivo
+      must be looked up under. Early in a new season the listino for
+      season N is imported before Serie A matches for season N have been
+      played/scraped, so it can be *ahead* of the domestic data.
+    - ``output_season`` — the ``season_start`` written onto the appended
+      fallback rows. This MUST equal ``df_player["season_start"].max()``
+      (the domestic "latest season" slice), because
+      ``ml.pipeline.trainer`` selects the current-squad cohort to project
+      forward via ``df[df.season_start == df.season_start.max()]``.
+      Tagging fallback rows with the listino season instead would shift
+      that max forward and silently drop every normal domestic player
+      out of the projection (they only reach last season's data until
+      the new season is scraped).
+
+    Using ``listino_season`` for the lookup only, and ``output_season``
+    for the label, keeps neo-arrivi discoverable as soon as the listino
+    is imported while leaving the domestic prediction cohort untouched.
     """
     if df_player.empty:
         return df_player
 
-    target_season = int(df_player["season_start"].max())
+    output_season = int(df_player["season_start"].max())
+    try:
+        listino_season_raw = engine.connect().execute(
+            sa.text("SELECT MAX(season_start) FROM player_quotations")
+        ).scalar()
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "Could not read latest listino season from player_quotations (%s); "
+            "falling back to domestic season %d for the foreign fallback lookup.",
+            exc, output_season,
+        )
+        listino_season_raw = None
+
+    listino_season = (
+        max(output_season, int(listino_season_raw))
+        if listino_season_raw is not None
+        else output_season
+    )
+    if listino_season != output_season:
+        log.info(
+            "Foreign fallback lookup using listino season %d (domestic Serie A "
+            "data only goes up to %d — expected early in a new season before "
+            "it has been scraped yet). Appended rows will still be tagged with "
+            "season_start=%d to match the current prediction cohort.",
+            listino_season, output_season, output_season,
+        )
+
     try:
         df_foreign = pd.read_sql(
             sa.text(_FOREIGN_FALLBACK_SQL), engine,
-            params={"season_start": target_season},
+            params={"season_start": listino_season},
         )
     except Exception as exc:  # noqa: BLE001
         log.warning(
@@ -419,8 +467,8 @@ def _append_foreign_fallback_rows(
         columns=["minutes_avg", "goals_per90", "assists_per90", "saves_per90", "clean_sheet_per90"]
     )
 
-    df_foreign["season_start"] = target_season
-    df_foreign["season_label"] = f"{target_season}-foreign-fallback"
+    df_foreign["season_start"] = output_season
+    df_foreign["season_label"] = f"{output_season}-foreign-fallback"
     df_foreign["team_fotmob_id"] = pd.NA
     df_foreign["is_foreign_fallback"] = True
 

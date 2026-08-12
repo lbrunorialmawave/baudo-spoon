@@ -48,6 +48,29 @@ class _FakeEngine:
     """Placeholder — never actually touched, read_sql is monkeypatched."""
 
 
+class _FakeConn:
+    """Minimal context-manager-free stand-in for engine.connect().execute(...).scalar()."""
+
+    def __init__(self, scalar_value):
+        self._scalar_value = scalar_value
+
+    def execute(self, *args, **kwargs):
+        return self
+
+    def scalar(self):
+        return self._scalar_value
+
+
+class _FakeEngineWithQuotations:
+    """Engine whose .connect().execute(...).scalar() returns a fixed listino season."""
+
+    def __init__(self, quotations_season: int):
+        self._quotations_season = quotations_season
+
+    def connect(self):
+        return _FakeConn(self._quotations_season)
+
+
 def test_excludes_players_already_present(monkeypatch: pytest.MonkeyPatch) -> None:
     """A candidate already in df_player (e.g. matched by a wider query than
     intended) must never be duplicated."""
@@ -145,3 +168,51 @@ def test_uncatalogued_league_becomes_foreign_fallback(
     assert foreign["is_foreign_fallback"] is True
     assert foreign["league_name"] == "Eredivisie"
     assert foreign["season_start"] == df_player["season_start"].max()
+
+
+def test_listino_season_ahead_of_domestic_uses_listino_for_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test: early in a new season, player_quotations/player_id_map
+    are already on season N while player_season_stats for domestic Serie A is
+    still on N-1 (matches not yet scraped). The SQL lookup must use the
+    listino season (N) — that's what player_id_map/player_quotations are
+    keyed on for a neo-arrivo transferred in during the transfer window —
+    but the appended row must still be tagged with the domestic season (N-1)
+    so it lands in the same "current squad" slice the trainer projects
+    forward, alongside every other player.
+    """
+    captured_params: dict = {}
+
+    def _fake_read_sql(query, engine, params=None, **kwargs):
+        captured_params.update(params or {})
+        return _fallback_row(player_fotmob_id=823825, league_name="Premier League")
+
+    monkeypatch.setattr("ml.data.loader.pd.read_sql", _fake_read_sql)
+
+    df_player = _df_player()  # domestic season_start = 2025
+    fake_engine = _FakeEngineWithQuotations(quotations_season=2026)
+
+    result = _append_foreign_fallback_rows(
+        df_player, fake_engine, logging.getLogger("test")
+    )
+
+    # The SQL param sent to the DB must be the listino season (2026), or the
+    # neo-arrivo (mapped only under season_start=2026 in player_id_map /
+    # player_quotations) would never be found.
+    assert captured_params.get("season_start") == 2026
+
+    # But the row appended to the dataframe must stay on the domestic
+    # season (2025) so it's part of the same cohort as the other players
+    # when the trainer selects df[df.season_start == df.season_start.max()].
+    new_row = result[result["player_fotmob_id"] == 823825].iloc[0]
+    assert new_row["season_start"] == 2025
+    assert new_row["is_foreign_fallback"] is True
+
+    # Domestic players must remain in the same latest-season slice as the
+    # neo-arrivo — this is the exact regression this test guards against.
+    latest = result["season_start"].max()
+    assert latest == 2025
+    assert set(result[result["season_start"] == latest]["player_fotmob_id"]) == {
+        10, 20, 823825,
+    }
