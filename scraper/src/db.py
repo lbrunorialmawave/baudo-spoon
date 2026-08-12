@@ -45,7 +45,7 @@ class League(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
-    comp_id: Mapped[str] = mapped_column(String(10), nullable=False)
+    comp_id: Mapped[str | None] = mapped_column(String(10), nullable=True)
     slug: Mapped[str] = mapped_column(String(200), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -318,23 +318,68 @@ def ingest_dataframe(
     return result.rowcount
 
 
+def normalize_league_name(name: str) -> str:
+    """Deterministic normalization for league identity (unique on name)."""
+    return " ".join(name.strip().split())
+
+
+def _slugify_league(name: str) -> str:
+    """Deterministic slug from league display name for uncatalogued leagues."""
+    import re
+    import unicodedata
+
+    nfkd = unicodedata.normalize("NFKD", name)
+    ascii_name = nfkd.encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-") or "unknown-league"
+
+
+def get_or_create_league(
+    session: Session,
+    league_name: str,
+    *,
+    comp_id: str | None = None,
+    slug: str | None = None,
+) -> League:
+    """Resolve or create a league row without requiring LEAGUE_CATALOG membership."""
+    normalized = normalize_league_name(league_name)
+    if not normalized:
+        raise ValueError("league_name must be non-empty after normalization")
+
+    resolved_slug = slug or _slugify_league(normalized)
+
+    set_values: dict[str, Any] = {}
+    if comp_id is not None:
+        set_values["comp_id"] = comp_id
+    if slug is not None:
+        set_values["slug"] = slug
+
+    stmt = pg_insert(League).values(
+        name=normalized, comp_id=comp_id, slug=resolved_slug
+    )
+    if set_values:
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["name"],
+            set_=set_values,
+        )
+    else:
+        stmt = stmt.on_conflict_do_nothing(index_elements=["name"])
+    session.execute(stmt)
+    return session.query(League).filter_by(name=normalized).one()
+
+
 def _upsert_season(
     session: Session,
     league_name: str,
-    meta: LeagueMeta,
+    meta: LeagueMeta | None,
     season_label: str,
 ) -> int:
     """Upsert league + season rows and return the season PK."""
-    stmt = (
-        pg_insert(League)
-        .values(name=league_name, comp_id=meta.comp_id, slug=meta.slug)
-        .on_conflict_do_update(
-            index_elements=["name"],
-            set_={"comp_id": meta.comp_id, "slug": meta.slug},
+    if meta is not None:
+        league = get_or_create_league(
+            session, league_name, comp_id=meta.comp_id, slug=meta.slug,
         )
-        .returning(League.id)
-    )
-    league_id: int = session.execute(stmt).scalar_one()
+    else:
+        league = get_or_create_league(session, league_name)
 
     try:
         season_start = int(season_label.split("-")[0])
@@ -344,7 +389,7 @@ def _upsert_season(
     stmt2 = (
         pg_insert(Season)
         .values(
-            league_id=league_id,
+            league_id=league.id,
             season_start=season_start,
             season_label=season_label,
             scraped_at=datetime.now(timezone.utc),
@@ -359,6 +404,7 @@ def _upsert_season(
         .returning(Season.id)
     )
     return session.execute(stmt2).scalar_one()
+
 
 
 def upsert_player_profiles(
@@ -448,7 +494,8 @@ def upsert_player_season_roles(
         },
     )
     result = session.execute(stmt)
-    session.commit()
+    if commit:
+        session.commit()
     return result.rowcount
 
 
@@ -456,11 +503,13 @@ def ingest_league_stats(
     session: Session,
     rows: list[dict[str, Any]],
     league_name: str,
-    meta: LeagueMeta,
+    meta: LeagueMeta | None,
     season_label: str,
     fotmob_season_id: int,
     stat_type: str,
     stat_category: str,
+    *,
+    commit: bool = True,
 ) -> int:
     """
     Upsert player or team season stats into the database.

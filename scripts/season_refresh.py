@@ -84,10 +84,35 @@ def _coherence_check(engine: sa.Engine, quotations_dir: Path) -> dict[str, Any]:
     }
 
 
+# Persistence-rate thresholds (configurable).
+_FOREIGN_PERSISTENCE_RATE_OK = float(os.environ.get("FOREIGN_PERSISTENCE_RATE_OK", "0.95"))
+_FOREIGN_PERSISTENCE_RATE_WARN = float(os.environ.get("FOREIGN_PERSISTENCE_RATE_WARN", "0.90"))
+# Stage 4 enforcement: when true, rate < WARN becomes hard failure.
+_FOREIGN_PERSISTENCE_ENFORCE = os.environ.get("FOREIGN_PERSISTENCE_ENFORCE", "").lower() in (
+    "1", "true", "yes",
+)
+
+
+def _evaluate_persistence_rate(rate: float | None) -> str:
+    if rate is None:
+        return "ok"
+    if rate >= _FOREIGN_PERSISTENCE_RATE_OK:
+        return "ok"
+    if rate >= _FOREIGN_PERSISTENCE_RATE_WARN:
+        return "warning"
+    return "failure"
+
+
 def _foreign_stats(engine: sa.Engine) -> dict[str, Any]:
+    """Fetch+persist (or shadow-classify) foreign career snapshots."""
     latest = engine.connect().execute(sa.text("SELECT MAX(season_start) FROM player_quotations")).scalar()
+    empty = {
+        "candidates": 0, "fetched": 0, "persisted": 0, "unresolved": 0,
+        "uncatalogued": 0, "skipped_invalid": 0, "persistence_rate": None,
+        "invariant_ok": True, "shadow": False,
+    }
     if latest is None:
-        return {"status": "skipped", "reason": "no_quotations", "candidates": 0}
+        return {"status": "skipped", "reason": "no_quotations", **empty}
     sql = sa.text("""
         SELECT DISTINCT pim.player_fotmob_id, pq.player_name
         FROM player_quotations pq
@@ -112,17 +137,49 @@ def _foreign_stats(engine: sa.Engine) -> dict[str, Any]:
         rows = conn.execute(sql, {"season_start": int(latest)}).mappings().all()
     candidates = {int(r["player_fotmob_id"]): r["player_name"] for r in rows}
     if not candidates:
-        return {"status": "ok", "season_start": int(latest), "candidates": 0, "fetched": 0, "persisted": 0}
+        return {"status": "ok", "season_start": int(latest), **empty}
+
     from scraper.src.player_career_scraper import fetch_and_persist_players
-    fetched, persisted = fetch_and_persist_players(candidates, _sync_db_url(os.environ["ML_DATABASE_URL"]))
-    return {
-        "status": "ok",
-        "season_start": int(latest),
-        "candidates": len(candidates),
-        "fetched": fetched,
-        "persisted": persisted,
-        "unresolved": len(candidates) - fetched,
-    }
+
+    fs = fetch_and_persist_players(
+        candidates, _sync_db_url(os.environ["ML_DATABASE_URL"])
+    )
+    detail = fs.to_dict()
+    detail["season_start"] = int(latest)
+    detail["enforce"] = _FOREIGN_PERSISTENCE_ENFORCE
+
+    rate_status = _evaluate_persistence_rate(fs.persistence_rate)
+    if not fs.invariant_ok:
+        detail["status"] = "error"
+        detail["rate_status"] = rate_status
+        log.error("foreign-stats invariant failure: %s", fs.invariant_errors)
+    elif rate_status == "failure" and _FOREIGN_PERSISTENCE_ENFORCE:
+        detail["status"] = "error"
+        detail["rate_status"] = rate_status
+        log.error(
+            "foreign-stats persistence_rate %.1f%% below enforce threshold %.0f%%",
+            (fs.persistence_rate or 0) * 100, _FOREIGN_PERSISTENCE_RATE_WARN * 100,
+        )
+    elif rate_status in ("failure", "warning"):
+        detail["status"] = "warning"
+        detail["rate_status"] = rate_status
+        log.warning(
+            "foreign-stats persistence_rate %s%% status=%s enforce=%s",
+            detail["persistence_rate"], rate_status, _FOREIGN_PERSISTENCE_ENFORCE,
+        )
+    else:
+        detail["status"] = "ok"
+        detail["rate_status"] = rate_status
+
+    log.info(
+        "foreign-stats shadow=%s candidates=%d fetched=%d persisted=%d "
+        "unresolved=%d uncatalogued=%d rate=%s%% status=%s",
+        detail.get("shadow"), detail["candidates"], detail["fetched"],
+        detail["persisted"], detail["unresolved"], detail["uncatalogued"],
+        detail["persistence_rate"], detail["status"],
+    )
+    return detail
+
 
 
 def _signing_secret() -> str:
@@ -234,7 +291,16 @@ def main() -> int:
             import_cmd += ["--overrides", str(args.overrides)]
         steps.append(_run(import_cmd, "import"))
 
-        steps.append(StepResult("foreign-stats", "ok", _foreign_stats(engine)))
+        foreign_detail = _foreign_stats(engine)
+        foreign_status = foreign_detail.get("status", "ok")
+        if foreign_status == "error":
+            steps.append(StepResult("foreign-stats", "error", foreign_detail))
+            raise RefreshError(
+                "foreign-stats failed: "
+                f"invariant_errors={foreign_detail.get('invariant_errors')} "
+                f"rate_status={foreign_detail.get('rate_status')}"
+            )
+        steps.append(StepResult("foreign-stats", foreign_status, foreign_detail))
 
         latest = engine.connect().execute(sa.text("SELECT MAX(season_start) FROM player_quotations")).scalar()
         if latest is None:

@@ -123,3 +123,25 @@ def test_empty_query_result_is_noop(monkeypatch: pytest.MonkeyPatch) -> None:
     df_player = _df_player()
     result = _append_foreign_fallback_rows(df_player, _FakeEngine(), logging.getLogger("test"))
     assert len(result) == len(df_player)
+
+
+def test_uncatalogued_league_becomes_foreign_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PR3: uncatalogued league (Eredivisie) still surfaces as is_foreign_fallback=True."""
+    monkeypatch.setattr(
+        "ml.data.loader.pd.read_sql",
+        lambda *a, **k: _fallback_row(
+            player_fotmob_id=777,
+            league_name="Eredivisie",
+        ),
+    )
+    df_player = _df_player()
+    result = _append_foreign_fallback_rows(
+        df_player, _FakeEngine(), logging.getLogger("test")
+    )
+    assert len(result) == len(df_player) + 1
+    foreign = result[result["player_fotmob_id"] == 777].iloc[0]
+    assert foreign["is_foreign_fallback"] is True
+    assert foreign["league_name"] == "Eredivisie"
+    assert foreign["season_start"] == df_player["season_start"].max()

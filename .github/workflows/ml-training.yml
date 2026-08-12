@@ -40,9 +40,9 @@ on:
         default: "1"
 
       min_minutes:
-        description: "Minuti minimi per includere un giocatore"
+        description: "Minuti minimi per includere un giocatore (MLConfig.min_minutes)"
         required: false
-        default: "100"
+        default: "800"
 
       seed:
         description: "Random seed per riproducibilità"

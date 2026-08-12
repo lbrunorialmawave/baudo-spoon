@@ -54,6 +54,13 @@ _GITHUB_API = "https://api.github.com"
 # "Failed to run workflow dispatch" 500 (see GitHub community reports on
 # workflow_dispatch + boolean inputs) — passing every default explicitly
 # sidesteps that server-side default-filling path.
+#
+# Single source of truth for training defaults (PR5):
+#   MLConfig (ml/config.py) is canonical.
+#   .github/workflows/ml-training.yml workflow_dispatch.inputs defaults
+#   MUST match the values below, and both MUST match MLConfig effective
+#   defaults for: min_minutes, seed, test_seasons, league.
+#   Drift here silently changes production training behaviour.
 _DEFAULT_WORKFLOW_INPUTS: dict[str, str] = {
     "league": "Serie A",
     "tune": "true",
@@ -62,8 +69,8 @@ _DEFAULT_WORKFLOW_INPUTS: dict[str, str] = {
     "predict_next": "true",
     "evaluate_mantra": "false",
     "test_seasons": "1",
-    "min_minutes": "100",
-    "seed": "4642",
+    "min_minutes": "800",  # was "100" — aligned with MLConfig.min_minutes
+    "seed": "42",          # was "4642" — aligned with MLConfig.random_seed
     "log_level": "INFO",
     "output_dir": "",
     "fantavoto_csv": "",
