@@ -394,6 +394,8 @@ _CAMEL_OVERRIDES = {
     "expected_value": "expectedValue",
     "prezzo_massimo": "prezzoMassimo",
     "hybrid_labels": "hybridLabels",
+    # ML foreign-league fallback (trainer → merger → scoring → overview drawer)
+    "is_foreign_fallback": "isForeignFallback",
     # Mixed-case keys that must pass through unchanged
     "FP_Corr": "FP_Corr",
     "CP_Corr": "CP_Corr",

@@ -222,6 +222,14 @@ def merge_datasets(
             player["predicted_fantavoto"] = matched.get("predicted") or matched.get("predicted_fantavoto")
             player["prediction_std"] = matched.get("prediction_std")
             player["expected_minutes"] = matched.get("expected_minutes") or matched.get("expectedMinutes")
+            # Propagate foreign-fallback flag from ML predictions so:
+            #   - scoring applies confidence penalty + hybridLabels "foreign_fallback"
+            #   - overview API camelCases it to isForeignFallback for the drawer badge
+            # Without this copy the UI contract is silently broken (always falsy).
+            player["is_foreign_fallback"] = bool(
+                matched.get("is_foreign_fallback")
+                or matched.get("isForeignFallback")
+            )
 
             # Enrich with VAR data
             resolved_id = pid if pid is not None else matched.get("player_fotmob_id")
@@ -242,6 +250,7 @@ def merge_datasets(
             player["var_score"] = None
             player["esv"] = None
             player["next_season_predicted"] = None
+            player["is_foreign_fallback"] = False
             no_ml += 1
 
     log.info(
