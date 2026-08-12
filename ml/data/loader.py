@@ -84,13 +84,39 @@ SELECT player_fotmob_id, season_start, canonical_role
 FROM player_season_roles
 """
 
-# Cross-league fallback candidates: players in the current listino with a
-# most-recent-season stat line in ANY league (player_latest_stats_any_league,
-# migration 018 — same view MANTRA's neo-arrivo COALESCE reads), joined down
-# to the player_fotmob_id the rest of this loader keys on. Both joins are
-# 1:1 by construction (uq_player_quotation / uq_id_map UNIQUE(fantacalcio_id,
-# season_start)), so no dedup is needed here.
-_FOREIGN_FALLBACK_SQL = """
+# Cross-league fallback candidates (PR5 target-aware contract).
+#
+# Prefer player_stats_by_prediction_season (migration 026) filtered by the
+# listino/target season so a historical backfill row for prediction=2024 is
+# not silently replaced by a newer absolute-latest 2025 row.
+# Falls back to player_latest_stats_any_league when the new view is absent
+# (migration not yet applied) — see _append_foreign_fallback_rows.
+_FOREIGN_FALLBACK_SQL_TARGET_AWARE = """
+SELECT
+    a.fantacalcio_id      AS player_fotmob_id,
+    pq.player_name,
+    pq.team                AS team_name,
+    a.league_name,
+    a.minutes_avg,
+    a.goals_per90,
+    a.assists_per90,
+    a.saves_per90,
+    a.clean_sheet_per90,
+    a.source_season_start,
+    a.prediction_season_start
+FROM player_stats_by_prediction_season a
+JOIN player_id_map pim
+    ON pim.player_fotmob_id = a.fantacalcio_id
+    AND pim.season_start = :season_start
+JOIN player_quotations pq
+    ON pq.fantacalcio_id = pim.fantacalcio_id
+    AND pq.season_start = :season_start
+WHERE a.prediction_season_start = :season_start
+"""
+
+# Legacy latest-absolute path (migration 018) — used only as fallback when
+# player_stats_by_prediction_season is not available.
+_FOREIGN_FALLBACK_SQL_LATEST = """
 SELECT
     a.fantacalcio_id      AS player_fotmob_id,
     pq.player_name,
@@ -109,6 +135,9 @@ JOIN player_quotations pq
     ON pq.fantacalcio_id = pim.fantacalcio_id
     AND pq.season_start = :season_start
 """
+
+# Back-compat alias for any external imports of the old name.
+_FOREIGN_FALLBACK_SQL = _FOREIGN_FALLBACK_SQL_TARGET_AWARE
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -364,10 +393,11 @@ def _append_foreign_fallback_rows(
 ) -> pd.DataFrame:
     """Append one inference-only row per neo-arrivo with zero Serie A history.
 
-    Reads ``player_latest_stats_any_league`` (migration 018 — the same view
-    MANTRA's cross-league COALESCE fallback uses, populated today by the
-    targeted ``POST /admin/scrape/foreign-stats`` scraper) for players
-    already in the current listino but absent from ``df_player`` entirely.
+    Prefers ``player_stats_by_prediction_season`` (migration 026) filtered by
+    the listino/target season so historical backfill rows are not replaced by
+    a newer absolute-latest season. Falls back to
+    ``player_latest_stats_any_league`` (migration 018) when the target-aware
+    view is unavailable.
 
     The returned rows are tagged ``is_foreign_fallback=True`` and their
     ``season_start`` is overridden to the domestic pipeline's latest season
@@ -432,18 +462,40 @@ def _append_foreign_fallback_rows(
             listino_season, output_season, output_season,
         )
 
+    # Prefer target-aware view (migration 026). If missing, fall back to
+    # latest-absolute (migration 018) so environments mid-rollout keep working.
+    df_foreign = pd.DataFrame()
     try:
         df_foreign = pd.read_sql(
-            sa.text(_FOREIGN_FALLBACK_SQL), engine,
+            sa.text(_FOREIGN_FALLBACK_SQL_TARGET_AWARE),
+            engine,
             params={"season_start": listino_season},
         )
-    except Exception as exc:  # noqa: BLE001
-        log.warning(
-            "Could not load cross-league neo-arrivo fallback (%s). "
-            "Apply migration 018 and run POST /admin/scrape/foreign-stats.",
-            exc,
+        log.debug(
+            "Foreign fallback loaded via player_stats_by_prediction_season "
+            "(target=%s, rows=%d)",
+            listino_season,
+            len(df_foreign),
         )
-        return df_player
+    except Exception as target_exc:  # noqa: BLE001
+        log.info(
+            "Target-aware foreign view unavailable (%s); "
+            "falling back to player_latest_stats_any_league.",
+            target_exc,
+        )
+        try:
+            df_foreign = pd.read_sql(
+                sa.text(_FOREIGN_FALLBACK_SQL_LATEST),
+                engine,
+                params={"season_start": listino_season},
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "Could not load cross-league neo-arrivo fallback (%s). "
+                "Apply migrations 018/026 and run foreign-stats backfill.",
+                exc,
+            )
+            return df_player
 
     if df_foreign.empty:
         return df_player

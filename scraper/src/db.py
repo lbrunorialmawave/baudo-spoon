@@ -127,6 +127,7 @@ class PlayerSeasonStat(Base):
     season_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("seasons.id", ondelete="CASCADE"), nullable=False
     )
+    # Sentinel -1 = foreign careerHistory snapshot (not from bulk league scrape).
     fotmob_season_id: Mapped[int] = mapped_column(Integer, nullable=False)
     stat_category: Mapped[str] = mapped_column(String(100), nullable=False)
     rank: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
@@ -138,6 +139,12 @@ class PlayerSeasonStat(Base):
     ingested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # Season-aware foreign lineage (migration 025). Nullable for BC with
+    # pre-existing bulk-scrape rows.
+    source_season_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prediction_season_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    selection_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    fallback_depth: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
 
     season: Mapped[Season] = relationship("Season", back_populates="player_season_stats")
 
@@ -510,6 +517,10 @@ def ingest_league_stats(
     stat_category: str,
     *,
     commit: bool = True,
+    source_season_start: int | None = None,
+    prediction_season_start: int | None = None,
+    selection_reason: str | None = None,
+    fallback_depth: int | None = None,
 ) -> int:
     """
     Upsert player or team season stats into the database.
@@ -517,6 +528,11 @@ def ingest_league_stats(
     Args:
         stat_type: ``"players"`` or ``"teams"``.
         rows: output of ``FotMobLeagueStatsScraper.run()`` for one category.
+        fotmob_season_id: FotMob season id; use ``-1`` for foreign careerHistory
+            snapshots that are not tied to a bulk league scrape.
+        source_season_start / prediction_season_start / selection_reason /
+        fallback_depth: optional season-aware lineage (migration 025). Only
+            applied to player rows.
 
     Returns:
         Number of rows inserted / updated.
@@ -540,6 +556,10 @@ def ingest_league_stats(
                 "team_name": r.get("team_name") or "",
                 "value": r.get("value"),
                 "ingested_at": now,
+                "source_season_start": source_season_start,
+                "prediction_season_start": prediction_season_start,
+                "selection_reason": selection_reason,
+                "fallback_depth": fallback_depth,
             }
             for r in rows
         ]
@@ -552,6 +572,10 @@ def ingest_league_stats(
                 "team_name": stmt.excluded.team_name,
                 "value": stmt.excluded.value,
                 "ingested_at": stmt.excluded.ingested_at,
+                "source_season_start": stmt.excluded.source_season_start,
+                "prediction_season_start": stmt.excluded.prediction_season_start,
+                "selection_reason": stmt.excluded.selection_reason,
+                "fallback_depth": stmt.excluded.fallback_depth,
             },
         )
     else:
@@ -580,5 +604,6 @@ def ingest_league_stats(
         )
 
     result = session.execute(stmt)
-    session.commit()
+    if commit:
+        session.commit()
     return result.rowcount

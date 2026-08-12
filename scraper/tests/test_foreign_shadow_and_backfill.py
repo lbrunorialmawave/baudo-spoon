@@ -66,3 +66,25 @@ def test_empty_candidates_ok():
     r.assert_conservation()
     assert r.invariant_ok is True
     assert r.persistence_rate is None
+
+
+def test_health_checks_structure_without_db():
+    """_health_checks is defined and documents the expected gate names."""
+    from pathlib import Path
+
+    mod_path = Path(__file__).resolve().parents[2] / "scripts" / "backfill_foreign_stats.py"
+    if not mod_path.exists():
+        mod_path = Path("scripts/backfill_foreign_stats.py")
+    src = mod_path.read_text()
+    assert "def _health_checks" in src
+    for name in (
+        "latest_view_readable",
+        "target_aware_view_readable",
+        "lineage_columns_queryable",
+        "foreign_sentinel_queryable",
+        "conservation_invariants",
+        "candidates_accounted",
+        "season_resolution_ran",
+    ):
+        assert name in src
+    assert "--health" in src
