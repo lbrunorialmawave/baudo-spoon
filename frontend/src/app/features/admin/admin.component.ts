@@ -84,7 +84,7 @@ export class AdminComponent {
     if (s.name === 'ml_coverage') {
       if (s.reason === 'no_quotations') return 'Nessuna quotazione importata';
       const coverage = s.coverage_pct != null ? `${s.coverage_pct}% copertura` : 'Copertura non disponibile';
-      const unresolved = s.n_neo_arrivo_unresolved != null ? `neo-arrivi senza ML: ${s.n_neo_arrivo_unresolved}` : '';
+      const unresolved = s.n_neo_arrivo_unresolved != null ? `giocatori senza ML: ${s.n_neo_arrivo_unresolved}` : '';
       const artifact = s.artifact === 'missing' ? 'results_latest.json mancante' : '';
       return [coverage, unresolved, artifact].filter(Boolean).join(' · ') || 'Nessun dettaglio';
     }
