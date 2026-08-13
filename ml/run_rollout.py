@@ -234,63 +234,79 @@ def save_state(state: RolloutState, local_path: Path) -> None:
 # ── R2 sync (opzionale) ──────────────────────────────────────────────────────
 
 
-def _download_from_r2(key: str, bucket: str, dest: Path) -> bool:
-    """Scarica ``key`` da R2 via awscli.  Ritorna True se scaricato."""
-    import subprocess
+def _r2_client():
+    """Build a boto3 S3 client pointed at Cloudflare R2.
 
-    if not dest.parent.exists():
-        dest.parent.mkdir(parents=True, exist_ok=True)
+    Usa le env ``ML_R2_*`` (come nel resto del progetto). Fallback alle
+    classiche ``AWS_*`` per compatibilità locale.
+    """
+    import boto3
+    from botocore.config import Config
 
     endpoint = os.environ.get("ML_R2_ENDPOINT_URL", "")
     if not endpoint:
+        return None
+
+    access_key = os.environ.get("ML_R2_ACCESS_KEY_ID") or os.environ.get(
+        "AWS_ACCESS_KEY_ID"
+    )
+    secret_key = os.environ.get("ML_R2_SECRET_ACCESS_KEY") or os.environ.get(
+        "AWS_SECRET_ACCESS_KEY"
+    )
+
+    return boto3.client(
+        "s3",
+        endpoint_url=endpoint,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        region_name=os.environ.get("AWS_DEFAULT_REGION", "auto"),
+        config=Config(signature_version="s3v4"),
+    )
+
+
+def _download_from_r2(key: str, bucket: str, dest: Path) -> bool:
+    """Scarica ``key`` da R2 via boto3.  Ritorna True se scaricato."""
+    if not dest.parent.exists():
+        dest.parent.mkdir(parents=True, exist_ok=True)
+
+    client = _r2_client()
+    if client is None:
         log.warning("ML_R2_ENDPOINT_URL non configurato, skip download R2.")
         return False
 
-    env = os.environ.copy()
-    env.setdefault("AWS_DEFAULT_REGION", "auto")
-    cmd = [
-        "aws", "s3", "cp",
-        f"s3://{bucket}/{key}",
-        str(dest),
-        "--endpoint-url", endpoint,
-    ]
-    log.info("Download R2: %s", " ".join(cmd))
-    res = subprocess.run(cmd, env=env, capture_output=True, text=True)  # noqa: S603
-    if res.returncode != 0:
-        # File non presente in R2 → non è un errore.
-        if "404" in res.stderr or "NoSuchKey" in res.stderr:
+    log.info("Download R2: s3://%s/%s → %s", bucket, key, dest)
+    try:
+        client.download_file(bucket, key, str(dest))
+    except client.exceptions.ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code", "")
+        if code in ("404", "NoSuchKey", "NotFound"):
             log.info("File R2 %s non presente (prima esecuzione?).", key)
             return False
-        log.error("Download R2 fallito: %s", res.stderr)
+        log.error("Download R2 fallito: %s", exc)
         return False
+    except Exception as exc:  # noqa: BLE001
+        log.error("Download R2 fallito: %s", exc)
+        return False
+
     return dest.exists() and dest.stat().st_size > 0
 
 
 def _upload_to_r2(local: Path, key: str, bucket: str) -> bool:
-    """Carica ``local`` su R2 via awscli.  Ritorna True se ok."""
-    import subprocess
-
+    """Carica ``local`` su R2 via boto3.  Ritorna True se ok."""
     if not local.exists():
         log.error("File locale %s assente, upload R2 saltato.", local)
         return False
 
-    endpoint = os.environ.get("ML_R2_ENDPOINT_URL", "")
-    if not endpoint:
+    client = _r2_client()
+    if client is None:
         log.warning("ML_R2_ENDPOINT_URL non configurato, skip upload R2.")
         return False
 
-    env = os.environ.copy()
-    env.setdefault("AWS_DEFAULT_REGION", "auto")
-    cmd = [
-        "aws", "s3", "cp",
-        str(local),
-        f"s3://{bucket}/{key}",
-        "--endpoint-url", endpoint,
-    ]
-    log.info("Upload R2: %s", " ".join(cmd))
-    res = subprocess.run(cmd, env=env, capture_output=True, text=True)  # noqa: S603
-    if res.returncode != 0:
-        log.error("Upload R2 fallito: %s", res.stderr)
+    log.info("Upload R2: %s → s3://%s/%s", local, bucket, key)
+    try:
+        client.upload_file(str(local), bucket, key)
+    except Exception as exc:  # noqa: BLE001
+        log.error("Upload R2 fallito: %s", exc)
         return False
     return True
 
