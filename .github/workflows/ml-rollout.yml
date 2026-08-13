@@ -33,7 +33,7 @@ on:
       actor:
         description: "Chi esegue l'azione (per audit log)"
         required: false
-        default: "${{ github.actor }}"
+        default: ""
 
       note:
         description: "Nota opzionale (es. 'Post PR5 exp 20260812')"
