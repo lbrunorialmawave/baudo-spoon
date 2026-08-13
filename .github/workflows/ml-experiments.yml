@@ -1,4 +1,4 @@
-name: ML Experiments (PR5)
+name: ML Experiments
 
 on:
   # Esecuzione manuale da tab "Actions" con parametri custom.

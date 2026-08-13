@@ -1,4 +1,4 @@
-name: ML Rollout (PR8)
+name: ML Rollout
 
 on:
   # Esecuzione manuale da tab "Actions".
@@ -94,25 +94,47 @@ jobs:
         run: |
           set -euo pipefail
 
-          ARGS=("${{ github.event.inputs.action }}")
-          ARGS+=(--artifacts-dir /app/artifacts)
+          ACTION="${{ github.event.inputs.action }}"
+          FLAG="${{ github.event.inputs.flag }}"
+          ACTOR="${{ github.event.inputs.actor || github.actor }}"
+          NOTE="${{ github.event.inputs.note }}"
+          ROLLOUT_PCT="${{ github.event.inputs.rollout_pct || '100' }}"
+          AUDIT_LIMIT="${{ github.event.inputs.audit_limit || '20' }}"
+
+          # Le opzioni globali del parser (--artifacts-dir, --r2-bucket,
+          # --sync-r2, --json-logs) devono precedere il sottocomando: una
+          # volta letto "status/shadow/...", argparse passa tutto il resto
+          # al subparser corrispondente, che non le riconosce.
+          ARGS=(--artifacts-dir /app/artifacts)
           ARGS+=(--r2-bucket "${ML_R2_BUCKET_NAME}")
           ARGS+=(--sync-r2)
           ARGS+=(--json-logs)
+          ARGS+=("${ACTION}")
 
-          if [ -n "${{ github.event.inputs.flag }}" ]; then
-            ARGS+=("${{ github.event.inputs.flag }}")
-          fi
-
-          # rollout_pct è rilevante solo per shadow/activate.
-          if [ "${{ github.event.inputs.action }}" = "shadow" ] || \
-             [ "${{ github.event.inputs.action }}" = "activate" ]; then
-            ARGS+=(--rollout-pct "${{ github.event.inputs.rollout_pct || '100' }}")
-          fi
-
-          ARGS+=(--actor "${{ github.event.inputs.actor || github.actor }}")
-          ARGS+=(--note "${{ github.event.inputs.note }}")
-          ARGS+=(--limit "${{ github.event.inputs.audit_limit || '20' }}")
+          # Ogni subparser accetta un set diverso di opzioni:
+          #   status/audit  -> solo --limit
+          #   shadow/activate -> flag (posizionale), --rollout-pct, --actor, --note
+          #   disable        -> flag (posizionale), --actor, --note
+          case "${ACTION}" in
+            status|audit)
+              ARGS+=(--limit "${AUDIT_LIMIT}")
+              ;;
+            shadow|activate)
+              if [ -n "${FLAG}" ]; then
+                ARGS+=("${FLAG}")
+              fi
+              ARGS+=(--rollout-pct "${ROLLOUT_PCT}")
+              ARGS+=(--actor "${ACTOR}")
+              ARGS+=(--note "${NOTE}")
+              ;;
+            disable)
+              if [ -n "${FLAG}" ]; then
+                ARGS+=("${FLAG}")
+              fi
+              ARGS+=(--actor "${ACTOR}")
+              ARGS+=(--note "${NOTE}")
+              ;;
+          esac
 
           echo "Rollout args: ${ARGS[*]}"
 
