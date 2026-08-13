@@ -44,8 +44,11 @@ class League(Base):
     __tablename__ = "leagues"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    # name is unique only among uncatalogued rows (comp_id IS NULL); catalogued
+    # rows are unique by comp_id. See migrations 027-028.
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
     comp_id: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    country_code: Mapped[str | None] = mapped_column(String(3), nullable=True)
     slug: Mapped[str] = mapped_column(String(200), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -237,15 +240,16 @@ def ingest_dataframe(
     if df.empty:
         return 0
 
-    # 1. Upsert League
+    # 1. Upsert League — conflict on comp_id (catalogued leagues are unique by comp_id).
     stmt_league = pg_insert(League).values(
         name=league_name,
         comp_id=meta.comp_id,
         slug=meta.slug,
     )
     stmt_league = stmt_league.on_conflict_do_update(
-        index_elements=["name"],
-        set_={"comp_id": meta.comp_id, "slug": meta.slug},
+        index_elements=["comp_id"],
+        index_where=League.comp_id.isnot(None),
+        set_={"name": league_name, "slug": meta.slug},
     ).returning(League.id)
     league_id = session.execute(stmt_league).scalar_one()
 
@@ -326,7 +330,7 @@ def ingest_dataframe(
 
 
 def normalize_league_name(name: str) -> str:
-    """Deterministic normalization for league identity (unique on name)."""
+    """Normalise whitespace for league display names."""
     return " ".join(name.strip().split())
 
 
@@ -347,31 +351,32 @@ def get_or_create_league(
     comp_id: str | None = None,
     slug: str | None = None,
 ) -> League:
-    """Resolve or create a league row without requiring LEAGUE_CATALOG membership."""
+    """Resolve or create a league row without requiring LEAGUE_CATALOG membership.
+
+    Identity rules (migrations 027-028):
+      catalogued   (comp_id given)  — unique by comp_id via partial index.
+      uncatalogued (comp_id=None)   — unique by name among NULL-comp_id rows.
+    """
     normalized = normalize_league_name(league_name)
     if not normalized:
         raise ValueError("league_name must be non-empty after normalization")
 
     resolved_slug = slug or _slugify_league(normalized)
+    stmt = pg_insert(League).values(name=normalized, comp_id=comp_id, slug=resolved_slug)
 
-    set_values: dict[str, Any] = {}
     if comp_id is not None:
-        set_values["comp_id"] = comp_id
-    if slug is not None:
-        set_values["slug"] = slug
-
-    stmt = pg_insert(League).values(
-        name=normalized, comp_id=comp_id, slug=resolved_slug
-    )
-    if set_values:
         stmt = stmt.on_conflict_do_update(
-            index_elements=["name"],
-            set_=set_values,
+            index_elements=["comp_id"],
+            index_where=League.comp_id.isnot(None),
+            set_={"name": normalized, "slug": resolved_slug},
         )
+        session.execute(stmt)
+        return session.query(League).filter_by(comp_id=comp_id).one()
     else:
-        stmt = stmt.on_conflict_do_nothing(index_elements=["name"])
-    session.execute(stmt)
-    return session.query(League).filter_by(name=normalized).one()
+        # Uncatalogued: suppress duplicate-name conflicts; return existing row.
+        stmt = stmt.on_conflict_do_nothing()
+        session.execute(stmt)
+        return session.query(League).filter_by(name=normalized, comp_id=None).one()
 
 
 def _upsert_season(

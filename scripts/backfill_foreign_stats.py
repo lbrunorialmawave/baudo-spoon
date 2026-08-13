@@ -200,7 +200,22 @@ def _health_checks(engine: sa.Engine, result: Any | None = None) -> dict[str, An
 def _candidate_players(
     engine: sa.Engine, season_starts: list[int]
 ) -> list:
-    """Players in listino for the given seasons who lack any-league latest stats.
+    """Players in listino who still need a target-aware foreign snapshot.
+
+    A (player, target_season) pair is a candidate when either:
+
+    * **Gap A — never backfilled:** no row in
+      ``player_latest_stats_any_league`` (original behaviour).
+    * **Gap B — stale prediction lineage (neo-arrivi only):** has
+      any-league latest stats, no row in
+      ``player_stats_by_prediction_season`` with
+      ``prediction_season_start = target_season``, **and** zero Serie A
+      rows in ``player_season_stats`` (Ramos-class: foreign stats exist
+      for N-1 only while the listino already points at N).
+
+    Gap B explicitly excludes pure domestic players (e.g. Berardi) who
+    appear in ``player_latest_stats_any_league`` via Serie A but must not
+    enter the foreign career scraper.
 
     Returns ``ForeignPlayerCandidate`` instances keyed by
     ``(player_fotmob_id, target_season_start)`` — the same player may appear
@@ -217,11 +232,42 @@ def _candidate_players(
         JOIN player_id_map pim
           ON pim.fantacalcio_id = pq.fantacalcio_id
          AND pim.season_start = pq.season_start
-        LEFT JOIN player_latest_stats_any_league pss_any
-          ON pss_any.fantacalcio_id = pim.player_fotmob_id::bigint
         WHERE pq.season_start = ANY(:seasons)
           AND pim.player_fotmob_id IS NOT NULL
-          AND pss_any.fantacalcio_id IS NULL
+          AND (
+            -- Gap A: never backfilled into any-league latest
+            NOT EXISTS (
+                SELECT 1
+                FROM player_latest_stats_any_league lat
+                WHERE lat.fantacalcio_id = pim.player_fotmob_id::bigint
+            )
+            OR
+            -- Gap B: neo-arrivo with stale prediction lineage
+            --   - has any-league latest (usually prior foreign club)
+            --   - missing prediction_season = listino target
+            --   - zero Serie A history (excludes Berardi & pure domestic)
+            (
+                EXISTS (
+                    SELECT 1
+                    FROM player_latest_stats_any_league lat
+                    WHERE lat.fantacalcio_id = pim.player_fotmob_id::bigint
+                )
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM player_stats_by_prediction_season pred
+                    WHERE pred.fantacalcio_id = pim.player_fotmob_id::bigint
+                      AND pred.prediction_season_start = pq.season_start
+                )
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM player_season_stats pss
+                    JOIN seasons s ON s.id = pss.season_id
+                    JOIN leagues l ON l.id = s.league_id
+                    WHERE pss.player_fotmob_id = pim.player_fotmob_id
+                      AND l.comp_id = '55'
+                )
+            )
+          )
     """)
     with engine.connect() as conn:
         rows = conn.execute(sql, {"seasons": season_starts}).mappings().all()
@@ -344,7 +390,8 @@ def main(argv: list[str] | None = None) -> int:
     before = _baseline_counts(engine)
     candidates = _candidate_players(engine, seasons)
     log.info(
-        "Candidates missing any-league stats: %d (unique player-season pairs)",
+        "Candidates needing foreign snapshot (missing latest OR missing "
+        "prediction_season=target): %d (unique player-season pairs)",
         len(candidates),
     )
 

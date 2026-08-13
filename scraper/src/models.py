@@ -72,3 +72,10 @@ LEAGUE_CATALOG: dict[str, LeagueMeta] = {
         country_code="ITA",
     ),
 }
+
+# Identity-safe catalog keyed by FotMob comp_id (the stable integer identifier
+# that distinguishes e.g. Serie A ITA (55) from Serie A BRA (268)). Use this
+# in the career scraper where display_name is not unique across countries.
+LEAGUE_CATALOG_BY_COMP_ID: dict[str, LeagueMeta] = {
+    meta.comp_id: meta for meta in LEAGUE_CATALOG.values()
+}

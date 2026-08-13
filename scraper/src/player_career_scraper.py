@@ -23,7 +23,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Optional, Sequence
 
-from .models import FOTMOB_BASE_URL, LEAGUE_CATALOG
+from .models import FOTMOB_BASE_URL, LEAGUE_CATALOG, LEAGUE_CATALOG_BY_COMP_ID
 
 log = logging.getLogger(__name__)
 
@@ -294,6 +294,7 @@ class CompetitionSnapshot:
     catalogued: bool
     raw_tournament: dict[str, Any] | None
     selection_rank: tuple[int, int, int, int]
+    competition_id: str | None = None  # FotMob leagueId; None for legacy/test data
 
 
 def _competition_rank(t: dict) -> tuple[int, int, int, int]:
@@ -356,6 +357,7 @@ def resolve_competition(season_entry: dict) -> CompetitionSnapshot | None:
             catalogued=False,
             raw_tournament=None,
             selection_rank=(0, 0, apps, 0),
+            competition_id=None,
         )
 
     best = max(
@@ -367,6 +369,7 @@ def resolve_competition(season_entry: dict) -> CompetitionSnapshot | None:
         return None
 
     name = (best.get("leagueName") or "").strip() or None
+    competition_id = str(best.get("leagueId") or "").strip() or None
     try:
         apps = int(best.get("appearances") or 0)
     except (TypeError, ValueError):
@@ -385,15 +388,20 @@ def resolve_competition(season_entry: dict) -> CompetitionSnapshot | None:
         if isinstance(rating_field, dict) and rating_field.get("rating") is not None
         else None
     )
+    catalogued = bool(
+        (competition_id is not None and competition_id in LEAGUE_CATALOG_BY_COMP_ID)
+        or (competition_id is None and name is not None and name in LEAGUE_CATALOG)
+    )
     return CompetitionSnapshot(
         league_name=name,
         appearances=apps,
         goals=goals,
         assists=assists,
         rating=rating_value,
-        catalogued=bool(name and name in LEAGUE_CATALOG),
+        catalogued=catalogued,
         raw_tournament=best,
         selection_rank=_competition_rank(best),
+        competition_id=competition_id,
     )
 
 
@@ -487,11 +495,33 @@ def resolve_season(
     by_start = {cs.season_start: cs for cs in seasons}
 
     if target not in by_start:
+        if not policy.allow_previous_season_fallback:
+            return SeasonResolutionResult(
+                target_season_start=target,
+                selected_season_start=None,
+                fallback_depth=0,
+                reason=REASON_NO_TARGET_SEASON,
+                entry=None,
+            )
+        # Target absent + fallback enabled: walk all seasons below the target.
+        previous_from_absent = [cs for cs in seasons if cs.season_start < target]
+        previous_from_absent.sort(key=lambda s: s.season_start, reverse=True)
+        for depth, cs in enumerate(previous_from_absent, start=1):
+            if depth > policy.max_fallback_depth:
+                break
+            if _usable(cs):
+                return SeasonResolutionResult(
+                    target_season_start=target,
+                    selected_season_start=cs.season_start,
+                    fallback_depth=depth,
+                    reason=REASON_PREVIOUS_SEASON_SELECTED,
+                    entry=cs.raw_entry,
+                )
         return SeasonResolutionResult(
             target_season_start=target,
             selected_season_start=None,
             fallback_depth=0,
-            reason=REASON_NO_TARGET_SEASON,
+            reason=REASON_NO_VALID_SEASON,
             entry=None,
         )
 
@@ -644,6 +674,7 @@ def fetch_player_career_snapshot(
     if comp is None:
         return None
     league_name = comp.league_name
+    competition_id = comp.competition_id
     appearances = comp.appearances
     goals = comp.goals
     assists = comp.assists
@@ -656,7 +687,10 @@ def fetch_player_career_snapshot(
 
     season_name = season_entry.get("seasonName", "")
     season_label = season_name.replace("/", "-") if "/" in season_name else season_name
-    catalogued = league_name in LEAGUE_CATALOG
+    catalogued = bool(
+        (competition_id is not None and competition_id in LEAGUE_CATALOG_BY_COMP_ID)
+        or (competition_id is None and league_name in LEAGUE_CATALOG)
+    )
 
     source_season_start = resolution.selected_season_start
     # prediction defaults: explicit kwarg → target → selected source
@@ -677,6 +711,7 @@ def fetch_player_career_snapshot(
         "player_fotmob_id": player_fotmob_id,
         "player_name": player_name,
         "league_name": league_name,
+        "competition_id": competition_id,
         "season_label": season_label,
         "source_season_start": source_season_start,
         "prediction_season_start": pred_season,
@@ -706,7 +741,11 @@ def _persist_one_snapshot(session: Any, snap: dict[str, Any]) -> int:
         return 0
 
     league_name = normalize_league_name(raw_name)
-    meta = LEAGUE_CATALOG.get(league_name)
+    comp_id_from_snap = snap.get("competition_id")
+    if comp_id_from_snap:
+        meta = LEAGUE_CATALOG_BY_COMP_ID.get(comp_id_from_snap)
+    else:
+        meta = LEAGUE_CATALOG.get(league_name)
 
     base_row = {
         "entity_id": snap["player_fotmob_id"],
@@ -830,8 +869,8 @@ def fetch_and_persist_players(
             if cand_policy is None and cand_target is not None:
                 cand_policy = SeasonResolutionPolicy(
                     target_season_start=cand_target,
-                    allow_previous_season_fallback=False,
-                    max_fallback_depth=2,
+                    allow_previous_season_fallback=True,
+                    max_fallback_depth=1,
                     require_positive_appearances=True,
                     require_league=True,
                 )

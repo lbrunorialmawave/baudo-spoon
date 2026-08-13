@@ -137,11 +137,11 @@ _PLAYER_DATA_SQL = sa.text("""
     LEFT JOIN team_strength_aggregates ts
         ON ts.team_name = pq.team
         AND ts.season_start = pq.season_start
-        AND ts.league_name = 'Serie A'
+        AND ts.league_comp_id  = '55'
     LEFT JOIN team_strength_aggregates ts_prev
         ON ts_prev.team_name = pq.team
         AND ts_prev.season_start = pq.season_start - 1
-        AND ts_prev.league_name = 'Serie A'
+        AND ts_prev.league_comp_id  = '55'
     WHERE pq.season_start = :season_start
     ORDER BY pq.player_name
 """)

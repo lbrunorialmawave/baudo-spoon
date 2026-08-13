@@ -361,7 +361,7 @@ def _load_fotmob_reference(
              FROM seasons s2
              JOIN leagues l2 ON l2.id = s2.league_id
              WHERE s2.season_start = psr.season_start
-               AND l2.name = 'Serie A'
+               AND l2.comp_id = '55'
              LIMIT 1
          )
         JOIN seasons s ON s.id = pss.season_id
@@ -403,11 +403,8 @@ def _load_fotmob_reference(
                    s.season_start,
                    ROW_NUMBER() OVER (
                        PARTITION BY pss.player_fotmob_id
-                       -- Serie A wins ties on season_start against any other
-                       -- ingested league, rather than leaving it to Postgres's
-                       -- arbitrary row-arrival order (see the primary query's
-                       -- season_id subquery above for the same rationale).
-                       ORDER BY (l.name = 'Serie A') DESC, s.season_start DESC
+                       -- comp_id='55' wins ties to pin Serie A ITA unambiguously.
+                       ORDER BY (l.comp_id = '55') DESC, s.season_start DESC
                    ) AS rn
             FROM player_season_stats pss
             JOIN seasons s ON s.id = pss.season_id

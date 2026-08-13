@@ -399,6 +399,47 @@ def test_resolve_max_fallback_depth_respected():
     assert result.reason == REASON_NO_VALID_SEASON
 
 
+# --- Acceptance: target absent + fallback enabled (Ramos-class: listino=2026, FotMob has 2025/26) ---
+
+def test_resolve_target_absent_with_previous_fallback():
+    """Target season absent from FotMob + fallback enabled → select nearest previous."""
+    entries = [
+        _season("2025/26", appearances=28),  # season_start=2025, usable
+        _season("2024/25", appearances=20),  # season_start=2024, also usable but further
+    ]
+    result = resolve_season(
+        entries,
+        SeasonResolutionPolicy(
+            target_season_start=2026,           # absent: FotMob has no 2026/27 entry yet
+            allow_previous_season_fallback=True,
+            max_fallback_depth=1,
+        ),
+    )
+    assert result.selected is True
+    assert result.selected_season_start == 2025  # "2025/26" → season_start=2025
+    assert result.fallback_depth == 1
+    assert result.reason == REASON_PREVIOUS_SEASON_SELECTED
+    assert result.target_season_start == 2026
+
+
+def test_resolve_target_absent_fallback_no_usable_previous():
+    """Target absent + fallback enabled but all previous seasons are unusable."""
+    entries = [
+        _season("2024/25", appearances=0),
+        _season("2025/26", appearances=0),
+    ]
+    result = resolve_season(
+        entries,
+        SeasonResolutionPolicy(
+            target_season_start=2026,
+            allow_previous_season_fallback=True,
+            max_fallback_depth=2,
+        ),
+    )
+    assert result.selected is False
+    assert result.reason == REASON_NO_VALID_SEASON
+
+
 # --- Backward-compatible _select_season_entry ---
 
 def test_select_season_entry_still_picks_max_year():
