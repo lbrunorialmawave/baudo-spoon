@@ -134,6 +134,9 @@ def test_foreign_fallback_row_survives_min_minutes_floor() -> None:
 
 
 def test_non_foreign_low_minutes_row_still_dropped() -> None:
+    """Legacy path (no hard_floor): rows under the default min_minutes=800
+    are dropped. Covers enable_limited_sample_training=False behaviour.
+    """
     df = _make_season_df(is_foreign_fallback=False)
     result = attach_target(df)
     assert len(result) == 0
@@ -145,6 +148,41 @@ def test_row_without_flag_column_still_dropped() -> None:
     df = _make_season_df()
     result = attach_target(df)
     assert len(result) == 0
+
+
+def test_hard_floor_keeps_limited_cohort() -> None:
+    """When hard_floor is supplied (limited-sample path), rows in
+    [hard_floor, min_minutes) survive attach_target so they can be
+    weighted/shrunk downstream.
+    """
+    # 300 min is below the legacy 800 floor but above the hard floor of 100.
+    df = _make_season_df(mins_played=300, is_foreign_fallback=False)
+    result = attach_target(df, min_minutes=800, hard_floor=100)
+    assert len(result) == 1
+    assert result.iloc[0]["mins_played"] == 300
+
+
+def test_hard_floor_still_drops_below_floor() -> None:
+    """Rows strictly below hard_floor are still dropped even when the
+    limited-sample path is active.
+    """
+    df = _make_season_df(mins_played=50, is_foreign_fallback=False)
+    result = attach_target(df, min_minutes=800, hard_floor=100)
+    assert len(result) == 0
+
+
+def test_hard_floor_none_preserves_legacy_drop() -> None:
+    """Explicit hard_floor=None is equivalent to the pre-low-sample API."""
+    df = _make_season_df(mins_played=300, is_foreign_fallback=False)
+    result = attach_target(df, min_minutes=800, hard_floor=None)
+    assert len(result) == 0
+
+
+def test_foreign_fallback_survives_even_with_hard_floor() -> None:
+    """Foreign fallback rows must continue to bypass any drop threshold."""
+    df = _make_season_df(mins_played=50, is_foreign_fallback=True)
+    result = attach_target(df, min_minutes=800, hard_floor=100)
+    assert len(result) == 1
 
 
 # ── WEIGHTS_BY_ROLE completeness ──────────────────────────────────────────────

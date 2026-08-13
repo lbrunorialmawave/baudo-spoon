@@ -8,9 +8,14 @@ production training (see ``plan.md`` PR3/PR4/PR7):
   ``select_features`` via ``extra_numeric_candidates``
 * ``enable_breakout_model``  — :meth:`Trainer._run_breakout_model`
 
-These tests exercise the Trainer helper methods directly (no DB, no
-full ``Trainer.run()``) to stay fast and hermetic, mirroring the style
-of ``test_trainer_foreign_quarantine.py``.
+Also covers the attach_target hard_floor wiring (PR wiring fix) so that
+the LIMITED cohort (100–799 min) actually reaches weighting/shrinkage
+when ``enable_limited_sample_training`` is True.
+
+These tests exercise the Trainer helper methods and the attach_target
+call-site contract directly (no DB, no full ``Trainer.run()``) to stay
+fast and hermetic, mirroring the style of
+``test_trainer_foreign_quarantine.py``.
 """
 
 from __future__ import annotations
@@ -22,6 +27,7 @@ import pandas as pd
 import pytest
 
 from ml.config import MLConfig
+from ml.data.target import attach_target
 from ml.pipeline.trainer import Trainer
 from ml.preprocessing.features import select_features
 from ml.preprocessing.role_features import (
@@ -190,3 +196,101 @@ class TestBreakoutModelShadow:
     def test_disabled_flag_is_not_invoked_by_default(self, tmp_path: Path) -> None:
         cfg = _cfg(tmp_path)
         assert cfg.enable_breakout_model is False
+
+
+# ── attach_target hard_floor wiring (LIMITED cohort reaches training) ────────
+
+class TestLimitedCohortSurvivesAttachTarget:
+    """Regression guard for the wiring bug where attach_target always dropped
+    rows below cfg.min_minutes (800), so the LIMITED cohort never reached
+    _build_sample_weights / _apply_shrinkage even when the flag was True.
+    """
+
+    def _raw_frame(self) -> pd.DataFrame:
+        """Synthetic df_raw with one row per minutes bucket."""
+        return pd.DataFrame(
+            {
+                "player_fotmob_id": [1, 2, 3, 4],
+                "player_name": ["A", "B", "C", "D"],
+                "season_start": [2023, 2023, 2023, 2023],
+                "canonical_role": ["FWD", "MID", "DEF", "GK"],
+                "mins_played": [50, 300, 600, 900],
+                "appearances": [1, 4, 8, 12],
+                "goals": [0, 1, 2, 0],
+                "is_foreign_fallback": [False, False, False, False],
+            }
+        )
+
+    def test_legacy_path_drops_limited_cohort(self, tmp_path: Path) -> None:
+        """enable_limited_sample_training=False → drop at min_minutes (800)."""
+        cfg = _cfg(
+            tmp_path,
+            enable_limited_sample_training=False,
+            min_minutes=800,
+            min_minutes_hard=100,
+        )
+        drop_floor = (
+            cfg.min_minutes_hard if cfg.enable_limited_sample_training else cfg.min_minutes
+        )
+        df = attach_target(
+            self._raw_frame(),
+            external_csv=None,
+            min_minutes=cfg.min_minutes,
+            hard_floor=drop_floor,
+        )
+        mins = set(df["mins_played"].tolist())
+        assert 50 not in mins
+        assert 300 not in mins
+        assert 600 not in mins
+        assert 900 in mins
+
+    def test_limited_path_keeps_limited_cohort(self, tmp_path: Path) -> None:
+        """enable_limited_sample_training=True → drop only below min_minutes_hard."""
+        cfg = _cfg(
+            tmp_path,
+            enable_limited_sample_training=True,
+            min_minutes=800,
+            min_minutes_hard=100,
+        )
+        drop_floor = (
+            cfg.min_minutes_hard if cfg.enable_limited_sample_training else cfg.min_minutes
+        )
+        df = attach_target(
+            self._raw_frame(),
+            external_csv=None,
+            min_minutes=cfg.min_minutes,
+            hard_floor=drop_floor,
+        )
+        mins = set(df["mins_played"].tolist())
+        assert 50 not in mins  # below hard floor
+        assert 300 in mins
+        assert 600 in mins
+        assert 900 in mins
+
+    def test_weights_see_limited_rows_when_flag_on(self, tmp_path: Path) -> None:
+        """After attach_target with hard_floor, _build_sample_weights must
+        produce non-uniform weights for the LIMITED rows that survived.
+        """
+        cfg = _cfg(
+            tmp_path,
+            enable_limited_sample_training=True,
+            min_minutes=800,
+            min_minutes_hard=100,
+            weighting_strategy="sqrt",
+        )
+        trainer = Trainer(cfg)
+        drop_floor = cfg.min_minutes_hard
+        df = attach_target(
+            self._raw_frame(),
+            external_csv=None,
+            min_minutes=cfg.min_minutes,
+            hard_floor=drop_floor,
+        )
+        weights = trainer._build_sample_weights(df)
+        assert weights is not None
+        assert len(weights) == 3  # 50 dropped; 300, 600, 900 kept
+        # STANDARD row (900) should be full weight; LIMITED rows reduced.
+        standard_w = weights[df["mins_played"] == 900].iloc[0]
+        limited_w = weights[df["mins_played"] == 300].iloc[0]
+        assert standard_w == pytest.approx(1.0)
+        assert 0.0 < limited_w < 1.0

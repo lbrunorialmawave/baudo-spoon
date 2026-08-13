@@ -210,6 +210,8 @@ def attach_target(
     df: pd.DataFrame,
     external_csv: Optional[Path] = None,
     min_minutes: int = 800,
+    *,
+    hard_floor: int | None = None,
 ) -> pd.DataFrame:
     """Add ``fantavoto_medio`` column to *df* and drop under-represented players.
 
@@ -218,8 +220,17 @@ def attach_target(
         external_csv: Optional path to a CSV with columns:
             ``player_fotmob_id, season_start, fantavoto_medio``
             OR ``player_name, season_label, fantavoto_medio``.
-        min_minutes: Rows whose ``mins_played`` is below this threshold
-            are dropped (noisy target).
+        min_minutes: Legacy/standard threshold used when *hard_floor* is None.
+            Rows whose ``mins_played`` is below this threshold are dropped
+            (noisy target). Kept for backward compatibility with callers that
+            do not pass *hard_floor*.
+        hard_floor: Optional explicit drop threshold. When provided, this
+            value is used instead of *min_minutes* as the exclusive lower
+            bound for keeping rows. Callers that enable limited-sample
+            training should pass ``cfg.min_minutes_hard`` (e.g. 100) so that
+            the LIMITED cohort (100–799 min) survives and can be weighted /
+            shrunk downstream. When None (default), behaviour is identical
+            to the pre-low-sample pipeline (drop at *min_minutes*).
 
     Returns:
         DataFrame with a ``fantavoto_medio`` column; rows with NaN targets removed.
@@ -277,11 +288,16 @@ def attach_target(
         df["fantavoto_medio"] = compute_approx_fantavoto(df)
 
     # ── Quality filter ────────────────────────────────────────────────────────
+    # Use hard_floor when the caller (Trainer with enable_limited_sample_training)
+    # wants LIMITED rows (100–799 min) to reach weighting / shrinkage. Otherwise
+    # fall back to the legacy min_minutes threshold so existing behaviour is
+    # byte-identical when the flag is off.
+    drop_threshold = hard_floor if hard_floor is not None else min_minutes
     mins_col = _safe_col(df, "mins_played")
     if mins_col is None:
         mins_col = _safe_col(df, "minutesPlayed")
     if mins_col is not None:
-        low_sample = pd.to_numeric(mins_col, errors="coerce").fillna(0) < min_minutes
+        low_sample = pd.to_numeric(mins_col, errors="coerce").fillna(0) < drop_threshold
         # Cross-league neo-arrivo fallback rows (ml/data/loader.py) are
         # inference-only and never used as training examples — the
         # "noisy target" rationale for this floor doesn't apply to them,
@@ -293,7 +309,7 @@ def attach_target(
             log.info(
                 "Dropping %d player-seasons with fewer than %d minutes played.",
                 dropped,
-                min_minutes,
+                drop_threshold,
             )
         df = df[~low_sample].reset_index(drop=True)
     else:

@@ -838,7 +838,19 @@ class Trainer:
 
         # ── 2. Attach target ──────────────────────────────────────────────────
         log.info("Step 2/12 — Attaching target variable")
-        df = attach_target(df_raw, external_fantavoto_csv, cfg.min_minutes)
+        # When limited-sample training is enabled, lower the hard drop floor so
+        # the LIMITED cohort (min_minutes_hard .. min_minutes-1) survives and
+        # can be weighted / shrunk by the downstream steps. With the flag off
+        # behaviour is byte-identical to the legacy pipeline (drop at 800).
+        drop_floor = (
+            cfg.min_minutes_hard if cfg.enable_limited_sample_training else cfg.min_minutes
+        )
+        df = attach_target(
+            df_raw,
+            external_fantavoto_csv,
+            cfg.min_minutes,
+            hard_floor=drop_floor,
+        )
 
         # ── 3. Feature engineering ────────────────────────────────────────────
         log.info("Step 3/12 — Engineering features")
