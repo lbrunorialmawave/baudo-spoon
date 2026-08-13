@@ -183,10 +183,12 @@ def train_all_models(
             its own clone to avoid cross-contamination.
         cfg: Pipeline configuration.
         sample_weight: Optional per-row weight aligned with ``X_train``.
-            When provided, the value is passed to ``fit()`` so estimators
-            that support it (Ridge, RandomForest, HistGradientBoosting,
-            XGBoost) down-weight low-sample observations.  When ``None``
-            the behaviour is unchanged — every row has implicit weight 1.
+            When provided, the value is routed to the estimator step via
+            ``model__sample_weight`` (sklearn Pipeline param routing) so
+            estimators that support it (Ridge, RandomForest,
+            HistGradientBoosting, XGBoost) down-weight low-sample
+            observations.  When ``None`` the behaviour is unchanged —
+            every row has implicit weight 1.
 
     Returns:
         Dict mapping model name → fitted Pipeline.
@@ -197,8 +199,12 @@ def train_all_models(
     tscv = TimeSeriesSplit(n_splits=cfg.cv_folds)
     fitted: dict[str, Pipeline] = {}
 
+    # Pipeline.fit does not accept bare sample_weight; route it to the
+    # final estimator step named "model" (see _make_full_pipeline).
     fit_kwargs: dict[str, Any] = (
-        {"sample_weight": sample_weight} if sample_weight is not None else {}
+        {"model__sample_weight": sample_weight}
+        if sample_weight is not None
+        else {}
     )
 
     for name, spec in registry.items():
