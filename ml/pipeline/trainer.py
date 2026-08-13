@@ -77,11 +77,18 @@ from ..evaluation.metrics import (
 from ..models.regression import train_all_models
 from ..preprocessing.features import (
     _ENVIRONMENTAL_STAT_COLS,
+    _PER_90_CANDIDATES,
     engineer_features,
     select_features,
     select_features_rfe,
 )
 from ..preprocessing.pipeline import build_preprocessor, get_feature_names
+from ..preprocessing.role_features import (
+    DEFAULT_OPPORTUNITY_WINDOW as _ROLE_OPPORTUNITY_WINDOW,
+    DEFAULT_RECENT_WINDOW as _ROLE_RECENT_WINDOW,
+    RoleOpportunityFeatureTransformer,
+    add_role_opportunity_features,
+)
 from ..optimizer.models import DEFAULT_BUDGET, ROLE_QUOTAS, TOTAL_SQUAD_SIZE
 from ..sample_reliability import (
     compute_sample_weight,
@@ -95,6 +102,11 @@ from ..sample_reliability.cohort import (
 )
 from ..sample_reliability.cohort import (
     COHORT_STANDARD as _COHORT_STANDARD,
+)
+from ..sample_reliability.cohort import classify_cohort as _classify_cohort
+from ..sample_reliability.shrinkage import (
+    apply_shrinkage as _apply_shrinkage_fn,
+    estimate_prior_rate as _estimate_prior_rate,
 )
 from ..storage.artifact_store import ArtifactStore, R2Config
 
@@ -126,6 +138,26 @@ _OUTFIELD_EXCLUDE_FEATURES: frozenset[str] = frozenset([
     "saves_per90_delta1", "_goals_prevented_per90_delta1",
     "saves_per90_sap", "_goals_prevented_per90_sap",
 ])
+
+# ── Shrinkage (PR3) ─────────────────────────────────────────────────────────
+
+# Base per-90 columns eligible for shrinkage. Deliberately restricted to
+# the *base* "_per90" columns (not "_sap"/"_roll2"/"_delta1" derivatives,
+# which are computed from these upstream in engineer_features()) to keep
+# the transformation contained and auditable — see plan.md PR3.
+_SHRINKAGE_PER90_COLS: frozenset[str] = frozenset(
+    f"{c}_per90" for c in _PER_90_CANDIDATES
+)
+
+# Minimum STANDARD-cohort rows required (per role group) to estimate a
+# shrinkage prior. Below this, the group's prior falls back to the
+# dataset-wide STANDARD cohort to avoid a degenerate median-of-few.
+_MIN_STANDARD_ROWS_FOR_PRIOR: int = 30
+
+# ── Breakout model (PR7) ─────────────────────────────────────────────────────
+
+# Minimum training rows required to fit the shadow BreakoutClassifier.
+_MIN_BREAKOUT_TRAIN_SAMPLES: int = 50
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -396,6 +428,100 @@ class Trainer:
             standard_minutes=self.cfg.min_minutes,
         )
 
+    def _apply_shrinkage(
+        self,
+        df: pd.DataFrame,
+        *,
+        prior_exclude_mask: pd.Series | None = None,
+    ) -> dict[str, Any]:
+        """Apply per-90 Bayesian shrinkage to *df* in place (PR3).
+
+        No-op (returns ``{"enabled": False}``) unless both
+        ``cfg.enable_limited_sample_training`` and ``cfg.enable_shrinkage``
+        are ``True`` — mirrors the no-op contract documented on
+        ``MLConfig.enable_shrinkage``.
+
+        The population prior for each ``_per90`` column is estimated from
+        the STANDARD cohort (``mins_played >= cfg.min_minutes``),
+        computed **per role** (``canonical_role``) when that column is
+        available, so GK rates never pull outfield rates (and vice
+        versa) toward the same prior. Rows in *prior_exclude_mask*
+        (typically cross-league fallback rows) never contribute to the
+        prior, but the transform is still applied to their features —
+        same shrinkage on both the training and inference side, per
+        :mod:`ml.sample_reliability.shrinkage`'s no-train/serve-skew
+        design.
+
+        Mutates *df* in place and returns a JSON-safe metadata dict
+        (also folded into the trainer output's ``sample_reliability``
+        section).
+        """
+        if not (self.cfg.enable_limited_sample_training and self.cfg.enable_shrinkage):
+            return {"enabled": False}
+
+        if "mins_played" not in df.columns:
+            log.warning(
+                "enable_shrinkage=True but 'mins_played' missing; "
+                "skipping shrinkage (no-op)."
+            )
+            return {"enabled": False, "skipped_reason": "mins_played missing"}
+
+        shrink_cols = [c for c in _SHRINKAGE_PER90_COLS if c in df.columns]
+        if not shrink_cols:
+            log.warning("enable_shrinkage=True but no eligible per-90 columns found.")
+            return {"enabled": False, "skipped_reason": "no eligible per90 columns"}
+
+        minutes = pd.to_numeric(df["mins_played"], errors="coerce")
+        exclude = (
+            prior_exclude_mask.reindex(df.index).fillna(False)
+            if prior_exclude_mask is not None
+            else pd.Series(False, index=df.index)
+        )
+        standard_mask_global = (minutes >= self.cfg.min_minutes) & ~exclude
+
+        if "canonical_role" in df.columns:
+            role_groups = df.groupby(df["canonical_role"].fillna("UNKNOWN")).groups
+        else:
+            role_groups = {"ALL": df.index}
+
+        priors: dict[str, dict[str, float]] = {}
+        n_adjusted_rows = 0
+        for role, idx in role_groups.items():
+            idx = pd.Index(idx)
+            role_standard_mask = standard_mask_global.loc[idx]
+            use_global_fallback = int(role_standard_mask.sum()) < _MIN_STANDARD_ROWS_FOR_PRIOR
+            priors[str(role)] = {}
+            for col in shrink_cols:
+                prior_mask = standard_mask_global if use_global_fallback else (
+                    df.index.isin(idx) & standard_mask_global
+                )
+                prior_rate = _estimate_prior_rate(
+                    df.loc[prior_mask, col],
+                    minutes=minutes.loc[prior_mask],
+                    min_minutes=self.cfg.min_minutes,
+                )
+                priors[str(role)][col] = prior_rate
+                df.loc[idx, col] = _apply_shrinkage_fn(
+                    df.loc[idx, col],
+                    minutes=minutes.loc[idx],
+                    prior_rate=prior_rate,
+                    prior_strength=self.cfg.shrinkage_prior_strength,
+                )
+            n_adjusted_rows += len(idx)
+
+        log.info(
+            "Shrinkage applied: %d per-90 column(s) across %d row(s) "
+            "(prior_strength=%d, role_groups=%s).",
+            len(shrink_cols), n_adjusted_rows,
+            self.cfg.shrinkage_prior_strength, list(role_groups.keys()),
+        )
+        return {
+            "enabled": True,
+            "columns": shrink_cols,
+            "prior_strength": int(self.cfg.shrinkage_prior_strength),
+            "priors_by_role": priors,
+        }
+
     def _save_model(
         self,
         pipeline: Any,
@@ -475,6 +601,126 @@ class Trainer:
         # so we keep the local append above and just delegate the R2 upload
         # of the (already-updated) file via save_binary (no-op copy).
         self._artifact_store.save_binary(log_path, "telemetry_log.ndjson")
+
+    # ── Breakout probability model (PR7, shadow) ──────────────────────────────
+
+    def _run_breakout_model(
+        self,
+        df_core: pd.DataFrame,
+        numeric_features: list[str],
+    ) -> dict[str, Any]:
+        """Train + evaluate the shadow breakout classifier, and score the
+        latest season's LIMITED cohort.
+
+        Purely additive/informational (see call site docstring): returns a
+        JSON-safe dict, never raises for expected "not enough data"
+        conditions (returns ``status: "skipped"`` instead).
+        """
+        from ..breakout import (
+            build_breakout_labels,
+            engineer_breakout_features,
+            evaluate_breakout_classifier,
+            train_breakout_classifier,
+        )
+
+        df_bo = engineer_breakout_features(
+            df_core, player_col="player_fotmob_id", season_col="season_start",
+        )
+        labels_full = build_breakout_labels(
+            df_bo,
+            player_col="player_fotmob_id",
+            season_col="season_start",
+            minutes_col="mins_played",
+            standard_minutes=self.cfg.min_minutes,
+            min_minutes_hard=self.cfg.min_minutes_hard,
+        )
+        valid = labels_full.notna()
+        feature_cols = [c for c in numeric_features if c in df_bo.columns]
+        if not feature_cols:
+            return {"status": "skipped", "reason": "no numeric features available"}
+
+        bo_df = df_bo.loc[valid]
+        bo_labels = labels_full.loc[valid].astype(int)
+        base_rate = float(bo_labels.mean()) if len(bo_labels) else 0.0
+        log.info(
+            "  Breakout dataset: %d labeled row(s) (base_rate=%.3f)",
+            len(bo_labels), base_rate,
+        )
+
+        if len(bo_df) < _MIN_BREAKOUT_TRAIN_SAMPLES:
+            return {
+                "status": "skipped",
+                "reason": f"only {len(bo_df)} labeled rows (< {_MIN_BREAKOUT_TRAIN_SAMPLES})",
+                "n_total": int(len(bo_df)),
+                "base_rate": base_rate,
+            }
+
+        seasons = sorted(bo_df["season_start"].unique())
+        test_season_ids = (
+            seasons[-self.cfg.test_seasons:]
+            if len(seasons) > self.cfg.test_seasons
+            else []
+        )
+        train_mask = ~bo_df["season_start"].isin(test_season_ids)
+        X_train = bo_df.loc[train_mask, feature_cols]
+        y_train = bo_labels.loc[train_mask]
+        X_test = bo_df.loc[~train_mask, feature_cols]
+        y_test = bo_labels.loc[~train_mask]
+
+        if y_train.nunique() < 2 or len(X_train) < _MIN_BREAKOUT_TRAIN_SAMPLES:
+            return {
+                "status": "skipped",
+                "reason": "insufficient class diversity or rows in train split",
+                "n_total": int(len(bo_df)),
+                "base_rate": base_rate,
+            }
+
+        clf = train_breakout_classifier(X_train, y_train, random_seed=self.cfg.random_seed)
+
+        metrics_dict: dict[str, Any] | None = None
+        if len(X_test) and y_test.nunique() >= 2:
+            metrics = evaluate_breakout_classifier(clf, X_test, y_test)
+            metrics_dict = dataclasses.asdict(metrics)
+        else:
+            log.info("  Breakout test split has <2 classes or is empty; metrics skipped.")
+
+        # Score the latest season's LIMITED cohort (shadow prediction only).
+        predictions: list[dict[str, Any]] = []
+        if "mins_played" in df_core.columns:
+            latest_season = df_core["season_start"].max()
+            minutes = pd.to_numeric(df_core["mins_played"], errors="coerce")
+            cohort = minutes.apply(
+                lambda m: _classify_cohort(
+                    m,
+                    min_minutes_hard=self.cfg.min_minutes_hard,
+                    standard_minutes=self.cfg.min_minutes,
+                )
+            )
+            score_mask = (
+                (df_core["season_start"] == latest_season)
+                & (cohort == _COHORT_LIMITED)
+            )
+            if score_mask.any():
+                X_score = df_core.loc[score_mask, feature_cols]
+                proba = clf.predict_proba(X_score)
+                score_cols = [
+                    c for c in ("player_fotmob_id", "player_name", "team_name", "season_start")
+                    if c in df_core.columns
+                ]
+                pred_df = df_core.loc[score_mask, score_cols].copy()
+                pred_df["breakout_probability"] = proba
+                pred_df = pred_df.sort_values("breakout_probability", ascending=False)
+                predictions = pred_df.to_dict(orient="records")
+
+        return {
+            "status": "ok",
+            "n_train": int(len(X_train)),
+            "n_test": int(len(X_test)),
+            "base_rate": base_rate,
+            "metrics": metrics_dict,
+            "feature_cols": feature_cols,
+            "predictions": predictions,
+        }
 
     # ── Role-partitioned sub-pipeline ─────────────────────────────────────────
 
@@ -598,11 +844,38 @@ class Trainer:
         log.info("Step 3/12 — Engineering features")
         df = engineer_features(df, trend_window=2)
 
+        # ── 3a. Role / opportunity features (PR4, opt-in) ─────────────────────
+        # No-op unless enable_recent_role_features=True. Computed on the full
+        # engineered frame (before the foreign quarantine below) so that
+        # cross-league fallback rows get the same features at inference time
+        # as training rows — no train/serve skew.
+        role_feature_cols: list[str] = []
+        if self.cfg.enable_recent_role_features:
+            log.info("  enable_recent_role_features=True — adding role/opportunity features")
+            df = add_role_opportunity_features(
+                df,
+                player_col="player_fotmob_id",
+                season_col="season_start",
+                opportunity_window=_ROLE_OPPORTUNITY_WINDOW,
+                recent_window=_ROLE_RECENT_WINDOW,
+            )
+            role_feature_cols = RoleOpportunityFeatureTransformer().get_feature_names_out()
+
         # ── 3b. Quarantine cross-league fallback rows ─────────────────────────
         # Neo-arrivi with zero Serie A history (ml/data/loader.py) are
         # inference-only: they must never influence feature selection,
         # training, backtest, or evaluation — only get a prediction (step 8b).
         _foreign_mask = df.get("is_foreign_fallback", pd.Series(False, index=df.index)).fillna(False)
+
+        # ── 3c. Per-90 shrinkage (PR3, opt-in) ─────────────────────────────────
+        # No-op unless enable_limited_sample_training AND enable_shrinkage are
+        # both True. Priors are estimated only from the STANDARD cohort of
+        # df_core (foreign rows excluded via prior_exclude_mask below), but
+        # the transform itself is applied to the whole frame — same reasoning
+        # as 3a: fallback rows must see the same feature transform at
+        # inference as training rows do.
+        shrinkage_meta = self._apply_shrinkage(df, prior_exclude_mask=_foreign_mask)
+
         df_core = df[~_foreign_mask].copy()
         df_foreign = df[_foreign_mask].copy()
         if len(df_foreign):
@@ -613,7 +886,9 @@ class Trainer:
 
         # ── 4. Feature selection ──────────────────────────────────────────────
         log.info("Step 4/12 — Selecting features")
-        numeric_features, categorical_features = select_features(df_core)
+        numeric_features, categorical_features = select_features(
+            df_core, extra_numeric_candidates=role_feature_cols
+        )
 
         if not numeric_features:
             raise ValueError(
@@ -971,6 +1246,25 @@ class Trainer:
         except Exception as _var_exc:
             log.warning("VAR computation failed (non-critical): %s", _var_exc)
 
+        # ── 11c. Breakout probability model (shadow, PR7, opt-in) ─────────────
+        # No-op unless enable_breakout_model=True. Purely informational: a
+        # LogisticRegression P(breakout) is trained on df_core (temporally
+        # split like the main model) and scored for the latest season's
+        # LIMITED-cohort players. It never feeds back into feature_cols,
+        # best_pipe, or predictions_df — the plan is explicit that this stays
+        # shadow-only until offline metrics justify promotion (plan.md §48).
+        breakout_result: dict[str, Any] = {"enabled": bool(cfg.enable_breakout_model)}
+        if cfg.enable_breakout_model:
+            log.info("Step 11c — Training shadow breakout classifier")
+            try:
+                breakout_result.update(
+                    self._run_breakout_model(df_core, numeric_features)
+                )
+            except Exception as _bo_exc:  # noqa: BLE001 — never fail the pipeline
+                log.warning("Breakout model training failed (non-critical): %s", _bo_exc)
+                breakout_result["status"] = "error"
+                breakout_result["error"] = repr(_bo_exc)
+
         # ── Predict next season (optional) ────────────────────────────────────
         next_season_predictions: list[dict] = []
         if cfg.predict_next:
@@ -1110,9 +1404,13 @@ class Trainer:
                 "weighting_strategy": cfg.weighting_strategy,
                 "shrinkage_enabled": bool(cfg.enable_shrinkage),
                 "shrinkage_prior_strength": int(cfg.shrinkage_prior_strength),
+                "shrinkage": shrinkage_meta,
+                "recent_role_features_enabled": bool(cfg.enable_recent_role_features),
+                "recent_role_features": role_feature_cols,
                 "breakout_model_enabled": bool(cfg.enable_breakout_model),
                 "cohort_profile": self._cohort_profile(df_core),
             },
+            "breakout_model": breakout_result,
             "metadata": metadata,
             "config": {
                 "test_seasons": cfg.test_seasons,

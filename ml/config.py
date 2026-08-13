@@ -62,8 +62,19 @@ class MLConfig(BaseSettings):
     # Master switch for per-90 shrinkage (PR3).  No-op when
     # ``enable_limited_sample_training`` is False.
     enable_shrinkage: bool = False
+    # Master switch for role/opportunity features (PR4): recent minutes,
+    # recent starts, usage trend, starts/appearance ratios. No-op when
+    # False (the trainer's numeric feature candidates are unchanged).
+    # When True, ``ml.preprocessing.role_features`` is run over the
+    # engineered frame and its output columns are added to the numeric
+    # feature candidates considered by ``select_features``.
+    enable_recent_role_features: bool = False
     # Master switch for the breakout probability model (PR7).  Kept
-    # disabled until offline experiments validate the dataset.
+    # disabled until offline experiments validate the dataset.  When
+    # True the trainer trains/evaluates a shadow ``BreakoutClassifier``
+    # (ml.breakout) on the LIMITED cohort and reports P(breakout) for
+    # the latest season — informational only, never used to alter the
+    # main fantavoto_medio regression predictions.
     enable_breakout_model: bool = False
 
     # Sample-weighting strategy.  Supported: "constant", "linear", "sqrt",

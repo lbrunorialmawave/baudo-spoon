@@ -579,14 +579,27 @@ NUMERIC_FEATURE_CANDIDATES: list[str] = [
 ]
 
 
-def select_features(df: pd.DataFrame) -> tuple[list[str], list[str]]:
+def select_features(
+    df: pd.DataFrame,
+    extra_numeric_candidates: list[str] | None = None,
+) -> tuple[list[str], list[str]]:
     """Return (numeric_cols, categorical_cols) that exist in *df*.
 
     Only returns columns that are present in the DataFrame and contain
     at least one non-NaN value.
+
+    Args:
+        df: Feature-engineered DataFrame.
+        extra_numeric_candidates: Optional additional numeric column
+            names to consider, appended after
+            :data:`NUMERIC_FEATURE_CANDIDATES`. Used by the trainer to
+            opt in role/opportunity features (PR4) without changing the
+            default candidate list. Ignored if ``None`` (default,
+            no-op — preserves existing behaviour).
     """
+    candidates = NUMERIC_FEATURE_CANDIDATES + list(extra_numeric_candidates or [])
     numeric = [
-        c for c in NUMERIC_FEATURE_CANDIDATES
+        c for c in candidates
         if c in df.columns and df[c].notna().any()
     ]
     categorical = [

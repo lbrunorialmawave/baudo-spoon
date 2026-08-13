@@ -137,6 +137,7 @@ def apply_variant(
             "enable_shrinkage": variant.enable_shrinkage,
             "weighting_strategy": variant.weighting_strategy,
             "shrinkage_prior_strength": variant.shrinkage_prior_strength,
+            "enable_recent_role_features": variant.enable_recent_role_features,
             "enable_breakout_model": False,  # never auto-enable breakout in experiments
         }
     )
@@ -222,6 +223,7 @@ def _cfg_summary(cfg: MLConfig) -> dict:
         "test_seasons": cfg.test_seasons,
         "enable_limited_sample_training": cfg.enable_limited_sample_training,
         "enable_shrinkage": cfg.enable_shrinkage,
+        "enable_recent_role_features": cfg.enable_recent_role_features,
         "enable_breakout_model": cfg.enable_breakout_model,
     }
 
