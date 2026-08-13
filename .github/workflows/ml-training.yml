@@ -105,6 +105,56 @@ jobs:
           fi
           echo "All required secrets are present."
 
+      # ── Rollout state (PR8) ─────────────────────────────────────────────────
+      # Scarica lo stato dei feature flag da R2 (scritto da ml-rollout.yml) e
+      # traduce gli stage ≥ SHADOW in env vars per il container.
+      # Se lo stato non esiste (primo run), tutti i flag restano DISABLED
+      # e nessuna env var viene impostata → comportamento legacy intatto.
+      - name: Install jq (for rollout state parsing)
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq jq
+          fi
+          jq --version
+
+      - name: Read rollout state from R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.ML_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.ML_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          mkdir -p artifacts/rollout
+          echo "Downloading s3://${ML_R2_BUCKET_NAME}/rollout/state.json ..."
+          if aws s3 cp \
+              "s3://${ML_R2_BUCKET_NAME}/rollout/state.json" \
+              artifacts/rollout/state.json \
+              --endpoint-url "${ML_R2_ENDPOINT_URL}" 2>/dev/null; then
+            echo "Rollout state scaricato:"
+            cat artifacts/rollout/state.json
+          else
+            echo "::notice::Nessun rollout state in R2 → tutti i flag DISABLED (legacy behaviour)."
+            echo '{"version":1,"flags":{},"audit":[]}' > artifacts/rollout/state.json
+          fi
+
+      - name: Translate rollout state to env vars
+        id: rollout_env
+        run: |
+          # Mappa stage ≥ SHADOW → env var = "true", altrimenti omessa.
+          # jq seleziona solo i flag con stage in (shadow, active).
+          ENABLED_FLAGS=$(jq -r '
+            .flags | to_entries[]
+            | select(.value.stage == "shadow" or .value.stage == "active")
+            | .key
+          ' artifacts/rollout/state.json)
+          echo "Flag abilitati (stage ≥ SHADOW):"
+          echo "${ENABLED_FLAGS:-<nessuno>}"
+          {
+            echo "ENABLED_FLAGS<<EOF"
+            echo "${ENABLED_FLAGS}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       # Scarica fantavoto_real.csv da R2 se l'utente non ha passato un path custom.
       # Il file finisce in ./artifacts sul runner e viene montato in /app/artifacts
       # nel container.
@@ -186,6 +236,19 @@ jobs:
 
           echo "Pipeline args: ${ARGS[*]}"
 
+          # Costruisci la lista di env vars per il rollout state (PR8).
+          # Mappa flag_name → ML_ENABLE_<UPPER> per attivare il flag
+          # corrispondente in MLConfig.  Solo i flag con stage ≥ SHADOW
+          # (letti da ${{ steps.rollout_env.outputs.ENABLED_FLAGS }})
+          # vengono effettivamente passati al container.
+          ROLLOUT_ENV_ARGS=()
+          while IFS= read -r flag_name; do
+            [ -z "${flag_name}" ] && continue
+            upper=$(echo "${flag_name}" | tr '[:lower:]' '[:upper:]')
+            ROLLOUT_ENV_ARGS+=(-e "ML_${upper}=true")
+            echo "  → attivo flag: ${flag_name} (ML_${upper}=true)"
+          done <<< "${{ steps.rollout_env.outputs.ENABLED_FLAGS }}"
+
           docker run --rm \
             -e ML_DATABASE_URL \
             -e ML_R2_ENDPOINT_URL \
@@ -193,6 +256,7 @@ jobs:
             -e ML_R2_SECRET_ACCESS_KEY \
             -e ML_R2_BUCKET_NAME \
             -e ML_ARTIFACTS_DIR=/app/artifacts \
+            "${ROLOUT_ENV_ARGS[@]}" \
             -v "${{ github.workspace }}/artifacts:/app/artifacts" \
             ml-runner:latest \
             "${ARGS[@]}"

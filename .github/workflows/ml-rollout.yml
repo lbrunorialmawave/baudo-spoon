@@ -1,0 +1,151 @@
+name: ML Rollout (PR8)
+
+on:
+  # Esecuzione manuale da tab "Actions".
+  # Niente schedule: il rollout è una decisione esplicita dell'ML owner.
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Azione di rollout da eseguire"
+        type: choice
+        required: true
+        default: "status"
+        options:
+          - status
+          - shadow
+          - activate
+          - disable
+          - audit
+
+      flag:
+        description: >
+          Flag da promuovere/demote (richiesto per shadow/activate/disable).
+          Valori: enable_limited_sample_training, enable_shrinkage,
+          enable_recent_role_features, enable_breakout_model.
+        required: false
+        default: ""
+
+      rollout_pct:
+        description: "Quota di traffico in ACTIVE (0-100, default 100 = tutti)"
+        required: false
+        default: "100"
+
+      actor:
+        description: "Chi esegue l'azione (per audit log)"
+        required: false
+        default: "${{ github.actor }}"
+
+      note:
+        description: "Nota opzionale (es. 'Post PR5 exp 20260812')"
+        required: false
+        default: ""
+
+      audit_limit:
+        description: "Per 'status' e 'audit': quante entry recenti mostrare"
+        required: false
+        default: "20"
+
+# Evita run sovrapposte: due promozioni in parallelo potrebbero confliggere.
+# Gruppo separato da 'ml-training' e 'ml-experiments' per non bloccarli.
+concurrency:
+  group: ml-rollout
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      ML_R2_ENDPOINT_URL: ${{ secrets.ML_R2_ENDPOINT_URL }}
+      ML_R2_ACCESS_KEY_ID: ${{ secrets.ML_R2_ACCESS_KEY_ID }}
+      ML_R2_SECRET_ACCESS_KEY: ${{ secrets.ML_R2_SECRET_ACCESS_KEY }}
+      ML_R2_BUCKET_NAME: ${{ secrets.ML_R2_BUCKET_NAME || 'baudo-spoon-ml-artifacts' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        run: |
+          missing=0
+          for var in ML_R2_ENDPOINT_URL ML_R2_ACCESS_KEY_ID ML_R2_SECRET_ACCESS_KEY; do
+            if [ -z "${!var}" ]; then
+              echo "::error::Secret $var is not set"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          echo "All required secrets are present."
+
+      # Build dal Dockerfile esistente (entrypoint = training).
+      # Per il rollout usiamo --entrypoint per invocare ml.run_rollout.
+      - name: Build ML image
+        run: docker build -f ml/Dockerfile -t ml-runner:latest .
+
+      - name: Run rollout action
+        env:
+          ML_R2_ENDPOINT_URL: ${{ secrets.ML_R2_ENDPOINT_URL }}
+          ML_R2_ACCESS_KEY_ID: ${{ secrets.ML_R2_ACCESS_KEY_ID }}
+          ML_R2_SECRET_ACCESS_KEY: ${{ secrets.ML_R2_SECRET_ACCESS_KEY }}
+          ML_R2_BUCKET_NAME: ${{ secrets.ML_R2_BUCKET_NAME || 'baudo-spoon-ml-artifacts' }}
+        run: |
+          set -euo pipefail
+
+          ARGS=("${{ github.event.inputs.action }}")
+          ARGS+=(--artifacts-dir /app/artifacts)
+          ARGS+=(--r2-bucket "${ML_R2_BUCKET_NAME}")
+          ARGS+=(--sync-r2)
+          ARGS+=(--json-logs)
+
+          if [ -n "${{ github.event.inputs.flag }}" ]; then
+            ARGS+=("${{ github.event.inputs.flag }}")
+          fi
+
+          # rollout_pct è rilevante solo per shadow/activate.
+          if [ "${{ github.event.inputs.action }}" = "shadow" ] || \
+             [ "${{ github.event.inputs.action }}" = "activate" ]; then
+            ARGS+=(--rollout-pct "${{ github.event.inputs.rollout_pct || '100' }}")
+          fi
+
+          ARGS+=(--actor "${{ github.event.inputs.actor || github.actor }}")
+          ARGS+=(--note "${{ github.event.inputs.note }}")
+          ARGS+=(--limit "${{ github.event.inputs.audit_limit || '20' }}")
+
+          echo "Rollout args: ${ARGS[*]}"
+
+          docker run --rm \
+            --entrypoint python \
+            -e ML_R2_ENDPOINT_URL \
+            -e ML_R2_ACCESS_KEY_ID \
+            -e ML_R2_SECRET_ACCESS_KEY \
+            -e ML_R2_BUCKET_NAME \
+            -v "${{ github.workspace }}/artifacts:/app/artifacts" \
+            ml-runner:latest \
+            -m ml.run_rollout "${ARGS[@]}"
+
+      - name: Show resulting state
+        if: always()
+        run: |
+          echo "=== artifacts/rollout/ ==="
+          find artifacts/rollout -type f 2>/dev/null || echo "(no rollout dir)"
+          if [ -f artifacts/rollout/state.json ]; then
+            echo "--- state.json ---"
+            cat artifacts/rollout/state.json
+          fi
+
+      # Upload stato + audit come artifact (90gg, allineato agli esperimenti).
+      - name: Upload rollout state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-rollout-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/rollout/
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "::error::Rollout fallito — controlla i log sopra. Lo stato su R2 potrebbe essere in uno stato inconsistente; verifica con action=status."
