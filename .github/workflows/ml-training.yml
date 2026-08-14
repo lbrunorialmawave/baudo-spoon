@@ -256,7 +256,7 @@ jobs:
             -e ML_R2_SECRET_ACCESS_KEY \
             -e ML_R2_BUCKET_NAME \
             -e ML_ARTIFACTS_DIR=/app/artifacts \
-            "${ROLOUT_ENV_ARGS[@]}" \
+            "${ROLLOUT_ENV_ARGS[@]}" \
             -v "${{ github.workspace }}/artifacts:/app/artifacts" \
             ml-runner:latest \
             "${ARGS[@]}"
