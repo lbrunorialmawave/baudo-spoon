@@ -143,7 +143,7 @@ def attach_output_reliability(
         role_groups = {"ALL": out.index}
 
     priors: dict[str, float] = {}
-    display_col = pd.Series(out[predicted_col].to_numpy(copy=True), index=out.index)
+    display_col = pd.Series(out[predicted_col].to_numpy(dtype=float, copy=True), index=out.index)
     for role, idx in role_groups.items():
         idx = pd.Index(idx)
         role_standard_mask = standard_mask_global.loc[idx]
