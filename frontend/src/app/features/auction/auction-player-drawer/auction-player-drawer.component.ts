@@ -23,6 +23,9 @@ export interface AuctionDrawerPlayer {
   /** Present when opened from assignment history. */
   finalPrice?: number | null;
   tier?: string | null;
+  /** PR9: INSUFFICIENT | LIMITED | STANDARD */
+  sampleCohort?: string | null;
+  reliabilityWeight?: number | null;
 }
 
 /**
@@ -52,6 +55,12 @@ export interface AuctionDrawerPlayer {
               <span class="signal-hold"> · —</span>
             }
           </p>
+          @if (isNoisyCohort()) {
+            <span class="ml-noisy-badge"
+                  [attr.title]="cohortTooltip()">
+              ⚠️ Valori ML rumorosi · {{ player().sampleCohort }}
+            </span>
+          }
         </div>
         <button type="button" class="close-btn" (click)="closed.emit()" aria-label="Chiudi">✕</button>
       </div>
@@ -167,20 +176,46 @@ export interface AuctionDrawerPlayer {
     }
     .signal-buy { color: var(--color-success, #22C55E); font-weight: 600; }
     .signal-hold { color: var(--color-text-secondary); }
+    .ml-noisy-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      margin-top: 6px; padding: 2px 8px; border-radius: 999px;
+      font-size: 10px; font-weight: 700;
+      background: #F59E0B22; color: #FBBF24; border: 1px solid #F59E0B44;
+    }
   `],
 })
 export class AuctionPlayerDrawerComponent {
   readonly player = input.required<AuctionDrawerPlayer>();
   readonly closed = output<void>();
 
+  isNoisyCohort(): boolean {
+    const c = this.player().sampleCohort;
+    return c === 'LIMITED' || c === 'INSUFFICIENT';
+  }
+
+  cohortTooltip(): string {
+    const c = this.player().sampleCohort;
+    if (c === 'INSUFFICIENT') {
+      return 'Campione insufficiente (<100 min): predizione fortemente ammorbidita verso la media di ruolo.';
+    }
+    return 'Campione limitato (100–799 min): predizione ammorbidita verso la media di ruolo.';
+  }
+
   identityRows(): { label: string; value: string }[] {
     const p = this.player();
-    return [
+    const rows = [
       { label: 'ID', value: p.playerId || '—' },
       { label: 'Ruolo', value: p.role || '—' },
       { label: 'Squadra', value: p.realTeam || '—' },
       { label: 'Nome', value: p.name || '—' },
     ];
+    if (p.sampleCohort) {
+      rows.push({ label: 'Sample cohort', value: p.sampleCohort });
+    }
+    if (p.reliabilityWeight != null) {
+      rows.push({ label: 'Reliability weight', value: String(p.reliabilityWeight) });
+    }
+    return rows;
   }
 
   hasRanking(): boolean {

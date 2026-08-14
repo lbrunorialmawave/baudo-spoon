@@ -115,6 +115,10 @@ export interface AuctionPlayer {
   projectedScore: number;
   /** MANTRA only: role codes this player can fill. */
   eligibleRoles?: string[];
+  /** PR9: INSUFFICIENT | LIMITED | STANDARD — drives reliability badge. */
+  sampleCohort?: string | null;
+  /** PR9: decision-layer weight (< 1 for low-sample cohorts). */
+  reliabilityWeight?: number | null;
 }
 
 // ── Init / lifecycle ──────────────────────────────────────────────────────
@@ -179,6 +183,10 @@ export interface AuctionPlayerSummary {
   cost: number;
   projectedScore: number;
   eligibleRoles?: string[] | null;
+  /** PR9: INSUFFICIENT | LIMITED | STANDARD — drives reliability badge. */
+  sampleCohort?: string | null;
+  /** PR9: decision-layer weight (< 1 for low-sample cohorts). */
+  reliabilityWeight?: number | null;
 }
 
 export interface AuctionParticipantState {
@@ -281,6 +289,8 @@ export interface VarRankingItem {
   buySignal: boolean;
   seasonValue?: number | null;
   startProbability?: number | null;
+  sampleCohort?: string | null;
+  reliabilityWeight?: number | null;
 }
 
 export interface VarRankingResponse {

@@ -18,6 +18,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import MatchMethodEnum, PlayerIdMap, PlayerMantraRole, PlayerQuotation
 from ml.domain.predictions import resolve_season_value_fields
+from ml.sample_reliability.cohort import (
+    COHORT_STANDARD,
+    RELIABILITY_WEIGHT_BY_COHORT,
+)
 from ml.storage.artifact_store import ArtifactStore, R2Config
 
 log = logging.getLogger(__name__)
@@ -1013,6 +1017,13 @@ class DataRepository:
         * ``eligible_roles`` — list of MANTRA role codes (only when
           ``ruleset == "MANTRA"`` and the player has a row in
           ``player_mantra_roles``; empty list otherwise).
+        * ``sample_cohort`` — ``INSUFFICIENT`` / ``LIMITED`` / ``STANDARD``
+          from the ML output-reliability layer (defaults to ``STANDARD``
+          when the artifact lacks the field).
+        * ``reliability_weight`` — decision-layer weight derived from
+          ``sample_cohort`` (see ``RELIABILITY_WEIGHT_BY_COHORT``). Used by
+          the Optimizer ILP objective; Auction inherits the effect via the
+          already-shrunk ``projected_score``.
 
         When ``return_exclusions=True``, returns
         ``(pool, excluded_no_projection)`` so callers can surface how many
@@ -1092,19 +1103,40 @@ class DataRepository:
             # from the same ML artifact. Do NOT fall back to pq.fvm — FVM is a
             # proprietary Fantagazzetta valuation index on a different scale
             # (often >> 10) and must never be used as a 1-10 voto proxy.
+            #
+            # For non-STANDARD cohorts prefer the shrinkage-damped display
+            # value so Optimizer / Auction decisions do not treat noisy raw
+            # predictions at face value (see output_reliability.py).
             predicted_score: Optional[float] = None
             pred: Optional[dict] = None
+            sample_cohort: str = COHORT_STANDARD
+            reliability_weight: float = 1.0
             if pim is not None and pim.player_fotmob_id is not None:
                 pred = predictions_by_id.get(int(pim.player_fotmob_id))
                 if pred is not None:
-                    val = pred.get("predicted_fantavoto")
-                    if isinstance(val, (int, float)):
-                        predicted_score = float(val)
+                    raw_cohort = pred.get("sample_cohort")
+                    if isinstance(raw_cohort, str) and raw_cohort:
+                        sample_cohort = raw_cohort
+                    reliability_weight = float(
+                        RELIABILITY_WEIGHT_BY_COHORT.get(sample_cohort, 1.0)
+                    )
+
+                    raw_val = pred.get("predicted_fantavoto")
+                    display_val = pred.get("predicted_fantavoto_display")
+                    if (
+                        sample_cohort != COHORT_STANDARD
+                        and isinstance(display_val, (int, float))
+                    ):
+                        predicted_score = float(display_val)
+                    elif isinstance(raw_val, (int, float)):
+                        predicted_score = float(raw_val)
                     elif isinstance(pred.get("fantavoto_medio"), (int, float)):
                         predicted_score = float(pred["fantavoto_medio"])
             # Plausible range for a single-match Fantacalcio voto. Values
             # outside this band are treated as missing projection (same bucket
             # as true absences) so they cannot enter the ILP objective.
+            # Checked after display/raw selection so a shrunk value that lands
+            # in-range is admitted even if the raw was extreme.
             _MIN_PLAUSIBLE_SCORE = 3.0
             _MAX_PLAUSIBLE_SCORE = 10.0
             if (
@@ -1181,6 +1213,8 @@ class DataRepository:
                     "season_value": season_value,
                     "start_probability": start_probability,
                     "eligible_roles": eligible_roles,
+                    "sample_cohort": sample_cohort,
+                    "reliability_weight": reliability_weight,
                 }
             )
 

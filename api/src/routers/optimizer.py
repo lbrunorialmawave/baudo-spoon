@@ -141,6 +141,7 @@ def _pool_from_override(req: OptimizationRequest) -> list[Player]:
             reliability_weight=p.reliability_weight, eligible_roles=frozenset(p.eligible_roles),
             prediction_std=p.prediction_std, historical_overpay_ratio=p.historical_overpay_ratio,
             season_value=p.season_value, start_probability=p.start_probability,
+            sample_cohort=getattr(p, "sample_cohort", None),
         )
         for p in req.pool_override
     ]
@@ -154,6 +155,8 @@ def _players_from_pool_rows(rows: list[dict]) -> list[Player]:
             prediction_std=r.get("prediction_std"), eligible_roles=frozenset(r.get("eligible_roles") or []),
             historical_overpay_ratio=r.get("historical_overpay_ratio"),
             season_value=r.get("season_value"), start_probability=r.get("start_probability"),
+            reliability_weight=r.get("reliability_weight"),
+            sample_cohort=r.get("sample_cohort"),
         )
         for r in rows
     ]
@@ -282,6 +285,8 @@ def _serialize_near_optimal(alts, effective_cost_lookup):
             effective_cost=effective_cost_lookup.get(p.player_id, float(p.cost)),
             eligible_roles=sorted(p.eligible_roles) if p.eligible_roles else [],
             prediction_std=p.prediction_std,
+            sample_cohort=p.sample_cohort,
+            reliability_weight=p.reliability_weight,
         ) for p in alt.result.squad]
         out.append(NearOptimalAlternativeSchema(
             excluded_player_ids=list(alt.excluded_player_ids),
@@ -400,6 +405,8 @@ def _serialize_result(
             effective_cost=effective_cost_lookup.get(p.player_id, float(p.cost)),
             eligible_roles=sorted(p.eligible_roles) if p.eligible_roles else [],
             prediction_std=p.prediction_std,
+            sample_cohort=p.sample_cohort,
+            reliability_weight=p.reliability_weight,
         )
         for p in result.squad
     ]

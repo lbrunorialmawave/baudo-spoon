@@ -1095,7 +1095,17 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                               <span class="mantra-role-hint" title="Ruoli Mantra">{{ p.eligibleRoles!.join('/') }}</span>
                             }
                           </td>
-                          <td class="name-cell">{{ p.name }}</td>
+                          <td class="name-cell">
+                            {{ p.name }}
+                            @if (p.sampleCohort === 'LIMITED' || p.sampleCohort === 'INSUFFICIENT') {
+                              <span class="ml-noisy-badge"
+                                    [attr.title]="p.sampleCohort === 'INSUFFICIENT'
+                                      ? 'Campione insufficiente (&lt;100 min): predizione fortemente ammorbidita.'
+                                      : 'Campione limitato (100–799 min): predizione ammorbidita verso la media di ruolo.'">
+                                ⚠️ {{ p.sampleCohort === 'INSUFFICIENT' ? 'Insuff.' : 'Limited' }}
+                              </span>
+                            }
+                          </td>
                           <td class="hide-sm muted">{{ p.realTeam }}</td>
                           <td class="num">{{ p.cost }}</td>
                           <td class="num hide-sm muted">{{ p.effectiveCost | number:'1.1-1' }}</td>
@@ -1929,6 +1939,13 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
     }
     .data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
     .name-cell { font-weight: 560; }
+    .ml-noisy-badge {
+      display: inline-flex; align-items: center; gap: 2px;
+      margin-left: 6px; padding: 1px 6px; border-radius: 999px;
+      font-size: 0.6rem; font-weight: 700; letter-spacing: 0.02em;
+      background: #F59E0B22; color: #FBBF24; border: 1px solid #F59E0B44;
+      vertical-align: middle; white-space: nowrap;
+    }
     .row-click { cursor: pointer; }
     .row-click:hover, .row-click:focus-visible {
       background: color-mix(in srgb, var(--color-accent, #6366f1) 8%, transparent);

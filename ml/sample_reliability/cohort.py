@@ -41,6 +41,17 @@ SAMPLE_COHORTS: Final[tuple[str, ...]] = (
     COHORT_STANDARD,
 )
 
+# Decision-layer reliability weights applied to Optimizer (ILP objective) and
+# Auction when a player belongs to a low-sample cohort.  STANDARD keeps full
+# weight; LIMITED / INSUFFICIENT are penalised so inflated raw predictions do
+# not compete on equal footing.  Values are conservative defaults — calibrate
+# via backtest before treating them as final (see reliability rollout plan).
+RELIABILITY_WEIGHT_BY_COHORT: Final[dict[str, float]] = {
+    COHORT_STANDARD: 1.0,
+    COHORT_LIMITED: 0.65,
+    COHORT_INSUFFICIENT: 0.30,
+}
+
 # Type alias for static type checkers.
 Cohort = str
 

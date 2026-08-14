@@ -97,6 +97,8 @@ def _player_from_schema(p: AuctionPlayerSchema) -> Player:
         season_value=p.season_value,
         start_probability=p.start_probability,
         eligible_roles=eligible,
+        reliability_weight=p.reliability_weight,
+        sample_cohort=p.sample_cohort,
     )
 
 
@@ -111,6 +113,8 @@ def _player_to_summary(p: Player) -> AuctionPlayerSummarySchema:
         season_value=p.season_value,
         start_probability=p.start_probability,
         eligible_roles=sorted(p.eligible_roles) if p.eligible_roles else None,
+        sample_cohort=p.sample_cohort,
+        reliability_weight=p.reliability_weight,
     )
 
 
@@ -389,6 +393,8 @@ async def init_auction(
                 season_value=r.get("season_value"),
                 start_probability=r.get("start_probability"),
                 eligible_roles=frozenset(r.get("eligible_roles") or []),
+                reliability_weight=r.get("reliability_weight"),
+                sample_cohort=r.get("sample_cohort"),
             )
             for r in rows
         ]
@@ -464,6 +470,8 @@ async def simulate_auction_endpoint(
                 projected_score=float(r["projected_score"]),
                 season_value=r.get("season_value"), start_probability=r.get("start_probability"),
                 eligible_roles=frozenset(r.get("eligible_roles") or []),
+                reliability_weight=r.get("reliability_weight"),
+                sample_cohort=r.get("sample_cohort"),
             )
             for r in rows
         ]
@@ -855,6 +863,8 @@ def get_var_ranking(
             buy_signal=r.esv > 0,
             season_value=player_map[r.player_id].season_value,
             start_probability=player_map[r.player_id].start_probability,
+            sample_cohort=player_map[r.player_id].sample_cohort,
+            reliability_weight=player_map[r.player_id].reliability_weight,
         )
         for r in results
     ]

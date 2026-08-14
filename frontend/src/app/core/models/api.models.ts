@@ -259,6 +259,10 @@ export interface SquadPlayer {
   predictionStd?: number | null;
   /** MANTRA only: roles this player can fill (e.g. ["Dd", "E"]). Empty/absent for CLASSIC. */
   eligibleRoles?: string[];
+  /** PR9: INSUFFICIENT | LIMITED | STANDARD — drives reliability badge. */
+  sampleCohort?: string | null;
+  /** PR9: decision-layer weight (< 1 for low-sample cohorts). */
+  reliabilityWeight?: number | null;
 }
 
 /** Squad-level coverage of one official Mantra Experience module. */

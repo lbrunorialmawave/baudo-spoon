@@ -500,7 +500,17 @@ function makeParticipants(
                     <ul class="pool-dropdown" role="listbox">
                       @for (p of poolSuggestions(); track p.playerId) {
                         <li class="pool-option" role="option" (mousedown)="selectPoolPlayer(p)">
-                          <span class="pool-name">{{ p.name }}</span>
+                          <span class="pool-name">
+                            {{ p.name }}
+                            @if (p.sampleCohort === 'LIMITED' || p.sampleCohort === 'INSUFFICIENT') {
+                              <span class="ml-noisy-badge"
+                                    [attr.title]="p.sampleCohort === 'INSUFFICIENT'
+                                      ? 'Campione insufficiente (&lt;100 min)'
+                                      : 'Campione limitato (100–799 min)'">
+                                ⚠️ {{ p.sampleCohort === 'INSUFFICIENT' ? 'Insuff.' : 'Limited' }}
+                              </span>
+                            }
+                          </span>
                           <span class="pool-meta">
                             <span
                               class="role-badge"
@@ -757,7 +767,12 @@ function makeParticipants(
                             [attr.aria-label]="'Dettaglio ' + a.player.name">
                           <td class="seq">{{ a.sequenceNumber }}</td>
                           <td>
-                            <p class="player-name">{{ a.player.name }}</p>
+                            <p class="player-name">
+                              {{ a.player.name }}
+                              @if (a.player.sampleCohort === 'LIMITED' || a.player.sampleCohort === 'INSUFFICIENT') {
+                                <span class="ml-noisy-badge">⚠️ {{ a.player.sampleCohort === 'INSUFFICIENT' ? 'Insuff.' : 'Limited' }}</span>
+                              }
+                            </p>
                             <p class="team-name">{{ a.player.realTeam }}</p>
                           </td>
                           <td>{{ winnerName(a.winnerParticipantId) }}</td>
@@ -933,7 +948,17 @@ function makeParticipants(
                               tabindex="0"
                               role="button"
                               [attr.aria-label]="'Dettaglio ' + v.name">
-                            <td>{{ v.name }}</td>
+                            <td>
+                              {{ v.name }}
+                              @if (v.sampleCohort === 'LIMITED' || v.sampleCohort === 'INSUFFICIENT') {
+                                <span class="ml-noisy-badge"
+                                      [attr.title]="v.sampleCohort === 'INSUFFICIENT'
+                                        ? 'Campione insufficiente (&lt;100 min)'
+                                        : 'Campione limitato (100–799 min)'">
+                                  ⚠️ {{ v.sampleCohort === 'INSUFFICIENT' ? 'Insuff.' : 'Limited' }}
+                                </span>
+                              }
+                            </td>
                             <td>
                               <span
                                 class="role-badge"
@@ -2480,6 +2505,8 @@ export class AuctionComponent {
       buySignal: v.buySignal,
       seasonValue: v.seasonValue,
       startProbability: v.startProbability,
+      sampleCohort: v.sampleCohort,
+      reliabilityWeight: v.reliabilityWeight,
     });
   }
 
@@ -2493,6 +2520,8 @@ export class AuctionComponent {
       projectedScore: a.player.projectedScore,
       finalPrice: a.finalPrice,
       tier: a.tier,
+      sampleCohort: a.player.sampleCohort,
+      reliabilityWeight: a.player.reliabilityWeight,
     });
   }
 

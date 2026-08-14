@@ -412,6 +412,7 @@ class PlayerSchema(_CamelModel):
     cost: int
     projected_score: float
     reliability_weight: Optional[float] = None
+    sample_cohort: Optional[str] = None  # INSUFFICIENT | LIMITED | STANDARD
     eligible_roles: list[str] = Field(default_factory=list)  # MANTRA only
     prediction_std: Optional[float] = None  # ensemble std; drives risk_aversion penalty
     historical_overpay_ratio: Optional[float] = None  # Picco/listino from pilastro4
@@ -690,6 +691,9 @@ class SquadPlayerSchema(_CamelModel):
     eligible_roles: list[str] = Field(default_factory=list)
     # Ensemble prediction std; used by risk-adjusted objective and shown in drawer.
     prediction_std: Optional[float] = None
+    # Output-reliability (PR9): cohort label + decision weight for frontend badges.
+    sample_cohort: Optional[str] = None
+    reliability_weight: Optional[float] = None
 
 
 class FormationCoverageSchema(_CamelModel):
@@ -867,6 +871,10 @@ class AuctionPlayerSchema(_CamelModel):
     eligible_roles: list[str] | None = None
     """MANTRA only: list of Mantra role codes this player can fill
     (e.g. ``["Dd", "E"]``). Ignored under CLASSIC."""
+    reliability_weight: float | None = None
+    """Decision-layer weight from sample cohort (1.0 = STANDARD)."""
+    sample_cohort: str | None = None
+    """INSUFFICIENT / LIMITED / STANDARD — useful for frontend badges."""
 
 
 class InitializeAuctionRequest(_CamelModel):
@@ -952,6 +960,8 @@ class AuctionPlayerSummarySchema(_CamelModel):
     season_value: Optional[float] = None
     start_probability: Optional[float] = None
     eligible_roles: list[str] | None = None
+    sample_cohort: Optional[str] = None
+    reliability_weight: Optional[float] = None
 
 
 class AuctionParticipantStateSchema(_CamelModel):
@@ -1027,6 +1037,8 @@ class VarRankingItemSchema(_CamelModel):
     buy_signal: bool  # esv > 0
     season_value: Optional[float] = None
     start_probability: Optional[float] = None
+    sample_cohort: Optional[str] = None
+    reliability_weight: Optional[float] = None
 
 
 class VarRankingResponse(_CamelModel):

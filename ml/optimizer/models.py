@@ -102,6 +102,9 @@ class Player:
     cost: int
     projected_score: float
     reliability_weight: float | None = None
+    # Sample cohort from ML output-reliability (INSUFFICIENT / LIMITED / STANDARD).
+    # Surfaced to the frontend for "valori ML rumorosi" badges on Optimizer/Auction.
+    sample_cohort: str | None = None
     # MANTRA only: set of Mantra role codes this player can fill (e.g. {"Dd", "E"}).
     # Must be non-empty when ruleset == "MANTRA". Ignored for CLASSIC.
     eligible_roles: frozenset[str] = field(default_factory=frozenset)

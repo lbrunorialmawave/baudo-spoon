@@ -27,6 +27,12 @@ import { SquadPlayer } from '../../../core/models/api.models';
               · <span class="mantra-roles">{{ mr }}</span>
             }
           </p>
+          @if (isNoisyCohort()) {
+            <span class="ml-noisy-badge"
+                  [attr.title]="cohortTooltip()">
+              ⚠️ Valori ML rumorosi · {{ player().sampleCohort }}
+            </span>
+          }
         </div>
         <button type="button" class="close-btn" (click)="closed.emit()" aria-label="Chiudi">✕</button>
       </div>
@@ -126,11 +132,30 @@ import { SquadPlayer } from '../../../core/models/api.models';
       color: var(--color-accent, #6366f1);
       font-weight: 600;
     }
+    .ml-noisy-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      margin-top: 6px; padding: 2px 8px; border-radius: 999px;
+      font-size: 10px; font-weight: 700;
+      background: #F59E0B22; color: #FBBF24; border: 1px solid #F59E0B44;
+    }
   `],
 })
 export class OptimizerPlayerDrawerComponent {
   readonly player = input.required<SquadPlayer>();
   readonly closed = output<void>();
+
+  isNoisyCohort(): boolean {
+    const c = this.player().sampleCohort;
+    return c === 'LIMITED' || c === 'INSUFFICIENT';
+  }
+
+  cohortTooltip(): string {
+    const c = this.player().sampleCohort;
+    if (c === 'INSUFFICIENT') {
+      return 'Campione insufficiente (<100 min): predizione fortemente ammorbidita verso la media di ruolo.';
+    }
+    return 'Campione limitato (100–799 min): predizione ammorbidita verso la media di ruolo.';
+  }
 
   identityRows(): { label: string; value: string }[] {
     const p = this.player();
@@ -143,6 +168,12 @@ export class OptimizerPlayerDrawerComponent {
     const mantra = this.mantraRolesLabel();
     if (mantra) {
       rows.splice(2, 0, { label: 'Ruoli Mantra', value: mantra });
+    }
+    if (p.sampleCohort) {
+      rows.push({ label: 'Sample cohort', value: p.sampleCohort });
+    }
+    if (p.reliabilityWeight != null) {
+      rows.push({ label: 'Reliability weight', value: String(p.reliabilityWeight) });
     }
     return rows;
   }
