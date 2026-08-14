@@ -84,6 +84,41 @@ def test_excludes_players_already_present(monkeypatch: pytest.MonkeyPatch) -> No
     assert not result["player_fotmob_id"].duplicated().any()
 
 
+def test_includes_player_with_only_stale_domestic_season(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test (sibling of PR8's _candidate_players fix): a player
+    with an OLD Serie A row (not the current output_season) — e.g. Dragusin,
+    Serie A 2022-23 then transferred abroad — must still receive the
+    foreign fallback row. Before the fix, ``existing_ids`` was built from
+    df_player's full multi-season history, so any player who ever had a
+    Serie A row (regardless of how old) was wrongly excluded here even
+    after the backfill had correctly populated his data upstream.
+    """
+    monkeypatch.setattr(
+        "ml.data.loader.pd.read_sql",
+        lambda *a, **k: _fallback_row(player_fotmob_id=10),  # id 10 below
+    )
+    # Player 10's only row is from an old season (2022), not the current
+    # output_season (2025) that the other domestic player (20) is on.
+    df_player = _df_player(
+        player_fotmob_id=[10, 20],
+        season_start=[2022, 2025],
+        season_label=["2022-23", "2025-26"],
+    )
+    result = _append_foreign_fallback_rows(df_player, _FakeEngine(), logging.getLogger("test"))
+
+    # The foreign row for player 10 must be appended, tagged to the
+    # current output_season (2025) — not silently dropped as "already
+    # present" just because he has a stale 2022 domestic row.
+    assert len(result) == len(df_player) + 1
+    foreign_rows = result[
+        (result["player_fotmob_id"] == 10) & (result["season_start"] == 2025)
+    ]
+    assert len(foreign_rows) == 1
+    assert foreign_rows.iloc[0]["is_foreign_fallback"] is True
+
+
 def test_injects_new_row_with_overridden_season_start(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "ml.data.loader.pd.read_sql",

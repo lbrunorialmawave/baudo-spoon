@@ -500,8 +500,20 @@ def _append_foreign_fallback_rows(
     if df_foreign.empty:
         return df_player
 
-    existing_ids = set(df_player["player_fotmob_id"].unique())
-    df_foreign = df_foreign[~df_foreign["player_fotmob_id"].isin(existing_ids)].copy()
+    # Exclude only players who already have a DOMESTIC row for the season
+    # being predicted (output_season) — NOT "ever had a Serie A row".
+    # df_player spans every scraped Serie A season, so a player with an
+    # old row (e.g. Serie A 2022-23) but nothing at output_season would
+    # otherwise be filtered out here even after the foreign backfill has
+    # correctly populated his row (same class of bug as PR8's
+    # _candidate_players — "ever played Serie A" vs "has a row now" —
+    # just resurfacing in the ML loader instead of the backfill script).
+    current_season_ids = set(
+        df_player.loc[
+            df_player["season_start"] == output_season, "player_fotmob_id"
+        ].unique()
+    )
+    df_foreign = df_foreign[~df_foreign["player_fotmob_id"].isin(current_season_ids)].copy()
     if df_foreign.empty:
         return df_player
 
