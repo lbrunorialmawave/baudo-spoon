@@ -9,6 +9,10 @@ This package implements the foundational layer described in ``plan.md``
   weighting strategies.
 * **PR3** — Bayesian shrinkage abstraction for per-90 rate stabilisation
   (kept in a separate module to preserve single-responsibility).
+* **PR9** — Output-side reliability labelling (``sample_cohort`` /
+  ``ml_values_noisy``) and display-only shrinkage of the model's own
+  predictions, so a LIMITED-cohort hot streak isn't presented at face
+  value (see ``output_reliability.py``).
 
 Design principles (enforced by the plan):
 * Minutes describe the **reliability of the sample**, not the **ability**
@@ -32,6 +36,10 @@ from .cohort import (
     SampleReliability,
     classify_cohort,
     profile_dataset,
+)
+from .output_reliability import (
+    DEFAULT_MIN_STANDARD_ROWS_FOR_PRIOR,
+    attach_output_reliability,
 )
 from .shrinkage import (
     DEFAULT_PRIOR_STRENGTH,
@@ -65,4 +73,6 @@ __all__ = [
     "DEFAULT_PRIOR_STRENGTH",
     "apply_shrinkage",
     "estimate_prior_rate",
+    "attach_output_reliability",
+    "DEFAULT_MIN_STANDARD_ROWS_FOR_PRIOR",
 ]

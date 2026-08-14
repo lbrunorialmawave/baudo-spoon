@@ -61,7 +61,17 @@ export interface PlayerPrediction {
   canonicalRole: string | null;
   season: string | null;
   fantavotoMedio: number | null;  // actual (from training data)
-  predicted: number;              // model prediction
+  predicted: number;              // model prediction (raw)
+  // Phase 3+ enrichments (optional)
+  confidence?: number | null;
+  predictionIntervalLow?: number | null;
+  predictionIntervalHigh?: number | null;
+  expectedMinutes?: number | null;
+  // PR9 output-reliability (absent on older artifacts)
+  sampleCohort?: string | null;
+  mlValuesNoisy?: boolean | null;
+  /** Shrinkage-damped value for LIMITED/INSUFFICIENT rows; prefer over predicted in UI. */
+  predictedDisplay?: number | null;
 }
 
 export interface ModelComparison {
@@ -75,6 +85,10 @@ export interface NextSeasonPrediction {
   playerName: string;
   playerFotmobId: number | null;
   predictedNextFantavoto: number;
+  // PR9 output-reliability (absent on older artifacts)
+  sampleCohort?: string | null;
+  mlValuesNoisy?: boolean | null;
+  predictedNextFantavotoDisplay?: number | null;
 }
 
 export interface PredictionsResponse {
@@ -383,6 +397,12 @@ export interface HybridPlayerPrediction {
   fpGap: number | null;
   expectedValue: number | null;
   hybridLabels: string[] | null;
+  /** Prediction uses career/foreign-league fallback stats rather than Serie A history. */
+  isForeignFallback?: boolean;
+  /** PR9: True when sample is LIMITED/INSUFFICIENT. */
+  mlValuesNoisy?: boolean;
+  sampleCohort?: string | null;
+  predictedDisplay?: number | null;
 }
 
 export interface HybridPredictionsResponse {

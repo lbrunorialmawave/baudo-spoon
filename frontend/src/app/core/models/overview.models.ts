@@ -47,6 +47,11 @@ export interface OverviewPlayer {
   hybridLabels: string[] | null;
   /** Prediction uses career/foreign-league fallback stats rather than Serie A history. */
   isForeignFallback?: boolean;
+  /** PR9: True when sample_cohort != STANDARD — prediction based on limited minutes. */
+  mlValuesNoisy?: boolean;
+  sampleCohort?: string | null;
+  /** Shrinkage-damped predicted fantavoto for UI when sample is limited. */
+  predictedDisplay?: number | null;
 
   // Titolarità — 3 distinct signals, never merged into one
   statusScraped: string | null;

@@ -206,16 +206,25 @@ def _candidate_players(
 
     * **Gap A — never backfilled:** no row in
       ``player_latest_stats_any_league`` (original behaviour).
-    * **Gap B — stale prediction lineage (neo-arrivi only):** has
-      any-league latest stats, no row in
+    * **Gap B — stale prediction lineage (neo-arrivi *and* ex-Serie A
+      transfers abroad):** has any-league latest stats, no row in
       ``player_stats_by_prediction_season`` with
-      ``prediction_season_start = target_season``, **and** zero Serie A
-      rows in ``player_season_stats`` (Ramos-class: foreign stats exist
-      for N-1 only while the listino already points at N).
+      ``prediction_season_start = target_season``, **and** no *recent*
+      Serie A row in ``player_season_stats`` — i.e. none in the
+      ``target_season`` / ``target_season - 1`` window already covered by
+      the ``pss`` / ``pss_prev`` COALESCE tiers in ``ml/mantra/runner.py``
+      (Ramos-class: foreign stats exist for N-1 only while the listino
+      already points at N).
 
-    Gap B explicitly excludes pure domestic players (e.g. Berardi) who
-    appear in ``player_latest_stats_any_league`` via Serie A but must not
-    enter the foreign career scraper.
+    Gap B excludes only players with a *recent* Serie A row (pure
+    domestic, e.g. Berardi, and anyone tier-1/tier-2 in the runner already
+    covers). It deliberately does **not** exclude players whose Serie A
+    history is older than ``target_season - 1`` — e.g. Dragusin or Kolo
+    Muani, who had a Serie A season and then moved abroad: their stale
+    Serie A row must not shadow the foreign scraper (see PR8). "Ever
+    played Serie A" and "currently has a recent Serie A row" are different
+    facts, and only the latter means tier 1/2 already has the player
+    covered.
 
     Returns ``ForeignPlayerCandidate`` instances keyed by
     ``(player_fotmob_id, target_season_start)`` — the same player may appear
@@ -232,30 +241,39 @@ def _candidate_players(
         JOIN player_id_map pim
           ON pim.fantacalcio_id = pq.fantacalcio_id
          AND pim.season_start = pq.season_start
-        WHERE pq.season_start = ANY(:seasons)
+        WHERE pq.season_start IN :seasons
           AND pim.player_fotmob_id IS NOT NULL
           AND (
             -- Gap A: never backfilled into any-league latest
             NOT EXISTS (
                 SELECT 1
                 FROM player_latest_stats_any_league lat
-                WHERE lat.fantacalcio_id = pim.player_fotmob_id::bigint
+                WHERE lat.fantacalcio_id = CAST(pim.player_fotmob_id AS BIGINT)
             )
             OR
-            -- Gap B: neo-arrivo with stale prediction lineage
-            --   - has any-league latest (usually prior foreign club)
+            -- Gap B: stale prediction lineage
+            --   - has any-league latest (usually prior foreign club, or a
+            --     stale Serie A row for ex-Serie A players now abroad)
             --   - missing prediction_season = listino target
-            --   - zero Serie A history (excludes Berardi & pure domestic)
+            --   - no RECENT Serie A row (target or target-1): a recent row
+            --     means tier 1/2 in the runner already has this player
+            --     covered, so the foreign scraper is genuinely unneeded.
+            --     Only a Serie A row older than target-1 (or none at all)
+            --     lets a player through — this is what excludes pure
+            --     domestic players (Berardi) while still catching
+            --     ex-Serie A players who moved abroad (Dragusin, Kolo
+            --     Muani) whose latest row would otherwise be a stale
+            --     Serie A season. See PR8.
             (
                 EXISTS (
                     SELECT 1
                     FROM player_latest_stats_any_league lat
-                    WHERE lat.fantacalcio_id = pim.player_fotmob_id::bigint
+                    WHERE lat.fantacalcio_id = CAST(pim.player_fotmob_id AS BIGINT)
                 )
                 AND NOT EXISTS (
                     SELECT 1
                     FROM player_stats_by_prediction_season pred
-                    WHERE pred.fantacalcio_id = pim.player_fotmob_id::bigint
+                    WHERE pred.fantacalcio_id = CAST(pim.player_fotmob_id AS BIGINT)
                       AND pred.prediction_season_start = pq.season_start
                 )
                 AND NOT EXISTS (
@@ -265,10 +283,11 @@ def _candidate_players(
                     JOIN leagues l ON l.id = s.league_id
                     WHERE pss.player_fotmob_id = pim.player_fotmob_id
                       AND l.comp_id = '55'
+                      AND s.season_start >= pq.season_start - 1
                 )
             )
           )
-    """)
+    """).bindparams(sa.bindparam("seasons", expanding=True))
     with engine.connect() as conn:
         rows = conn.execute(sql, {"seasons": season_starts}).mappings().all()
 
@@ -336,6 +355,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Run post-backfill health gates and exit (Stage 5 / plan §45)",
     )
     parser.add_argument(
+        "--enforce",
+        action="store_true",
+        help="Run post-backfill health gates and exit with nonzero if any gate fails (Stage 5 / plan §45)",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         dest="as_json",
@@ -368,6 +392,19 @@ def main(argv: list[str] | None = None) -> int:
             for k, v in counts.items():
                 print(f"  {k}: {v}")
         return 0
+
+
+    if args.enforce:
+        report = _health_checks(engine, result=None)
+        if args.as_json:
+            print(json.dumps({"health": report}, indent=2))
+        else:
+            print("=== health checks ===")
+            print(f"  ok: {report['ok']}")
+            for g in report["gates"]:
+                status = "OK" if g["ok"] else "FAIL"
+                print(f"  [{status}] {g['name']}: {g['detail']}")
+        return 0 if report["ok"] else 1
 
     if args.health:
         report = _health_checks(engine, result=None)

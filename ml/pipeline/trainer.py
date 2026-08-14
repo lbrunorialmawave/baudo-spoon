@@ -22,7 +22,9 @@ Output dict (also serialised to JSON in the artifacts directory):
   "run_id":                   "20240101_120000",
   "best_model":               "xgboost",
   "role_partitioned":         true,
-  "predictions":              [{player_name, season, fantavoto_medio, predicted}, …],
+  "predictions":              [{player_name, season, fantavoto_medio, predicted,
+                                 sample_cohort, ml_values_noisy,
+                                 predicted_fantavoto_display}, …],
   "model_comparison":         [{model, rmse, mae, r2}, …],
   "role_metrics": {
     "gk":       {"ridge": {rmse, mae, r2}, …},
@@ -33,7 +35,9 @@ Output dict (also serialised to JSON in the artifacts directory):
   "player_clusters":          [{player_name, cluster_id, pca_0, pca_1, …}, …],
   "low_cost_recommendations": [{top_player_name, alt_player_name, …}, …],
   "clustering_stats":         {n_clusters, silhouette, inertia, pca_explained_variance},
-  "next_season_predictions":  [{player_name, predicted_next_fantavoto}, …],
+  "next_season_predictions":  [{player_name, predicted_next_fantavoto,
+                                 sample_cohort, ml_values_noisy,
+                                 predicted_next_fantavoto_display}, …],
   "metadata":                 {run_id, hardware, dependencies, data_hash, config},
   "config":                   {…},
 }
@@ -104,6 +108,7 @@ from ..sample_reliability.cohort import (
     COHORT_STANDARD as _COHORT_STANDARD,
 )
 from ..sample_reliability.cohort import classify_cohort as _classify_cohort
+from ..sample_reliability.output_reliability import attach_output_reliability
 from ..sample_reliability.shrinkage import (
     apply_shrinkage as _apply_shrinkage_fn,
     estimate_prior_rate as _estimate_prior_rate,
@@ -1292,11 +1297,31 @@ class Trainer:
             df_next["predicted_next_fantavoto"] = full_pipe.predict(
                 df_next[feature_cols]
             )
+
+            # Label + damp low-sample rows for display (PR9) — never
+            # touches the raw predicted_next_fantavoto used elsewhere;
+            # only adds sample_cohort / ml_values_noisy / the _display
+            # column that the frontend badges off.
+            df_next, _next_reliability_meta = attach_output_reliability(
+                df_next,
+                predicted_col="predicted_next_fantavoto",
+                minutes_col="mins_played",
+                role_col="canonical_role" if "canonical_role" in df_next.columns else None,
+                min_minutes_hard=cfg.min_minutes_hard,
+                standard_minutes=cfg.min_minutes,
+                prior_strength=cfg.shrinkage_prior_strength,
+                exclude_from_prior_mask=df_next.get(
+                    "is_foreign_fallback", pd.Series(False, index=df_next.index)
+                ).fillna(False),
+            )
+
+            next_season_cols = [
+                "player_fotmob_id", "player_name", "team_name", "season_start",
+                "predicted_next_fantavoto", "predicted_next_fantavoto_display",
+                "sample_cohort", "ml_values_noisy",
+            ]
             next_season_col = (
-                df_next[
-                    ["player_fotmob_id", "player_name", "team_name",
-                     "season_start", "predicted_next_fantavoto"]
-                ]
+                df_next[[c for c in next_season_cols if c in df_next.columns]]
                 .sort_values("predicted_next_fantavoto", ascending=False)
                 .reset_index(drop=True)
             )
@@ -1373,6 +1398,25 @@ class Trainer:
                 [predictions_df, foreign_predictions_df], ignore_index=True, sort=False
             )
 
+        # Label + damp low-sample rows for display (PR9) — see
+        # ``ml.sample_reliability.output_reliability``. Runs on the full
+        # predictions_df (test-set STANDARD/LIMITED rows + any folded-in
+        # foreign-fallback rows); foreign-fallback rows are still
+        # classified/damped but excluded from prior estimation since
+        # they're already a separate, cross-league signal.
+        predictions_df, output_reliability_meta = attach_output_reliability(
+            predictions_df,
+            predicted_col="predicted_fantavoto",
+            minutes_col="expected_minutes",
+            role_col="canonical_role" if "canonical_role" in predictions_df.columns else None,
+            min_minutes_hard=cfg.min_minutes_hard,
+            standard_minutes=cfg.min_minutes,
+            prior_strength=cfg.shrinkage_prior_strength,
+            exclude_from_prior_mask=predictions_df.get(
+                "is_foreign_fallback", pd.Series(False, index=predictions_df.index)
+            ).fillna(False),
+        )
+
         # Derive season-value targets from predicted rating × predicted appearances.
         # The derivation lives in ``ml.domain.predictions`` so the MANTRA runner
         # and the optimizer pool read the same numbers from the same source.
@@ -1421,6 +1465,7 @@ class Trainer:
                 "recent_role_features": role_feature_cols,
                 "breakout_model_enabled": bool(cfg.enable_breakout_model),
                 "cohort_profile": self._cohort_profile(df_core),
+                "output_reliability": output_reliability_meta,
             },
             "breakout_model": breakout_result,
             "metadata": metadata,

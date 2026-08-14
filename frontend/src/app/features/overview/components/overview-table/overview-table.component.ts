@@ -101,7 +101,7 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                   {{ item.FP_Mantra != null ? (item.FP_Mantra | number:'1.1-1') : '—' }}
                 </td>
                 <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell" style="color:var(--color-text-secondary)">
-                  {{ item.predictedFantavoto != null ? (item.predictedFantavoto | number:'1.2-2') : '—' }}
+                  {{ (item.predictedDisplay ?? item.predictedFantavoto) != null ? ((item.predictedDisplay ?? item.predictedFantavoto)! | number:'1.2-2') : '—' }}
                 </td>
                 <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell" style="color:var(--color-text-secondary)">
                   {{ item.confidenceScore != null ? (item.confidenceScore | number:'1.0-0') : '—' }}

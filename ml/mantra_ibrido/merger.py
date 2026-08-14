@@ -12,6 +12,13 @@ Edge cases handled
 *   ``results_latest.json`` does not exist → all players marked without ML data
 *   A player exists in MANTRA but not in ML → ``has_ml_data=false``, no crash
 *   Multiple ML records for the same ``player_fotmob_id`` → first match wins
+
+Propagated ML fields (when matched)
+-----------------------------------
+*   ``predicted_fantavoto``, ``prediction_std``, ``expected_minutes``
+*   ``is_foreign_fallback`` (scoring penalty + overview badge)
+*   PR9 output-reliability: ``sample_cohort``, ``ml_values_noisy``,
+    ``predicted_fantavoto_display`` (UI damping; raw prediction unchanged)
 """
 
 from __future__ import annotations
@@ -230,6 +237,28 @@ def merge_datasets(
                 matched.get("is_foreign_fallback")
                 or matched.get("isForeignFallback")
             )
+            # PR9 output-reliability: cohort label + noisy flag + damped display
+            # value. Raw predicted_fantavoto stays undamped for scoring/metrics;
+            # predicted_fantavoto_display is UI-only (overview/prediction drawers
+            # prefer it via predictedDisplay ?? predictedFantavoto).
+            player["sample_cohort"] = (
+                matched.get("sample_cohort") or matched.get("sampleCohort")
+            )
+            player["ml_values_noisy"] = bool(
+                matched.get("ml_values_noisy")
+                if matched.get("ml_values_noisy") is not None
+                else matched.get("mlValuesNoisy") or False
+            )
+            _display = (
+                matched.get("predicted_fantavoto_display")
+                if matched.get("predicted_fantavoto_display") is not None
+                else matched.get("predicted_display")
+                if matched.get("predicted_display") is not None
+                else matched.get("predictedFantavotoDisplay")
+                if matched.get("predictedFantavotoDisplay") is not None
+                else matched.get("predictedDisplay")
+            )
+            player["predicted_fantavoto_display"] = _display
 
             # Enrich with VAR data
             resolved_id = pid if pid is not None else matched.get("player_fotmob_id")
@@ -251,6 +280,9 @@ def merge_datasets(
             player["esv"] = None
             player["next_season_predicted"] = None
             player["is_foreign_fallback"] = False
+            player["sample_cohort"] = None
+            player["ml_values_noisy"] = False
+            player["predicted_fantavoto_display"] = None
             no_ml += 1
 
     log.info(

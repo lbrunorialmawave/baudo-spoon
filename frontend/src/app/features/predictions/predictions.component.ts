@@ -367,10 +367,10 @@ const MANTRA_ROLES = ['Por', 'Dc', 'Dd', 'Ds', 'B', 'E', 'M', 'C', 'T', 'W', 'A'
                       <div class="w-20 h-1.5 rounded-full overflow-hidden"
                            style="background:var(--color-surface-raised)">
                         <div class="h-full rounded-full" style="background:var(--color-accent)"
-                             [style.width.%]="scorePct(p.predictedNextFantavoto)"></div>
+                             [style.width.%]="scorePct(p.predictedNextFantavotoDisplay ?? p.predictedNextFantavoto)"></div>
                       </div>
                       <span class="font-bold text-sm tabular-nums" style="color:var(--color-accent)">
-                        {{ p.predictedNextFantavoto | number:'1.2-2' }}
+                        {{ (p.predictedNextFantavotoDisplay ?? p.predictedNextFantavoto) | number:'1.2-2' }}
                       </span>
                     </div>
                   </div>

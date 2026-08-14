@@ -70,7 +70,25 @@ import { FASE7_LABELS } from '../../../../core/models/mantra.models';
         </section>
 
         <section class="mb-5">
-          <h3 class="section-title">Machine Learning</h3>
+          <div class="flex items-center justify-between gap-2 mb-2">
+            <h3 class="section-title mb-0">Machine Learning</h3>
+            <div class="flex items-center gap-1.5 flex-wrap justify-end">
+              @if (player().isForeignFallback) {
+                <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold shrink-0"
+                      style="background:#3B82F622;color:#60A5FA;border:1px solid #3B82F644"
+                      title="La prediction ML usa statistiche storiche da un campionato estero come fallback.">
+                  🌍 Foreign fallback
+                </span>
+              }
+              @if (player().mlValuesNoisy) {
+                <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold shrink-0"
+                      style="background:#F59E0B22;color:#FBBF24;border:1px solid #F59E0B44"
+                      title="Predizione basata su un campione ridotto di minuti giocati; il valore è stato ammorbidito verso la media di lega.">
+                  ⚠️ Valori ML rumorosi
+                </span>
+              }
+            </div>
+          </div>
           <div class="grid grid-cols-2 gap-2">
             @for (row of mlRows(); track row.label) {
               <div class="rounded-lg px-3 py-2" style="background:var(--color-surface)">
@@ -176,7 +194,7 @@ export class PredictionDrawerComponent {
   mlRows(): { label: string; value: number | null }[] {
     const p = this.player();
     return [
-      { label: 'Fantavoto previsto', value: p.predictedFantavoto },
+      { label: 'Fantavoto previsto', value: p.predictedDisplay ?? p.predictedFantavoto },
       { label: 'Deviazione std.', value: p.predictionStd },
       { label: 'Minuti attesi', value: p.expectedMinutes },
       { label: 'ML score (0-100)', value: p.mlScoreNorm },

@@ -134,13 +134,23 @@ async def list_player_predictions(
             player_fotmob_id=r.get("player_fotmob_id") or db_meta.get("player_fotmob_id"),
             team_name=r.get("team_name") or db_meta.get("team_name"),
             canonical_role=r.get("canonical_role"),
-            season=r.get("season"),
+            # Artifact uses season_start; older consumers may still emit season.
+            season=r.get("season_start") or r.get("season"),
             fantavoto_medio=r.get("fantavoto_medio"),
-            predicted=r.get("predicted", 0.0),
+            # Artifact key is predicted_fantavoto; keep predicted as fallback.
+            predicted=float(r.get("predicted_fantavoto") if r.get("predicted_fantavoto") is not None else r.get("predicted", 0.0)),
             confidence=r.get("confidence"),
             prediction_interval_low=r.get("prediction_interval_low"),
             prediction_interval_high=r.get("prediction_interval_high"),
             expected_minutes=r.get("expected_minutes"),
+            # PR9 output-reliability fields (absent on older artifacts).
+            sample_cohort=r.get("sample_cohort"),
+            ml_values_noisy=r.get("ml_values_noisy"),
+            predicted_display=(
+                r.get("predicted_fantavoto_display")
+                if r.get("predicted_fantavoto_display") is not None
+                else r.get("predicted_display")
+            ),
         )
         if player and player.lower() not in name.lower():
             continue
@@ -396,6 +406,12 @@ _CAMEL_OVERRIDES = {
     "hybrid_labels": "hybridLabels",
     # ML foreign-league fallback (trainer → merger → scoring → overview drawer)
     "is_foreign_fallback": "isForeignFallback",
+    # PR9 output-reliability (trainer → predictions / hybrid / overview)
+    "sample_cohort": "sampleCohort",
+    "ml_values_noisy": "mlValuesNoisy",
+    "predicted_fantavoto_display": "predictedFantavotoDisplay",
+    "predicted_display": "predictedDisplay",
+    "predicted_next_fantavoto_display": "predictedNextFantavotoDisplay",
     # Mixed-case keys that must pass through unchanged
     "FP_Corr": "FP_Corr",
     "CP_Corr": "CP_Corr",

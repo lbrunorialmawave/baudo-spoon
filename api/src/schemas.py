@@ -116,6 +116,16 @@ class PlayerPredictionSchema(_CamelModel):
     prediction_interval_low: Optional[float] = None
     prediction_interval_high: Optional[float] = None
     expected_minutes: Optional[float] = None
+    # Output-reliability enrichments (PR9, absent in older artifacts).
+    # sample_cohort: "INSUFFICIENT" | "LIMITED" | "STANDARD".
+    # ml_values_noisy: True for non-STANDARD cohorts — drives the
+    # frontend "valori ML rumorosi" badge.
+    # predicted_display: shrinkage-damped value for LIMITED/INSUFFICIENT
+    # rows (equal to `predicted` for STANDARD rows); the frontend should
+    # prefer this over `predicted` when present.
+    sample_cohort: Optional[str] = None
+    ml_values_noisy: Optional[bool] = None
+    predicted_display: Optional[float] = None
 
 
 class PlayerVarSchema(_CamelModel):
@@ -147,6 +157,10 @@ class NextSeasonPredictionSchema(_CamelModel):
     player_name: str
     player_fotmob_id: Optional[int] = None
     predicted_next_fantavoto: float
+    # Same output-reliability enrichments as PlayerPredictionSchema.
+    sample_cohort: Optional[str] = None
+    ml_values_noisy: Optional[bool] = None
+    predicted_next_fantavoto_display: Optional[float] = None
 
 
 class ModelComparisonSchema(_CamelModel):

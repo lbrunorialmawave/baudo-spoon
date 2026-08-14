@@ -155,3 +155,121 @@ def test_to_camel_is_foreign_fallback() -> None:
     parts = key.split("_")
     camel = parts[0] + "".join(p.capitalize() for p in parts[1:])
     assert camel == "isForeignFallback"
+
+
+def test_merger_propagates_output_reliability_fields(tmp_path: Path) -> None:
+    """PR9: merger must copy sample_cohort / ml_values_noisy / predicted_*_display.
+
+    Same failure mode as is_foreign_fallback: without the copy, overview
+    _to_camel never emits mlValuesNoisy / predictedFantavotoDisplay and the
+    drawer badge + damped table value stay invisible.
+    """
+    mantra = tmp_path / "mantra.json"
+    ml = tmp_path / "results_latest.json"
+
+    _write_mantra(
+        mantra,
+        [
+            {
+                "fantacalcio_id": 1,
+                "player_fotmob_id": 100,
+                "player_name": "Standard Sample",
+                "team": "Inter",
+                "ruolo_primario": "FWD",
+                "FP_Corr": 60,
+            },
+            {
+                "fantacalcio_id": 2,
+                "player_fotmob_id": 200,
+                "player_name": "Limited Sample",
+                "team": "Milan",
+                "ruolo_primario": "MID",
+                "FP_Corr": 55,
+            },
+        ],
+    )
+    _write_ml(
+        ml,
+        [
+            {
+                "player_fotmob_id": 100,
+                "player_name": "Standard Sample",
+                "predicted_fantavoto": 7.2,
+                "prediction_std": 0.3,
+                "expected_minutes": 2800,
+                "is_foreign_fallback": False,
+                "sample_cohort": "STANDARD",
+                "ml_values_noisy": False,
+                "predicted_fantavoto_display": 7.2,
+            },
+            {
+                "player_fotmob_id": 200,
+                "player_name": "Limited Sample",
+                "predicted_fantavoto": 8.5,  # raw (explosive on small sample)
+                "prediction_std": 1.2,
+                "expected_minutes": 400,
+                "is_foreign_fallback": False,
+                "sample_cohort": "LIMITED",
+                "ml_values_noisy": True,
+                "predicted_fantavoto_display": 6.9,  # damped toward STANDARD median
+            },
+        ],
+    )
+
+    merged = merge_datasets(mantra, ml)
+    by_id = {p["player_fotmob_id"]: p for p in merged["players"]}
+
+    std = by_id[100]
+    assert std["has_ml_data"] is True
+    assert std["sample_cohort"] == "STANDARD"
+    assert std["ml_values_noisy"] is False
+    assert std["predicted_fantavoto"] == 7.2
+    assert std["predicted_fantavoto_display"] == 7.2
+
+    lim = by_id[200]
+    assert lim["has_ml_data"] is True
+    assert lim["sample_cohort"] == "LIMITED"
+    assert lim["ml_values_noisy"] is True
+    # Raw stays for scoring; display is the damped UI value.
+    assert lim["predicted_fantavoto"] == 8.5
+    assert lim["predicted_fantavoto_display"] == 6.9
+
+
+def test_merger_output_reliability_defaults_when_no_ml(tmp_path: Path) -> None:
+    mantra = tmp_path / "mantra.json"
+    ml = tmp_path / "results_latest.json"
+    _write_mantra(
+        mantra,
+        [
+            {
+                "fantacalcio_id": 9,
+                "player_fotmob_id": 999,
+                "player_name": "No ML",
+                "team": "Roma",
+                "ruolo_primario": "DEF",
+                "FP_Corr": 40,
+            }
+        ],
+    )
+    _write_ml(ml, [])
+
+    merged = merge_datasets(mantra, ml)
+    p = merged["players"][0]
+    assert p["has_ml_data"] is False
+    assert p["sample_cohort"] is None
+    assert p["ml_values_noisy"] is False
+    assert p["predicted_fantavoto_display"] is None
+
+
+def test_to_camel_output_reliability_keys() -> None:
+    """Mirrors api.routers.intelligence._CAMEL_OVERRIDES / generic snake→camel."""
+    cases = {
+        "sample_cohort": "sampleCohort",
+        "ml_values_noisy": "mlValuesNoisy",
+        "predicted_fantavoto_display": "predictedFantavotoDisplay",
+        "predicted_display": "predictedDisplay",
+    }
+    for snake, expected in cases.items():
+        parts = snake.split("_")
+        camel = parts[0] + "".join(p.capitalize() for p in parts[1:])
+        assert camel == expected, f"{snake} → {camel}, expected {expected}"
