@@ -70,6 +70,10 @@ export type AuctionStrategyConfig = Pick<
   | 'replacementMethod'
   | 'minStartProbability'
   | 'hybridBlend'
+  // WS3 limited-cohort hardening: presets can opt-in to overriding these;
+  // when omitted, the component-level defaults (true / 0.0) are preserved.
+  | 'applyReliabilityWeight'
+  | 'riskAversion'
 >;
 
 export interface AuctionPreset {
