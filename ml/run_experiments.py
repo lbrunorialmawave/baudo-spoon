@@ -49,6 +49,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+log = logging.getLogger(__name__)
+
 
 # ── Structured JSON logging (riusa il pattern di run_pipeline.py) ─────────────
 
@@ -214,7 +216,139 @@ def _parse_args() -> argparse.Namespace:
         dest="json_logs",
         help="Emetti log come JSON single-line (per ELK/Splunk).",
     )
+    parser.add_argument(
+        "--publish-r2",
+        action=argparse.BooleanOptionalAction,
+        dest="publish_r2",
+        default=None,  # risolto in main(): True se ML_R2_ENDPOINT_URL è settata
+        help=(
+            "Pubblica il report.json consolidato su R2 (Cloudflare R2) "
+            "agli indirizzi 'experiments/<run_id>/report.json' e "
+            "'experiments/latest/report.json'. Default: abilitato se "
+            "ML_R2_ENDPOINT_URL è presente nell'ambiente. "
+            "Best-effort: un fallimento di upload NON interrompe l'esperimento "
+            "(il report resta su disco + GitHub Actions artifact)."
+        ),
+    )
     return parser.parse_args()
+
+
+# ── R2 sync (opzionale, best-effort) ────────────────────────────────────────
+#
+# Pattern condiviso con ``ml.run_rollout._r2_client`` / ``_upload_to_r2``.
+# Non riusiamo ``ml.storage.artifact_store.ArtifactStore`` perché quello è
+# orientato a filename flat in ``local_dir`` e single-key R2, mentre qui
+# dobbiamo pubblicare con chiavi annidate (``experiments/<run_id>/...``)
+# e senza popolare la cache locale.
+
+
+def _r2_client():
+    """Build a boto3 S3 client pointed at Cloudflare R2.
+
+    Usa le env ``ML_R2_*`` (come nel resto del progetto). Fallback alle
+    classiche ``AWS_*`` per compatibilità locale.
+
+    Ritorna ``None`` se ``ML_R2_ENDPOINT_URL`` non è configurato —
+    l'import di boto3 è lazy così la funzione resta importabile in ambienti
+    dev senza boto3 (il caller deve comunque gestire ``None`` prima di
+    provare a usare il client).
+    """
+    endpoint = os.environ.get("ML_R2_ENDPOINT_URL", "")
+    if not endpoint:
+        return None
+
+    import boto3
+    from botocore.config import Config
+
+    access_key = os.environ.get("ML_R2_ACCESS_KEY_ID") or os.environ.get(
+        "AWS_ACCESS_KEY_ID"
+    )
+    secret_key = os.environ.get("ML_R2_SECRET_ACCESS_KEY") or os.environ.get(
+        "AWS_SECRET_ACCESS_KEY"
+    )
+
+    return boto3.client(
+        "s3",
+        endpoint_url=endpoint,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        region_name=os.environ.get("AWS_DEFAULT_REGION", "auto"),
+        config=Config(signature_version="s3v4"),
+    )
+
+
+def _upload_to_r2(local: Path, key: str, bucket: str) -> bool:
+    """Carica ``local`` su R2 via boto3. Ritorna True se ok."""
+    if not local.exists():
+        log.error("File locale %s assente, upload R2 saltato.", local)
+        return False
+
+    client = _r2_client()
+    if client is None:
+        log.warning("ML_R2_ENDPOINT_URL non configurato, skip upload R2.")
+        return False
+
+    log.info("Upload R2: %s → s3://%s/%s", local, bucket, key)
+    try:
+        client.upload_file(str(local), bucket, key)
+    except Exception as exc:  # noqa: BLE001 - best-effort, mai fatale
+        log.error("Upload R2 fallito per s3://%s/%s: %s", bucket, key, exc)
+        return False
+    return True
+
+
+def _publish_report_to_r2(
+    report_path: Path, run_id: str, bucket: str
+) -> dict[str, Any]:
+    """Pubblica ``report.json`` su R2 alle chiavi canoniche del rollout.
+
+    Due destinazioni, entrambe necessarie per ``ml-training.yml/build``:
+
+    1. ``experiments/<run_id>/report.json`` — storico immutabile per audit.
+       Match-a sempre il pattern ``/report\.json$`` usato dal ``build``
+       job per risolvere l'ultimo promotion report (``sort | tail -n 1``
+       sui listing R2).
+    2. ``experiments/latest/report.json`` — alias "latest" per accesso
+       diretto senza dover listare l'intero prefisso. Sovrascrive ad
+       ogni run, non storico.
+
+    Ritorna un dict con lo stato di ogni upload, da includere nel
+    summary JSON emesso su stdout. **Non solleva mai eccezioni**: un
+    fallimento R2 non deve mai interrompere l'esperimento.
+    """
+    canonical_key = f"experiments/{run_id}/report.json"
+    latest_key = "experiments/latest/report.json"
+
+    client = _r2_client()
+    if client is None:
+        log.warning(
+            "R2 non configurato (ML_R2_ENDPOINT_URL assente): publish saltato. "
+            "Il report resta disponibile come GitHub Actions artifact "
+            "('ml-experiments-report-<run_id>-<attempt>') ma NON potrà "
+            "essere letto da ml-training.yml finché non viene pubblicato."
+        )
+        return {
+            "enabled": False,
+            "reason": "ML_R2_ENDPOINT_URL not set",
+            "canonical": None,
+            "latest": None,
+        }
+
+    canonical_ok = _upload_to_r2(report_path, canonical_key, bucket)
+    latest_ok = _upload_to_r2(report_path, latest_key, bucket)
+
+    return {
+        "enabled": True,
+        "bucket": bucket,
+        "canonical": {
+            "key": canonical_key,
+            "ok": canonical_ok,
+        },
+        "latest": {
+            "key": latest_key,
+            "ok": latest_ok,
+        },
+    }
 
 
 def _resolve_variants(spec: str) -> list[str]:
@@ -334,6 +468,44 @@ def main() -> int:
         log.exception("Esecuzione esperimento fallita.")
         return 1
 
+    # ── R2 publish (opzionale, best-effort) ────────────────────────────────
+    # Pubblica il report consolidato su R2 in modo che ml-training.yml/build
+    # possa scaricarlo (R2_REPORTS_PREFIX="experiments/", pattern
+    # /report\.json$ nel listing). Due destinazioni:
+    #   - experiments/<run_id>/report.json (storico per audit)
+    #   - experiments/latest/report.json   (alias latest, sempre aggiornato)
+    # Se --publish-r2 non è stato passato esplicitamente, default =
+    # (R2 è configurato ⇒ True) — segue il principio "fail-safe verso
+    # l'integrazione" in modo che un nuovo runner con secrets corretti
+    # produca l'artefatto senza dover ricordare il flag.
+    if args.publish_r2 is None:
+        args.publish_r2 = bool(os.environ.get("ML_R2_ENDPOINT_URL"))
+
+    bucket = os.environ.get(
+        "ML_R2_BUCKET_NAME", "baudo-spoon-ml-artifacts"
+    )
+
+    # Il report.json è stato appena scritto dall'harness a
+    # <out_dir>/report.json (vedi experiments/harness.py:208-210).
+    report_path = (
+        output_dir or (cfg.artifacts_dir / "experiments" / str(report["run_id"]))
+    ) / "report.json"
+
+    if args.publish_r2:
+        r2_publish_status = _publish_report_to_r2(
+            report_path,
+            str(report.get("run_id", "unknown")),
+            bucket,
+        )
+    else:
+        log.info("R2 publish disabilitato (--no-publish-r2).")
+        r2_publish_status = {
+            "enabled": False,
+            "reason": "--no-publish-r2",
+            "canonical": None,
+            "latest": None,
+        }
+
     # ── Sommario finale (JSON-line su stdout per l'action) ──────────────────
     summary = {
         "run_id": report.get("run_id"),
@@ -343,10 +515,8 @@ def main() -> int:
             for name, payload in report.get("variants", {}).items()
             if payload.get("status") == "error"
         ],
-        "report_path": str(
-            (output_dir or (cfg.artifacts_dir / "experiments" / report["run_id"]))
-            / "report.json"
-        ),
+        "report_path": str(report_path),
+        "r2_publish": r2_publish_status,
     }
     # Pretty summary con confronto side-by-side
     for name, payload in report.get("variants", {}).items():
