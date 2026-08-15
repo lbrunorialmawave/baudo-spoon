@@ -339,10 +339,22 @@ def _percentile(values: Sequence[float], q: float) -> float:
     return float(np.percentile(np.asarray(values, dtype=float), q))
 
 
-def _esv_proxy(player: Player, price: float) -> float:
+def _esv_proxy(
+    player: Player,
+    price: float,
+    *,
+    apply_reliability_weight: bool = True,
+    risk_aversion: float = 0.0,
+) -> float:
+    """ESV proxy using canonical decision score (WS6)."""
     if player.esv is not None:
         return float(player.esv)
-    score = float(player.projected_score or 0)
+    from ml.auction.decision_score import compute_decision_score_from_player
+    score = compute_decision_score_from_player(
+        player,
+        apply_reliability_weight=apply_reliability_weight,
+        risk_aversion=risk_aversion,
+    )
     return score if price <= 0 else score - price * 0.01
 
 
@@ -399,8 +411,14 @@ def simulate_auction(
                 (p.budget_initial for p in participants if p.participant_id == pid), config.budget_initial,
             )
             spend_series[pid].append(float(initial_budget - pstate.budget_residual))
+            apply_rw = bool(getattr(config, "apply_reliability_weight", True))
+            risk_av = float(getattr(config, "risk_aversion", 0.0) or 0.0)
             esv_total = sum(
-                _esv_proxy(a.player, float(a.final_price))
+                _esv_proxy(
+                    a.player, float(a.final_price),
+                    apply_reliability_weight=apply_rw,
+                    risk_aversion=risk_av,
+                )
                 for a in state.assignments if a.winner_participant_id == pid
             )
             esv_series[pid].append(esv_total)

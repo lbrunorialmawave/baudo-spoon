@@ -906,7 +906,7 @@ def _config_from_dict(d: dict[str, object]) -> AuctionConfig:
         valuation_mode=cast(str, d.get("valuation_mode", "PER_MATCH_RATING")),
         hybrid_blend=float(d.get("hybrid_blend", 0.0) or 0.0),
         risk_aversion=float(d.get("risk_aversion", 0.0) or 0.0),
-        apply_reliability_weight=bool(d.get("apply_reliability_weight", False)),
+        apply_reliability_weight=bool(d.get("apply_reliability_weight", True)),
     )
 
 

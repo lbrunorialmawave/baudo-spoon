@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).parent
@@ -91,6 +91,16 @@ class MLConfig(BaseSettings):
     # "bucket"     → legacy RELIABILITY_WEIGHT_BY_COHORT step function.
     # See plan-limited-cohort-hardening.md WS2 / patches G3–G4.
     reliability_weight_mode: str = "continuous"
+
+    @field_validator("reliability_weight_mode")
+    @classmethod
+    def _validate_reliability_weight_mode(cls, v: str) -> str:
+        allowed = {"bucket", "continuous"}
+        if not isinstance(v, str) or v.strip().lower() not in allowed:
+            raise ValueError(
+                f"reliability_weight_mode must be one of {sorted(allowed)}, got {v!r}"
+            )
+        return v.strip().lower()
 
     # Optional display ceiling for LIMITED/INSUFFICIENT predictions
     # (plan §6.4). When set (e.g. 0.85), attach_output_reliability caps

@@ -105,11 +105,13 @@ jobs:
           fi
           echo "All required secrets are present."
 
-      # ── Rollout state (PR8) ─────────────────────────────────────────────────
+      # ── Rollout state (PR8 + production-hardening WS3) ──────────────────────
       # Scarica lo stato dei feature flag da R2 (scritto da ml-rollout.yml) e
-      # traduce gli stage ≥ SHADOW in env vars per il container.
-      # Se lo stato non esiste (primo run), tutti i flag restano DISABLED
-      # e nessuna env var viene impostata → comportamento legacy intatto.
+      # traduce gli stage in env vars con semantica corretta:
+      #   DISABLED → nessuna env (legacy)
+      #   SHADOW   → *_CHALLENGER=true (compute only, production unchanged)
+      #   ACTIVE   → flag=true (production uses challenger)
+      # Se lo stato non esiste (primo run), tutti i flag restano DISABLED.
       - name: Install jq (for rollout state parsing)
         run: |
           if ! command -v jq >/dev/null 2>&1; then
@@ -140,18 +142,57 @@ jobs:
       - name: Translate rollout state to env vars
         id: rollout_env
         run: |
-          # Mappa stage ≥ SHADOW → env var = "true", altrimenti omessa.
-          # jq seleziona solo i flag con stage in (shadow, active).
-          ENABLED_FLAGS=$(jq -r '
+          # Semantic mapping (production-hardening plan WS3/WS4):
+          #   DISABLED → compute=false, use=false
+          #   SHADOW   → compute=true,  use=false  (challenger observed only)
+          #   ACTIVE   → compute=true,  use=true
+          # Boolean flags become ML_<FLAG>=true only for ACTIVE (production path).
+          # SHADOW additionally sets ML_<FLAG>_CHALLENGER=true so the trainer
+          # can emit shadow artifacts without changing production decisions.
+          # String modes (e.g. reliability_weight_mode) are passed as their
+          # enum value, never coerced to boolean.
+          if [ ! -f artifacts/rollout/state.json ]; then
+            echo "No rollout state → all flags DISABLED"
+            echo "ACTIVE_FLAGS=" >> "$GITHUB_OUTPUT"
+            echo "SHADOW_FLAGS=" >> "$GITHUB_OUTPUT"
+            echo "MODE_FLAGS=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          ACTIVE_FLAGS=$(jq -r '
             .flags | to_entries[]
-            | select(.value.stage == "shadow" or .value.stage == "active")
+            | select(.value.stage == "active")
             | .key
           ' artifacts/rollout/state.json)
-          echo "Flag abilitati (stage ≥ SHADOW):"
-          echo "${ENABLED_FLAGS:-<nessuno>}"
+          SHADOW_FLAGS=$(jq -r '
+            .flags | to_entries[]
+            | select(.value.stage == "shadow")
+            | .key
+          ' artifacts/rollout/state.json)
+          # String-valued modes (if present in state under a known key)
+          MODE_FLAGS=$(jq -r '
+            .flags | to_entries[]
+            | select(.value.stage == "active" or .value.stage == "shadow")
+            | select(.key == "reliability_weight_mode")
+            | "\(.key)=\(.value.mode // .value.value // "bucket")"
+          ' artifacts/rollout/state.json 2>/dev/null || true)
+
+          echo "ACTIVE flags (production path):"
+          echo "${ACTIVE_FLAGS:-<none>}"
+          echo "SHADOW flags (challenger only):"
+          echo "${SHADOW_FLAGS:-<none>}"
+          echo "Mode flags:"
+          echo "${MODE_FLAGS:-<none>}"
+
           {
-            echo "ENABLED_FLAGS<<EOF"
-            echo "${ENABLED_FLAGS}"
+            echo "ACTIVE_FLAGS<<EOF"
+            echo "${ACTIVE_FLAGS}"
+            echo "EOF"
+            echo "SHADOW_FLAGS<<EOF"
+            echo "${SHADOW_FLAGS}"
+            echo "EOF"
+            echo "MODE_FLAGS<<EOF"
+            echo "${MODE_FLAGS}"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -236,18 +277,33 @@ jobs:
 
           echo "Pipeline args: ${ARGS[*]}"
 
-          # Costruisci la lista di env vars per il rollout state (PR8).
-          # Mappa flag_name → ML_ENABLE_<UPPER> per attivare il flag
-          # corrispondente in MLConfig.  Solo i flag con stage ≥ SHADOW
-          # (letti da ${{ steps.rollout_env.outputs.ENABLED_FLAGS }})
-          # vengono effettivamente passati al container.
+          # Build env vars from rollout state (production-hardening WS3/WS4).
+          # ACTIVE → ML_<FLAG>=true (production path uses challenger).
+          # SHADOW → ML_<FLAG>_CHALLENGER=true only (compute + observe, no production use).
+          # Mode strings → ML_<FLAG>=<enum value>.
           ROLLOUT_ENV_ARGS=()
           while IFS= read -r flag_name; do
             [ -z "${flag_name}" ] && continue
             upper=$(echo "${flag_name}" | tr '[:lower:]' '[:upper:]')
             ROLLOUT_ENV_ARGS+=(-e "ML_${upper}=true")
-            echo "  → attivo flag: ${flag_name} (ML_${upper}=true)"
-          done <<< "${{ steps.rollout_env.outputs.ENABLED_FLAGS }}"
+            echo "  → ACTIVE flag: ${flag_name} (ML_${upper}=true)"
+          done <<< "${{ steps.rollout_env.outputs.ACTIVE_FLAGS }}"
+
+          while IFS= read -r flag_name; do
+            [ -z "${flag_name}" ] && continue
+            upper=$(echo "${flag_name}" | tr '[:lower:]' '[:upper:]')
+            ROLLOUT_ENV_ARGS+=(-e "ML_${upper}_CHALLENGER=true")
+            echo "  → SHADOW flag: ${flag_name} (ML_${upper}_CHALLENGER=true)"
+          done <<< "${{ steps.rollout_env.outputs.SHADOW_FLAGS }}"
+
+          while IFS= read -r mode_kv; do
+            [ -z "${mode_kv}" ] && continue
+            key="${mode_kv%%=*}"
+            val="${mode_kv#*=}"
+            upper=$(echo "${key}" | tr '[:lower:]' '[:upper:]')
+            ROLLOUT_ENV_ARGS+=(-e "ML_${upper}=${val}")
+            echo "  → mode: ${key}=${val} (ML_${upper}=${val})"
+          done <<< "${{ steps.rollout_env.outputs.MODE_FLAGS }}"
 
           docker run --rm \
             -e ML_DATABASE_URL \

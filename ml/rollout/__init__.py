@@ -1,5 +1,7 @@
 """Public surface for the production-rollout module (PR8)."""
 
+from .observability import CohortObservability, compute_cohort_observability, diagnostic_score_layers
+from .env_flags import ResolvedFlags, apply_challenger_flags_to_config, apply_production_flags_to_config, resolve_env_flags
 from .controller import (
     DEFAULT_ROLLOUT_PCT,
     FeatureFlag,
@@ -12,6 +14,13 @@ from .controller import (
 )
 
 __all__ = [
+    "ResolvedFlags",
+    "resolve_env_flags",
+    "apply_production_flags_to_config",
+    "apply_challenger_flags_to_config",
+    "CohortObservability",
+    "compute_cohort_observability",
+    "diagnostic_score_layers",
     "FeatureFlag",
     "FlagStage",
     "RolloutController",

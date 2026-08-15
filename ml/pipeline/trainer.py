@@ -347,6 +347,15 @@ class Trainer:
     """
 
     def __init__(self, cfg: MLConfig) -> None:
+        # Align production path with deployment env (WS3): ACTIVE flags only.
+        # SHADOW challenger flags are observed later via _maybe_write_shadow_artifact.
+        try:
+            from ml.rollout.env_flags import apply_production_flags_to_config, resolve_env_flags
+            resolved = resolve_env_flags()
+            apply_production_flags_to_config(cfg, resolved)
+            self._rollout_resolved = resolved
+        except Exception:  # noqa: BLE001 — never block construction
+            self._rollout_resolved = None
         self.cfg = cfg
         self._artifacts_dir = cfg.artifacts_dir
         self._artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -1508,12 +1517,65 @@ class Trainer:
 
         self._persist_metrics_to_db(output)
 
+        # Shadow rollout artifact (WS3): when CHALLENGER env flags are set,
+        # emit baseline vs challenger decision-score comparison without
+        # changing the production decision path used above.
+        self._maybe_write_shadow_artifact(output)
+
         log.info("=" * 60)
         log.info("Pipeline complete.  Results in %s", self._artifacts_dir)
         return output
 
+    def _maybe_write_shadow_artifact(self, output: dict) -> None:
+        """If SHADOW challenger flags are set, write comparison artifact (WS3).
+
+        Production decisions already used the ACTIVE-only config. This only
+        observes the challenger path on the emitted prediction rows.
+        """
+        try:
+            from ml.rollout.env_flags import resolve_env_flags
+            from ml.rollout.shadow_artifacts import write_shadow_artifact
+        except ImportError:
+            return
+        resolved = resolve_env_flags()
+        if not resolved.any_challenger():
+            return
+        preds = output.get("predictions") or []
+        if not preds:
+            return
+        players = []
+        for row in preds:
+            if not isinstance(row, dict):
+                continue
+            players.append(
+                {
+                    "player_id": str(row.get("player_fotmob_id") or row.get("player_name") or ""),
+                    "role": row.get("canonical_role") or row.get("role") or "?",
+                    "minutes": row.get("mins_played") or row.get("minutes"),
+                    "projected_score": row.get("predicted") or row.get("predicted_fantavoto_display") or 0.0,
+                }
+            )
+        out_path = Path(self._artifacts_dir) / f"shadow_comparison_{self._run_id}.json"
+        try:
+            write_shadow_artifact(
+                out_path,
+                players,
+                baseline_mode="bucket",
+                challenger_mode="continuous",
+                meta={
+                    "run_id": self._run_id,
+                    "stages": resolved.stages,
+                    "production_flags": resolved.production,
+                    "challenger_flags": resolved.challenger,
+                },
+            )
+            log.info("Shadow comparison artifact written to %s", out_path)
+        except Exception as exc:  # noqa: BLE001 — never fail the main pipeline
+            log.warning("Failed to write shadow artifact: %s", exc)
+
     def _persist_metrics_to_db(self, output: dict) -> None:
         """Write run metadata and metrics to Postgres. Non-fatal: logs on failure."""
+
         import os
 
         db_url = os.environ.get("ML_DATABASE_URL") or os.environ.get("API_DATABASE_URL")

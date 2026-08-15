@@ -18,6 +18,9 @@ def _report(**variant_overrides) -> dict:
         "mae_by_cohort": {"STANDARD": 0.28, "LIMITED": 0.35, "INSUFFICIENT": None},
         "rmse_by_cohort": {"STANDARD": 0.38, "LIMITED": 0.45, "INSUFFICIENT": None},
         "phenom_leakage_rate": 0.10,
+        "canary_anomalies_remaining": 0,
+        "canary_anomalies_total": 0,
+        "canary_anomalies_resolved": 0,
     }
     base_variant.update(variant_overrides)
     return {
@@ -64,6 +67,8 @@ def test_check_variant_missing_keys() -> None:
         control="A_control",
         max_phenom_leakage=0.25,
         max_mae_delta_pct=3.0,
+        max_overrep_delta_pp=5.0,
         require_cohort_keys=True,
+        require_canary_clean=True,
     )
     assert any("mae_by_cohort" in f for f in failures)

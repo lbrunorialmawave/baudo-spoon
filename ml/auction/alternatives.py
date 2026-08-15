@@ -69,13 +69,27 @@ def _roles_compatible(a: Player, b: Player, ruleset: str) -> bool:
     return bool(player_role_set(a, ruleset) & player_role_set(b, ruleset))
 
 
-def _get_player_score(player: Player, valuation_mode: ValuationMode) -> float:
-    """Extract relevant score from Player based on valuation mode."""
-    if valuation_mode == ValuationMode.SEASON_VALUE:
-        sv = player.season_value
-        if isinstance(sv, (int, float)) and sv > 0:
-            return float(sv)
-    return player.projected_score
+def _get_player_score(
+    player: Player,
+    valuation_mode: ValuationMode,
+    *,
+    apply_reliability_weight: bool = True,
+    risk_aversion: float = 0.0,
+) -> float:
+    """Decision score for ranking/alternatives (canonical policy).
+
+    Uses :func:`ml.auction.decision_score.compute_decision_score_from_player`
+    so alternatives ranking cannot bypass the reliability policy.
+    """
+    from ml.auction.decision_score import compute_decision_score_from_player
+
+    use_season = valuation_mode == ValuationMode.SEASON_VALUE
+    return compute_decision_score_from_player(
+        player,
+        apply_reliability_weight=apply_reliability_weight,
+        risk_aversion=risk_aversion,
+        use_season_value=use_season,
+    )
 
 
 def pareto_diversify(
@@ -85,6 +99,8 @@ def pareto_diversify(
     *,
     max_points: int = 5,
     exclude_ids: set[str] | None = None,
+    apply_reliability_weight: bool = True,
+    risk_aversion: float = 0.0,
 ) -> list[Player]:
     """Mini-fronte Pareto su (score ↑, -price ↑, value_ratio ↑).
 
@@ -104,7 +120,11 @@ def pareto_diversify(
     for p in candidates:
         if p.player_id in exclude:
             continue
-        score = _get_player_score(p, valuation_mode)
+        score = _get_player_score(
+            p, valuation_mode,
+            apply_reliability_weight=apply_reliability_weight,
+            risk_aversion=risk_aversion,
+        )
         price = max(1e-9, expected_prices.get(p.player_id, p.cost or 1.0))
         ratio = score / price
         scored.append((p, score, -price, ratio))
@@ -220,6 +240,9 @@ def suggest_alternatives(
     campi WS3 opzionali.
     """
     ruleset = getattr(state.config, "ruleset", "CLASSIC") or "CLASSIC"
+    # Canonical decision policy from auction config (WS6)
+    apply_rw = bool(getattr(state.config, "apply_reliability_weight", True))
+    risk_av = float(getattr(state.config, "risk_aversion", 0.0) or 0.0)
     same_role = [
         p
         for p in available_pool
@@ -261,12 +284,16 @@ def suggest_alternatives(
         expected_prices=expected_prices,
         config=config,
         valuation_mode=valuation_mode,
+        apply_reliability_weight=apply_rw,
+        risk_aversion=risk_av,
     )
     closest = _select_closest(
         target=target,
         candidates=same_role,
         expected_prices=expected_prices,
         valuation_mode=valuation_mode,
+        apply_reliability_weight=apply_rw,
+        risk_aversion=risk_av,
     )
 
     exclude = set()
@@ -283,6 +310,8 @@ def suggest_alternatives(
                 valuation_mode,
                 max_points=max_diversified,
                 exclude_ids=exclude,
+                apply_reliability_weight=apply_rw,
+                risk_aversion=risk_av,
             )
         )
 
@@ -322,6 +351,9 @@ def _select_low_cost(
     expected_prices: dict[str, float],
     config: AlternativesConfig,
     valuation_mode: ValuationMode = ValuationMode.PER_MATCH_RATING,
+    *,
+    apply_reliability_weight: bool = True,
+    risk_aversion: float = 0.0,
 ) -> Player | None:
     """Seleziona l'alternativa low-cost.
 
@@ -358,7 +390,11 @@ def _select_low_cost(
         ep = expected_prices[p.player_id]
         if ep <= 0.0:
             return float("-inf")
-        return _get_player_score(p, valuation_mode) / ep
+        return _get_player_score(
+            p, valuation_mode,
+            apply_reliability_weight=apply_reliability_weight,
+            risk_aversion=risk_aversion,
+        ) / ep
 
     return max(eligible, key=_score)
 
@@ -368,6 +404,9 @@ def _select_closest(
     candidates: list[Player],
     expected_prices: dict[str, float],
     valuation_mode: ValuationMode = ValuationMode.PER_MATCH_RATING,
+    *,
+    apply_reliability_weight: bool = True,
+    risk_aversion: float = 0.0,
 ) -> Player | None:
     """Seleziona l'alternativa per affinità di rendimento.
 
@@ -378,10 +417,18 @@ def _select_closest(
     if not candidates:
         return None
 
-    target_score = _get_player_score(target, valuation_mode)
+    target_score = _get_player_score(
+        target, valuation_mode,
+        apply_reliability_weight=apply_reliability_weight,
+        risk_aversion=risk_aversion,
+    )
 
     def _sort_key(p: Player) -> tuple[float, float]:
-        dist = abs(_get_player_score(p, valuation_mode) - target_score)
+        dist = abs(_get_player_score(
+            p, valuation_mode,
+            apply_reliability_weight=apply_reliability_weight,
+            risk_aversion=risk_aversion,
+        ) - target_score)
         ep = expected_prices[p.player_id]
         return (dist, ep)
 

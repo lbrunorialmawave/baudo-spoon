@@ -51,6 +51,12 @@ jobs:
           pip install -r ml/requirements.txt
           pip install pytest pytest-cov
 
+      - name: Dependency preflight (WS0.3)
+        run: python -m ml.scripts.check_test_dependencies
+
+      - name: ADR uniqueness guard (WS2)
+        run: python ml/scripts/check_adr_uniqueness.py
+
       - name: Run ML tests
         env:
           ML_DATABASE_URL: postgresql+psycopg2://fbref:ci_password@localhost:5432/fbref

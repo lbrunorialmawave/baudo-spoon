@@ -424,19 +424,16 @@ class VarEngine:
             if isinstance(fp, (int, float)) and fp > 0:
                 base = (1.0 - self.hybrid_blend) * base + self.hybrid_blend * float(fp)
 
-        # WS3 alignment with Optimizer (solver.py risk-adjusted objective):
-        # score *= reliability_weight; score -= risk_aversion * prediction_std.
-        # Both terms are no-ops under the default constructor args.
-        if self.apply_reliability_weight:
-            rw = player.get("reliability_weight")
-            if isinstance(rw, (int, float)) and rw >= 0:
-                base = base * float(rw)
-        if self.risk_aversion > 0.0:
-            std = player.get("prediction_std")
-            if isinstance(std, (int, float)) and std >= 0:
-                base = base - self.risk_aversion * float(std)
-
-        return base
+        # Canonical decision policy (WS6 / ADR 0001). Hybrid blend is applied
+        # first (auction-specific); reliability + risk then via shared helper.
+        from ml.auction.decision_score import compute_decision_score
+        return compute_decision_score(
+            projected_score=base,
+            reliability_weight=player.get("reliability_weight"),
+            prediction_std=player.get("prediction_std"),
+            apply_reliability_weight=self.apply_reliability_weight,
+            risk_aversion=self.risk_aversion,
+        )
 
     def evaluate(
         self,

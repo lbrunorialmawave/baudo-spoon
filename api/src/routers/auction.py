@@ -161,7 +161,7 @@ def _auction_config_from_schema(
         hybrid_blend=getattr(cfg, "hybrid_blend", 0.0) or 0.0,
         risk_aversion=float(getattr(cfg, "risk_aversion", 0.0) or 0.0),
         apply_reliability_weight=bool(
-            getattr(cfg, "apply_reliability_weight", False)
+            getattr(cfg, "apply_reliability_weight", True)
         ),
         reference_budget=cfg.reference_budget,
         budget_initial=cfg.budget_initial,
@@ -857,7 +857,7 @@ def get_var_ranking(
         hybrid_blend=float(getattr(state.config, "hybrid_blend", 0.0) or 0.0),
         risk_aversion=float(getattr(state.config, "risk_aversion", 0.0) or 0.0),
         apply_reliability_weight=bool(
-            getattr(state.config, "apply_reliability_weight", False)
+            getattr(state.config, "apply_reliability_weight", True)
         ),
     )
     results = engine.evaluate(players_input, price_overrides=price_overrides)
