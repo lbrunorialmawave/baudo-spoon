@@ -87,10 +87,19 @@ class DataRepository:
         r2_secret_access_key: str | None = None,
         r2_bucket_name: str | None = None,
         artifact_store: ArtifactStore | None = None,
+        reliability_weight_mode: str = "continuous",
     ) -> None:
         self._dir = artifacts_dir
         self._redis = redis_client
         self._ttl = cache_ttl
+        # plan-limited-cohort-patches G3: honour MLConfig.reliability_weight_mode
+        # instead of hardcoding continuous whenever minutes are present.
+        mode = (reliability_weight_mode or "continuous").strip().lower()
+        if mode not in ("bucket", "continuous"):
+            raise ValueError(
+                f"reliability_weight_mode must be 'bucket' or 'continuous', got {mode!r}"
+            )
+        self._reliability_weight_mode = mode
         self._artifact_store = artifact_store or ArtifactStore(
             local_dir=artifacts_dir,
             r2_config=R2Config(
@@ -1119,12 +1128,10 @@ class DataRepository:
                     raw_cohort = pred.get("sample_cohort")
                     if isinstance(raw_cohort, str) and raw_cohort:
                         sample_cohort = raw_cohort
-                    # Prefer continuous weight when expected_minutes (or
-                    # mins_played) is present — closes the 105' vs 795'
-                    # discontinuity (plan-limited-cohort-hardening WS2).
-                    # Falls back to the legacy bucket when minutes are
-                    # missing so behaviour stays bit-identical for old
-                    # artifacts that only carry sample_cohort.
+                    # Decision weight mode from MLConfig.reliability_weight_mode
+                    # (injected as self._reliability_weight_mode). When minutes
+                    # are missing, get_reliability_weight falls back to the
+                    # cohort bucket for continuous mode as well.
                     _mins = pred.get("expected_minutes")
                     if _mins is None:
                         _mins = pred.get("mins_played")
@@ -1132,7 +1139,7 @@ class DataRepository:
                         get_reliability_weight(
                             _mins,
                             cohort=sample_cohort,
-                            mode="continuous" if _mins is not None else "bucket",
+                            mode=self._reliability_weight_mode,
                         )
                     )
 

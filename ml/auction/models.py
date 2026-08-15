@@ -227,11 +227,11 @@ class AuctionConfig:
     ``score -= risk_aversion * prediction_std`` inside VarEngine.
     Default 0.0 = risk-neutral (bit-identical to pre-WS3)."""
 
-    apply_reliability_weight: bool = False
-    """plan-limited-cohort-hardening WS3 Option B: when True, VarEngine
-    multiplies the decision score by ``reliability_weight``. Default
-    False preserves the historical "Auction inherits damping only via
-    already-shrunk projected_score" behaviour."""
+    apply_reliability_weight: bool = True
+    """plan-limited-cohort-hardening WS3 Option B / ADR 0001: when True,
+    VarEngine multiplies the decision score by ``reliability_weight``.
+    Default True aligns Auction with Optimizer. Set False only to restore
+    pre-hardening ranking (display-shrink only)."""
 
     reference_budget: int = 300
     """Budget per squadra su cui il listino (``player.cost``) è tarato.

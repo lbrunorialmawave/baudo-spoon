@@ -52,6 +52,10 @@ class FeatureFlag(str, Enum):
     PER90_SHRINKAGE = "enable_shrinkage"
     RECENT_ROLE_FEATURES = "enable_recent_role_features"
     BREAKOUT_MODEL = "enable_breakout_model"
+    # String-valued MLConfig.reliability_weight_mode mapped onto the boolean
+    # rollout machine: ACTIVE → "continuous", DISABLED/SHADOW → "bucket"
+    # (plan-limited-cohort-patches.md G4 option a).
+    RELIABILITY_WEIGHT_CONTINUOUS = "reliability_weight_mode"
 
 
 # Stage of a feature flag.  Promotion must be monotonic.
@@ -250,3 +254,14 @@ def default_controllers(*, random_seed: int = 0) -> dict[FeatureFlag, RolloutCon
         flag: RolloutController(flag=flag, random_seed=random_seed)
         for flag in FeatureFlag
     }
+
+
+def reliability_weight_mode_for_stage(stage: FlagStage) -> str:
+    """Map rollout stage → reliability_weight_mode string.
+
+    ACTIVE → continuous; DISABLED or SHADOW → bucket (safe / legacy path
+    while the continuous mode is still being observed in shadow).
+    """
+    if stage == FlagStage.ACTIVE:
+        return "continuous"
+    return "bucket"

@@ -1418,7 +1418,41 @@ function makeParticipants(
 
             <div class="field-row">
               <div class="field-group">
-                <label class="field-label" for="replacementMethod"
+                
+              <label class="field-label" for="applyReliabilityWeight"
+                >Applica reliability weight
+                <app-field-legend
+                  fieldId="legend-applyReliabilityWeight"
+                  description="Applica lo sconto di affidabilità (reliability_weight) al ranking VAR/ESV per i giocatori LIMITED/INSUFFICIENT, in aggiunta allo shrink già presente nel punteggio mostrato. Disattivarlo riporta l'Auction al comportamento pre-hardening (solo shrink di display)."
+                  [examples]="[]"
+                />
+              </label>
+              <input
+                id="applyReliabilityWeight"
+                type="checkbox"
+                class="field-input"
+                [(ngModel)]="applyReliabilityWeight"
+              />
+
+              <label class="field-label" for="auctionRiskAversion"
+                >Risk aversion (asta)
+                <app-field-legend
+                  fieldId="legend-auctionRiskAversion"
+                  [description]="OPTIMIZER_LEGENDS['riskAversion'].description"
+                  [examples]="OPTIMIZER_LEGENDS['riskAversion'].examples"
+                />
+              </label>
+              <input
+                id="auctionRiskAversion"
+                type="number"
+                class="field-input"
+                min="0"
+                max="5"
+                step="0.1"
+                [(ngModel)]="riskAversion"
+              />
+
+<label class="field-label" for="replacementMethod"
                   >
                   >Metodo replacement level <span class="field-hint">solo VAR/ESV</span></label
                 >
@@ -1840,6 +1874,10 @@ export class AuctionComponent {
   valuationMode: ValuationMode = 'PER_MATCH_RATING';
   /** WS3 #2: fpIbrido blend weight for VarEngine (0 = off). */
   hybridBlend = 0.0;
+  /** ADR 0001 default: apply reliability_weight in VAR ranking. */
+  applyReliabilityWeight = true;
+  /** Opt-in risk penalty; 0 = risk-neutral until calibrated. */
+  riskAversion = 0.0;
   /** Optional strategy for alternatives price cap (WS3 #5). */
   altStrategyName: string | null = null;
 
@@ -2094,6 +2132,12 @@ export class AuctionComponent {
     } else if (typeof cfg.minStartProbability === 'number') {
       this.minStartProbability = cfg.minStartProbability;
     }
+    if (typeof cfg.applyReliabilityWeight === 'boolean') {
+      this.applyReliabilityWeight = cfg.applyReliabilityWeight;
+    }
+    if (cfg.riskAversion != null && typeof cfg.riskAversion === 'number') {
+      this.riskAversion = cfg.riskAversion;
+    }
 
     this.useInflationBaseline = !!cfg.useInflationBaseline;
     const infl = cfg.inflationConfig;
@@ -2179,6 +2223,8 @@ export class AuctionComponent {
       roleQuotas: this.roleQuotas,
       ruleset: this.ruleset,
       hybridBlend: this.hybridBlend,
+      applyReliabilityWeight: this.applyReliabilityWeight,
+      riskAversion: this.riskAversion,
       marketDriftConfig: {
         alpha: this.alpha,
         spilloverAdjacentTier: this.spilloverAdj,
@@ -2222,6 +2268,8 @@ export class AuctionComponent {
           roleQuotas: this.roleQuotas,
           ruleset: this.ruleset,
           hybridBlend: this.hybridBlend,
+          applyReliabilityWeight: this.applyReliabilityWeight,
+          riskAversion: this.riskAversion,
           marketDriftConfig: {
             alpha: this.alpha,
             spilloverAdjacentTier: this.spilloverAdj,

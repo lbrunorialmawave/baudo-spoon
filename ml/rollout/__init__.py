@@ -7,6 +7,7 @@ from .controller import (
     RolloutController,
     ShadowComparison,
     default_controllers,
+    reliability_weight_mode_for_stage,
     shadow_compare,
 )
 
@@ -18,4 +19,5 @@ __all__ = [
     "shadow_compare",
     "default_controllers",
     "DEFAULT_ROLLOUT_PCT",
+    "reliability_weight_mode_for_stage",
 ]

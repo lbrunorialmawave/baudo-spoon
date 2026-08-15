@@ -10,12 +10,13 @@ from ml.rollout import (
     FlagStage,
     RolloutController,
     default_controllers,
+    reliability_weight_mode_for_stage,
     shadow_compare,
 )
 
 
 class TestFeatureFlagEnum:
-    def test_all_four_flags_defined(self) -> None:
+    def test_all_flags_defined(self) -> None:
         values = {flag.value for flag in FeatureFlag}
         # Each flag is mapped to an MLConfig field name.
         assert values == {
@@ -23,7 +24,13 @@ class TestFeatureFlagEnum:
             "enable_shrinkage",
             "enable_recent_role_features",
             "enable_breakout_model",
+            "reliability_weight_mode",
         }
+
+    def test_reliability_weight_mode_maps_stage(self) -> None:
+        assert reliability_weight_mode_for_stage(FlagStage.DISABLED) == "bucket"
+        assert reliability_weight_mode_for_stage(FlagStage.SHADOW) == "bucket"
+        assert reliability_weight_mode_for_stage(FlagStage.ACTIVE) == "continuous"
 
 
 class TestShadowCompare:

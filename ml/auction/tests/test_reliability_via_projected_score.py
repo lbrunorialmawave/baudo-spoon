@@ -1,4 +1,4 @@
-"""Auction VAR must reflect the already-shrunk projected_score."""
+"""Auction VAR: display-shrunk projected_score + decision reliability weight (ADR 0001)."""
 
 from __future__ import annotations
 
@@ -57,8 +57,34 @@ def test_var_engine_assigns_lower_var_to_shrunk_limited() -> None:
     assert by_id["std-1"].var_score > by_id["lim-1"].var_score
 
 
-def test_var_engine_default_ignores_reliability_weight() -> None:
-    """Backward compatible: apply_reliability_weight=False → same score."""
+def test_var_engine_default_applies_reliability_weight() -> None:
+    """ADR 0001: default apply_reliability_weight=True multiplies the score."""
+    players = [
+        {
+            "player_id": "full",
+            "role": "C",
+            "projected_score": 8.0,
+            "reliability_weight": 1.0,
+        },
+        {
+            "player_id": "half",
+            "role": "C",
+            "projected_score": 8.0,
+            "reliability_weight": 0.5,
+        },
+        *[{"player_id": f"c{i}", "role": "C", "projected_score": 5.0} for i in range(15)],
+        *[{"player_id": f"p{i}", "role": "P", "projected_score": 5.0} for i in range(5)],
+        *[{"player_id": f"d{i}", "role": "D", "projected_score": 5.0} for i in range(12)],
+        *[{"player_id": f"a{i}", "role": "A", "projected_score": 5.0} for i in range(10)],
+    ]
+    engine = VarEngine(total_budget=500, num_participants=8)  # defaults only
+    results = engine.evaluate(players)
+    by_id = {r.player_id: r for r in results}
+    assert by_id["full"].var_score > by_id["half"].var_score
+
+
+def test_var_engine_can_disable_reliability_weight() -> None:
+    """Explicit False restores pre-hardening ranking (same score at same projected)."""
     players = [
         {
             "player_id": "a",
@@ -66,16 +92,62 @@ def test_var_engine_default_ignores_reliability_weight() -> None:
             "projected_score": 8.0,
             "reliability_weight": 0.5,
         },
-        *[{"player_id": f"c{i}", "role": "C", "projected_score": 6.0} for i in range(15)],
-        *[{"player_id": f"p{i}", "role": "P", "projected_score": 6.0} for i in range(5)],
-        *[{"player_id": f"d{i}", "role": "D", "projected_score": 6.0} for i in range(12)],
-        *[{"player_id": f"a{i}", "role": "A", "projected_score": 6.0} for i in range(10)],
+        {
+            "player_id": "b",
+            "role": "C",
+            "projected_score": 8.0,
+            "reliability_weight": 1.0,
+        },
+        *[{"player_id": f"c{i}", "role": "C", "projected_score": 5.0} for i in range(15)],
+        *[{"player_id": f"p{i}", "role": "P", "projected_score": 5.0} for i in range(5)],
+        *[{"player_id": f"d{i}", "role": "D", "projected_score": 5.0} for i in range(12)],
+        *[{"player_id": f"a{i}", "role": "A", "projected_score": 5.0} for i in range(10)],
+    ]
+    engine = VarEngine(
+        total_budget=500, num_participants=8, apply_reliability_weight=False
+    )
+    results = engine.evaluate(players)
+    by_id = {r.player_id: r for r in results}
+    assert by_id["a"].var_score == pytest.approx(by_id["b"].var_score)
+
+
+def test_adzic_style_not_in_top_decile_with_defaults() -> None:
+    """End-to-end guard: Adzic-style LIMITED with high display score is ranked down.
+
+    VarEngine() with no overrides must apply reliability_weight so a LIMITED
+    player at 0.65 weight does not outrank a STANDARD peer at similar raw score
+    enough to monopolise the top of the list.
+    """
+    players = [
+        {
+            "player_id": "adzic-163",
+            "role": "A",
+            "projected_score": 7.8,  # still high after display shrink
+            "reliability_weight": 0.40,  # continuous ~163'
+            "sample_cohort": COHORT_LIMITED,
+        },
+        {
+            "player_id": "std-fwd",
+            "role": "A",
+            "projected_score": 7.1,
+            "reliability_weight": 1.0,
+            "sample_cohort": COHORT_STANDARD,
+        },
+        *[{"player_id": f"a{i}", "role": "A", "projected_score": 6.2, "reliability_weight": 1.0} for i in range(10)],
+        *[{"player_id": f"c{i}", "role": "C", "projected_score": 6.0, "reliability_weight": 1.0} for i in range(15)],
+        *[{"player_id": f"p{i}", "role": "P", "projected_score": 6.0, "reliability_weight": 1.0} for i in range(5)],
+        *[{"player_id": f"d{i}", "role": "D", "projected_score": 6.0, "reliability_weight": 1.0} for i in range(12)],
     ]
     engine = VarEngine(total_budget=500, num_participants=8)
     results = engine.evaluate(players)
-    by_id = {r.player_id: r for r in results}
-    # projected 8.0 used as-is → higher VAR than fillers at 6.0
-    assert by_id["a"].var_score > 0
+    # Rank by var_score within role A
+    role_a = [r for r in results if r.role == "A"]
+    role_a_sorted = sorted(role_a, key=lambda r: r.var_score, reverse=True)
+    top_decile_n = max(1, len(role_a_sorted) // 10)
+    top_ids = {r.player_id for r in role_a_sorted[:top_decile_n]}
+    # With weight 0.40, effective score ≈ 3.12 → well below STANDARD 7.1
+    assert "adzic-163" not in top_ids
+    assert role_a_sorted[0].player_id == "std-fwd"
 
 
 def test_var_engine_applies_reliability_weight_when_enabled() -> None:

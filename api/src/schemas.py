@@ -846,10 +846,13 @@ class AuctionConfigSchema(_CamelModel):
     """WS3 limited-cohort hardening: score -= risk_aversion * prediction_std.
     Default 0.0 = risk-neutral (backward compatible)."""
 
-    apply_reliability_weight: bool = False
+    # Default True after ADR 0001 — Auction must discount trust in automatic
+    # decisions for LIMITED/INSUFFICIENT players the same way Optimizer does
+    # (plan-limited-cohort-hardening.md WS3 / plan-limited-cohort-patches.md G1).
+    apply_reliability_weight: bool = True
     """WS3 Option B: multiply VarEngine score by reliability_weight.
-    Default False keeps historical Auction behaviour; set True to align
-    with Optimizer decision discounting."""
+    Default True aligns Auction with Optimizer decision discounting.
+    Set False only to restore pre-hardening Auction ranking behaviour."""
 
     @field_validator("reference_budget", "budget_initial")
     @classmethod

@@ -59,6 +59,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         redis_client=redis_client,
         cache_ttl=settings.cache_ttl_seconds,
         artifact_store=app.state.artifact_store,
+        reliability_weight_mode=settings.reliability_weight_mode,
     )
     log.info("DataRepository initialised (artifacts_dir=%s)", settings.artifacts_dir)
 

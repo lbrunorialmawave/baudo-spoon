@@ -88,6 +88,17 @@ export interface AuctionConfig {
    * 'roster_depth' = quota di rosa per ruolo.
    */
   replacementMethod?: ReplacementMethod;
+  /**
+   * WS3 limited-cohort hardening: when true (backend default after ADR 0001),
+   * VAR/ESV ranking applies reliability_weight (< 1 for LIMITED/INSUFFICIENT)
+   * on top of the already-shrunk projected_score — same principle as Optimizer.
+   */
+  applyReliabilityWeight?: boolean;
+  /**
+   * Coefficient in score_eff = projected_score − riskAversion × prediction_std.
+   * 0 (default) = risk-neutral. Same meaning as Optimizer riskAversion.
+   */
+  riskAversion?: number;
   /** Budget the quotation file is calibrated on (historical baseline). */
   referenceBudget: number;
   /** Budget per team for the current auction session. */

@@ -31,6 +31,11 @@ class APISettings(BaseSettings):
         default=Path("ml/artifacts"),
         description="Directory containing ML pipeline output JSON artifacts",
     )
+    # Mirrors MLConfig.reliability_weight_mode (plan-limited-cohort-patches G3).
+    reliability_weight_mode: str = Field(
+        default="continuous",
+        description="Decision reliability weight mode: continuous | bucket",
+    )
 
     # ── Artifact storage (Cloudflare R2) ────────────────────────────────────
     r2_endpoint_url: str | None = Field(default=None, description="https://<account_id>.r2.cloudflarestorage.com")

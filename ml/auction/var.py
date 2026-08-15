@@ -356,7 +356,7 @@ class VarEngine:
         min_start_probability: float | None = None,
         hybrid_blend: float = 0.0,
         risk_aversion: float = 0.0,
-        apply_reliability_weight: bool = False,
+        apply_reliability_weight: bool = True,
     ) -> None:
         self.demand_curve = demand_curve or DemandCurve()
         self.total_budget = total_budget
@@ -374,7 +374,8 @@ class VarEngine:
         self.hybrid_blend = hybrid_blend
         # plan-limited-cohort-hardening WS3: optional risk penalty and
         # reliability_weight multiplier, symmetric with Optimizer solver.
-        # Defaults (0.0 / False) preserve bit-identical pre-WS3 behaviour.
+        # risk_aversion default 0.0 remains opt-in; apply_reliability_weight
+        # defaults to True after ADR 0001 (align with Optimizer).
         if risk_aversion < 0.0:
             raise ValueError(f"risk_aversion must be >= 0, got {risk_aversion}")
         self.risk_aversion = float(risk_aversion)

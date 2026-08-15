@@ -85,11 +85,12 @@ class MLConfig(BaseSettings):
     shrinkage_prior_strength: int = 300
 
     # Decision-layer reliability weight mode for Optimizer / Auction.
-    # "bucket"  → legacy RELIABILITY_WEIGHT_BY_COHORT step function (default,
-    #             bit-identical to pre-hardening behaviour).
-    # "continuous" → continuous_reliability_weight(minutes) with floor 0.30.
-    # See plan-limited-cohort-hardening.md WS2.
-    reliability_weight_mode: str = "bucket"
+    # "continuous" → continuous_reliability_weight(minutes) with floor 0.30
+    #                (default after plan-limited-cohort-patches.md G3 Option 1:
+    #                matches the behaviour already observed once minutes exist).
+    # "bucket"     → legacy RELIABILITY_WEIGHT_BY_COHORT step function.
+    # See plan-limited-cohort-hardening.md WS2 / patches G3–G4.
+    reliability_weight_mode: str = "continuous"
 
     # Optional display ceiling for LIMITED/INSUFFICIENT predictions
     # (plan §6.4). When set (e.g. 0.85), attach_output_reliability caps
