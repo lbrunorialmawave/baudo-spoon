@@ -1131,6 +1131,44 @@ jobs:
           name: ml-shadow-state-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/
 
+      - name: Fallback — scarica SHADOW state da R2 se l'artifact è vuoto
+        if: always()
+        env:
+          ML_R2_ENDPOINT_URL: ${{ secrets.ML_R2_ENDPOINT_URL }}
+          ML_R2_ACCESS_KEY_ID: ${{ secrets.ML_R2_ACCESS_KEY_ID }}
+          ML_R2_SECRET_ACCESS_KEY: ${{ secrets.ML_R2_SECRET_ACCESS_KEY }}
+        run: |
+          if [ -s artifacts/rollout/state.json ]; then
+            echo "SHADOW state presente localmente (via artifact)."
+            cat artifacts/rollout/state.json
+            exit 0
+          fi
+          echo "State locale mancante → tentativo download da R2 (s3://${ML_R2_BUCKET_NAME}/${R2_ROLLOUT_STATE})"
+          mkdir -p artifacts/rollout
+          python -m pip install --quiet boto3
+          python - <<'PY'
+          import os
+          import sys
+          import pathlib
+          import boto3
+
+          bucket = os.environ["ML_R2_BUCKET_NAME"]
+          key = os.environ["R2_ROLLOUT_STATE"]
+          client = boto3.client(
+              "s3",
+              endpoint_url=os.environ["ML_R2_ENDPOINT_URL"],
+              aws_access_key_id=os.environ["ML_R2_ACCESS_KEY_ID"],
+              aws_secret_access_key=os.environ["ML_R2_SECRET_ACCESS_KEY"],
+          )
+          target = pathlib.Path("artifacts/rollout/state.json")
+          try:
+              client.download_file(bucket, key, str(target))
+          except Exception as exc:
+              print(f"::error::Download R2 fallito per s3://{bucket}/{key}: {exc}")
+              sys.exit(1)
+          print(f"OK: state.json scaricato ({target.stat().st_size} bytes)")
+          PY
+
       - name: Verify SHADOW stage is active for the flag
         run: |
           if [ ! -f artifacts/rollout/state.json ]; then
