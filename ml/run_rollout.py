@@ -23,6 +23,18 @@ disable <FLAG> [--note TEXT] [--actor NAME]
 audit [--limit N]
     Dumpa l'audit log completo (o le ultime N entry).
 
+save-snapshot --name NAME [--commit-sha SHA] [--actor NAME]
+    Salva uno snapshot dello stato corrente (known-good config).
+
+list-snapshots
+    Elenca gli snapshot salvati (più recenti prima).
+
+restore-snapshot --name NAME [--reason TEXT] [--actor NAME] [--trigger TEXT]
+    Ripristina lo stato da uno snapshot (rollback mirato).
+
+rollback-all [--reason TEXT] [--actor NAME] [--trigger TEXT]
+    Forza tutti i flag a ``DISABLED`` (kill switch di emergenza, WS17).
+
 Usage examples
 --------------
 # Stato corrente (tutti i flag, ultimi 10 eventi):
@@ -42,6 +54,17 @@ Usage examples
 # Log audit completo:
     python -m ml.run_rollout audit --limit 50
 
+# WS17 — snapshot pre-deploy:
+    python -m ml.run_rollout save-snapshot --name pre-shrinkage-2026-08-12
+
+# WS17 — rollback totale di emergenza (kill switch):
+    python -m ml.run_rollout rollback-all \\
+        --reason "canary anomaly in top decile" --actor lbrunori
+
+# WS17 — ripristino a snapshot noto:
+    python -m ml.run_rollout restore-snapshot --name pre-shrinkage-2026-08-12 \\
+        --reason "anomaly correlata alla nuova promozione" --actor lbrunori
+
 # Da GitHub Actions (con R2 sync):
     python -m ml.run_rollout activate enable_shrinkage \\
         --r2-bucket baudo-spoon-ml-artifacts --sync-r2
@@ -51,6 +74,7 @@ Exit codes
 0 — successo
 1 — errore fatale (eccezione non gestita, R2 sync fallita se richiesta)
 2 — errore di configurazione (env mancanti, flag sconosciuto, stage invalido)
+3 — promotion gate negato (fail-closed)
 """
 from __future__ import annotations
 
@@ -591,6 +615,299 @@ def cmd_audit(state: RolloutState, args: argparse.Namespace) -> int:
     return 0
 
 
+# ── Subcommand WS17 — snapshot + rollback production-grade ─────────────────
+
+
+def _flags_view_for_snapshot(
+    state: RolloutState,
+) -> dict[str, dict[str, Any]]:
+    """Restituisce la vista ``{flag: {stage, rollout_pct}}`` dello stato corrente."""
+    return {
+        name: {"stage": fs.stage, "rollout_pct": fs.rollout_pct}
+        for name, fs in state.flags.items()
+    }
+
+
+def _ensure_state_on_disk(state: RolloutState, artifacts_dir: Path) -> Path:
+    """Forza la persistenza dello stato e ritorna il path del file locale."""
+    local_path = _local_state_path(artifacts_dir)
+    save_state(state, local_path)
+    return local_path
+
+
+def cmd_save_snapshot(state: RolloutState, args: argparse.Namespace) -> int:
+    """Salva uno snapshot dello stato corrente (known-good config)."""
+    from ml.rollout import (
+        SnapshotError,
+        save_snapshot as _save_snapshot,
+    )
+
+    if not args.name or not str(args.name).strip():
+        print(
+            json.dumps({"error": "--name obbligatorio per save-snapshot"}),
+            file=sys.stderr,
+        )
+        return 2
+
+    flags_view = _flags_view_for_snapshot(state)
+    if not flags_view:
+        print(
+            json.dumps({"error": "stato vuoto: nessun flag da snapshotare"}),
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        snapshot = _save_snapshot(
+            artifacts_root=args.artifacts_dir,
+            name=str(args.name).strip(),
+            flags=flags_view,
+            saved_by=str(args.actor).strip() or "cli",
+            commit_sha=str(args.commit_sha).strip() if args.commit_sha else None,
+        )
+    except SnapshotError as exc:
+        print(json.dumps({"error": "snapshot_error", "message": str(exc)}), file=sys.stderr)
+        return 2
+
+    summary = {
+        "status": "ok",
+        "snapshot": snapshot.to_dict(),
+        "path": str(snapshot_path := _snapshot_dir(args.artifacts_dir) / f"{snapshot.name}.json"),
+    }
+    print(json.dumps(summary, indent=2, default=str))
+    return 0
+
+
+def _snapshot_dir(artifacts_root: Path) -> Path:
+    from ml.rollout import snapshot_dir as _snapshot_dir_fn
+    return _snapshot_dir_fn(artifacts_root)
+
+
+def cmd_list_snapshots(args: argparse.Namespace) -> int:
+    """Elenca gli snapshot salvati (più recenti prima)."""
+    from ml.rollout import list_snapshots as _list_snapshots
+
+    snapshots = _list_snapshots(args.artifacts_dir)
+    summary = {
+        "total": len(snapshots),
+        "snapshots": [
+            {
+                "name": s.name,
+                "saved_at": s.saved_at,
+                "saved_by": s.saved_by,
+                "commit_sha": s.commit_sha,
+                "config_hash": s.config_hash,
+                "flags": {k: dict(v) for k, v in s.flags.items()},
+            }
+            for s in snapshots
+        ],
+    }
+    print(json.dumps(summary, indent=2, default=str))
+    return 0
+
+
+def _ensure_audit_log(state: RolloutState) -> "AuditLog":  # type: ignore[name-defined]
+    """Costruisce un :class:`AuditLog` a partire dall'audit in-memory dello stato.
+
+    L'audit log è in-memory per il rollback: una volta persistito viene
+    riversato nello stato e nel file di log come eventi ``rollback``.
+    """
+    from ml.rollout import AuditLog, records_from_controller_events
+
+    audit = AuditLog()
+    if state.audit:
+        # Trasforma gli eventi del controller in record audit, mantenendo
+        # eventuali record espliciti (record_transition / record_denied / record_rollback)
+        # che sono già nella forma ``dict`` con chiave ``kind``.
+        for ev in state.audit:
+            if isinstance(ev, dict) and "kind" in ev and "actor" in ev:
+                # Record serializzato in precedenza: lo reincludiamo solo se
+                # ha la forma attesa (per evitare di duplicare eventi del
+                # controller come se fossero record di audit).
+                if ev.get("kind") in {"transition", "denied", "rollback"}:
+                    from ml.rollout import (
+                        AuditKind,
+                        AuditRecord,
+                    )
+                    audit.append(
+                        AuditRecord(
+                            kind=AuditKind(ev["kind"]),
+                            timestamp=str(ev.get("timestamp", ev.get("at", ""))),
+                            actor=str(ev.get("actor", "unknown")),
+                            flag=ev.get("flag"),
+                            from_stage=ev.get("from_stage"),
+                            to_stage=ev.get("to_stage"),
+                            from_pct=ev.get("from_pct"),
+                            to_pct=ev.get("to_pct"),
+                            reason=str(ev.get("reason", "?")),
+                            commit_sha=ev.get("commit_sha"),
+                            promotion_report=ev.get("promotion_report"),
+                            gate_result=ev.get("gate_result"),
+                            config_hash=ev.get("config_hash"),
+                            failed_checks=tuple(ev.get("failed_checks", ())),
+                            extra=dict(ev.get("extra", {})),
+                        )
+                    )
+        # Aggiunge anche i record derivati dagli eventi "grezzi" del
+        # controller che NON sono già nel formato audit-record.
+        raw_events = [ev for ev in state.audit if not (isinstance(ev, dict) and ev.get("kind") in {"transition", "denied", "rollback"})]
+        if raw_events:
+            audit.extend(records_from_controller_events(raw_events, actor="state-replay"))
+    return audit
+
+
+def _commit_sha_from_state(state: RolloutState) -> str | None:
+    """Estrae il commit SHA più recente dallo stato, se presente."""
+    for entry in reversed(state.audit):
+        if not isinstance(entry, dict):
+            continue
+        sha = entry.get("commit_sha")
+        if sha:
+            return str(sha)
+    return None
+
+
+def cmd_rollback_all(state: RolloutState, args: argparse.Namespace) -> int:
+    """Forza tutti i flag noti a ``DISABLED`` (kill switch, WS17)."""
+    from ml.rollout import (
+        AuditLog,
+        rollback_all_to_disabled,
+    )
+
+    if not args.reason or not str(args.reason).strip():
+        print(
+            json.dumps({"error": "--reason obbligatorio per rollback-all"}),
+            file=sys.stderr,
+        )
+        return 2
+
+    audit: AuditLog = _ensure_audit_log(state)
+    state_flags_view = _flags_view_for_snapshot(state)
+    commit_sha = (
+        str(args.commit_sha).strip()
+        if args.commit_sha
+        else _commit_sha_from_state(state)
+    )
+    new_flags, report = rollback_all_to_disabled(
+        state_flags=state_flags_view,
+        audit_log=audit,
+        actor=str(args.actor).strip() or "cli",
+        reason=str(args.reason).strip(),
+        commit_sha=commit_sha,
+        trigger=str(args.trigger).strip() if args.trigger else "manual",
+    )
+
+    # Aggiorna lo stato persistito: tutti i flag noti sono a DISABLED/0.
+    now = datetime.now(tz=timezone.utc).isoformat()
+    for name, fs in state.flags.items():
+        if name in new_flags:
+            new_state = new_flags[name]
+            state.flags[name] = FlagState(
+                flag=name,
+                stage=str(new_state.get("stage", "disabled")),
+                rollout_pct=float(new_state.get("rollout_pct", 0.0)),
+                updated_at=str(new_state.get("updated_at", now)),
+                updated_by=str(new_state.get("updated_by", args.actor)),
+                note=str(args.reason).strip(),
+            )
+    # Aggiungi gli eventi rollback-only all'audit dello stato.
+    for record in audit.records:
+        if record.kind.value == "rollback":
+            state.audit.append(record.to_dict())
+
+    local_path = _ensure_state_on_disk(state, args.artifacts_dir)
+    if args.sync_r2:
+        if not _upload_to_r2(local_path, R2_STATE_KEY, args.r2_bucket):
+            log.error("Sync R2 fallita.")
+            return 1
+
+    summary = {
+        "status": "ok",
+        "report": report.to_dict(),
+        "state_path": str(local_path),
+        "r2_synced": args.sync_r2,
+    }
+    print(json.dumps(summary, indent=2, default=str))
+    return 0
+
+
+def cmd_restore_snapshot(state: RolloutState, args: argparse.Namespace) -> int:
+    """Ripristina lo stato da uno snapshot (WS17)."""
+    from ml.rollout import (
+        AuditLog,
+        SnapshotError,
+        load_snapshot as _load_snapshot,
+        rollback_to_snapshot,
+    )
+
+    if not args.name or not str(args.name).strip():
+        print(
+            json.dumps({"error": "--name obbligatorio per restore-snapshot"}),
+            file=sys.stderr,
+        )
+        return 2
+    if not args.reason or not str(args.reason).strip():
+        print(
+            json.dumps({"error": "--reason obbligatorio per restore-snapshot"}),
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        snapshot = _load_snapshot(args.artifacts_dir, str(args.name).strip())
+    except SnapshotError as exc:
+        print(json.dumps({"error": "snapshot_error", "message": str(exc)}), file=sys.stderr)
+        return 2
+
+    audit: AuditLog = _ensure_audit_log(state)
+    state_flags_view = _flags_view_for_snapshot(state)
+    commit_sha = (
+        str(args.commit_sha).strip()
+        if args.commit_sha
+        else _commit_sha_from_state(state)
+    )
+    new_flags, report = rollback_to_snapshot(
+        state_flags=state_flags_view,
+        audit_log=audit,
+        snapshot=snapshot,
+        actor=str(args.actor).strip() or "cli",
+        reason=str(args.reason).strip(),
+        commit_sha=commit_sha,
+        trigger=str(args.trigger).strip() if args.trigger else "manual",
+    )
+
+    now = datetime.now(tz=timezone.utc).isoformat()
+    for name, fs in state.flags.items():
+        if name in new_flags:
+            new_state = new_flags[name]
+            state.flags[name] = FlagState(
+                flag=name,
+                stage=str(new_state.get("stage", "disabled")),
+                rollout_pct=float(new_state.get("rollout_pct", 0.0)),
+                updated_at=str(new_state.get("updated_at", now)),
+                updated_by=str(new_state.get("updated_by", args.actor)),
+                note=str(args.reason).strip(),
+            )
+    for record in audit.records:
+        if record.kind.value == "rollback":
+            state.audit.append(record.to_dict())
+
+    local_path = _ensure_state_on_disk(state, args.artifacts_dir)
+    if args.sync_r2:
+        if not _upload_to_r2(local_path, R2_STATE_KEY, args.r2_bucket):
+            log.error("Sync R2 fallita.")
+            return 1
+
+    summary = {
+        "status": "ok",
+        "report": report.to_dict(),
+        "state_path": str(local_path),
+        "r2_synced": args.sync_r2,
+    }
+    print(json.dumps(summary, indent=2, default=str))
+    return 0
+
+
 # ── CLI parser ───────────────────────────────────────────────────────────────
 
 
@@ -714,6 +1031,87 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Quante entry ritornare (0 = tutte).",
     )
 
+    # WS17 — save-snapshot
+    p_save_snap = sub.add_parser(
+        "save-snapshot",
+        help="Salva uno snapshot dello stato corrente (known-good config).",
+    )
+    p_save_snap.add_argument(
+        "--name", required=True, metavar="NAME",
+        help=(
+            "Identificatore dello snapshot. Usare uno schema tipo "
+            "'pre-<flag>-<YYYYMMDD>' per garantire l'ordinamento. "
+            "Caratteri ammessi: [A-Za-z0-9._-], lunghezza 1-128."
+        ),
+    )
+    p_save_snap.add_argument(
+        "--actor", default="cli", help="Operatore o sistema che cattura lo snapshot.",
+    )
+    p_save_snap.add_argument(
+        "--commit-sha", default=None, metavar="SHA",
+        help="Commit SHA da associare allo snapshot (per audit).",
+    )
+
+    # WS17 — list-snapshots
+    sub.add_parser(
+        "list-snapshots",
+        help="Elenca gli snapshot salvati (più recenti prima).",
+    )
+
+    # WS17 — restore-snapshot
+    p_restore = sub.add_parser(
+        "restore-snapshot",
+        help="Ripristina lo stato da uno snapshot (rollback mirato, WS17).",
+    )
+    p_restore.add_argument(
+        "--name", required=True, metavar="NAME",
+        help="Nome dello snapshot da ripristinare.",
+    )
+    p_restore.add_argument(
+        "--reason", required=True, metavar="TEXT",
+        help="Motivo del rollback (obbligatorio per audit).",
+    )
+    p_restore.add_argument(
+        "--actor", default="cli", help="Operatore o sistema che esegue il rollback.",
+    )
+    p_restore.add_argument(
+        "--trigger", default="manual", metavar="TRIGGER",
+        help=(
+            "Identificatore del trigger (default: manual). Valori tipici: "
+            "promotion_regression, canary_anomaly, config_drift, "
+            "runtime_error_threshold, invariant_violation."
+        ),
+    )
+    p_restore.add_argument(
+        "--commit-sha", default=None, metavar="SHA",
+        help="Commit SHA al momento del rollback (opzionale).",
+    )
+
+    # WS17 — rollback-all
+    p_rb_all = sub.add_parser(
+        "rollback-all",
+        help="Forza tutti i flag a DISABLED (kill switch, WS17).",
+    )
+    p_rb_all.add_argument(
+        "--reason", required=True, metavar="TEXT",
+        help="Motivo del rollback totale (obbligatorio per audit).",
+    )
+    p_rb_all.add_argument(
+        "--actor", default="cli", help="Operatore o sistema che esegue il rollback.",
+    )
+    p_rb_all.add_argument(
+        "--trigger", default="manual", metavar="TRIGGER",
+        help=(
+            "Identificatore del trigger (default: manual). Valori tipici: "
+            "promotion_regression, canary_anomaly, config_drift, "
+            "runtime_error_threshold, invariant_violation."
+        ),
+    )
+    p_rb_all.add_argument(
+        "--commit-sha", default=None, metavar="SHA",
+        help="Commit SHA al momento del rollback (opzionale).",
+    )
+
     return parser
 
 
@@ -755,6 +1153,14 @@ def main() -> int:
         return cmd_transition(state, args, new_stage="disabled")
     if args.command == "audit":
         return cmd_audit(state, args)
+    if args.command == "save-snapshot":
+        return cmd_save_snapshot(state, args)
+    if args.command == "list-snapshots":
+        return cmd_list_snapshots(args)
+    if args.command == "restore-snapshot":
+        return cmd_restore_snapshot(state, args)
+    if args.command == "rollback-all":
+        return cmd_rollback_all(state, args)
 
     parser.error(f"Comando sconosciuto: {args.command}")
     return 2  # unreachable

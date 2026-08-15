@@ -144,6 +144,53 @@ def record_transition(
     )
 
 
+def record_rollback(
+    *,
+    actor: str,
+    flag: str | None,
+    from_stage: str | None,
+    from_pct: float | None,
+    to_stage: str,
+    to_pct: float,
+    reason: str,
+    commit_sha: str | None = None,
+    config_hash: str | None = None,
+    snapshot_name: str | None = None,
+    trigger: str | None = None,
+    extra: Mapping[str, Any] | None = None,
+    timestamp: str | None = None,
+) -> AuditRecord:
+    """Build a :class:`AuditRecord` for a *rollback* event (WS17).
+
+    Rollback records are distinct from ordinary transitions: a
+    rollback is by definition a rewind (or a kill-switch), and the
+    audit trail must show *what was rolled back*, *from which state*,
+    *and why*.  ``trigger`` captures the automatic-rollback trigger
+    that fired (``manual`` if initiated by an operator), and
+    ``snapshot_name`` points at the known-good config that was
+    restored (None when rolling back to ``DISABLED``).
+    """
+    payload_extra: dict[str, Any] = dict(extra or {})
+    if trigger is not None:
+        payload_extra.setdefault("trigger", trigger)
+    if snapshot_name is not None:
+        payload_extra.setdefault("snapshot_name", snapshot_name)
+    return AuditRecord(
+        kind=AuditKind.ROLLBACK,
+        timestamp=timestamp or _utc_now_iso(),
+        actor=actor,
+        flag=flag,
+        from_stage=from_stage,
+        to_stage=to_stage,
+        from_pct=from_pct,
+        to_pct=to_pct,
+        reason=reason,
+        commit_sha=commit_sha,
+        config_hash=config_hash,
+        extra=payload_extra,
+    )
+
+
 def record_denied(
     *,
     actor: str,
@@ -310,6 +357,7 @@ __all__ = [
     "AuditLog",
     "record_transition",
     "record_denied",
+    "record_rollback",
     "write_audit_log",
     "read_audit_log",
     "records_from_controller_events",

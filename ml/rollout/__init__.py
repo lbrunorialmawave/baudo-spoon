@@ -27,6 +27,7 @@ from .audit import (
     AuditRecord,
     read_audit_log,
     record_denied,
+    record_rollback,
     record_transition,
     records_from_controller_events,
     write_audit_log,
@@ -43,6 +44,22 @@ from .controller import (
     default_controllers,
     reliability_weight_mode_for_stage,
     shadow_compare,
+)
+from .snapshots import (
+    Snapshot,
+    SnapshotError,
+    delete_snapshot,
+    latest_snapshot,
+    list_snapshots,
+    load_snapshot,
+    save_snapshot,
+    snapshot_dir,
+    snapshot_path,
+)
+from .rollback import (
+    RollbackReport,
+    rollback_all_to_disabled,
+    rollback_to_snapshot,
 )
 from ml.scripts.check_promotion_gate import (  # noqa: E402
     PromotionGateDenied,
@@ -93,9 +110,23 @@ __all__ = [
     "AuditLog",
     "record_transition",
     "record_denied",
+    "record_rollback",
     "write_audit_log",
     "read_audit_log",
     "records_from_controller_events",
+    # WS17 — production rollback (snapshots + executor)
+    "Snapshot",
+    "SnapshotError",
+    "snapshot_dir",
+    "snapshot_path",
+    "save_snapshot",
+    "load_snapshot",
+    "list_snapshots",
+    "latest_snapshot",
+    "delete_snapshot",
+    "RollbackReport",
+    "rollback_all_to_disabled",
+    "rollback_to_snapshot",
     # WS6 — promotion gate
     "PromotionGateError",
     "PromotionGateDenied",
