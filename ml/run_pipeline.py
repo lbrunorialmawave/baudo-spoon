@@ -318,6 +318,7 @@ def _build_effective_config_payload(cfg: MLConfig) -> dict[str, Any]:
     # are set in ``main``.
     from ml.rollout.config_drift import effective_config_from_mapping
     from ml.rollout.config_hash import build_config_bundle
+    from ml.rollout.config_snapshot import build_ml_config_snapshot
     from ml.rollout.env_flags import resolve_env_flags
 
     resolved = resolve_env_flags()
@@ -328,29 +329,33 @@ def _build_effective_config_payload(cfg: MLConfig) -> dict[str, Any]:
         "challenger_enabled": any(resolved.challenger.values()),
     }
     eff = effective_config_from_mapping(config_mapping, source="run_pipeline")
-    snapshot: dict[str, Any] = {
+    # ``config`` is the **canonical ML snapshot** — its hash MUST match
+    # the one carried by ``canary_report.json`` and
+    # ``promotion_report.json`` so the promotion gate (Phase 6) and the
+    # activate transition (Phase 10) accept the artefact on every
+    # re-run of the same effective configuration.  Caller-specific
+    # fields are placed in ``extra`` and do not perturb the hash.
+    config = build_ml_config_snapshot(cfg)
+    extra: dict[str, Any] = {
+        "source": "run_pipeline",
         "production_mode": eff.production_mode,
         "use_new_behavior": eff.use_new_behavior,
         "production_flags": dict(eff.production_flags),
         "challenger_enabled": eff.challenger_enabled,
         "challenger_flags": dict(resolved.challenger),
         "stages": dict(resolved.stages),
-        "source": eff.source,
+        "effective_config_source": eff.source,
         "ml_config": {
-            "min_minutes": int(cfg.min_minutes),
-            "min_minutes_hard": int(cfg.min_minutes_hard),
             "test_seasons": int(cfg.test_seasons),
             "n_clusters": int(cfg.n_clusters),
             "tune": bool(cfg.tune),
             "tune_iter": int(cfg.tune_iter),
             "random_seed": int(cfg.random_seed),
-            "weighting_strategy": str(cfg.weighting_strategy),
-            "shrinkage_prior_strength": int(cfg.shrinkage_prior_strength),
             "predict_next": bool(cfg.predict_next),
             "league_name": cfg.league_name,
         },
     }
-    return build_config_bundle(config=snapshot, extra={"source": "run_pipeline"})
+    return build_config_bundle(config=config, extra=extra)
 
 
 def _write_json(path: str | os.PathLike[str], payload: dict[str, Any]) -> None:
@@ -499,6 +504,7 @@ def _build_promotion_report_payload(
     """
     from ml.rollout.canary import build_canary_report
     from ml.rollout.config_hash import build_config_bundle
+    from ml.rollout.config_snapshot import build_ml_config_snapshot
 
     best_model = str(results.get("best_model", ""))
     role_metrics = results.get("role_metrics", {}) or {}
@@ -536,21 +542,12 @@ def _build_promotion_report_payload(
         "canary_anomalies_remaining": canary_remaining,
     }
 
-    # Config snapshot — must match the one used by effective_config.json
-    # so ``check_promotion_gate`` reports ``config_hash_status=match``
-    # (plan §18).  Field set is the strict subset used in
-    # ``ml.rollout.canary.build_canary_report``.
-    config_snapshot: dict[str, Any] = {
-        "min_minutes": int(cfg.min_minutes),
-        "min_minutes_hard": int(cfg.min_minutes_hard),
-        "enable_limited_sample_training": bool(cfg.enable_limited_sample_training),
-        "enable_shrinkage": bool(cfg.enable_shrinkage),
-        "enable_recent_role_features": bool(cfg.enable_recent_role_features),
-        "enable_breakout_model": bool(cfg.enable_breakout_model),
-        "weighting_strategy": str(cfg.weighting_strategy),
-        "shrinkage_prior_strength": int(cfg.shrinkage_prior_strength),
-        "reliability_weight_mode": str(cfg.reliability_weight_mode),
-    }
+    # Config snapshot — MUST match the one used by effective_config.json
+    # and the canary report.  Pull it from the shared helper in
+    # :mod:`ml.rollout.config_snapshot` so any future field addition is
+    # a single-place change and the three artefacts stay aligned across
+    # pipeline re-runs (idempotency, plan §18).
+    config_snapshot = build_ml_config_snapshot(cfg)
     bundle = build_config_bundle(config=config_snapshot)
 
     return {

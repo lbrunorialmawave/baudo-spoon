@@ -30,6 +30,7 @@ import pandas as pd
 
 from ml.config import MLConfig
 from ml.rollout.config_hash import build_config_bundle
+from ml.rollout.config_snapshot import build_ml_config_snapshot
 from ml.sample_reliability import (
     apply_shrinkage,
     compute_sample_weight,
@@ -220,19 +221,13 @@ def build_canary_report(
     resolved = sum(1 for f in findings if f["resolved"])
     remaining = total - resolved
 
-    # Config snapshot for the hash — strip non-deterministic bits so
-    # the hash is stable across re-runs of the same build.
-    config_snapshot: dict[str, Any] = {
-        "min_minutes": int(cfg.min_minutes),
-        "min_minutes_hard": int(cfg.min_minutes_hard),
-        "enable_limited_sample_training": bool(cfg.enable_limited_sample_training),
-        "enable_shrinkage": bool(cfg.enable_shrinkage),
-        "enable_recent_role_features": bool(cfg.enable_recent_role_features),
-        "enable_breakout_model": bool(cfg.enable_breakout_model),
-        "weighting_strategy": str(cfg.weighting_strategy),
-        "shrinkage_prior_strength": int(cfg.shrinkage_prior_strength),
-        "reliability_weight_mode": str(cfg.reliability_weight_mode),
-    }
+    # Config snapshot for the hash — must use the canonical, shared
+    # schema defined in :mod:`ml.rollout.config_snapshot` so the canary,
+    # the promotion report, and effective_config.json all produce the
+    # same SHA-256 for the same effective configuration.  A drift here
+    # would re-introduce the ``config_hash mismatch`` denials on
+    # pipeline re-runs.
+    config_snapshot = build_ml_config_snapshot(cfg)
     bundle = build_config_bundle(config=config_snapshot)
 
     report: dict[str, Any] = {

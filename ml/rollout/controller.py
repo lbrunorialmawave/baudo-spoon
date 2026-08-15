@@ -370,6 +370,57 @@ class RolloutController:
         if config_snapshot_path is not None:
             snapshot_path = Path(config_snapshot_path)
 
+        # ── Idempotency guard (WS16, plan §18) ──────────────────────────
+        # Re-running the rollout workflow against an already-ACTIVE flag
+        # MUST be a no-op when the configuration is unchanged.  This
+        # keeps the pipeline idempotent (a second ``ml-training.yml``
+        # run must not flip the flag back to ACTIVE through a stale
+        # report downloaded from R2).  We compare the live
+        # ``config_hash`` recorded on the most recent successful
+        # transition against the candidate's hash; only when they
+        # match do we short-circuit.
+        if (
+            self.stage == FlagStage.ACTIVE
+            and not break_glass
+        ):
+            last_event = self._events[-1] if self._events else None
+            last_hash = (
+                last_event.get("config_hash") if last_event else None
+            )
+            candidate_hash: str | None = None
+            if snapshot_map is not None:
+                candidate_hash = compute_config_hash(snapshot_map)
+            elif snapshot_path is not None:
+                # Re-hash the on-disk snapshot so callers that only
+                # pass a path still benefit from the early-return.
+                try:
+                    import json as _json
+                    candidate_hash = compute_config_hash(
+                        _json.loads(snapshot_path.read_text(encoding="utf-8"))
+                    )
+                except (OSError, ValueError):
+                    candidate_hash = None
+            if (
+                candidate_hash is not None
+                and last_hash is not None
+                and last_hash == candidate_hash
+            ):
+                log.info(
+                    "RolloutController[%s] already ACTIVE with the same "
+                    "config_hash=%s — idempotent replay, skipping gate",
+                    self.flag.value,
+                    candidate_hash,
+                )
+                return PromotionGateReport(
+                    passed=True,
+                    failures=(),
+                    report_path=str(report_path),
+                    variant="?",
+                    config_hash=candidate_hash,
+                    config_hash_status="match",
+                    extra={"idempotent_replay": True},
+                )
+
         # The default gate function accepts (report_path, *, config_snapshot=...).
         # It also accepts the legacy positional variant; we pass the path
         # as a keyword to be unambiguous.

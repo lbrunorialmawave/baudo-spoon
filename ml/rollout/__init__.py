@@ -21,6 +21,11 @@ from .config_hash import (
     short_hash,
     verify_config_hash,
 )
+from .config_snapshot import (
+    ML_CONFIG_SNAPSHOT_KEYS,
+    build_ml_config_snapshot,
+    merge_ml_snapshot,
+)
 from .canary import (
     CANARY_REPORT_VERSION,
     build_canary_report,
@@ -108,6 +113,10 @@ __all__ = [
     "verify_config_hash",
     "short_hash",
     "build_config_bundle",
+    # WS16 — canonical ML snapshot (shared by canary + promotion + effective config)
+    "ML_CONFIG_SNAPSHOT_KEYS",
+    "build_ml_config_snapshot",
+    "merge_ml_snapshot",
     # WS14 — canary report
     "CANARY_REPORT_VERSION",
     "build_canary_report",

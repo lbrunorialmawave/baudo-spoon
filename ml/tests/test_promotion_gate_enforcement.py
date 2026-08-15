@@ -544,3 +544,137 @@ class TestDefensiveBehaviour:
         joined = " | ".join(rec.failed_checks)
         assert "canary_anomalies_remaining" in joined
         assert "phenom_leakage_rate" in joined
+
+
+# ── Idempotency guard (WS16, plan §18) ────────────────────────────────────
+#
+# Re-running the rollout workflow against an already-ACTIVE flag with
+# the same canonical config_hash MUST be a no-op.  This is the second
+# half of the fix for Run "Idempotenza" (the first half is the shared
+# snapshot in :mod:`ml.rollout.config_snapshot`).
+
+
+class TestIdempotencyGuard:
+    """``promote_to_active`` must short-circuit on re-runs of the same
+    effective configuration so a second ``ml-training.yml`` execution
+    cannot be denied by a stale report downloaded from R2."""
+
+    @staticmethod
+    def _activate(
+        controller: RolloutController,
+        report: Path,
+        snapshot: dict[str, Any],
+    ) -> PromotionGateReport:
+        return controller.promote_to_active(
+            report_path=report,
+            config_snapshot=snapshot,
+            actor="ci-bot",
+        )
+
+    def test_active_with_same_hash_is_noop(
+        self, tmp_path: Path
+    ) -> None:
+        snapshot = {
+            "min_minutes": 600,
+            "min_minutes_hard": 270,
+            "enable_shrinkage": True,
+            "reliability_weight_mode": "continuous",
+        }
+        report = _make_report(tmp_path)
+        c = _make_controller(
+            stage=FlagStage.SHADOW, gate_fn=_passing_gate
+        )
+        # First call: real promotion.
+        outcome = self._activate(c, report, snapshot)
+        assert outcome.passed is True
+        assert c.stage == FlagStage.ACTIVE
+        first_event_count = len(c.events)
+        first_audit_count = (
+            len(c.audit_log.records) if c.audit_log is not None else 0
+        )
+
+        # Second call: same hash → idempotent replay.  The gate MUST
+        # NOT be invoked (we'd notice because the synthetic gate would
+        # still PASS, but the noop path records the result without
+        # touching ``events`` or ``audit_log``).
+        outcome2 = self._activate(c, report, snapshot)
+        assert outcome2.passed is True
+        assert outcome2.extra.get("idempotent_replay") is True
+        assert c.stage == FlagStage.ACTIVE
+        # No new transition recorded.
+        assert len(c.events) == first_event_count
+        if c.audit_log is not None:
+            assert len(c.audit_log.records) == first_audit_count
+
+    def test_active_with_different_hash_falls_through_to_gate(
+        self, tmp_path: Path
+    ) -> None:
+        snapshot_a = {
+            "min_minutes": 600,
+            "min_minutes_hard": 270,
+            "enable_shrinkage": True,
+        }
+        snapshot_b = {**snapshot_a, "min_minutes": 700}  # drift
+        report = _make_report(tmp_path)
+        # The gate is FAILING on purpose; we want to see the guard
+        # short-circuit and the gate take over instead.
+        c = _make_controller(
+            stage=FlagStage.SHADOW, gate_fn=_failing_gate
+        )
+        # First call: stage transition is needed (SHADOW → ACTIVE),
+        # so the guard does NOT apply yet.
+        from ml.rollout import PromotionGateDenied
+
+        with pytest.raises(PromotionGateDenied):
+            self._activate(c, report, snapshot_a)
+        # Stage was NOT advanced because the gate failed.
+        assert c.stage == FlagStage.SHADOW
+
+        # Manually move to ACTIVE so we can exercise the guard.
+        c.stage = FlagStage.ACTIVE
+        c.rollout_pct = 10.0
+        c.promote(
+            new_stage=FlagStage.ACTIVE,
+            new_rollout_pct=10.0,
+            config_snapshot=snapshot_a,
+        )
+        # Now a re-run with a DIFFERENT hash must NOT short-circuit:
+        # the gate is invoked, fails, and we observe a denial.
+        with pytest.raises(PromotionGateDenied):
+            self._activate(c, report, snapshot_b)
+
+    def test_break_glass_bypasses_idempotency_guard(
+        self, tmp_path: Path
+    ) -> None:
+        snapshot = {
+            "min_minutes": 600,
+            "min_minutes_hard": 270,
+            "enable_shrinkage": True,
+        }
+        report = _make_report(tmp_path)
+        # The gate is FAILING; we want the break-glass path to take
+        # over (operator override) without the idempotency short-circuit
+        # silently swallowing the failure.
+        c = _make_controller(
+            stage=FlagStage.SHADOW, gate_fn=_failing_gate
+        )
+        c.promote(
+            new_stage=FlagStage.ACTIVE,
+            new_rollout_pct=10.0,
+            config_snapshot=snapshot,
+        )
+        # Re-activate with the same hash but break_glass=True →
+        # gate IS invoked and the operator override proceeds.
+        outcome = c.promote_to_active(
+            report_path=report,
+            config_snapshot=snapshot,
+            actor="on-call",
+            break_glass=True,
+            break_glass_reason="incident IR-2026-08-15",
+        )
+        assert outcome.passed is False  # gate still fails
+        # But the break-glass override was applied (event reason).
+        last = c.events[-1]
+        assert last["reason"] == "break_glass"
+        assert last["gate_result"] == "BREAK_GLASS"
+
