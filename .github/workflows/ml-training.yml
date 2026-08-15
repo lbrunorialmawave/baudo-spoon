@@ -360,7 +360,6 @@ jobs:
         with:
           name: ml-build-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/
-          if-no-files-found: warn
 
       - name: Build ML image (per dipendenze)
         run: docker build -f ml/Dockerfile -t ml-runner:latest .
@@ -462,7 +461,6 @@ jobs:
         with:
           name: ml-build-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/
-          if-no-files-found: warn
 
       - name: Build ML image
         run: docker build -f ml/Dockerfile -t ml-runner:latest .
@@ -568,7 +566,6 @@ jobs:
         with:
           name: ml-build-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/
-          if-no-files-found: warn
 
       - name: Build ML image
         run: docker build -f ml/Dockerfile -t ml-runner:latest .
@@ -686,7 +683,6 @@ jobs:
         with:
           name: ml-build-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/
-          if-no-files-found: warn
 
       - name: Download unit test summary
         uses: actions/download-artifact@v4
@@ -872,7 +868,6 @@ jobs:
         with:
           name: ml-train-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/
-          if-no-files-found: warn
 
       - name: Verify all WS14 §16.1 artifacts are present
         run: |
@@ -1003,7 +998,6 @@ jobs:
         with:
           name: ml-validate-reports-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/
-          if-no-files-found: warn
 
       - name: Build ML image
         run: docker build -f ml/Dockerfile -t ml-runner:latest .
@@ -1012,84 +1006,14 @@ jobs:
         run: |
           mkdir -p artifacts
           docker run --rm \
+            --entrypoint python \
             -v "${{ github.workspace }}/artifacts:/app/artifacts" \
             -e PYTHONPATH=/app \
-            -e ML_R2_BUCKET_NAME \
+            -e ARTIFACT_EFFECTIVE_CONFIG \
+            -e PROMOTE_FLAG \
+            -e LOG_LEVEL \
             ml-runner:latest \
-            python - <<'PY'
-          import json
-          import os
-          import pathlib
-          import sys
-          from ml.rollout.config_drift import detect_config_drift
-          from ml.rollout.config_drift import (
-              RolloutSnapshot,
-              EffectiveConfig,
-              FlagStage,
-          )
-
-          rollout_state = json.loads(
-              pathlib.Path("artifacts/rollout/state.json").read_text()
-          )
-          flags = rollout_state.get("flags", {})
-          # Considera il flag "target" della promozione, se specificato.
-          target = os.environ.get("PROMOTE_FLAG", "").strip()
-          if target and target in flags:
-              fs = flags[target]
-          elif flags:
-              # Default: prendi il primo flag dichiarato.
-              first_key = sorted(flags.keys())[0]
-              fs = flags[first_key]
-              target = first_key
-          else:
-              fs = {"stage": "disabled", "rollout_pct": 0.0}
-
-          effective_data = json.loads(
-              pathlib.Path("${{ env.ARTIFACT_EFFECTIVE_CONFIG }}").read_text()
-          )
-
-          snapshot = RolloutSnapshot(
-              stage=FlagStage(fs.get("stage", "disabled")),
-              rollout_pct=float(fs.get("rollout_pct", 0.0)),
-              production_mode=(
-                  effective_data.get("reliability_weight_mode")
-                  or effective_data.get("production_mode")
-                  or "bucket"
-              ),
-              production_flags={
-                  k: bool(v) for k, v in effective_data.get("flags", {}).items()
-              },
-              flag=target or "",
-          )
-          effective = EffectiveConfig(
-              production_mode=(
-                  effective_data.get("reliability_weight_mode")
-                  or effective_data.get("production_mode")
-                  or "bucket"
-              ),
-              use_new_behavior=(
-                  effective_data.get("stage", "disabled") == "active"
-              ),
-              challenger_enabled=(
-                  effective_data.get("stage", "disabled") in ("shadow", "active")
-              ),
-              production_flags={
-                  k: bool(v) for k, v in effective_data.get("flags", {}).items()
-              },
-              flag=target or "",
-          )
-
-          report = detect_config_drift(snapshot, effective)
-          pathlib.Path("artifacts/config_drift.json").write_text(
-              json.dumps(report.to_dict() if hasattr(report, "to_dict") else str(report), indent=2, default=str)
-          )
-          print("=== config drift report ===")
-          print(json.dumps(report.to_dict() if hasattr(report, "to_dict") else str(report), indent=2, default=str))
-          # P0 = exit code != 0
-          exit_code = report.exit_code() if hasattr(report, "exit_code") else 0
-          print(f"drift exit_code={exit_code}")
-          sys.exit(int(exit_code))
-          PY
+            -m ml.scripts.detect_config_drift
 
       - name: Upload config drift report
         if: always()
@@ -1129,7 +1053,6 @@ jobs:
         with:
           name: ml-validate-reports-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/
-          if-no-files-found: warn
 
       - name: Build ML image
         run: docker build -f ml/Dockerfile -t ml-runner:latest .
@@ -1196,7 +1119,6 @@ jobs:
         with:
           name: ml-shadow-state-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/
-          if-no-files-found: warn
 
       - name: Verify SHADOW stage is active for the flag
         run: |
@@ -1296,14 +1218,12 @@ jobs:
         with:
           name: ml-validate-reports-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/
-          if-no-files-found: warn
 
       - name: Download observe artifacts
         uses: actions/download-artifact@v4
         with:
           name: ml-observe-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/
-          if-no-files-found: warn
 
       - name: Build ML image
         run: docker build -f ml/Dockerfile -t ml-runner:latest .
@@ -1388,19 +1308,21 @@ jobs:
         with:
           name: ml-train-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/
-          if-no-files-found: warn
       - name: Download validation artifacts
         uses: actions/download-artifact@v4
         with:
           name: ml-validate-reports-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/
-          if-no-files-found: warn
       - name: Download observe artifacts
+        # L'artifact ml-observe esiste solo quando l'utente ha
+        # specificato un promote_flag (Phase 9 ha `if: promote_flag != ''`).
+        # In caso contrario il download non produce file: lo step non deve
+        # bloccare la pipeline di pubblicazione, ma solo segnalare un warning.
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: ml-observe-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/
-          if-no-files-found: warn
 
       - name: Build summary index of WS14 §16.1 artifacts
         run: |
