@@ -21,6 +21,12 @@ Usage examples
 # Structured JSON logs for ELK/Splunk:
     python -m ml.run_pipeline --json-logs
 
+# Emit rollout artefacts (effective_config + canary_report) for
+# ml-training.yml Phase 6 (WS14, plan §16.1):
+    python -m ml.run_pipeline \\
+        --emit-effective-config artifacts/effective_config.json \\
+        --emit-canary-report artifacts/canary_report.json
+
 # Docker (reads ML_DATABASE_URL from environment, set in docker-compose):
     docker compose run --rm api python -m ml.run_pipeline --league "Serie A"
 
@@ -256,7 +262,142 @@ def _parse_args() -> argparse.Namespace:
         dest="evaluate_mantra",
         help="Run MANTRA 4-pillar evaluation against actuals after training.",
     )
+    parser.add_argument(
+        "--emit-effective-config",
+        default=None,
+        dest="emit_effective_config",
+        metavar="PATH",
+        help=(
+            "Write the effective production config (with config_hash, WS16) "
+            "to PATH as JSON. Consumed by ml-training.yml Phase 6 to "
+            "verify the build matches the deployed rollout state."
+        ),
+    )
+    parser.add_argument(
+        "--emit-canary-report",
+        default=None,
+        dest="emit_canary_report",
+        metavar="PATH",
+        help=(
+            "Write the canary report (limited-cohort safety-net, plan §16.1) "
+            "to PATH as JSON. The report exposes anomalies.remaining; "
+            "remaining > 0 fails the gate."
+        ),
+    )
     return parser.parse_args()
+
+
+# ── Rollout artefacts (WS14, plan §16.1) ─────────────────────────────────────
+
+
+def _build_effective_config_payload(cfg: MLConfig) -> dict[str, Any]:
+    """Build the JSON-serialisable payload for ``effective_config.json``.
+
+    Combines the resolved feature flags (production vs challenger) with
+    the MLConfig snapshot, then wraps the result in
+    :func:`ml.rollout.config_hash.build_config_bundle` so the artefact
+    carries the canonical ``config_hash`` consumed by Phase 6 and Phase 7
+    of ``ml-training.yml``.
+    """
+    # Deferred import: keeps ``--help`` and parse-only paths light, and
+    # avoids pulling pydantic-settings indirectly before the env vars
+    # are set in ``main``.
+    from ml.rollout.config_drift import effective_config_from_mapping
+    from ml.rollout.config_hash import build_config_bundle
+    from ml.rollout.env_flags import resolve_env_flags
+
+    resolved = resolve_env_flags()
+    config_mapping: dict[str, Any] = {
+        "production_mode": cfg.reliability_weight_mode,
+        "use_new_behavior": any(resolved.production.values()),
+        "production_flags": dict(resolved.production),
+        "challenger_enabled": any(resolved.challenger.values()),
+    }
+    eff = effective_config_from_mapping(config_mapping, source="run_pipeline")
+    snapshot: dict[str, Any] = {
+        "production_mode": eff.production_mode,
+        "use_new_behavior": eff.use_new_behavior,
+        "production_flags": dict(eff.production_flags),
+        "challenger_enabled": eff.challenger_enabled,
+        "challenger_flags": dict(resolved.challenger),
+        "stages": dict(resolved.stages),
+        "source": eff.source,
+        "ml_config": {
+            "min_minutes": int(cfg.min_minutes),
+            "min_minutes_hard": int(cfg.min_minutes_hard),
+            "test_seasons": int(cfg.test_seasons),
+            "n_clusters": int(cfg.n_clusters),
+            "tune": bool(cfg.tune),
+            "tune_iter": int(cfg.tune_iter),
+            "random_seed": int(cfg.random_seed),
+            "weighting_strategy": str(cfg.weighting_strategy),
+            "shrinkage_prior_strength": int(cfg.shrinkage_prior_strength),
+            "predict_next": bool(cfg.predict_next),
+            "league_name": cfg.league_name,
+        },
+    }
+    return build_config_bundle(config=snapshot, extra={"source": "run_pipeline"})
+
+
+def _write_json(path: str | os.PathLike[str], payload: dict[str, Any]) -> None:
+    """Write *payload* to *path* as UTF-8 JSON, creating parent dirs.
+
+    Atomic-ish: writes to ``<path>.tmp`` then renames, so a partial
+    file can never satisfy ``if-no-files-found: error`` downstream.
+    """
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(target.suffix + ".tmp")
+    tmp.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
+    tmp.replace(target)
+
+
+def _emit_effective_config(cfg: MLConfig, path: str) -> None:
+    log = logging.getLogger(__name__)
+    try:
+        payload = _build_effective_config_payload(cfg)
+        _write_json(path, payload)
+        log.info(
+            "effective_config written to %s (config_hash=%s)",
+            path,
+            payload.get("config_hash", "?"),
+        )
+    except Exception:
+        log.exception("Failed to write effective_config to %s", path)
+
+
+def _emit_canary_report(cfg: MLConfig, path: str) -> None:
+    log = logging.getLogger(__name__)
+    try:
+        from ml.rollout.canary import build_canary_report
+
+        payload = build_canary_report(cfg)
+        _write_json(path, payload)
+        remaining = payload.get("anomalies", {}).get("remaining", -1)
+        log.info(
+            "canary_report written to %s (anomalies.remaining=%d, gate=%s)",
+            path,
+            remaining,
+            "PASS" if remaining == 0 else "FAIL",
+        )
+    except Exception:
+        log.exception("Failed to write canary_report to %s", path)
+
+
+def _emit_rollout_artifacts(cfg: MLConfig, args: argparse.Namespace) -> None:
+    """Best-effort emission of WS14 rollout artefacts.
+
+    Both writes are wrapped in their own try/except so a failure in one
+    does not suppress the other, and the training run (which already
+    succeeded) is not retroactively failed.
+    """
+    if args.emit_effective_config:
+        _emit_effective_config(cfg, args.emit_effective_config)
+    if args.emit_canary_report:
+        _emit_canary_report(cfg, args.emit_canary_report)
 
 
 def main() -> int:
@@ -309,6 +450,14 @@ def main() -> int:
     except Exception:
         log.exception("Pipeline failed with an unhandled exception.")
         return 1
+
+    # ── Emit rollout artefacts (WS14 — plan §16.1) ──────────────────────────
+    # The two artefacts are independent: each is written only if its
+    # path is set, and a failure in either one is logged but does NOT
+    # fail the training run (the training already succeeded; the
+    # artefacts are for downstream validation).
+    if args.emit_effective_config or args.emit_canary_report:
+        _emit_rollout_artifacts(cfg, args)
 
     # ── Evaluate MANTRA (optional) ──────────────────────────────────────────
     if args.evaluate_mantra:

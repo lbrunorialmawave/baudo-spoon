@@ -21,6 +21,10 @@ from .config_hash import (
     short_hash,
     verify_config_hash,
 )
+from .canary import (
+    CANARY_REPORT_VERSION,
+    build_canary_report,
+)
 from .audit import (
     AuditKind,
     AuditLog,
@@ -104,6 +108,9 @@ __all__ = [
     "verify_config_hash",
     "short_hash",
     "build_config_bundle",
+    # WS14 — canary report
+    "CANARY_REPORT_VERSION",
+    "build_canary_report",
     # WS15 — audit trail
     "AuditKind",
     "AuditRecord",
