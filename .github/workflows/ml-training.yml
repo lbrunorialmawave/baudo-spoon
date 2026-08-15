@@ -762,10 +762,11 @@ jobs:
           fi
 
           ARGS+=(--json-logs)
-          # WS14 — chiedi esplicitamente al trainer di produrre effective_config
-          # e canary_report; shadow_comparison viene generato in SHADOW.
+          # WS14 — chiedi esplicitamente al trainer di produrre effective_config,
+          # canary_report e promotion_report; shadow_comparison viene generato in SHADOW.
           ARGS+=(--emit-effective-config "$ARTIFACT_EFFECTIVE_CONFIG")
           ARGS+=(--emit-canary-report "$ARTIFACT_CANARY_REPORT")
+          ARGS+=(--emit-promotion-report "$ARTIFACT_PROMOTION_REPORT")
 
           echo "Pipeline args: ${ARGS[*]}"
 
@@ -811,6 +812,7 @@ jobs:
           missing=0
           for art in \
             "$ARTIFACT_EFFECTIVE_CONFIG" \
+            "$ARTIFACT_PROMOTION_REPORT" \
             "$ARTIFACT_CANARY_REPORT" \
             ; do
             if [ ! -s "${art}" ]; then

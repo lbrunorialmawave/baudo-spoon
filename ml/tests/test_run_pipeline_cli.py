@@ -5,6 +5,11 @@ These flags were added because ``ml-training.yml`` (Phase 5 "Train")
 expects the trainer to write the two artefacts directly.  Argparse
 must accept them without complaining — the original bug was
 ``unrecognized arguments: --emit-effective-config …``.
+
+The ``--emit-promotion-report`` flag was added later (Phase 6 fix):
+the ``validate-reports`` job needs ``promotion_report.json`` and the
+build job cannot always download one from R2, so the trainer now
+produces a single-variant report inline.
 """
 
 from __future__ import annotations
@@ -52,17 +57,30 @@ def test_emit_canary_report_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None
     assert ns.emit_canary_report == "artifacts/canary_report.json"
 
 
-def test_both_flags_combined(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_emit_promotion_report_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    _relay_argv(
+        monkeypatch,
+        "--emit-promotion-report",
+        "artifacts/promotion_report.json",
+    )
+    ns = _parse_args()
+    assert ns.emit_promotion_report == "artifacts/promotion_report.json"
+
+
+def test_all_three_flags_combined(monkeypatch: pytest.MonkeyPatch) -> None:
     _relay_argv(
         monkeypatch,
         "--emit-effective-config",
         "a/eff.json",
         "--emit-canary-report",
         "a/canary.json",
+        "--emit-promotion-report",
+        "a/promo.json",
     )
     ns = _parse_args()
     assert ns.emit_effective_config == "a/eff.json"
     assert ns.emit_canary_report == "a/canary.json"
+    assert ns.emit_promotion_report == "a/promo.json"
 
 
 # ── Default behaviour preserved ─────────────────────────────────────────────
@@ -73,6 +91,7 @@ def test_defaults_are_none(monkeypatch: pytest.MonkeyPatch) -> None:
     ns = _parse_args()
     assert ns.emit_effective_config is None
     assert ns.emit_canary_report is None
+    assert ns.emit_promotion_report is None
 
 
 # ── Regression: all pre-existing flags still parse ─────────────────────────
@@ -104,6 +123,8 @@ def test_existing_flags_still_parse(monkeypatch: pytest.MonkeyPatch) -> None:
         "artifacts/effective_config.json",
         "--emit-canary-report",
         "artifacts/canary_report.json",
+        "--emit-promotion-report",
+        "artifacts/promotion_report.json",
     )
     ns = _parse_args()
     # Spot-check each flag, focusing on the new + critical ones.
@@ -120,3 +141,4 @@ def test_existing_flags_still_parse(monkeypatch: pytest.MonkeyPatch) -> None:
     assert ns.json_logs is True
     assert Path(ns.emit_effective_config).name == "effective_config.json"
     assert Path(ns.emit_canary_report).name == "canary_report.json"
+    assert Path(ns.emit_promotion_report).name == "promotion_report.json"

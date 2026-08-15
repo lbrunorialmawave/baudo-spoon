@@ -21,11 +21,12 @@ Usage examples
 # Structured JSON logs for ELK/Splunk:
     python -m ml.run_pipeline --json-logs
 
-# Emit rollout artefacts (effective_config + canary_report) for
-# ml-training.yml Phase 6 (WS14, plan §16.1):
+# Emit rollout artefacts (effective_config + canary_report + promotion_report)
+# for ml-training.yml Phase 6 (WS14, plan §16.1):
     python -m ml.run_pipeline \\
         --emit-effective-config artifacts/effective_config.json \\
-        --emit-canary-report artifacts/canary_report.json
+        --emit-canary-report artifacts/canary_report.json \\
+        --emit-promotion-report artifacts/promotion_report.json
 
 # Docker (reads ML_DATABASE_URL from environment, set in docker-compose):
     docker compose run --rm api python -m ml.run_pipeline --league "Serie A"
@@ -284,6 +285,19 @@ def _parse_args() -> argparse.Namespace:
             "remaining > 0 fails the gate."
         ),
     )
+    parser.add_argument(
+        "--emit-promotion-report",
+        default=None,
+        dest="emit_promotion_report",
+        metavar="PATH",
+        help=(
+            "Write the single-variant promotion report (plan §16.1) to "
+            "PATH as JSON. Shape mirrors the harness matrix output so "
+            "ml.scripts.check_promotion_gate can validate it directly. "
+            "If omitted, the build job in ml-training.yml is expected to "
+            "download one from R2."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -387,17 +401,224 @@ def _emit_canary_report(cfg: MLConfig, path: str) -> None:
         log.exception("Failed to write canary_report to %s", path)
 
 
-def _emit_rollout_artifacts(cfg: MLConfig, args: argparse.Namespace) -> None:
+# Cohort labels mirrored from ml.experiments.harness to keep the single-
+# variant report consistent with the multi-variant harness output consumed
+# by ml.scripts.check_promotion_gate.
+_PROMOTION_COHORTS: tuple[str, ...] = ("STANDARD", "LIMITED", "INSUFFICIENT")
+
+
+def _cohort_stratified_metrics(
+    predictions: list[dict[str, Any]],
+) -> tuple[dict[str, float | None], dict[str, float | None], float | None]:
+    """Compute MAE/RMSE per ``sample_cohort`` and a phenom-leakage rate.
+
+    Inline copy of the same primitive used by
+    :func:`ml.experiments.harness._cohort_stratified_metrics`.  Kept local
+    to avoid a private import across modules and to keep ``--help`` /
+    parse-only paths free of the experiments side-effects.
+
+    Returns:
+        ``(mae_by_cohort, rmse_by_cohort, phenom_leakage_rate)``.  Any
+        cohort with no rows is reported as ``None`` so the validator
+        can distinguish "missing data" from "perfect prediction".
+    """
+    import math
+
+    mae_by: dict[str, float | None] = {c: None for c in _PROMOTION_COHORTS}
+    rmse_by: dict[str, float | None] = {c: None for c in _PROMOTION_COHORTS}
+
+    if not predictions:
+        return mae_by, rmse_by, None
+
+    score_key = "predicted_fantavoto"
+    if any("predicted_fantavoto_display" in r for r in predictions):
+        score_key = "predicted_fantavoto_display"
+    target_key = "fantavoto_medio"
+    cohort_key = "sample_cohort"
+
+    by_cohort: dict[str, list[tuple[float, float]]] = {}
+    scores: list[tuple[str, float]] = []
+    for row in predictions:
+        cohort = row.get(cohort_key)
+        pred = row.get(score_key)
+        actual = row.get(target_key)
+        if not isinstance(cohort, str) or cohort not in _PROMOTION_COHORTS:
+            continue
+        if not isinstance(pred, (int, float)):
+            continue
+        scores.append((cohort, float(pred)))
+        if isinstance(actual, (int, float)):
+            by_cohort.setdefault(cohort, []).append((float(pred), float(actual)))
+
+    for c in _PROMOTION_COHORTS:
+        pairs = by_cohort.get(c) or []
+        if not pairs:
+            continue
+        abs_errs = [abs(p - a) for p, a in pairs]
+        sq_errs = [(p - a) ** 2 for p, a in pairs]
+        mae_by[c] = sum(abs_errs) / len(abs_errs)
+        rmse_by[c] = math.sqrt(sum(sq_errs) / len(sq_errs))
+
+    phenom: float | None = None
+    limited_scores = [s for c, s in scores if c == "LIMITED"]
+    if limited_scores and scores:
+        all_pred = sorted(s for _, s in scores)
+        cut_idx = max(0, int(math.ceil(0.9 * len(all_pred))) - 1)
+        threshold = all_pred[cut_idx]
+        in_top = sum(1 for s in limited_scores if s >= threshold)
+        phenom = in_top / len(limited_scores)
+
+    return mae_by, rmse_by, phenom
+
+
+def _select_variant_label(cfg: MLConfig) -> str:
+    """Pick the harness-style variant name for the current config.
+
+    Mirrors the labelling used by :mod:`ml.experiments.harness` so the
+    report can be diffed against a future multi-variant run.  The
+    default ``MLConfig`` (no challenger features) maps to ``A_control``,
+    which is also the harness's control variant.
+    """
+    if bool(cfg.enable_shrinkage):
+        return "C_shrinkage"
+    if bool(cfg.enable_limited_sample_training):
+        return "B_weighting"
+    return "A_control"
+
+
+def _build_promotion_report_payload(
+    cfg: MLConfig, results: dict[str, Any]
+) -> dict[str, Any]:
+    """Build the single-variant promotion report from a trainer run.
+
+    The output shape mirrors :func:`ml.experiments.harness.run_experiment`
+    so :mod:`ml.scripts.check_promotion_gate` can validate it without
+    any special-casing.  Only the *candidate* variant is populated; the
+    control variant block is intentionally absent (the gate simply
+    skips the MAE-delta check when control is missing).
+    """
+    from ml.rollout.canary import build_canary_report
+    from ml.rollout.config_hash import build_config_bundle
+
+    best_model = str(results.get("best_model", ""))
+    role_metrics = results.get("role_metrics", {}) or {}
+    outfield_metrics = (
+        (role_metrics.get("outfield") or {}).get(best_model) or {}
+    ) or {}
+    backtest = results.get("backtest", {}) or {}
+    cohort = ((results.get("sample_reliability") or {}).get("cohort_profile")) or {}
+    mae_by, rmse_by, phenom = _cohort_stratified_metrics(
+        results.get("predictions") or []
+    )
+
+    # Reuse the canary report for the gate-required field; the
+    # ``build_canary_report`` call is pure and idempotent.
+    canary = build_canary_report(cfg)
+    canary_remaining = int(canary.get("anomalies", {}).get("remaining", 0))
+
+    variant_label = _select_variant_label(cfg)
+    variant_payload: dict[str, Any] = {
+        "description": (
+            f"Single-variant promotion report derived from run_pipeline "
+            f"(active features → {variant_label})."
+        ),
+        "status": "ok",
+        "best_model": best_model,
+        "rmse": outfield_metrics.get("rmse"),
+        "mae": outfield_metrics.get("mae"),
+        "r2": outfield_metrics.get("r2"),
+        "backtest_mean_rmse": backtest.get("mean_rmse"),
+        "backtest_mean_mae": backtest.get("mean_mae"),
+        "cohort_profile": cohort,
+        "mae_by_cohort": mae_by,
+        "rmse_by_cohort": rmse_by,
+        "phenom_leakage_rate": phenom,
+        "canary_anomalies_remaining": canary_remaining,
+    }
+
+    # Config snapshot — must match the one used by effective_config.json
+    # so ``check_promotion_gate`` reports ``config_hash_status=match``
+    # (plan §18).  Field set is the strict subset used in
+    # ``ml.rollout.canary.build_canary_report``.
+    config_snapshot: dict[str, Any] = {
+        "min_minutes": int(cfg.min_minutes),
+        "min_minutes_hard": int(cfg.min_minutes_hard),
+        "enable_limited_sample_training": bool(cfg.enable_limited_sample_training),
+        "enable_shrinkage": bool(cfg.enable_shrinkage),
+        "enable_recent_role_features": bool(cfg.enable_recent_role_features),
+        "enable_breakout_model": bool(cfg.enable_breakout_model),
+        "weighting_strategy": str(cfg.weighting_strategy),
+        "shrinkage_prior_strength": int(cfg.shrinkage_prior_strength),
+        "reliability_weight_mode": str(cfg.reliability_weight_mode),
+    }
+    bundle = build_config_bundle(config=config_snapshot)
+
+    return {
+        "version": "1.0",
+        "source": "run_pipeline",
+        "run_id": str(
+            (results.get("metadata") or {}).get("run_id")
+            or datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
+        ),
+        "generated_at_utc": datetime.now(tz=timezone.utc).isoformat(),
+        "data_hash": str((results.get("metadata") or {}).get("data_hash", "")),
+        "base_config": {
+            "min_minutes": int(cfg.min_minutes),
+            "min_minutes_hard": int(cfg.min_minutes_hard),
+            "test_seasons": int(cfg.test_seasons),
+            "weighting_strategy": str(cfg.weighting_strategy),
+            "enable_limited_sample_training": bool(
+                cfg.enable_limited_sample_training
+            ),
+            "enable_shrinkage": bool(cfg.enable_shrinkage),
+            "enable_recent_role_features": bool(
+                cfg.enable_recent_role_features
+            ),
+            "enable_breakout_model": bool(cfg.enable_breakout_model),
+        },
+        "variants": {variant_label: variant_payload},
+        "config": bundle["config"],
+        "config_hash": bundle["config_hash"],
+        # Convenience top-level alias for tooling that doesn't drill
+        # into ``variants[*]``.
+        "canary_anomalies_remaining": canary_remaining,
+    }
+
+
+def _emit_promotion_report(
+    cfg: MLConfig, results: dict[str, Any], path: str
+) -> None:
+    log = logging.getLogger(__name__)
+    try:
+        payload = _build_promotion_report_payload(cfg, results)
+        _write_json(path, payload)
+        remaining = int(payload.get("canary_anomalies_remaining", -1))
+        log.info(
+            "promotion_report written to %s (variant=%s, canary_remaining=%d, gate=%s)",
+            path,
+            next(iter(payload.get("variants", {})), "?"),
+            remaining,
+            "PASS" if remaining == 0 else "FAIL",
+        )
+    except Exception:
+        log.exception("Failed to write promotion_report to %s", path)
+
+
+def _emit_rollout_artifacts(
+    cfg: MLConfig, results: dict[str, Any], args: argparse.Namespace
+) -> None:
     """Best-effort emission of WS14 rollout artefacts.
 
-    Both writes are wrapped in their own try/except so a failure in one
-    does not suppress the other, and the training run (which already
+    Each write is wrapped in its own try/except so a failure in one
+    does not suppress the others, and the training run (which already
     succeeded) is not retroactively failed.
     """
     if args.emit_effective_config:
         _emit_effective_config(cfg, args.emit_effective_config)
     if args.emit_canary_report:
         _emit_canary_report(cfg, args.emit_canary_report)
+    if args.emit_promotion_report:
+        _emit_promotion_report(cfg, results, args.emit_promotion_report)
 
 
 def main() -> int:
@@ -452,12 +673,16 @@ def main() -> int:
         return 1
 
     # ── Emit rollout artefacts (WS14 — plan §16.1) ──────────────────────────
-    # The two artefacts are independent: each is written only if its
-    # path is set, and a failure in either one is logged but does NOT
+    # The three artefacts are independent: each is written only if its
+    # path is set, and a failure in any of them is logged but does NOT
     # fail the training run (the training already succeeded; the
     # artefacts are for downstream validation).
-    if args.emit_effective_config or args.emit_canary_report:
-        _emit_rollout_artifacts(cfg, args)
+    if (
+        args.emit_effective_config
+        or args.emit_canary_report
+        or args.emit_promotion_report
+    ):
+        _emit_rollout_artifacts(cfg, results, args)
 
     # ── Evaluate MANTRA (optional) ──────────────────────────────────────────
     if args.evaluate_mantra:
