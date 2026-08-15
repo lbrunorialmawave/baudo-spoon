@@ -159,6 +159,10 @@ def _auction_config_from_schema(
         inflation_config=inflation,
         valuation_mode=cfg.valuation_mode,
         hybrid_blend=getattr(cfg, "hybrid_blend", 0.0) or 0.0,
+        risk_aversion=float(getattr(cfg, "risk_aversion", 0.0) or 0.0),
+        apply_reliability_weight=bool(
+            getattr(cfg, "apply_reliability_weight", False)
+        ),
         reference_budget=cfg.reference_budget,
         budget_initial=cfg.budget_initial,
     )
@@ -395,6 +399,7 @@ async def init_auction(
                 eligible_roles=frozenset(r.get("eligible_roles") or []),
                 reliability_weight=r.get("reliability_weight"),
                 sample_cohort=r.get("sample_cohort"),
+                prediction_std=r.get("prediction_std"),
             )
             for r in rows
         ]
@@ -472,6 +477,7 @@ async def simulate_auction_endpoint(
                 eligible_roles=frozenset(r.get("eligible_roles") or []),
                 reliability_weight=r.get("reliability_weight"),
                 sample_cohort=r.get("sample_cohort"),
+                prediction_std=r.get("prediction_std"),
             )
             for r in rows
         ]
@@ -831,6 +837,9 @@ def get_var_ranking(
             "start_probability": p.start_probability,
             "eligible_roles": sorted(p.eligible_roles) if p.eligible_roles else None,
             "fp_ibrido": p.fp_ibrido,
+            "reliability_weight": p.reliability_weight,
+            "prediction_std": p.prediction_std,
+            "sample_cohort": p.sample_cohort,
         }
         for p in pool
     ]
@@ -846,6 +855,10 @@ def get_var_ranking(
         replacement_method=getattr(state.config, "replacement_method", "percentile"),
         min_start_probability=getattr(state.config, "min_start_probability", None),
         hybrid_blend=float(getattr(state.config, "hybrid_blend", 0.0) or 0.0),
+        risk_aversion=float(getattr(state.config, "risk_aversion", 0.0) or 0.0),
+        apply_reliability_weight=bool(
+            getattr(state.config, "apply_reliability_weight", False)
+        ),
     )
     results = engine.evaluate(players_input, price_overrides=price_overrides)
 

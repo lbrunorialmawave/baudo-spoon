@@ -842,6 +842,15 @@ class AuctionConfigSchema(_CamelModel):
     hybrid_blend: float = 0.0
     """WS3 #2: weight in [0, 1] of fpIbrido signal in VarEngine. 0 = off."""
 
+    risk_aversion: float = 0.0
+    """WS3 limited-cohort hardening: score -= risk_aversion * prediction_std.
+    Default 0.0 = risk-neutral (backward compatible)."""
+
+    apply_reliability_weight: bool = False
+    """WS3 Option B: multiply VarEngine score by reliability_weight.
+    Default False keeps historical Auction behaviour; set True to align
+    with Optimizer decision discounting."""
+
     @field_validator("reference_budget", "budget_initial")
     @classmethod
     def _validate_positive_budget(cls, v: int) -> int:

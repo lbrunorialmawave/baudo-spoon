@@ -175,11 +175,15 @@ def _enrich_pool_with_blends(pool: list[Player], config: OptimizationConfig, req
             num_participants=config.num_participants,
             min_start_probability=req.min_start_probability,
             replacement_method=req.replacement_method,
+            risk_aversion=float(getattr(config, "risk_aversion", 0.0) or 0.0),
+            apply_reliability_weight=True,  # align with Optimizer objective (WS3)
         )
         players_input = [
             {"player_id": p.player_id, "role": p.role,
              "projected_score": p.projected_score, "cost": p.cost,
-             "season_value": p.season_value, "start_probability": p.start_probability}
+             "season_value": p.season_value, "start_probability": p.start_probability,
+             "reliability_weight": p.reliability_weight,
+             "prediction_std": p.prediction_std}
             for p in pool
         ]
         esv_results = engine.evaluate(players_input)

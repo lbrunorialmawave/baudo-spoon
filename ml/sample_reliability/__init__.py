@@ -25,16 +25,29 @@ Design principles (enforced by the plan):
 * Foreign-fallback rows (``is_foreign_fallback = True``) remain
   **inference-only** by the main plan; this module never promotes them
   to training data.
+
+Changelog note (limited-cohort hardening, 2026-08):
+* Continuous decision-layer reliability weight added
+  (:func:`continuous_reliability_weight` / :func:`get_reliability_weight`).
+  The legacy :data:`RELIABILITY_WEIGHT_BY_COHORT` step function is retained
+  as the default (mode="bucket") for bit-identical behaviour; switch to
+  mode="continuous" via config once the canary gate passes.
+* Historical note: PR2 (weighting) was promoted without PR3 (shrinkage)
+  in an earlier rollout — see plan-limited-cohort-hardening.md.
 """
 
 from .cohort import (
     COHORT_INSUFFICIENT,
     COHORT_LIMITED,
     COHORT_STANDARD,
+    DEFAULT_RELIABILITY_FLOOR,
+    RELIABILITY_WEIGHT_BY_COHORT,
     SAMPLE_COHORTS,
     Cohort,
     SampleReliability,
     classify_cohort,
+    continuous_reliability_weight,
+    get_reliability_weight,
     profile_dataset,
 )
 from .output_reliability import (
@@ -64,6 +77,10 @@ __all__ = [
     "SampleReliability",
     "classify_cohort",
     "profile_dataset",
+    "RELIABILITY_WEIGHT_BY_COHORT",
+    "DEFAULT_RELIABILITY_FLOOR",
+    "continuous_reliability_weight",
+    "get_reliability_weight",
     "WeightingStrategy",
     "STRATEGY_CONSTANT",
     "STRATEGY_LINEAR",

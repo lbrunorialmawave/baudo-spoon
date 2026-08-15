@@ -55,3 +55,79 @@ def test_var_engine_assigns_lower_var_to_shrunk_limited() -> None:
     by_id = {r.player_id: r for r in results}
 
     assert by_id["std-1"].var_score > by_id["lim-1"].var_score
+
+
+def test_var_engine_default_ignores_reliability_weight() -> None:
+    """Backward compatible: apply_reliability_weight=False → same score."""
+    players = [
+        {
+            "player_id": "a",
+            "role": "C",
+            "projected_score": 8.0,
+            "reliability_weight": 0.5,
+        },
+        *[{"player_id": f"c{i}", "role": "C", "projected_score": 6.0} for i in range(15)],
+        *[{"player_id": f"p{i}", "role": "P", "projected_score": 6.0} for i in range(5)],
+        *[{"player_id": f"d{i}", "role": "D", "projected_score": 6.0} for i in range(12)],
+        *[{"player_id": f"a{i}", "role": "A", "projected_score": 6.0} for i in range(10)],
+    ]
+    engine = VarEngine(total_budget=500, num_participants=8)
+    results = engine.evaluate(players)
+    by_id = {r.player_id: r for r in results}
+    # projected 8.0 used as-is → higher VAR than fillers at 6.0
+    assert by_id["a"].var_score > 0
+
+
+def test_var_engine_applies_reliability_weight_when_enabled() -> None:
+    """WS3 Option B: reliability_weight multiplies the decision score."""
+    players = [
+        {
+            "player_id": "full",
+            "role": "C",
+            "projected_score": 8.0,
+            "reliability_weight": 1.0,
+        },
+        {
+            "player_id": "half",
+            "role": "C",
+            "projected_score": 8.0,
+            "reliability_weight": 0.5,
+        },
+        *[{"player_id": f"c{i}", "role": "C", "projected_score": 5.0} for i in range(15)],
+        *[{"player_id": f"p{i}", "role": "P", "projected_score": 5.0} for i in range(5)],
+        *[{"player_id": f"d{i}", "role": "D", "projected_score": 5.0} for i in range(12)],
+        *[{"player_id": f"a{i}", "role": "A", "projected_score": 5.0} for i in range(10)],
+    ]
+    engine = VarEngine(
+        total_budget=500,
+        num_participants=8,
+        apply_reliability_weight=True,
+    )
+    results = engine.evaluate(players)
+    by_id = {r.player_id: r for r in results}
+    assert by_id["full"].var_score > by_id["half"].var_score
+
+
+def test_var_engine_applies_risk_aversion() -> None:
+    players = [
+        {
+            "player_id": "sure",
+            "role": "C",
+            "projected_score": 8.0,
+            "prediction_std": 0.1,
+        },
+        {
+            "player_id": "noisy",
+            "role": "C",
+            "projected_score": 8.0,
+            "prediction_std": 2.0,
+        },
+        *[{"player_id": f"c{i}", "role": "C", "projected_score": 5.0} for i in range(15)],
+        *[{"player_id": f"p{i}", "role": "P", "projected_score": 5.0} for i in range(5)],
+        *[{"player_id": f"d{i}", "role": "D", "projected_score": 5.0} for i in range(12)],
+        *[{"player_id": f"a{i}", "role": "A", "projected_score": 5.0} for i in range(10)],
+    ]
+    engine = VarEngine(total_budget=500, num_participants=8, risk_aversion=0.5)
+    results = engine.evaluate(players)
+    by_id = {r.player_id: r for r in results}
+    assert by_id["sure"].var_score > by_id["noisy"].var_score

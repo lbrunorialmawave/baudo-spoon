@@ -21,6 +21,7 @@ from ml.domain.predictions import resolve_season_value_fields
 from ml.sample_reliability.cohort import (
     COHORT_STANDARD,
     RELIABILITY_WEIGHT_BY_COHORT,
+    get_reliability_weight,
 )
 from ml.storage.artifact_store import ArtifactStore, R2Config
 
@@ -1021,9 +1022,10 @@ class DataRepository:
           from the ML output-reliability layer (defaults to ``STANDARD``
           when the artifact lacks the field).
         * ``reliability_weight`` — decision-layer weight derived from
-          ``sample_cohort`` (see ``RELIABILITY_WEIGHT_BY_COHORT``). Used by
-          the Optimizer ILP objective; Auction inherits the effect via the
-          already-shrunk ``projected_score``.
+          minutes (continuous curve) when available, otherwise from
+          ``sample_cohort`` (legacy bucket). Used by the Optimizer ILP
+          objective; Auction currently inherits the primary damping via
+          the already-shrunk ``projected_score`` (see WS3 alignment plan).
 
         When ``return_exclusions=True``, returns
         ``(pool, excluded_no_projection)`` so callers can surface how many
@@ -1117,8 +1119,21 @@ class DataRepository:
                     raw_cohort = pred.get("sample_cohort")
                     if isinstance(raw_cohort, str) and raw_cohort:
                         sample_cohort = raw_cohort
+                    # Prefer continuous weight when expected_minutes (or
+                    # mins_played) is present — closes the 105' vs 795'
+                    # discontinuity (plan-limited-cohort-hardening WS2).
+                    # Falls back to the legacy bucket when minutes are
+                    # missing so behaviour stays bit-identical for old
+                    # artifacts that only carry sample_cohort.
+                    _mins = pred.get("expected_minutes")
+                    if _mins is None:
+                        _mins = pred.get("mins_played")
                     reliability_weight = float(
-                        RELIABILITY_WEIGHT_BY_COHORT.get(sample_cohort, 1.0)
+                        get_reliability_weight(
+                            _mins,
+                            cohort=sample_cohort,
+                            mode="continuous" if _mins is not None else "bucket",
+                        )
                     )
 
                     raw_val = pred.get("predicted_fantavoto")

@@ -84,6 +84,19 @@ class MLConfig(BaseSettings):
     # during per-90 shrinkage.  See ``apply_shrinkage``.
     shrinkage_prior_strength: int = 300
 
+    # Decision-layer reliability weight mode for Optimizer / Auction.
+    # "bucket"  → legacy RELIABILITY_WEIGHT_BY_COHORT step function (default,
+    #             bit-identical to pre-hardening behaviour).
+    # "continuous" → continuous_reliability_weight(minutes) with floor 0.30.
+    # See plan-limited-cohort-hardening.md WS2.
+    reliability_weight_mode: str = "bucket"
+
+    # Optional display ceiling for LIMITED/INSUFFICIENT predictions
+    # (plan §6.4). When set (e.g. 0.85), attach_output_reliability caps
+    # non-STANDARD display values at that percentile of the STANDARD
+    # cohort of the same role. None = disabled (bit-identical default).
+    limited_ceiling_percentile: float | None = None
+
     # ── League filter ─────────────────────────────────────────────────────────
     # Defaults to Serie A: once foreign leagues are scraped (for MANTRA's
     # cross-league neo-arrivo fallback, see ml/mantra/runner.py), a training

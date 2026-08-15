@@ -294,3 +294,54 @@ class TestLimitedCohortSurvivesAttachTarget:
         limited_w = weights[df["mins_played"] == 300].iloc[0]
         assert standard_w == pytest.approx(1.0)
         assert 0.0 < limited_w < 1.0
+
+
+# ── WS1: Adzic-style phenom must be damped by input shrinkage ───────────────
+
+
+class TestShrinkagePreventsPhenom:
+    def test_adzic_style_163_min_one_goal_pulled_toward_prior(self, tmp_path: Path) -> None:
+        """163 minutes / extreme rate must shrink when both flags are on.
+
+        Mirrors the concrete canary from plan-limited-cohort-hardening.md:
+        raw goals_per90 ≈ 0.55 (1 goal / 163 min * 90) is an artifact;
+        after shrinkage with prior_strength=300 it must move toward the
+        STANDARD-cohort prior of the same role.
+        """
+        cfg = _cfg(
+            tmp_path,
+            enable_limited_sample_training=True,
+            enable_shrinkage=True,
+            min_minutes=800,
+            min_minutes_hard=100,
+            shrinkage_prior_strength=300,
+        )
+        trainer = Trainer(cfg)
+        # Need >= 30 STANDARD FWD rows so the role prior is not the global fallback.
+        df = _toy_frame(n_players=80)
+        fwd_idx = df.index[:40]
+        df.loc[fwd_idx, "canonical_role"] = "FWD"
+        df.loc[fwd_idx, "mins_played"] = 2500
+        df.loc[fwd_idx, "goals_per90"] = 0.30  # realistic prior ~0.30
+
+        outlier_idx = df.index[-1]
+        df.loc[outlier_idx, "canonical_role"] = "FWD"
+        df.loc[outlier_idx, "mins_played"] = 163
+        df.loc[outlier_idx, "goals_per90"] = 1.0 / 163.0 * 90.0  # ≈ 0.552
+        raw = float(df.loc[outlier_idx, "goals_per90"])
+        assert raw == pytest.approx(0.552, abs=0.01)
+
+        meta = trainer._apply_shrinkage(df, prior_exclude_mask=df["is_foreign_fallback"])
+        assert meta["enabled"] is True
+        adjusted = float(df.loc[outlier_idx, "goals_per90"])
+        assert adjusted < raw
+        # With prior ≈ 0.30 and weight_on_obs ≈ 0.35, expected ≈ 0.39
+        assert adjusted < 0.45
+        assert adjusted > 0.25  # still above pure prior (not zeroed)
+
+    def test_config_defaults_remain_safe(self, tmp_path: Path) -> None:
+        """Kill-switch: both flags default False so production is unchanged."""
+        cfg = _cfg(tmp_path)
+        assert cfg.enable_limited_sample_training is False
+        assert cfg.enable_shrinkage is False
+        assert cfg.reliability_weight_mode == "bucket"

@@ -69,6 +69,7 @@ def attach_output_reliability(
     min_standard_rows_for_prior: int = DEFAULT_MIN_STANDARD_ROWS_FOR_PRIOR,
     exclude_from_prior_mask: pd.Series | None = None,
     display_suffix: str = "_display",
+    limited_ceiling_percentile: float | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Attach ``sample_cohort`` / ``ml_values_noisy`` / display columns.
 
@@ -100,6 +101,11 @@ def attach_output_reliability(
             classified and damped, just not used to compute the prior.
         display_suffix: Suffix appended to *predicted_col* for the new
             damped column.
+        limited_ceiling_percentile: Optional back-stop (plan §6.4). When
+            set (e.g. 0.85), no LIMITED/INSUFFICIENT row may have a
+            display value above the given percentile of the STANDARD
+            cohort of the same role.  ``None`` (default) disables the
+            ceiling so existing callers remain bit-identical.
 
     Returns:
         ``(new_df, metadata)`` — *new_df* is a copy of *df* with
@@ -166,11 +172,38 @@ def attach_output_reliability(
 
     out[f"{predicted_col}{display_suffix}"] = display_col
 
+    # Optional hard ceiling for non-STANDARD rows (plan §6.4 back-stop).
+    ceiling_applied = 0
+    if limited_ceiling_percentile is not None:
+        if not (0.0 < limited_ceiling_percentile <= 1.0):
+            raise ValueError(
+                f"limited_ceiling_percentile must be in (0, 1], got "
+                f"{limited_ceiling_percentile}"
+            )
+        for role, idx in role_groups.items():
+            idx = pd.Index(idx)
+            role_std = standard_mask_global.loc[idx]
+            if int(role_std.sum()) < 3:
+                # Too few STANDARD rows in this role → use global STANDARD
+                std_vals = display_col.loc[standard_mask_global]
+            else:
+                std_vals = display_col.loc[idx][role_std.to_numpy()]
+            if len(std_vals) == 0:
+                continue
+            ceiling = float(std_vals.quantile(limited_ceiling_percentile))
+            non_std_idx = idx[~standard_mask_global.loc[idx].to_numpy()]
+            if len(non_std_idx) == 0:
+                continue
+            before = display_col.loc[non_std_idx].copy()
+            display_col.loc[non_std_idx] = before.clip(upper=ceiling)
+            ceiling_applied += int((before > ceiling).sum())
+        out[f"{predicted_col}{display_suffix}"] = display_col
+
     n_noisy = int(out["ml_values_noisy"].sum())
     log.info(
         "Output reliability attached: %d/%d row(s) flagged noisy "
-        "(prior_strength=%d, role_groups=%s).",
-        n_noisy, len(out), prior_strength, list(role_groups.keys()),
+        "(prior_strength=%d, role_groups=%s, ceiling_applied=%d).",
+        n_noisy, len(out), prior_strength, list(role_groups.keys()), ceiling_applied,
     )
     return out, {
         "enabled": True,
@@ -182,4 +215,6 @@ def attach_output_reliability(
         "n_noisy": n_noisy,
         "n_total": int(len(out)),
         "priors_by_role": priors,
+        "limited_ceiling_percentile": limited_ceiling_percentile,
+        "ceiling_applied": ceiling_applied,
     }

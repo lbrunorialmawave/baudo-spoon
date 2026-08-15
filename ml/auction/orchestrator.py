@@ -859,6 +859,9 @@ def _config_to_dict(config: AuctionConfig) -> dict[str, object]:
         "reference_budget": config.reference_budget,
         "budget_initial": config.budget_initial,
         "valuation_mode": config.valuation_mode,
+        "hybrid_blend": config.hybrid_blend,
+        "risk_aversion": config.risk_aversion,
+        "apply_reliability_weight": config.apply_reliability_weight,
         # inflation_config non è serializzato di default: il caller può
         # ricostruirlo se davvero necessario (l'ottimizzatore rosa lo
         # ottiene via DI).  Per completezza includiamo il repr ma non
@@ -901,6 +904,9 @@ def _config_from_dict(d: dict[str, object]) -> AuctionConfig:
         reference_budget=cast(int, d.get("reference_budget", 300)),
         budget_initial=cast(int, d.get("budget_initial", 300)),
         valuation_mode=cast(str, d.get("valuation_mode", "PER_MATCH_RATING")),
+        hybrid_blend=float(d.get("hybrid_blend", 0.0) or 0.0),
+        risk_aversion=float(d.get("risk_aversion", 0.0) or 0.0),
+        apply_reliability_weight=bool(d.get("apply_reliability_weight", False)),
     )
 
 

@@ -273,3 +273,106 @@ def test_operational_invariant_cohorts_partition() -> None:
 
 def test_default_prior_strength_is_positive() -> None:
     assert DEFAULT_PRIOR_STRENGTH > 0
+
+
+# ── WS2 — continuous decision-layer reliability weight ───────────────────────
+
+
+from ml.sample_reliability import (
+    DEFAULT_RELIABILITY_FLOOR,
+    RELIABILITY_WEIGHT_BY_COHORT,
+    continuous_reliability_weight,
+    get_reliability_weight,
+)
+
+
+class TestContinuousReliabilityWeight:
+    def test_standard_is_one(self) -> None:
+        assert continuous_reliability_weight(800) == pytest.approx(1.0)
+        assert continuous_reliability_weight(2500) == pytest.approx(1.0)
+
+    def test_below_hard_cutoff_is_floor(self) -> None:
+        assert continuous_reliability_weight(0) == pytest.approx(DEFAULT_RELIABILITY_FLOOR)
+        assert continuous_reliability_weight(50) == pytest.approx(DEFAULT_RELIABILITY_FLOOR)
+        assert continuous_reliability_weight(99) == pytest.approx(DEFAULT_RELIABILITY_FLOOR)
+
+    def test_at_hard_cutoff_is_floor(self) -> None:
+        # Continuous curve starts at floor exactly at the hard cutoff.
+        assert continuous_reliability_weight(100) == pytest.approx(DEFAULT_RELIABILITY_FLOOR)
+
+    def test_monotonic_non_decreasing(self) -> None:
+        prev = continuous_reliability_weight(0)
+        for m in range(1, 1200, 7):
+            w = continuous_reliability_weight(m)
+            assert w >= prev - 1e-12, f"non-monotonic at minutes={m}: {w} < {prev}"
+            prev = w
+
+    def test_in_range(self) -> None:
+        for m in (0, 50, 100, 163, 400, 795, 800, 3000, None):
+            w = continuous_reliability_weight(m)
+            assert DEFAULT_RELIABILITY_FLOOR - 1e-12 <= w <= 1.0 + 1e-12
+
+    def test_differentiates_105_vs_795(self) -> None:
+        """Regression guard: the step function gave both 0.65; continuous must not."""
+        w_lo = continuous_reliability_weight(105)
+        w_hi = continuous_reliability_weight(795)
+        assert w_hi > w_lo + 0.05  # meaningful gap
+        # Bucket path still returns the same value for both
+        assert get_reliability_weight(105, mode="bucket", cohort="LIMITED") == pytest.approx(0.65)
+        assert get_reliability_weight(795, mode="bucket", cohort="LIMITED") == pytest.approx(0.65)
+
+    def test_adzic_case_below_near_standard(self) -> None:
+        w_adzic = continuous_reliability_weight(163)
+        w_near = continuous_reliability_weight(795)
+        assert w_adzic < w_near
+        assert w_adzic < 0.55  # still meaningfully discounted
+
+    def test_linear_strategy(self) -> None:
+        w = continuous_reliability_weight(400, strategy="linear")
+        assert DEFAULT_RELIABILITY_FLOOR <= w <= 1.0
+
+    def test_invalid_floor_rejected(self) -> None:
+        with pytest.raises(ValueError):
+            continuous_reliability_weight(500, floor=1.5)
+        with pytest.raises(ValueError):
+            continuous_reliability_weight(500, floor=-0.1)
+
+    def test_get_reliability_weight_bucket_default(self) -> None:
+        assert get_reliability_weight(cohort="LIMITED") == pytest.approx(0.65)
+        assert get_reliability_weight(cohort="STANDARD") == pytest.approx(1.0)
+        assert get_reliability_weight(cohort="INSUFFICIENT") == pytest.approx(0.30)
+
+    def test_get_reliability_weight_continuous_uses_minutes(self) -> None:
+        w = get_reliability_weight(163, cohort="LIMITED", mode="continuous")
+        assert w == pytest.approx(continuous_reliability_weight(163))
+
+    def test_get_reliability_weight_continuous_fallback_to_bucket(self) -> None:
+        # minutes missing → degrade to bucket for the known cohort
+        w = get_reliability_weight(None, cohort="LIMITED", mode="continuous")
+        assert w == pytest.approx(RELIABILITY_WEIGHT_BY_COHORT["LIMITED"])
+
+
+# ── WS0 canary fixture smoke ─────────────────────────────────────────────────
+
+
+def test_canary_fixture_loads_and_marks_anomalies() -> None:
+    from ml.tests.fixtures.limited_cohort_canary import (
+        CANARY_ANOMALY_IDS,
+        build_limited_cohort_canary,
+        canary_anomaly_count,
+    )
+
+    df = build_limited_cohort_canary()
+    assert len(df) >= 8
+    assert "adzic-163" in set(df["player_id"])
+    assert canary_anomaly_count(df) >= 2
+    assert CANARY_ANOMALY_IDS.issubset(set(df.loc[df["is_known_anomaly"], "player_id"]))
+
+    # Continuous weight must rank near-standard LIMITED higher than Adzic
+    from ml.sample_reliability import continuous_reliability_weight
+
+    adzic = df.loc[df["player_id"] == "adzic-163"].iloc[0]
+    near = df.loc[df["player_id"] == "lim-795"].iloc[0]
+    assert continuous_reliability_weight(near["mins_played"]) > continuous_reliability_weight(
+        adzic["mins_played"]
+    )

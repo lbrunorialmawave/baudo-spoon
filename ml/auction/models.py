@@ -222,6 +222,17 @@ class AuctionConfig:
     VarEngine scoring. 0 = disabled (default). Same shape as
     OptimizationConfig.hybrid_blend."""
 
+    risk_aversion: float = 0.0
+    """plan-limited-cohort-hardening WS3: penalty subtracted as
+    ``score -= risk_aversion * prediction_std`` inside VarEngine.
+    Default 0.0 = risk-neutral (bit-identical to pre-WS3)."""
+
+    apply_reliability_weight: bool = False
+    """plan-limited-cohort-hardening WS3 Option B: when True, VarEngine
+    multiplies the decision score by ``reliability_weight``. Default
+    False preserves the historical "Auction inherits damping only via
+    already-shrunk projected_score" behaviour."""
+
     reference_budget: int = 300
     """Budget per squadra su cui il listino (``player.cost``) è tarato.
 
@@ -299,6 +310,10 @@ class AuctionConfig:
         if not 0.0 <= self.hybrid_blend <= 1.0:
             raise ValueError(
                 f"AuctionConfig.hybrid_blend must be in [0, 1], got {self.hybrid_blend}"
+            )
+        if self.risk_aversion < 0.0:
+            raise ValueError(
+                f"AuctionConfig.risk_aversion must be >= 0, got {self.risk_aversion}"
             )
 
 

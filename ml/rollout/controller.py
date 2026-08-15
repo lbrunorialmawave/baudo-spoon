@@ -182,6 +182,24 @@ class RolloutController:
         Promotion must be monotonic (``DISABLED → SHADOW → ACTIVE``);
         a rewind is allowed (e.g. for an emergency rollback) but emits
         an ``"emergency_rollback"`` reason.
+
+        Operational gate (plan-limited-cohort-hardening WS4 — manual,
+        not enforced in this method which stays I/O-free by design):
+
+        Before promoting any low-sample flag family member
+        (``LIMITED_SAMPLE_TRAINING``, ``PER90_SHRINKAGE``, …) to
+        ``ACTIVE``, the operator must attach:
+
+        1. An experiment-harness report containing cohort-stratified
+           metrics (``mae_by_cohort``, ``rmse_by_cohort``,
+           ``phenom_leakage_rate``).
+        2. Evidence that known canary anomalies (Adzic-class) are
+           resolved (0 residual anomalies in the top bracket).
+
+        Prefer promoting ``PER90_SHRINKAGE`` together with (or before)
+        leaving ``LIMITED_SAMPLE_TRAINING`` at full traffic, so the
+        protective path is never missing while LIMITED rows influence
+        the model.
         """
         if new_stage not in FlagStage:
             raise ValueError(f"Unknown stage: {new_stage!r}")

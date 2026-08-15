@@ -21,7 +21,11 @@ from ml.experiments import (
 
 def _base_cfg(tmp_path: Path) -> MLConfig:
     """Build a minimal ``MLConfig`` for testing the harness in isolation."""
-    return MLConfig(artifacts_dir=tmp_path, test_seasons=1)
+    return MLConfig(
+        database_url="postgresql://user:pass@localhost/db",
+        artifacts_dir=tmp_path,
+        test_seasons=1,
+    )
 
 
 class TestDefaultVariants:
@@ -101,6 +105,29 @@ class TestRunExperiment:
                                 "n_insufficient": 0,
                             }
                         },
+                        # WS4: predictions with cohort labels for stratified metrics
+                        "predictions": [
+                            {
+                                "sample_cohort": "STANDARD",
+                                "predicted_fantavoto": 6.5,
+                                "fantavoto_medio": 6.4,
+                            },
+                            {
+                                "sample_cohort": "STANDARD",
+                                "predicted_fantavoto": 6.8,
+                                "fantavoto_medio": 6.7,
+                            },
+                            {
+                                "sample_cohort": "LIMITED",
+                                "predicted_fantavoto": 7.5,
+                                "fantavoto_medio": 6.0,
+                            },
+                            {
+                                "sample_cohort": "LIMITED",
+                                "predicted_fantavoto": 6.0,
+                                "fantavoto_medio": 5.8,
+                            },
+                        ],
                     }
             return _StubTrainer()
 
@@ -116,8 +143,15 @@ class TestRunExperiment:
         on_disk = json.loads(report_path.read_text(encoding="utf-8"))
         assert on_disk["run_id"] == report["run_id"]
         for name in (VARIANT_A, VARIANT_B, VARIANT_C, VARIANT_D):
-            assert on_disk["variants"][name]["status"] == "ok"
-            assert on_disk["variants"][name]["rmse"] == pytest.approx(0.40)
+            variant = on_disk["variants"][name]
+            assert variant["status"] == "ok"
+            assert variant["rmse"] == pytest.approx(0.40)
+            # WS4 cohort-stratified keys must be present
+            assert "mae_by_cohort" in variant
+            assert "rmse_by_cohort" in variant
+            assert "phenom_leakage_rate" in variant
+            assert variant["mae_by_cohort"]["STANDARD"] is not None
+            assert variant["mae_by_cohort"]["LIMITED"] is not None
 
     def test_failed_variant_is_captured_not_raised(self, tmp_path: Path) -> None:
         base = _base_cfg(tmp_path)

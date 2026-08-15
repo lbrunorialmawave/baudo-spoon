@@ -229,12 +229,21 @@ def _cfg_summary(cfg: MLConfig) -> dict:
 
 
 def _variant_summary(output: dict, variant: ExperimentVariant) -> dict:
-    """Extract the most important metrics from a trainer run output."""
+    """Extract the most important metrics from a trainer run output.
+
+    Includes cohort-stratified error metrics and a phenom-leakage rate
+    (plan-limited-cohort-hardening WS4) when prediction rows carry
+    ``sample_cohort``.  Absent fields stay ``None`` so older artefacts
+    remain reportable.
+    """
     role_metrics = output.get("role_metrics", {}) or {}
     out_metrics = (role_metrics.get("outfield") or {}).get(output.get("best_model", "")) or {}
     gk_metrics = (role_metrics.get("gk") or {}).get(output.get("best_model", "")) or {}
     backtest = output.get("backtest", {}) or {}
     cohort = (output.get("sample_reliability") or {}).get("cohort_profile", {}) or {}
+    mae_by_cohort, rmse_by_cohort, phenom_leakage = _cohort_stratified_metrics(
+        output.get("predictions") or []
+    )
     return {
         "description": variant.description,
         "status": "ok",
@@ -246,4 +255,71 @@ def _variant_summary(output: dict, variant: ExperimentVariant) -> dict:
         "backtest_mean_rmse": backtest.get("mean_rmse"),
         "backtest_mean_mae": backtest.get("mean_mae"),
         "cohort_profile": cohort,
+        # WS4 — cohort-aware gate metrics
+        "mae_by_cohort": mae_by_cohort,
+        "rmse_by_cohort": rmse_by_cohort,
+        "phenom_leakage_rate": phenom_leakage,
     }
+
+
+def _cohort_stratified_metrics(
+    predictions: list[dict],
+) -> tuple[dict[str, float | None], dict[str, float | None], float | None]:
+    """Compute MAE/RMSE per sample_cohort and a phenom-leakage rate.
+
+    Phenom leakage: among players with sample_cohort == LIMITED, the
+    fraction that land in the global top-decile of predicted_fantavoto
+    (or predicted_fantavoto_display when present).  ``None`` when the
+    prediction list lacks the required columns.
+    """
+    from collections import defaultdict
+    import math
+
+    cohorts = ("STANDARD", "LIMITED", "INSUFFICIENT")
+    mae_by: dict[str, float | None] = {c: None for c in cohorts}
+    rmse_by: dict[str, float | None] = {c: None for c in cohorts}
+
+    if not predictions:
+        return mae_by, rmse_by, None
+
+    # Prefer display column for ranking (what Optimizer/Auction see).
+    score_key = "predicted_fantavoto"
+    if any("predicted_fantavoto_display" in r for r in predictions):
+        score_key = "predicted_fantavoto_display"
+    target_key = "fantavoto_medio"
+    cohort_key = "sample_cohort"
+
+    by_cohort: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    scores: list[tuple[str, float]] = []
+    for row in predictions:
+        cohort = row.get(cohort_key)
+        pred = row.get(score_key)
+        actual = row.get(target_key)
+        if not isinstance(cohort, str) or cohort not in cohorts:
+            continue
+        if not isinstance(pred, (int, float)):
+            continue
+        scores.append((cohort, float(pred)))
+        if isinstance(actual, (int, float)):
+            by_cohort[cohort].append((float(pred), float(actual)))
+
+    for c in cohorts:
+        pairs = by_cohort.get(c) or []
+        if not pairs:
+            continue
+        abs_errs = [abs(p - a) for p, a in pairs]
+        sq_errs = [(p - a) ** 2 for p, a in pairs]
+        mae_by[c] = sum(abs_errs) / len(abs_errs)
+        rmse_by[c] = math.sqrt(sum(sq_errs) / len(sq_errs))
+
+    phenom: float | None = None
+    limited_scores = [s for c, s in scores if c == "LIMITED"]
+    if limited_scores and scores:
+        all_pred = sorted(s for _, s in scores)
+        # top-decile threshold
+        cut_idx = max(0, int(math.ceil(0.9 * len(all_pred))) - 1)
+        threshold = all_pred[cut_idx]
+        in_top = sum(1 for s in limited_scores if s >= threshold)
+        phenom = in_top / len(limited_scores)
+
+    return mae_by, rmse_by, phenom

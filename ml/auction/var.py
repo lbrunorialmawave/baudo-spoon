@@ -355,6 +355,8 @@ class VarEngine:
         num_participants: int = 8,
         min_start_probability: float | None = None,
         hybrid_blend: float = 0.0,
+        risk_aversion: float = 0.0,
+        apply_reliability_weight: bool = False,
     ) -> None:
         self.demand_curve = demand_curve or DemandCurve()
         self.total_budget = total_budget
@@ -370,6 +372,13 @@ class VarEngine:
         if not 0.0 <= hybrid_blend <= 1.0:
             raise ValueError(f"hybrid_blend must be in [0, 1], got {hybrid_blend}")
         self.hybrid_blend = hybrid_blend
+        # plan-limited-cohort-hardening WS3: optional risk penalty and
+        # reliability_weight multiplier, symmetric with Optimizer solver.
+        # Defaults (0.0 / False) preserve bit-identical pre-WS3 behaviour.
+        if risk_aversion < 0.0:
+            raise ValueError(f"risk_aversion must be >= 0, got {risk_aversion}")
+        self.risk_aversion = float(risk_aversion)
+        self.apply_reliability_weight = bool(apply_reliability_weight)
 
     def _pool_roles(self, player: dict) -> list[str]:
         """Roles this player counts as supply for.
@@ -409,12 +418,24 @@ class VarEngine:
         else:
             base = float(player["projected_score"])
 
-        if self.hybrid_blend <= 0.0:
-            return base
-        fp = player.get("fp_ibrido")
-        if not isinstance(fp, (int, float)) or fp <= 0:
-            return base
-        return (1.0 - self.hybrid_blend) * base + self.hybrid_blend * float(fp)
+        if self.hybrid_blend > 0.0:
+            fp = player.get("fp_ibrido")
+            if isinstance(fp, (int, float)) and fp > 0:
+                base = (1.0 - self.hybrid_blend) * base + self.hybrid_blend * float(fp)
+
+        # WS3 alignment with Optimizer (solver.py risk-adjusted objective):
+        # score *= reliability_weight; score -= risk_aversion * prediction_std.
+        # Both terms are no-ops under the default constructor args.
+        if self.apply_reliability_weight:
+            rw = player.get("reliability_weight")
+            if isinstance(rw, (int, float)) and rw >= 0:
+                base = base * float(rw)
+        if self.risk_aversion > 0.0:
+            std = player.get("prediction_std")
+            if isinstance(std, (int, float)) and std >= 0:
+                base = base - self.risk_aversion * float(std)
+
+        return base
 
     def evaluate(
         self,

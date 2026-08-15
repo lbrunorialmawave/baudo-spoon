@@ -46,11 +46,20 @@ SAMPLE_COHORTS: Final[tuple[str, ...]] = (
 # weight; LIMITED / INSUFFICIENT are penalised so inflated raw predictions do
 # not compete on equal footing.  Values are conservative defaults — calibrate
 # via backtest before treating them as final (see reliability rollout plan).
+#
+# Legacy step-function path.  Prefer :func:`continuous_reliability_weight` /
+# :func:`get_reliability_weight` (mode="continuous") for new code; the dict
+# remains as a documented fallback and for bit-identical behaviour when
+# ``reliability_weight_mode="bucket"``.
 RELIABILITY_WEIGHT_BY_COHORT: Final[dict[str, float]] = {
     COHORT_STANDARD: 1.0,
     COHORT_LIMITED: 0.65,
     COHORT_INSUFFICIENT: 0.30,
 }
+
+# Default floor for the continuous decision weight (never fully zero out an
+# eligible LIMITED player).  Matches the historical INSUFFICIENT bucket.
+DEFAULT_RELIABILITY_FLOOR: Final[float] = 0.30
 
 # Type alias for static type checkers.
 Cohort = str
@@ -216,6 +225,127 @@ def profile_dataset(
         "min_minutes_hard": int(min_minutes_hard),
         "standard_minutes": int(standard_minutes),
     }
+
+
+# ── Continuous decision-layer reliability weight (WS2) ──────────────────────
+
+def continuous_reliability_weight(
+    minutes: int | float | None,
+    *,
+    min_minutes_hard: int = 100,
+    standard_minutes: int = 800,
+    floor: float = DEFAULT_RELIABILITY_FLOOR,
+    strategy: str = "sqrt",
+) -> float:
+    """Continuous decision-layer reliability weight in ``[floor, 1.0]``.
+
+    Replaces the three-bucket step function for Optimizer / Auction ranking
+    so that a player at 105' is discounted more heavily than one at 795'.
+    Shape mirrors :func:`ml.sample_reliability.weights.compute_sample_weight`
+    (default ``sqrt``) but never drops below *floor* for eligible players
+    (minutes >= min_minutes_hard).
+
+    Invariants (enforced by tests):
+    * result ∈ [floor, 1.0]
+    * monotonically non-decreasing in minutes
+    * weight(standard_minutes) == 1.0 (and above)
+    * weight(minutes < min_minutes_hard) == floor  (INSUFFICIENT still
+      receives the floor rather than 0 so the player remains visible)
+    """
+    import math
+
+    if floor < 0.0 or floor > 1.0:
+        raise ValueError(f"floor must be in [0, 1], got {floor}")
+    if min_minutes_hard < 0:
+        raise ValueError("min_minutes_hard must be non-negative")
+    if min_minutes_hard >= standard_minutes:
+        raise ValueError(
+            "min_minutes_hard must be strictly less than standard_minutes"
+        )
+    if strategy not in {"sqrt", "linear"}:
+        raise ValueError(
+            f"Unsupported strategy for continuous reliability weight: {strategy!r}. "
+            "Supported: 'sqrt', 'linear'."
+        )
+
+    if minutes is None or (isinstance(minutes, float) and np.isnan(minutes)):
+        return float(floor)
+    try:
+        m = float(minutes)
+    except (TypeError, ValueError):
+        return float(floor)
+    if m < 0 or math.isnan(m):
+        return float(floor)
+    if m < min_minutes_hard:
+        return float(floor)
+    if m >= standard_minutes:
+        return 1.0
+
+    # Interpolate between floor (at min_minutes_hard) and 1.0 (at standard).
+    # Using the same functional form as sample weighting, then rescaling
+    # into [floor, 1] so the curve is continuous at the hard cutoff.
+    ratio = m / float(standard_minutes)
+    if strategy == "sqrt":
+        raw = math.sqrt(ratio)
+    else:
+        raw = ratio
+    # raw at min_minutes_hard is sqrt(min/std) or min/std; map [raw_at_hard, 1] → [floor, 1]
+    raw_at_hard = (
+        math.sqrt(min_minutes_hard / float(standard_minutes))
+        if strategy == "sqrt"
+        else (min_minutes_hard / float(standard_minutes))
+    )
+    if raw_at_hard >= 1.0:
+        return 1.0
+    # Linear map of raw from [raw_at_hard, 1] onto [floor, 1]
+    t = (raw - raw_at_hard) / (1.0 - raw_at_hard)
+    t = max(0.0, min(1.0, t))
+    return float(floor + t * (1.0 - floor))
+
+
+def get_reliability_weight(
+    minutes: int | float | None = None,
+    cohort: Cohort | None = None,
+    *,
+    mode: str = "bucket",
+    min_minutes_hard: int = 100,
+    standard_minutes: int = 800,
+    floor: float = DEFAULT_RELIABILITY_FLOOR,
+    strategy: str = "sqrt",
+) -> float:
+    """Dispatch to continuous or legacy bucket reliability weight.
+
+    * mode="bucket" (default): uses :data:`RELIABILITY_WEIGHT_BY_COHORT`
+      keyed by *cohort* (falls back to 1.0).  Bit-identical to pre-WS2.
+    * mode="continuous": uses :func:`continuous_reliability_weight` on
+      *minutes*.  If minutes is missing, falls back to the bucket value
+      for the provided cohort (or STANDARD).
+    """
+    if mode == "continuous":
+        if minutes is not None:
+            return continuous_reliability_weight(
+                minutes,
+                min_minutes_hard=min_minutes_hard,
+                standard_minutes=standard_minutes,
+                floor=floor,
+                strategy=strategy,
+            )
+        # minutes unavailable → degrade to bucket for the known cohort
+        if cohort is not None:
+            return float(RELIABILITY_WEIGHT_BY_COHORT.get(cohort, 1.0))
+        return 1.0
+
+    # Legacy bucket path
+    if cohort is not None:
+        return float(RELIABILITY_WEIGHT_BY_COHORT.get(cohort, 1.0))
+    if minutes is not None:
+        c = classify_cohort(
+            minutes,
+            min_minutes_hard=min_minutes_hard,
+            standard_minutes=standard_minutes,
+        )
+        return float(RELIABILITY_WEIGHT_BY_COHORT.get(c, 1.0))
+    return 1.0
 
 
 # ── Internal helpers ────────────────────────────────────────────────────────

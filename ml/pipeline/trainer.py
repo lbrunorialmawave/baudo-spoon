@@ -1310,6 +1310,7 @@ class Trainer:
                 min_minutes_hard=cfg.min_minutes_hard,
                 standard_minutes=cfg.min_minutes,
                 prior_strength=cfg.shrinkage_prior_strength,
+            limited_ceiling_percentile=cfg.limited_ceiling_percentile,
                 exclude_from_prior_mask=df_next.get(
                     "is_foreign_fallback", pd.Series(False, index=df_next.index)
                 ).fillna(False),
@@ -1412,6 +1413,7 @@ class Trainer:
             min_minutes_hard=cfg.min_minutes_hard,
             standard_minutes=cfg.min_minutes,
             prior_strength=cfg.shrinkage_prior_strength,
+            limited_ceiling_percentile=cfg.limited_ceiling_percentile,
             exclude_from_prior_mask=predictions_df.get(
                 "is_foreign_fallback", pd.Series(False, index=predictions_df.index)
             ).fillna(False),
