@@ -47,7 +47,9 @@ def _api_default(py_text: str, key: str) -> str | None:
 
 @pytest.fixture(scope="module")
 def sources() -> dict:
-    # MLConfig() is instantiated at module import and requires database_url
+    # MLConfig() no longer richiede database_url (reso opzionale per non
+    # bloccare import/uso di moduli R2-only come ml.run_rollout).  Impostare
+    # il valore di test è comunque utile per coprire il ramo "env-driven".
     os.environ.setdefault("ML_DATABASE_URL", "postgresql://x:x@localhost/x")
     from ml.config import MLConfig
 

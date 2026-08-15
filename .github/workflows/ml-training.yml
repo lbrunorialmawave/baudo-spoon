@@ -1104,6 +1104,17 @@ jobs:
     if: ${{ github.event.inputs.promote_flag != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # ML_DATABASE_URL: opzionale in MLConfig (reso tale per non bloccare i
+      # subcommand rollout che non accedono al DB), ma esportato qui come
+      # safety net: se un futuro subcommand inizia a leggere il DB, fallirà
+      # esplicitamente via MLConfig.get_database_url() invece di crashare
+      # su connessione None.  Coerente con ``promote-to-shadow`` e
+      # ``promote-to-active``.
+      ML_DATABASE_URL: ${{ secrets.ML_DATABASE_URL }}
+      ML_R2_ENDPOINT_URL: ${{ secrets.ML_R2_ENDPOINT_URL }}
+      ML_R2_ACCESS_KEY_ID: ${{ secrets.ML_R2_ACCESS_KEY_ID }}
+      ML_R2_SECRET_ACCESS_KEY: ${{ secrets.ML_R2_SECRET_ACCESS_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -1200,6 +1211,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
+      # ML_DATABASE_URL: opzionale in MLConfig (reso tale per non bloccare i
+      # subcommand rollout che non accedono al DB), ma esportato qui come
+      # safety net: se un futuro subcommand inizia a leggere il DB, fallirà
+      # esplicitamente via MLConfig.get_database_url() invece di crashare
+      # su connessione None.  Coerente con ``promote-to-shadow``.
+      ML_DATABASE_URL: ${{ secrets.ML_DATABASE_URL }}
       ML_R2_ENDPOINT_URL: ${{ secrets.ML_R2_ENDPOINT_URL }}
       ML_R2_ACCESS_KEY_ID: ${{ secrets.ML_R2_ACCESS_KEY_ID }}
       ML_R2_SECRET_ACCESS_KEY: ${{ secrets.ML_R2_SECRET_ACCESS_KEY }}

@@ -838,7 +838,7 @@ class Trainer:
         # ── 1. Connect + load data ─────────────────────────────────────────────
         log.info("Step 1/12 — Connecting to database and loading data")
         if engine is None:
-            engine = sa.create_engine(cfg.database_url)
+            engine = sa.create_engine(cfg.get_database_url())
         df_raw = load_raw_data(engine, cfg)
 
         # Compute data hash before any transformations for auditability

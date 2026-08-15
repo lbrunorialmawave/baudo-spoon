@@ -172,12 +172,14 @@ def test_exists_missing_when_no_r2_config_and_local_absent(tmp_path: Path) -> No
 
 
 # ── R2Config.from_env() ──────────────────────────────────────────────────────
-# Regressione: costruire R2Config a partire dal singleton MLConfig/Settings
-# obbliga a fornire anche campi non correlati come `database_url`
-# (obbligatorio, senza default) — from_env() legge solo i 4 campi R2_*
-# direttamente dall'ambiente, così i chiamanti che non hanno già in mano una
-# Settings interamente popolata (es. ml.mantra.runner.run_mantra, chiamato
-# con engine=None nei test) non acquisiscono quella dipendenza indiretta.
+# Regressione: ``R2Config.from_env()`` evita di passare per il singleton
+# ``MLConfig`` perché, anche se ``database_url`` è ora opzionale (vedi
+# :meth:`MLConfig.get_database_url`), il principio di minimo privilegio
+# vuole che i moduli R2-only non inneschino la validazione di campi che non
+# gli servono.  from_env() legge solo i 4 campi ``R2_*`` direttamente
+# dall'ambiente, così i chiamanti che non hanno già in mano una Settings
+# interamente popolata (es. ``ml.mantra.runner.run_mantra`` con
+# ``engine=None`` nei test) non acquisiscono dipendenze indirette.
 
 
 def test_r2_config_from_env_reads_prefixed_vars(monkeypatch: pytest.MonkeyPatch) -> None:

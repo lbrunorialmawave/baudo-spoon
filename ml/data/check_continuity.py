@@ -19,7 +19,7 @@ from .loader import load_raw_data
 def main() -> int:
     cfg = MLConfig()
     logging.basicConfig(level=cfg.log_level)
-    engine = sa.create_engine(cfg.database_url)
+    engine = sa.create_engine(cfg.get_database_url())
     load_raw_data(engine, cfg)
     return 0
 

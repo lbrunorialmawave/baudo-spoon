@@ -30,10 +30,39 @@ class MLConfig(BaseSettings):
     )
 
     # ── Database ──────────────────────────────────────────────────────────────
-    database_url: str = Field(
-        ...,
-        description="PostgreSQL connection URL (psycopg2 dialect)",
+    # Reso opzionale di proposito: solo i moduli che effettivamente leggono
+    # il DB (trainer, import_quotations, check_continuity, …) ne hanno bisogno.
+    # Tutti gli altri consumer (status/audit/snapshots del rollout, canary
+    # report, optimizer puro, …) non devono essere costretti a fornire la
+    # URL per poter essere importati o eseguiti.  Per recuperare il valore
+    # in modo type-safe usa :meth:`get_database_url`, che fallisce con un
+    # errore esplicito quando il campo non è stato configurato.
+    database_url: str | None = Field(
+        default=None,
+        description=(
+            "PostgreSQL connection URL (psycopg2 dialect). Opzionale: "
+            "impostare via env ML_DATABASE_URL solo quando il modulo "
+            "chiamante accede al DB. Per la lettura type-safe usare "
+            "MLConfig.get_database_url()."
+        ),
     )
+
+    def get_database_url(self) -> str:
+        """Restituisce la URL del DB o solleva :class:`RuntimeError` con
+        istruzioni operative.
+
+        Da usare in tutti i call-site che effettivamente aprono una
+        connessione (trainer, data loaders, ecc.).  Tutti gli altri
+        moduli devono semplicemente ignorare il campo ``database_url``.
+        """
+        if not self.database_url:
+            raise RuntimeError(
+                "MLConfig.database_url non configurato. "
+                "Imposta la variabile d'ambiente ML_DATABASE_URL "
+                "(es. postgresql+psycopg2://user:pass@host:5432/db) "
+                "prima di invocare moduli che accedono al DB."
+            )
+        return self.database_url
 
     # ── Reproducibility ───────────────────────────────────────────────────────
     random_seed: int = 42
@@ -158,5 +187,13 @@ class MLConfig(BaseSettings):
     r2_bucket_name: str = Field(default="baudo-spoon-ml-artifacts")
 
 
-# Singleton — imported by all submodules.
+# Singleton — imported by all submodules.  Sicuro perché ``database_url``
+# è opzionale: i moduli che non accedono al DB (es. ``ml.run_rollout``
+# subcommand ``status``/``audit``/``snapshots``) istanziano ``settings``
+# senza richiedere ``ML_DATABASE_URL``.  I moduli che effettivamente
+# aprono una connessione devono chiamare :meth:`MLConfig.get_database_url`
+# per ottenere un errore esplicito in caso di mancata configurazione.
 settings = MLConfig()
+
+
+__all__ = ["MLConfig", "ARTIFACTS_DIR", "BASE_DIR", "settings"]

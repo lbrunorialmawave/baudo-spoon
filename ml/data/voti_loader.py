@@ -527,7 +527,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     # Reuse the pipeline's env-driven config so we honour .env files.
     from ..config import settings as ml_settings
 
-    db_url = args.database_url or ml_settings.database_url
+    db_url = args.database_url or ml_settings.get_database_url()
     engine = sa.create_engine(db_url, future=True)
 
     build_fantavoto_csv(args.voti_dir, args.output, engine)
