@@ -334,8 +334,20 @@ def _apply_transition(
     rollout_pct: float,
     actor: str,
     note: str,
+    *,
+    promotion_report: Path | None = None,
+    config_snapshot: Path | None = None,
+    break_glass: bool = False,
+    break_glass_reason: str | None = None,
 ) -> dict[str, Any]:
-    """Applica una transizione di stage al flag e registra l'evento."""
+    """Applica una transizione di stage al flag e registra l'evento.
+
+    Quando ``new_stage == "active"`` e ``promotion_report`` è fornito,
+    la transizione passa attraverso
+    :meth:`RolloutController.promote_to_active` (WS6 — fail-closed
+    promotion gate).  In assenza di report, la transizione usa il
+    percorso storico :meth:`RolloutController.promote` (compat).
+    """
     from ml.rollout import FeatureFlag, FlagStage, RolloutController
 
     # Mappa il flag value al enum per usare la logica del controller.
@@ -354,11 +366,69 @@ def _apply_transition(
     from_stage = current.stage
     from_pct = current.rollout_pct
 
-    # Esegui la promozione (la logica monotonica è nel controller).
-    controller.promote(
-        new_stage=FlagStage(new_stage),
-        new_rollout_pct=rollout_pct,
-    )
+    # Esegui la promozione.
+    gate_outcome: dict[str, Any] | None = None
+    if new_stage == "active" and promotion_report is not None:
+        # Hard promotion gate (WS6).  Solleva PromotionGateDenied
+        # in caso di fail-closed.  Con break_glass=True il gate
+        # viene override-ato ma il motivo viene registrato.
+        from ml.rollout import (
+            PromotionGateDenied,
+            PromotionGateError,
+        )
+
+        try:
+            outcome = controller.promote_to_active(
+                report_path=promotion_report,
+                config_snapshot_path=config_snapshot,
+                actor=actor,
+                new_rollout_pct=rollout_pct,
+                break_glass=break_glass,
+                break_glass_reason=break_glass_reason,
+            )
+        except PromotionGateDenied as exc:
+            print(
+                json.dumps(
+                    {
+                        "error": "promotion_denied",
+                        "message": str(exc),
+                        "outcome": exc.outcome.to_dict(),
+                    }
+                ),
+                file=sys.stderr,
+            )
+            raise
+        except PromotionGateError as exc:
+            print(
+                json.dumps(
+                    {
+                        "error": "promotion_gate_error",
+                        "message": str(exc),
+                    }
+                ),
+                file=sys.stderr,
+            )
+            raise
+
+        # Log strutturato dell'esito del gate (per audit CI).
+        gate_outcome = {
+            "passed": outcome.passed,
+            "failures": list(outcome.failures),
+            "config_hash": outcome.config_hash,
+            "config_hash_status": outcome.config_hash_status,
+            "report_path": outcome.report_path,
+            "break_glass": break_glass,
+        }
+        log.info(
+            "Promotion gate evaluated for %s: passed=%s failures=%d",
+            flag_value, outcome.passed, len(outcome.failures),
+        )
+    else:
+        # Percorso storico: la logica monotonica è nel controller.
+        controller.promote(
+            new_stage=FlagStage(new_stage),
+            new_rollout_pct=rollout_pct,
+        )
 
     # Aggiorna lo stato persistito.
     new_state = FlagState(
@@ -377,6 +447,12 @@ def _apply_transition(
     last_event["note"] = note
     last_event["from_stage"] = from_stage
     last_event["from_pct"] = from_pct
+    if gate_outcome is not None:
+        last_event["gate_result"] = "PASS" if gate_outcome["passed"] else "BREAK_GLASS"
+        last_event["gate_failures"] = gate_outcome["failures"]
+        last_event["gate_config_hash"] = gate_outcome["config_hash"]
+        last_event["gate_config_hash_status"] = gate_outcome["config_hash_status"]
+        last_event["promotion_report"] = gate_outcome["report_path"]
     state.audit.append(last_event)
 
     return {
@@ -448,14 +524,39 @@ def cmd_transition(
         )
         return 2
 
-    event = _apply_transition(
-        state=state,
-        flag_value=flag_value,
-        new_stage=new_stage,
-        rollout_pct=rollout_pct,
-        actor=args.actor,
-        note=args.note or "",
-    )
+    # Break-glass richiede --break-glass-reason non vuoto.
+    break_glass = bool(getattr(args, "break_glass", False))
+    break_glass_reason = getattr(args, "break_glass_reason", None)
+    if break_glass and not (break_glass_reason and str(break_glass_reason).strip()):
+        print(
+            json.dumps(
+                {
+                    "error": (
+                        "--break-glass richiede --break-glass-reason non vuoto"
+                    ),
+                }
+            ),
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        event = _apply_transition(
+            state=state,
+            flag_value=flag_value,
+            new_stage=new_stage,
+            rollout_pct=rollout_pct,
+            actor=args.actor,
+            note=args.note or "",
+            promotion_report=getattr(args, "promotion_report", None),
+            config_snapshot=getattr(args, "config_snapshot", None),
+            break_glass=break_glass,
+            break_glass_reason=break_glass_reason,
+        )
+    except Exception:
+        # _apply_transition ha già scritto un JSON diagnostico su stderr.
+        # Restituiamo exit 3 per distinguerlo da errori CLI generici.
+        return 3
 
     # Persisti subito (così se l'utente vede errore R2, ha già lo stato locale).
     local_path = _local_state_path(args.artifacts_dir)
@@ -560,6 +661,45 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_activate.add_argument("--actor", default="cli", help="Chi esegue l'azione.")
     p_activate.add_argument("--note", default="", help="Nota opzionale.")
+    p_activate.add_argument(
+        "--promotion-report",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Path al report JSON dell'experiment harness.  Se fornito, "
+            "la transizione ad ACTIVE passa attraverso il promotion gate "
+            "fail-closed (plan §8).  Se il gate non passa, la transizione "
+            "viene negata (exit 3) salvo --break-glass."
+        ),
+    )
+    p_activate.add_argument(
+        "--config-snapshot",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Path al JSON di config snapshot.  Se fornito insieme a "
+            "--promotion-report, il config_hash del candidate viene "
+            "confrontato con quello registrato nel report (plan §18).  "
+            "Mismatch forza DENY (mai WARN)."
+        ),
+    )
+    p_activate.add_argument(
+        "--break-glass",
+        action="store_true",
+        help=(
+            "Override di emergenza del promotion gate.  Richiede "
+            "--break-glass-reason.  MAI usare nel workflow standard.  "
+            "Disponibile solo in ml-rollout.yml con input esplicito."
+        ),
+    )
+    p_activate.add_argument(
+        "--break-glass-reason",
+        default=None,
+        metavar="TEXT",
+        help="Motivazione dell'override (obbligatoria con --break-glass).",
+    )
 
     # disable
     p_disable = sub.add_parser("disable", help="Torna a DISABLED (rollback).")

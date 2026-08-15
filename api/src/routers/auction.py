@@ -371,13 +371,7 @@ async def init_auction(
     if payload.player_pool is not None:
         pool: list[Player] = [_player_from_schema(p) for p in payload.player_pool]
     else:
-        repo = DataRepository(
-            artifacts_dir=settings.artifacts_dir,
-            r2_endpoint_url=settings.r2_endpoint_url,
-            r2_access_key_id=settings.r2_access_key_id,
-            r2_secret_access_key=settings.r2_secret_access_key,
-            r2_bucket_name=settings.r2_bucket_name,
-        )
+        repo = DataRepository.from_settings(settings)
         rows, excluded = await repo.get_player_pool(
             db,
             season_start=payload.season_start,
@@ -453,13 +447,7 @@ async def simulate_auction_endpoint(
     if payload.player_pool is not None:
         pool: list[Player] = [_player_from_schema(p) for p in payload.player_pool]
     else:
-        repo = DataRepository(
-            artifacts_dir=settings.artifacts_dir,
-            r2_endpoint_url=settings.r2_endpoint_url,
-            r2_access_key_id=settings.r2_access_key_id,
-            r2_secret_access_key=settings.r2_secret_access_key,
-            r2_bucket_name=settings.r2_bucket_name,
-        )
+        repo = DataRepository.from_settings(settings)
         rows, excluded = await repo.get_player_pool(
             db,
             season_start=payload.season_start,

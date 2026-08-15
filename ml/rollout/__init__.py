@@ -1,16 +1,54 @@
 """Public surface for the production-rollout module (PR8)."""
-
+from .config_drift import (
+    DriftFinding,
+    DriftReport,
+    DriftSeverity,
+    DriftType,
+    EffectiveConfig,
+    RolloutSnapshot,
+    detect_config_drift,
+    effective_config_from_mapping,
+    merge_reports,
+    render_markdown,
+    rollout_snapshot_from_resolved,
+)
+from .config_hash import (
+    HASH_ALGORITHM,
+    HASH_PREFIX,
+    build_config_bundle,
+    canonical_json,
+    compute_config_hash,
+    short_hash,
+    verify_config_hash,
+)
+from .audit import (
+    AuditKind,
+    AuditLog,
+    AuditRecord,
+    read_audit_log,
+    record_denied,
+    record_transition,
+    records_from_controller_events,
+    write_audit_log,
+)
 from .observability import CohortObservability, compute_cohort_observability, diagnostic_score_layers
 from .env_flags import ResolvedFlags, apply_challenger_flags_to_config, apply_production_flags_to_config, resolve_env_flags
 from .controller import (
     DEFAULT_ROLLOUT_PCT,
     FeatureFlag,
     FlagStage,
+    GateFn,
     RolloutController,
     ShadowComparison,
     default_controllers,
     reliability_weight_mode_for_stage,
     shadow_compare,
+)
+from ml.scripts.check_promotion_gate import (  # noqa: E402
+    PromotionGateDenied,
+    PromotionGateError,
+    PromotionGateReport,
+    evaluate_report,
 )
 
 __all__ = [
@@ -29,4 +67,39 @@ __all__ = [
     "default_controllers",
     "DEFAULT_ROLLOUT_PCT",
     "reliability_weight_mode_for_stage",
+    # WS5 — configuration drift
+    "DriftType",
+    "DriftSeverity",
+    "DriftFinding",
+    "DriftReport",
+    "RolloutSnapshot",
+    "EffectiveConfig",
+    "detect_config_drift",
+    "rollout_snapshot_from_resolved",
+    "effective_config_from_mapping",
+    "merge_reports",
+    "render_markdown",
+    # WS16 — config hash
+    "HASH_ALGORITHM",
+    "HASH_PREFIX",
+    "canonical_json",
+    "compute_config_hash",
+    "verify_config_hash",
+    "short_hash",
+    "build_config_bundle",
+    # WS15 — audit trail
+    "AuditKind",
+    "AuditRecord",
+    "AuditLog",
+    "record_transition",
+    "record_denied",
+    "write_audit_log",
+    "read_audit_log",
+    "records_from_controller_events",
+    # WS6 — promotion gate
+    "PromotionGateError",
+    "PromotionGateDenied",
+    "PromotionGateReport",
+    "evaluate_report",
+    "GateFn",
 ]

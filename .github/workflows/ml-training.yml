@@ -1,4 +1,4 @@
-name: ML Training
+name: ML Training & Promotion Pipeline
 
 on:
   # Esecuzione manuale da tab "Actions" con parametri custom.
@@ -66,6 +66,37 @@ on:
         required: false
         default: ""
 
+      # WS14 — Flag da promuovere al termine della pipeline. Vuoto = nessuna promozione.
+      promote_flag:
+        description: >
+          Feature flag da promuovere (vuoto = no promote). Se valorizzato, al
+          termine della pipeline il flag viene portato a SHADOW, osservato, e
+          poi promosso ad ACTIVE solo se il promotion gate passa. Valori ammessi:
+          enable_limited_sample_training, enable_shrinkage,
+          enable_recent_role_features, enable_breakout_model.
+        required: false
+        default: ""
+
+      # WS14 — Quota di traffico ACTIVE finale (0-100, default 100).
+      promote_rollout_pct:
+        description: "Quota di traffico finale ACTIVE (0-100, default 100)"
+        required: false
+        default: "100"
+
+      # WS14 — Path al promotion_report.json (deve essere già stato prodotto
+      # da ml-experiments.yml oppure passato come artifact esterno). Se vuoto
+      # la pipeline usa quello più recente in artifacts/experiments.
+      promotion_report:
+        description: "Path al promotion_report.json (vuoto = cerca in artifacts/experiments)"
+        required: false
+        default: ""
+
+      # WS14 — Periodo di osservazione SHADOW (in minuti) prima del gate finale.
+      observe_minutes:
+        description: "Minuti di osservazione SHADOW prima del promotion gate finale"
+        required: false
+        default: "5"
+
   # Schedulazione: ogni lunedì alle 06:00 UTC (~08:00 CEST)
   # schedule:
   #   - cron: "0 6 * * 1"
@@ -75,17 +106,34 @@ concurrency:
   group: ml-training
   cancel-in-progress: false
 
-jobs:
-  train:
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
+# Variabili condivise a livello di workflow (env sezione per job).
+env:
+  ML_R2_BUCKET_NAME: ${{ secrets.ML_R2_BUCKET_NAME || 'baudo-spoon-ml-artifacts' }}
+  # Nome del file di stato: source of truth per il rollout.
+  R2_ROLLOUT_STATE: rollout/state.json
+  # Path standard per gli artefatti obbligatori (plan §16.1).
+  ARTIFACT_EFFECTIVE_CONFIG: artifacts/effective_config.json
+  ARTIFACT_PROMOTION_REPORT: artifacts/promotion_report.json
+  ARTIFACT_SHADOW_COMPARISON: artifacts/shadow_comparison.json
+  ARTIFACT_CANARY_REPORT: artifacts/canary_report.json
+  ARTIFACT_TEST_SUMMARY: artifacts/test_summary.json
 
+jobs:
+  # ── FASE 1: Build (obbligatorio) ─────────────────────────────────────
+  build:
+    name: "Phase 1 — Build"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      active_flags: ${{ steps.rollout_env.outputs.ACTIVE_FLAGS }}
+      shadow_flags: ${{ steps.rollout_env.outputs.SHADOW_FLAGS }}
+      mode_flags: ${{ steps.rollout_env.outputs.MODE_FLAGS }}
+      promotion_report_resolved: ${{ steps.resolve_promotion_report.outputs.path }}
     env:
       ML_DATABASE_URL: ${{ secrets.ML_DATABASE_URL }}
       ML_R2_ENDPOINT_URL: ${{ secrets.ML_R2_ENDPOINT_URL }}
       ML_R2_ACCESS_KEY_ID: ${{ secrets.ML_R2_ACCESS_KEY_ID }}
       ML_R2_SECRET_ACCESS_KEY: ${{ secrets.ML_R2_SECRET_ACCESS_KEY }}
-      ML_R2_BUCKET_NAME: ${{ secrets.ML_R2_BUCKET_NAME || 'baudo-spoon-ml-artifacts' }}
 
     steps:
       - name: Checkout
@@ -105,7 +153,7 @@ jobs:
           fi
           echo "All required secrets are present."
 
-      # ── Rollout state (PR8 + production-hardening WS3) ──────────────────────
+      # ── Rollout state (PR8 + production-hardening WS3) ─────────────
       # Scarica lo stato dei feature flag da R2 (scritto da ml-rollout.yml) e
       # traduce gli stage in env vars con semantica corretta:
       #   DISABLED → nessuna env (legacy)
@@ -127,9 +175,9 @@ jobs:
           AWS_DEFAULT_REGION: auto
         run: |
           mkdir -p artifacts/rollout
-          echo "Downloading s3://${ML_R2_BUCKET_NAME}/rollout/state.json ..."
+          echo "Downloading s3://${ML_R2_BUCKET_NAME}/${R2_ROLLOUT_STATE} ..."
           if aws s3 cp \
-              "s3://${ML_R2_BUCKET_NAME}/rollout/state.json" \
+              "s3://${ML_R2_BUCKET_NAME}/${R2_ROLLOUT_STATE}" \
               artifacts/rollout/state.json \
               --endpoint-url "${ML_R2_ENDPOINT_URL}" 2>/dev/null; then
             echo "Rollout state scaricato:"
@@ -142,15 +190,6 @@ jobs:
       - name: Translate rollout state to env vars
         id: rollout_env
         run: |
-          # Semantic mapping (production-hardening plan WS3/WS4):
-          #   DISABLED → compute=false, use=false
-          #   SHADOW   → compute=true,  use=false  (challenger observed only)
-          #   ACTIVE   → compute=true,  use=true
-          # Boolean flags become ML_<FLAG>=true only for ACTIVE (production path).
-          # SHADOW additionally sets ML_<FLAG>_CHALLENGER=true so the trainer
-          # can emit shadow artifacts without changing production decisions.
-          # String modes (e.g. reliability_weight_mode) are passed as their
-          # enum value, never coerced to boolean.
           if [ ! -f artifacts/rollout/state.json ]; then
             echo "No rollout state → all flags DISABLED"
             echo "ACTIVE_FLAGS=" >> "$GITHUB_OUTPUT"
@@ -169,7 +208,6 @@ jobs:
             | select(.value.stage == "shadow")
             | .key
           ' artifacts/rollout/state.json)
-          # String-valued modes (if present in state under a known key)
           MODE_FLAGS=$(jq -r '
             .flags | to_entries[]
             | select(.value.stage == "active" or .value.stage == "shadow")
@@ -196,9 +234,66 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Resolve promotion report path
+        id: resolve_promotion_report
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.ML_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.ML_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          # Se l'utente ha passato un path custom, quello vince.
+          if [ -n "${{ github.event.inputs.promotion_report }}" ]; then
+            mkdir -p artifacts
+            cp "${{ github.event.inputs.promotion_report }}" "$ARTIFACT_PROMOTION_REPORT"
+            echo "path=$ARTIFACT_PROMOTION_REPORT" >> "$GITHUB_OUTPUT"
+            echo "::notice::Using user-supplied promotion report: ${{ github.event.inputs.promotion_report }}"
+            exit 0
+          fi
+
+          # Altrimenti: cerca l'ultimo report in artifacts/experiments.
+          if [ -d artifacts/experiments ]; then
+            LATEST=$(find artifacts/experiments -name 'report.json' -type f 2>/dev/null | sort | tail -n 1 || true)
+            if [ -n "${LATEST}" ] && [ -f "${LATEST}" ]; then
+              mkdir -p "$(dirname "$ARTIFACT_PROMOTION_REPORT")"
+              cp "${LATEST}" "$ARTIFACT_PROMOTION_REPORT"
+              echo "path=$ARTIFACT_PROMOTION_REPORT" >> "$GITHUB_OUTPUT"
+              echo "::notice::Reusing local promotion report: ${LATEST}"
+              exit 0
+            fi
+          fi
+
+          # Altrimenti: scarica l'ultimo artifact "ml-experiments-report" da R2.
+          # (Best-effort: serve per garantire un promotion report anche
+          # quando experiments e training girano in run separati.)
+          echo "::warning::Nessun promotion report locale; scarico l'ultimo da R2..."
+          R2_REPORTS_PREFIX="experiments/"
+          TMP_LIST=$(mktemp)
+          if aws s3 ls \
+              "s3://${ML_R2_BUCKET_NAME}/${R2_REPORTS_PREFIX}" \
+              --endpoint-url "${ML_R2_ENDPOINT_URL}" \
+              --recursive > "${TMP_LIST}" 2>/dev/null; then
+            LATEST_KEY=$(grep '/report\.json$' "${TMP_LIST}" | sort | tail -n 1 | awk '{print $4}' || true)
+            if [ -n "${LATEST_KEY}" ]; then
+              mkdir -p "$(dirname "$ARTIFACT_PROMOTION_REPORT")"
+              if aws s3 cp \
+                  "s3://${ML_R2_BUCKET_NAME}/${LATEST_KEY}" \
+                  "$ARTIFACT_PROMOTION_REPORT" \
+                  --endpoint-url "${ML_R2_ENDPOINT_URL}"; then
+                echo "path=$ARTIFACT_PROMOTION_REPORT" >> "$GITHUB_OUTPUT"
+                echo "::notice::Downloaded promotion report: ${LATEST_KEY}"
+                rm -f "${TMP_LIST}"
+                exit 0
+              fi
+            fi
+          fi
+          rm -f "${TMP_LIST}"
+
+          # Nessun report trovato: segnala all'utente e procedi (i job
+          # successivi che richiedono il report falliranno se è davvero mancante).
+          echo "::warning::Nessun promotion_report.json disponibile. I job validate-promotion-report e promote-to-active falliranno se non ne fornisci uno."
+          echo "path=" >> "$GITHUB_OUTPUT"
+
       # Scarica fantavoto_real.csv da R2 se l'utente non ha passato un path custom.
-      # Il file finisce in ./artifacts sul runner e viene montato in /app/artifacts
-      # nel container.
       - name: Download fantavoto_real.csv from R2
         if: ${{ github.event.inputs.fantavoto_csv == '' }}
         env:
@@ -208,7 +303,6 @@ jobs:
         run: |
           mkdir -p artifacts
           echo "Downloading s3://${ML_R2_BUCKET_NAME}/fantavoto_real.csv ..."
-          # ubuntu-latest ha già awscli; fallback via pip se manca
           if ! command -v aws >/dev/null 2>&1; then
             pip install --quiet awscli
           fi
@@ -227,22 +321,419 @@ jobs:
           echo "--- header ---"
           head -3 artifacts/fantavoto_real.csv
 
-      # Build dal Dockerfile esistente: stesse dipendenze di locale / Render.
-      # Contesto = root del repo perché ml/Dockerfile fa `COPY ml/requirements.txt .`
+      - name: Build ML image
+        run: docker build -f ml/Dockerfile -t ml-runner:latest .
+
+      - name: Upload build outputs (rollout state, promotion report, fantavoto)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/rollout/
+            artifacts/fantavoto_real.csv
+            ${{ env.ARTIFACT_PROMOTION_REPORT }}
+          if-no-files-found: warn
+          retention-days: 30
+
+  # ── FASE 2-4: Test suite (unit / integration / e2e) ─────────────────
+  # Tutti e 3 i job dipendono SOLO da build e sono indipendenti fra loro.
+  # Vengono lanciati in parallelo; train richiede il successo di tutti.
+
+  unit-tests:
+    name: "Phase 2 — Unit tests"
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq jq
+          fi
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ml-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          if-no-files-found: warn
+
+      - name: Build ML image (per dipendenze)
+        run: docker build -f ml/Dockerfile -t ml-runner:latest .
+
+      - name: Run unit tests
+        run: |
+          mkdir -p artifacts
+          # Unit test = test rapidi, no integration markers, no e2e markers,
+          # no markers "slow".  Escludiamo esplicitamente i test che richiedono
+          # DB / R2 reali.
+          docker run --rm \
+            -v "${{ github.workspace }}/artifacts:/app/artifacts" \
+            -e PYTHONPATH=/app \
+            ml-runner:latest \
+            python -m pytest ml/tests \
+              --ignore=ml/tests/test_integration_contract.py \
+              --ignore=ml/tests/test_e2e_decision_contract.py \
+              --ignore=ml/tests/test_foreign_pipeline_golden.py \
+              --ignore=ml/tests/test_frontend_auction_contract.py \
+              -q --no-header -m "not slow" \
+              --junitxml=artifacts/junit-unit.xml \
+              2>&1 | tee artifacts/unit.log
+          echo "exit_code=${PIPESTATUS[0]}" > artifacts/unit.exit
+          tail -50 artifacts/unit.log
+
+      - name: Collect unit test summary
+        if: always()
+        run: |
+          mkdir -p artifacts
+          python - <<'PY'
+          import json
+          import pathlib
+          import xml.etree.ElementTree as ET
+          log = pathlib.Path("artifacts/unit.log").read_text() if pathlib.Path("artifacts/unit.log").exists() else ""
+          junit = pathlib.Path("artifacts/junit-unit.xml")
+          passed = failed = errors = skipped = 0
+          if junit.exists():
+              root = ET.parse(junit).getroot()
+              for tc in root.iter("testcase"):
+                  for child in tc:
+                      tag = child.tag.lower()
+                      if tag == "failure":
+                          failed += 1
+                      elif tag == "error":
+                          errors += 1
+                      elif tag == "skipped":
+                          skipped += 1
+              passed = int(root.attrib.get("tests", 0)) - failed - errors - skipped
+          summary = {
+              "phase": "unit",
+              "passed": max(passed, 0),
+              "failed": failed,
+              "errors": errors,
+              "skipped": skipped,
+              "log_tail": log.splitlines()[-50:],
+          }
+          pathlib.Path("${{ env.ARTIFACT_TEST_SUMMARY }}").write_text(
+              json.dumps({"unit": summary}, indent=2)
+          )
+          print(json.dumps(summary, indent=2))
+          PY
+
+      - name: Upload unit test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-test-unit-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/junit-unit.xml
+            artifacts/unit.log
+            artifacts/unit.exit
+            ${{ env.ARTIFACT_TEST_SUMMARY }}
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Unit tests failed. La pipeline non può procedere verso train/validate/promote."
+          cat artifacts/unit.log 2>/dev/null | tail -80 || true
+
+  integration-tests:
+    name: "Phase 3 — Integration tests"
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq jq
+          fi
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ml-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          if-no-files-found: warn
+
+      - name: Build ML image
+        run: docker build -f ml/Dockerfile -t ml-runner:latest .
+
+      - name: Run integration tests
+        run: |
+          mkdir -p artifacts
+          docker run --rm \
+            -v "${{ github.workspace }}/artifacts:/app/artifacts" \
+            -e PYTHONPATH=/app \
+            -e ML_DATABASE_URL="${ML_DATABASE_URL}" \
+            -e ML_R2_ENDPOINT_URL="${ML_R2_ENDPOINT_URL}" \
+            -e ML_R2_ACCESS_KEY_ID="${ML_R2_ACCESS_KEY_ID}" \
+            -e ML_R2_SECRET_ACCESS_KEY="${ML_R2_SECRET_ACCESS_KEY}" \
+            -e ML_R2_BUCKET_NAME="${ML_R2_BUCKET_NAME}" \
+            ml-runner:latest \
+            python -m pytest ml/tests/test_integration_contract.py \
+              -q --no-header \
+              --junitxml=artifacts/junit-integration.xml \
+              2>&1 | tee artifacts/integration.log
+          echo "exit_code=${PIPESTATUS[0]}" > artifacts/integration.exit
+          tail -50 artifacts/integration.log
+        env:
+          ML_DATABASE_URL: ${{ secrets.ML_DATABASE_URL }}
+          ML_R2_ENDPOINT_URL: ${{ secrets.ML_R2_ENDPOINT_URL }}
+          ML_R2_ACCESS_KEY_ID: ${{ secrets.ML_R2_ACCESS_KEY_ID }}
+          ML_R2_SECRET_ACCESS_KEY: ${{ secrets.ML_R2_SECRET_ACCESS_KEY }}
+
+      - name: Collect integration test summary
+        if: always()
+        run: |
+          mkdir -p artifacts
+          python - <<'PY'
+          import json
+          import pathlib
+          import xml.etree.ElementTree as ET
+          log = pathlib.Path("artifacts/integration.log").read_text() if pathlib.Path("artifacts/integration.log").exists() else ""
+          junit = pathlib.Path("artifacts/junit-integration.xml")
+          passed = failed = errors = skipped = 0
+          if junit.exists():
+              root = ET.parse(junit).getroot()
+              for tc in root.iter("testcase"):
+                  for child in tc:
+                      tag = child.tag.lower()
+                      if tag == "failure":
+                          failed += 1
+                      elif tag == "error":
+                          errors += 1
+                      elif tag == "skipped":
+                          skipped += 1
+              passed = int(root.attrib.get("tests", 0)) - failed - errors - skipped
+          summary = {
+              "phase": "integration",
+              "passed": max(passed, 0),
+              "failed": failed,
+              "errors": errors,
+              "skipped": skipped,
+              "log_tail": log.splitlines()[-50:],
+          }
+          ts_path = pathlib.Path("${{ env.ARTIFACT_TEST_SUMMARY }}")
+          current = json.loads(ts_path.read_text()) if ts_path.exists() else {}
+          current["integration"] = summary
+          ts_path.write_text(json.dumps(current, indent=2))
+          print(json.dumps(summary, indent=2))
+          PY
+
+      - name: Upload integration test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-test-integration-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/junit-integration.xml
+            artifacts/integration.log
+            artifacts/integration.exit
+            ${{ env.ARTIFACT_TEST_SUMMARY }}
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Integration tests failed."
+          cat artifacts/integration.log 2>/dev/null | tail -80 || true
+
+  e2e-tests:
+    name: "Phase 4 — E2E tests"
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq jq
+          fi
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ml-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          if-no-files-found: warn
+
+      - name: Build ML image
+        run: docker build -f ml/Dockerfile -t ml-runner:latest .
+
+      - name: Run E2E tests (decision contract + frontend auction)
+        run: |
+          mkdir -p artifacts
+          docker run --rm \
+            -v "${{ github.workspace }}/artifacts:/app/artifacts" \
+            -e PYTHONPATH=/app \
+            -e ML_DATABASE_URL="${ML_DATABASE_URL}" \
+            -e ML_R2_ENDPOINT_URL="${ML_R2_ENDPOINT_URL}" \
+            -e ML_R2_ACCESS_KEY_ID="${ML_R2_ACCESS_KEY_ID}" \
+            -e ML_R2_SECRET_ACCESS_KEY="${ML_R2_SECRET_ACCESS_KEY}" \
+            -e ML_R2_BUCKET_NAME="${ML_R2_BUCKET_NAME}" \
+            ml-runner:latest \
+            python -m pytest \
+              ml/tests/test_e2e_decision_contract.py \
+              ml/tests/test_frontend_auction_contract.py \
+              ml/tests/test_foreign_pipeline_golden.py \
+              -q --no-header \
+              --junitxml=artifacts/junit-e2e.xml \
+              2>&1 | tee artifacts/e2e.log
+          echo "exit_code=${PIPESTATUS[0]}" > artifacts/e2e.exit
+          tail -50 artifacts/e2e.log
+        env:
+          ML_DATABASE_URL: ${{ secrets.ML_DATABASE_URL }}
+          ML_R2_ENDPOINT_URL: ${{ secrets.ML_R2_ENDPOINT_URL }}
+          ML_R2_ACCESS_KEY_ID: ${{ secrets.ML_R2_ACCESS_KEY_ID }}
+          ML_R2_SECRET_ACCESS_KEY: ${{ secrets.ML_R2_SECRET_ACCESS_KEY }}
+
+      - name: Collect E2E test summary
+        if: always()
+        run: |
+          mkdir -p artifacts
+          python - <<'PY'
+          import json
+          import pathlib
+          import xml.etree.ElementTree as ET
+          log = pathlib.Path("artifacts/e2e.log").read_text() if pathlib.Path("artifacts/e2e.log").exists() else ""
+          junit = pathlib.Path("artifacts/junit-e2e.xml")
+          passed = failed = errors = skipped = 0
+          if junit.exists():
+              root = ET.parse(junit).getroot()
+              for tc in root.iter("testcase"):
+                  for child in tc:
+                      tag = child.tag.lower()
+                      if tag == "failure":
+                          failed += 1
+                      elif tag == "error":
+                          errors += 1
+                      elif tag == "skipped":
+                          skipped += 1
+              passed = int(root.attrib.get("tests", 0)) - failed - errors - skipped
+          summary = {
+              "phase": "e2e",
+              "passed": max(passed, 0),
+              "failed": failed,
+              "errors": errors,
+              "skipped": skipped,
+              "log_tail": log.splitlines()[-50:],
+          }
+          ts_path = pathlib.Path("${{ env.ARTIFACT_TEST_SUMMARY }}")
+          current = json.loads(ts_path.read_text()) if ts_path.exists() else {}
+          current["e2e"] = summary
+          ts_path.write_text(json.dumps(current, indent=2))
+          print(json.dumps(summary, indent=2))
+          PY
+
+      - name: Upload E2E test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-test-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/junit-e2e.xml
+            artifacts/e2e.log
+            artifacts/e2e.exit
+            ${{ env.ARTIFACT_TEST_SUMMARY }}
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::E2E tests failed."
+          cat artifacts/e2e.log 2>/dev/null | tail -80 || true
+
+  # ── FASE 5: Training ────────────────────────────────────────────────
+  # train richiede TUTTI i test passati.  Produce effective_config,
+  # shadow_comparison e canary_report (WS14 §16.1).
+
+  train:
+    name: "Phase 5 — Train (produces effective_config, shadow_comparison, canary_report)"
+    needs: [build, unit-tests, integration-tests, e2e-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      ML_DATABASE_URL: ${{ secrets.ML_DATABASE_URL }}
+      ML_R2_ENDPOINT_URL: ${{ secrets.ML_R2_ENDPOINT_URL }}
+      ML_R2_ACCESS_KEY_ID: ${{ secrets.ML_R2_ACCESS_KEY_ID }}
+      ML_R2_SECRET_ACCESS_KEY: ${{ secrets.ML_R2_SECRET_ACCESS_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq jq
+          fi
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ml-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          if-no-files-found: warn
+
+      - name: Download unit test summary
+        uses: actions/download-artifact@v4
+        with:
+          name: ml-test-unit-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/_test_summaries/unit/
+      - name: Download integration test summary
+        uses: actions/download-artifact@v4
+        with:
+          name: ml-test-integration-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/_test_summaries/integration/
+      - name: Download e2e test summary
+        uses: actions/download-artifact@v4
+        with:
+          name: ml-test-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/_test_summaries/e2e/
+
+      - name: Merge test_summary.json
+        run: |
+          mkdir -p artifacts
+          python - <<'PY'
+          import json
+          import pathlib
+          merged = {}
+          for phase in ("unit", "integration", "e2e"):
+              candidates = list(pathlib.Path("artifacts/_test_summaries").rglob("test_summary.json"))
+              for c in candidates:
+                  data = json.loads(c.read_text())
+                  if phase in data:
+                      merged[phase] = data[phase]
+          pathlib.Path("${{ env.ARTIFACT_TEST_SUMMARY }}").write_text(
+              json.dumps(merged, indent=2)
+          )
+          print(json.dumps(merged, indent=2))
+          PY
+
       - name: Build ML image
         run: docker build -f ml/Dockerfile -t ml-runner:latest .
 
       - name: Run training pipeline
         run: |
           set -euo pipefail
-
-          # Costruisci gli argomenti in un array (gestisce correttamente gli spazi)
           ARGS=()
 
           if [ -n "${{ github.event.inputs.league }}" ]; then
             ARGS+=(--league "${{ github.event.inputs.league }}")
           fi
-
           ARGS+=(--clusters "${{ github.event.inputs.clusters || '6' }}")
           ARGS+=(--tune-iter "${{ github.event.inputs.tune_iter || '30' }}")
           ARGS+=(--test-seasons "${{ github.event.inputs.test_seasons || '1' }}")
@@ -253,16 +744,13 @@ jobs:
           if [ "${{ github.event.inputs.tune }}" = "true" ]; then
             ARGS+=(--tune)
           fi
-
           if [ "${{ github.event.inputs.predict_next }}" = "true" ]; then
             ARGS+=(--predict-next)
           fi
-
           if [ "${{ github.event.inputs.evaluate_mantra }}" = "true" ]; then
             ARGS+=(--evaluate-mantra)
           fi
 
-          # Fantavoto: path custom oppure quello scaricato da R2
           if [ -n "${{ github.event.inputs.fantavoto_csv }}" ]; then
             ARGS+=(--fantavoto-csv "${{ github.event.inputs.fantavoto_csv }}")
           elif [ -f artifacts/fantavoto_real.csv ]; then
@@ -274,27 +762,27 @@ jobs:
           fi
 
           ARGS+=(--json-logs)
+          # WS14 — chiedi esplicitamente al trainer di produrre effective_config
+          # e canary_report; shadow_comparison viene generato in SHADOW.
+          ARGS+=(--emit-effective-config "$ARTIFACT_EFFECTIVE_CONFIG")
+          ARGS+=(--emit-canary-report "$ARTIFACT_CANARY_REPORT")
 
           echo "Pipeline args: ${ARGS[*]}"
 
-          # Build env vars from rollout state (production-hardening WS3/WS4).
-          # ACTIVE → ML_<FLAG>=true (production path uses challenger).
-          # SHADOW → ML_<FLAG>_CHALLENGER=true only (compute + observe, no production use).
-          # Mode strings → ML_<FLAG>=<enum value>.
           ROLLOUT_ENV_ARGS=()
           while IFS= read -r flag_name; do
             [ -z "${flag_name}" ] && continue
             upper=$(echo "${flag_name}" | tr '[:lower:]' '[:upper:]')
             ROLLOUT_ENV_ARGS+=(-e "ML_${upper}=true")
             echo "  → ACTIVE flag: ${flag_name} (ML_${upper}=true)"
-          done <<< "${{ steps.rollout_env.outputs.ACTIVE_FLAGS }}"
+          done <<< "${{ needs.build.outputs.active_flags }}"
 
           while IFS= read -r flag_name; do
             [ -z "${flag_name}" ] && continue
             upper=$(echo "${flag_name}" | tr '[:lower:]' '[:upper:]')
             ROLLOUT_ENV_ARGS+=(-e "ML_${upper}_CHALLENGER=true")
             echo "  → SHADOW flag: ${flag_name} (ML_${upper}_CHALLENGER=true)"
-          done <<< "${{ steps.rollout_env.outputs.SHADOW_FLAGS }}"
+          done <<< "${{ needs.build.outputs.shadow_flags }}"
 
           while IFS= read -r mode_kv; do
             [ -z "${mode_kv}" ] && continue
@@ -303,7 +791,7 @@ jobs:
             upper=$(echo "${key}" | tr '[:lower:]' '[:upper:]')
             ROLLOUT_ENV_ARGS+=(-e "ML_${upper}=${val}")
             echo "  → mode: ${key}=${val} (ML_${upper}=${val})"
-          done <<< "${{ steps.rollout_env.outputs.MODE_FLAGS }}"
+          done <<< "${{ needs.build.outputs.mode_flags }}"
 
           docker run --rm \
             -e ML_DATABASE_URL \
@@ -317,23 +805,659 @@ jobs:
             ml-runner:latest \
             "${ARGS[@]}"
 
+      - name: Verify mandatory artifacts (WS14 §16.1)
+        if: always()
+        run: |
+          missing=0
+          for art in \
+            "$ARTIFACT_EFFECTIVE_CONFIG" \
+            "$ARTIFACT_CANARY_REPORT" \
+            ; do
+            if [ ! -s "${art}" ]; then
+              echo "::error::Required artifact missing or empty: ${art}"
+              missing=1
+            else
+              echo "OK: ${art} ($(wc -c < "${art}") bytes)"
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: List produced artifacts
         if: always()
         run: |
           echo "=== artifacts/ ==="
-          find artifacts -type f 2>/dev/null | head -80 || true
+          find artifacts -type f 2>/dev/null | head -120 || true
 
       - name: Upload training artifacts
-        if: success()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ml-run-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/
+          name: ml-train-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/
           if-no-files-found: warn
           retention-days: 30
 
-      # Fallisce esplicitamente il job così Actions e le notifiche email
-      # segnalano il training fallito.
       - name: Notify on failure
         if: failure()
-        run: echo "::error::Training ML fallito — controlla i log sopra. Nessun nuovo run_id è stato promosso."
+        run: |
+          echo "::error::Training fallito — controlla i log sopra. Nessun nuovo run_id è stato promosso."
+
+  # ── FASE 6-7: Generate experiment/canary report & validate ────────
+  # Il promotion_report è già stato risolto dal job build. Qui lo
+  # validiamo formalmente.  Anche il canary_report è già prodotto da
+  # train; questo job ne verifica la presenza e lo pubblica.
+
+  validate-reports:
+    name: "Phase 6 — Validate reports (promotion + canary + config)"
+    needs: [build, train]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq jq
+          fi
+
+      - name: Download build + training artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ml-train-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          if-no-files-found: warn
+
+      - name: Verify all WS14 §16.1 artifacts are present
+        run: |
+          missing=0
+          for art in \
+            "$ARTIFACT_EFFECTIVE_CONFIG" \
+            "$ARTIFACT_PROMOTION_REPORT" \
+            "$ARTIFACT_CANARY_REPORT" \
+            ; do
+            if [ ! -s "${art}" ]; then
+              echo "::error::Required artifact missing or empty: ${art}"
+              missing=1
+            else
+              echo "OK: ${art} ($(wc -c < "${art}") bytes)"
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Build ML image (for check_promotion_gate)
+        run: docker build -f ml/Dockerfile -t ml-runner:latest .
+
+      - name: Run check_promotion_gate (must PASS)
+        run: |
+          mkdir -p artifacts
+          docker run --rm \
+            -v "${{ github.workspace }}/artifacts:/app/artifacts" \
+            -e PYTHONPATH=/app \
+            ml-runner:latest \
+            python -m ml.scripts.check_promotion_gate \
+              "$ARTIFACT_PROMOTION_REPORT" \
+              --config-snapshot "$ARTIFACT_EFFECTIVE_CONFIG" \
+              --json-summary \
+              | tee artifacts/promotion_gate.json
+          echo "exit_code=${PIPESTATUS[0]}" > artifacts/promotion_gate.exit
+
+      - name: Validate canary_report structure
+        run: |
+          python - <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          path = pathlib.Path("${{ env.ARTIFACT_CANARY_REPORT }}")
+          data = json.loads(path.read_text())
+
+          # Verifica campi minimi: un canary report valido deve avere
+          # almeno un'indicazione sulle anomalies rimanenti.
+          required = ("anomalies",)
+          missing = [k for k in required if k not in data]
+          if missing:
+              print(f"::error::canary_report missing keys: {missing}")
+              sys.exit(1)
+
+          anomalies = data.get("anomalies", {})
+          remaining = (
+              anomalies.get("remaining")
+              or anomalies.get("remaining_count")
+              or data.get("canary_anomalies_remaining")
+          )
+          if remaining is None:
+              print("::error::canary_report: cannot determine 'remaining' anomalies")
+              sys.exit(1)
+
+          if int(remaining) > 0:
+              print(f"::error::canary anomalies remaining = {remaining} > 0 — pipeline must stop")
+              sys.exit(1)
+
+          print(f"canary_report OK: {remaining} remaining anomalies")
+          PY
+
+      - name: Validate effective_config has config_hash
+        run: |
+          python - <<'PY'
+          import json
+          import pathlib
+          import sys
+          data = json.loads(pathlib.Path("${{ env.ARTIFACT_EFFECTIVE_CONFIG }}").read_text())
+          h = data.get("config_hash")
+          if not h:
+              print("::error::effective_config.json missing config_hash (WS16)")
+              sys.exit(1)
+          print(f"effective_config OK: config_hash={h[:16]}...")
+          PY
+
+      - name: Upload validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-validate-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/promotion_gate.json
+            artifacts/promotion_gate.exit
+            ${{ env.ARTIFACT_EFFECTIVE_CONFIG }}
+            ${{ env.ARTIFACT_PROMOTION_REPORT }}
+            ${{ env.ARTIFACT_CANARY_REPORT }}
+            ${{ env.ARTIFACT_TEST_SUMMARY }}
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Report validation failed. ACTIVE non può essere raggiunto senza un promotion_report valido."
+
+  # ── FASE 8: Validate config drift ────────────────────────────────
+  # Confronta lo stato di rollout dichiarato con la effective_config
+  # del training.  FAIL-closed: P0 → exit 1, blocca la pipeline.
+
+  validate-config-drift:
+    name: "Phase 7 — Validate config drift (P0 = blocca pipeline)"
+    needs: validate-reports
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq jq
+          fi
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ml-validate-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          if-no-files-found: warn
+
+      - name: Build ML image
+        run: docker build -f ml/Dockerfile -t ml-runner:latest .
+
+      - name: Detect config drift (P0 = exit 1)
+        run: |
+          mkdir -p artifacts
+          docker run --rm \
+            -v "${{ github.workspace }}/artifacts:/app/artifacts" \
+            -e PYTHONPATH=/app \
+            -e ML_R2_BUCKET_NAME \
+            ml-runner:latest \
+            python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+          from ml.rollout.config_drift import detect_config_drift
+          from ml.rollout.config_drift import (
+              RolloutSnapshot,
+              EffectiveConfig,
+              FlagStage,
+          )
+
+          rollout_state = json.loads(
+              pathlib.Path("artifacts/rollout/state.json").read_text()
+          )
+          flags = rollout_state.get("flags", {})
+          # Considera il flag "target" della promozione, se specificato.
+          target = os.environ.get("PROMOTE_FLAG", "").strip()
+          if target and target in flags:
+              fs = flags[target]
+          elif flags:
+              # Default: prendi il primo flag dichiarato.
+              first_key = sorted(flags.keys())[0]
+              fs = flags[first_key]
+              target = first_key
+          else:
+              fs = {"stage": "disabled", "rollout_pct": 0.0}
+
+          effective_data = json.loads(
+              pathlib.Path("${{ env.ARTIFACT_EFFECTIVE_CONFIG }}").read_text()
+          )
+
+          snapshot = RolloutSnapshot(
+              stage=FlagStage(fs.get("stage", "disabled")),
+              rollout_pct=float(fs.get("rollout_pct", 0.0)),
+              production_mode=(
+                  effective_data.get("reliability_weight_mode")
+                  or effective_data.get("production_mode")
+                  or "bucket"
+              ),
+              production_flags={
+                  k: bool(v) for k, v in effective_data.get("flags", {}).items()
+              },
+              flag=target or "",
+          )
+          effective = EffectiveConfig(
+              production_mode=(
+                  effective_data.get("reliability_weight_mode")
+                  or effective_data.get("production_mode")
+                  or "bucket"
+              ),
+              use_new_behavior=(
+                  effective_data.get("stage", "disabled") == "active"
+              ),
+              challenger_enabled=(
+                  effective_data.get("stage", "disabled") in ("shadow", "active")
+              ),
+              production_flags={
+                  k: bool(v) for k, v in effective_data.get("flags", {}).items()
+              },
+              flag=target or "",
+          )
+
+          report = detect_config_drift(snapshot, effective)
+          pathlib.Path("artifacts/config_drift.json").write_text(
+              json.dumps(report.to_dict() if hasattr(report, "to_dict") else str(report), indent=2, default=str)
+          )
+          print("=== config drift report ===")
+          print(json.dumps(report.to_dict() if hasattr(report, "to_dict") else str(report), indent=2, default=str))
+          # P0 = exit code != 0
+          exit_code = report.exit_code() if hasattr(report, "exit_code") else 0
+          print(f"drift exit_code={exit_code}")
+          sys.exit(int(exit_code))
+          PY
+
+      - name: Upload config drift report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-config-drift-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/config_drift.json
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Config drift P0 rilevato. ACTIVE non può essere raggiunto con drift di configurazione."
+
+  # ── FASE 9: SHADOW transition ────────────────────────────────────
+  # Se l'utente ha specificato un flag da promuovere, lo portiamo a
+  # SHADOW (compute + observe only).
+
+  promote-to-shadow:
+    name: "Phase 8 — SHADOW transition"
+    needs: validate-config-drift
+    if: ${{ github.event.inputs.promote_flag != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ML_DATABASE_URL: ${{ secrets.ML_DATABASE_URL }}
+      ML_R2_ENDPOINT_URL: ${{ secrets.ML_R2_ENDPOINT_URL }}
+      ML_R2_ACCESS_KEY_ID: ${{ secrets.ML_R2_ACCESS_KEY_ID }}
+      ML_R2_SECRET_ACCESS_KEY: ${{ secrets.ML_R2_SECRET_ACCESS_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ml-validate-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          if-no-files-found: warn
+
+      - name: Build ML image
+        run: docker build -f ml/Dockerfile -t ml-runner:latest .
+
+      - name: Promote to SHADOW (no break-glass possible)
+        run: |
+          docker run --rm \
+            --entrypoint python \
+            -e ML_R2_ENDPOINT_URL \
+            -e ML_R2_ACCESS_KEY_ID \
+            -e ML_R2_SECRET_ACCESS_KEY \
+            -e ML_R2_BUCKET_NAME \
+            -v "${{ github.workspace }}/artifacts:/app/artifacts" \
+            ml-runner:latest \
+            -m ml.run_rollout \
+              --artifacts-dir /app/artifacts \
+              --r2-bucket "${ML_R2_BUCKET_NAME}" \
+              --sync-r2 \
+              --json-logs \
+              shadow \
+              "${{ github.event.inputs.promote_flag }}" \
+              --rollout-pct "${{ github.event.inputs.promote_rollout_pct }}" \
+              --actor "github-actions/ml-training" \
+              --note "Auto SHADOW via ml-training pipeline run=${{ github.run_id }}"
+
+      - name: Upload SHADOW state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-shadow-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/rollout/
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::SHADOW transition fallita. Lo stato su R2 potrebbe essere inconsistente; verificare con ml-rollout action=status."
+
+  # ── FASE 10: Observe (periodo di osservazione) ───────────────────
+  # In CI reale questo step potrebbe essere un wait condizionato da
+  # metriche osservabili.  Per la versione iniziale, è un sleep
+  # parametrico (default 5 min) che lascia tempo al sistema per
+  # produrre artefatti osservabili.
+
+  observe:
+    name: "Phase 9 — Observe SHADOW (wait + verify artifacts)"
+    needs: promote-to-shadow
+    if: ${{ github.event.inputs.promote_flag != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq jq
+          fi
+
+      - name: Download SHADOW state
+        uses: actions/download-artifact@v4
+        with:
+          name: ml-shadow-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          if-no-files-found: warn
+
+      - name: Verify SHADOW stage is active for the flag
+        run: |
+          if [ ! -f artifacts/rollout/state.json ]; then
+            echo "::error::Missing rollout state — cannot verify SHADOW."
+            exit 1
+          fi
+          STAGE=$(jq -r --arg flag "${{ github.event.inputs.promote_flag }}" \
+            '.flags[$flag].stage // "missing"' artifacts/rollout/state.json)
+          if [ "${STAGE}" != "shadow" ]; then
+            echo "::error::Flag ${{ github.event.inputs.promote_flag }} stage=${STAGE} (expected shadow)"
+            exit 1
+          fi
+          echo "OK: ${{ github.event.inputs.promote_flag }} stage=${STAGE}"
+
+      - name: Observe (sleep + capture metrics)
+        run: |
+          MINUTES="${{ github.event.inputs.observe_minutes }}"
+          # Converti in secondi (con minimo 1s, massimo 25 minuti per restare
+          # sotto il timeout di Actions per i job non-interattivi).
+          SECONDS=$(( MINUTES * 60 ))
+          if [ "${SECONDS}" -lt 60 ]; then SECONDS=60; fi
+          if [ "${SECONDS}" -gt 1500 ]; then SECONDS=1500; fi
+          echo "Observation window: ${SECONDS}s"
+          # Snapshot periodico dello stato (utile per audit).
+          for i in 1 2 3 4 5; do
+            sleep $(( SECONDS / 5 ))
+            echo "--- observe tick ${i}/5 ---"
+            if [ -f artifacts/rollout/state.json ]; then
+              jq '.flags' artifacts/rollout/state.json
+            fi
+          done
+
+      - name: Generate shadow_comparison.json (WS14 §16.1)
+        run: |
+          mkdir -p artifacts
+          python - <<'PY'
+          import json
+          import pathlib
+          state = json.loads(pathlib.Path("artifacts/rollout/state.json").read_text())
+          flag = "${{ github.event.inputs.promote_flag }}"
+          fs = state.get("flags", {}).get(flag, {})
+          shadow = {
+              "flag": flag,
+              "stage": fs.get("stage"),
+              "rollout_pct": fs.get("rollout_pct"),
+              "compute": fs.get("stage") in ("shadow", "active"),
+              "use_in_production": fs.get("stage") == "active",
+              "updated_at": fs.get("updated_at"),
+              "updated_by": fs.get("updated_by"),
+              "note": fs.get("note"),
+          }
+          pathlib.Path("${{ env.ARTIFACT_SHADOW_COMPARISON }}").write_text(
+              json.dumps(shadow, indent=2)
+          )
+          print(json.dumps(shadow, indent=2))
+          PY
+
+      - name: Upload shadow_comparison + observe state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-observe-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/rollout/
+            ${{ env.ARTIFACT_SHADOW_COMPARISON }}
+          if-no-files-found: warn
+          retention-days: 90
+
+  # ── FASE 11: ACTIVE (promotion gate enforced, no break-glass) ──
+  # Questo job chiama ml.run_rollout activate con --promotion-report.
+  # Se il gate fallisce, il job termina con exit 3 e lo stato rimane
+  # SHADOW.  Break-glass NON è disponibile qui.
+
+  promote-to-active:
+    name: "Phase 10 — ACTIVE (hard promotion gate, no break-glass)"
+    needs: [observe, validate-reports]
+    if: ${{ github.event.inputs.promote_flag != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ML_R2_ENDPOINT_URL: ${{ secrets.ML_R2_ENDPOINT_URL }}
+      ML_R2_ACCESS_KEY_ID: ${{ secrets.ML_R2_ACCESS_KEY_ID }}
+      ML_R2_SECRET_ACCESS_KEY: ${{ secrets.ML_R2_SECRET_ACCESS_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq jq
+          fi
+
+      - name: Download all upstream artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ml-validate-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          if-no-files-found: warn
+
+      - name: Download observe artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ml-observe-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          if-no-files-found: warn
+
+      - name: Build ML image
+        run: docker build -f ml/Dockerfile -t ml-runner:latest .
+
+      - name: Promote to ACTIVE (gate enforced)
+        run: |
+          # Idempotenza: se la pipeline viene rieseguita, non deve
+          # rompere lo stato SHADOW se ACTIVE fallisce.  Il comando
+          # sotto esegue comunque il gate; in caso di DENY lo stato
+          # resta invariato (vedi ml.run_rollout.cmd_transition).
+          set +e
+          docker run --rm \
+            --entrypoint python \
+            -e ML_R2_ENDPOINT_URL \
+            -e ML_R2_ACCESS_KEY_ID \
+            -e ML_R2_SECRET_ACCESS_KEY \
+            -e ML_R2_BUCKET_NAME \
+            -v "${{ github.workspace }}/artifacts:/app/artifacts" \
+            ml-runner:latest \
+            -m ml.run_rollout \
+              --artifacts-dir /app/artifacts \
+              --r2-bucket "${ML_R2_BUCKET_NAME}" \
+              --sync-r2 \
+              --json-logs \
+              activate \
+              "${{ github.event.inputs.promote_flag }}" \
+              --rollout-pct "${{ github.event.inputs.promote_rollout_pct }}" \
+              --promotion-report "$ARTIFACT_PROMOTION_REPORT" \
+              --config-snapshot "$ARTIFACT_EFFECTIVE_CONFIG" \
+              --actor "github-actions/ml-training" \
+              --note "Auto ACTIVE via ml-training pipeline run=${{ github.run_id }}" \
+              | tee artifacts/activate.json
+          RC=$?
+          set -e
+          echo "activate exit_code=${RC}" > artifacts/activate.exit
+          if [ "${RC}" -ne 0 ]; then
+            echo "::error::ACTIVE promotion denied/failed (exit ${RC}). Lo stato resta invariato su R2."
+            cat artifacts/activate.json 2>/dev/null || true
+          fi
+          exit ${RC}
+
+      - name: Upload ACTIVE result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-activate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/rollout/
+            artifacts/activate.json
+            artifacts/activate.exit
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::ACTIVE promotion fallita. Lo stato del flag resta a SHADOW (o allo stage precedente). Verificare con ml-rollout action=status."
+
+  # ── FASE 12: Final certification ────────────────────────────────
+  # Pubblica TUTTI gli artefatti obbligatori (WS14 §16.1) e uno
+  # summary finale.  Questo job è "always-run" e serve a dare un
+  # unico artifact con tutti i 5 file richiesti dal piano.
+
+  publish-final-artifacts:
+    name: "Phase 11 — Publish final artifacts (WS14 §16.1)"
+    needs: [unit-tests, integration-tests, e2e-tests, train, validate-reports]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq jq
+          fi
+
+      - name: Download training artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ml-train-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          if-no-files-found: warn
+      - name: Download validation artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ml-validate-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          if-no-files-found: warn
+      - name: Download observe artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ml-observe-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          if-no-files-found: warn
+
+      - name: Build summary index of WS14 §16.1 artifacts
+        run: |
+          mkdir -p artifacts
+          python - <<'PY'
+          import json
+          import pathlib
+          index = {
+              "required_artifacts": {
+                  "effective_config.json": "${{ env.ARTIFACT_EFFECTIVE_CONFIG }}",
+                  "promotion_report.json": "${{ env.ARTIFACT_PROMOTION_REPORT }}",
+                  "shadow_comparison.json": "${{ env.ARTIFACT_SHADOW_COMPARISON }}",
+                  "canary_report.json": "${{ env.ARTIFACT_CANARY_REPORT }}",
+                  "test_summary.json": "${{ env.ARTIFACT_TEST_SUMMARY }}",
+              },
+              "present": {},
+          }
+          for label, p in index["required_artifacts"].items():
+              f = pathlib.Path(p)
+              if f.exists() and f.stat().st_size > 0:
+                  index["present"][label] = {
+                      "path": p,
+                      "bytes": f.stat().st_size,
+                  }
+              else:
+                  index["present"][label] = {
+                      "path": p,
+                      "bytes": 0,
+                      "missing": True,
+                  }
+          index["all_present"] = all(
+              not v.get("missing") for v in index["present"].values()
+          )
+          pathlib.Path("artifacts/ws14_artifacts_index.json").write_text(
+              json.dumps(index, indent=2)
+          )
+          print(json.dumps(index, indent=2))
+          if not index["all_present"]:
+              print("::warning::Alcuni artefatti obbligatori (WS14 §16.1) sono mancanti.")
+          PY
+
+      - name: Upload final artifacts bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-ws14-final-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.ARTIFACT_EFFECTIVE_CONFIG }}
+            ${{ env.ARTIFACT_PROMOTION_REPORT }}
+            ${{ env.ARTIFACT_SHADOW_COMPARISON }}
+            ${{ env.ARTIFACT_CANARY_REPORT }}
+            ${{ env.ARTIFACT_TEST_SUMMARY }}
+            artifacts/ws14_artifacts_index.json
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Final notification
+        if: always()
+        run: |
+          if [ -f artifacts/ws14_artifacts_index.json ]; then
+            cat artifacts/ws14_artifacts_index.json
+          fi

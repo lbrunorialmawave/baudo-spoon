@@ -493,13 +493,7 @@ async def run_multi_strategy(
     tramite :class:`DataRepository.get_player_pool`, facendo join con le
     predizioni ML di ``results_latest.json``.
     """
-    repo = DataRepository(
-        artifacts_dir=settings.artifacts_dir,
-        r2_endpoint_url=settings.r2_endpoint_url,
-        r2_access_key_id=settings.r2_access_key_id,
-        r2_secret_access_key=settings.r2_secret_access_key,
-        r2_bucket_name=settings.r2_bucket_name,
-    )
+    repo = DataRepository.from_settings(settings)
     config = _build_config(req)
 
     n_excluded_no_projection = 0
@@ -653,13 +647,7 @@ async def run_single_strategy(
         strategy = _strategy_by_name(strategy_name)
     else:
         raise HTTPException(status_code=422, detail="Provide strategy_name or custom_strategies")
-    repo = DataRepository(
-        artifacts_dir=settings.artifacts_dir,
-        r2_endpoint_url=settings.r2_endpoint_url,
-        r2_access_key_id=settings.r2_access_key_id,
-        r2_secret_access_key=settings.r2_secret_access_key,
-        r2_bucket_name=settings.r2_bucket_name,
-    )
+    repo = DataRepository.from_settings(settings)
     config = _build_config(req)
 
     n_excluded_no_projection = 0
@@ -761,13 +749,7 @@ async def run_sensitivity(
     else:
         raise HTTPException(status_code=422, detail="Provide strategy_name or custom_strategies")
 
-    repo = DataRepository(
-        artifacts_dir=settings.artifacts_dir,
-        r2_endpoint_url=settings.r2_endpoint_url,
-        r2_access_key_id=settings.r2_access_key_id,
-        r2_secret_access_key=settings.r2_secret_access_key,
-        r2_bucket_name=settings.r2_bucket_name,
-    )
+    repo = DataRepository.from_settings(settings)
     config = _build_config(req)
 
     n_excluded_no_projection = 0
@@ -842,13 +824,7 @@ async def run_pareto(
     else:
         raise HTTPException(status_code=422, detail="Provide strategy_name or custom_strategies")
 
-    repo = DataRepository(
-        artifacts_dir=settings.artifacts_dir,
-        r2_endpoint_url=settings.r2_endpoint_url,
-        r2_access_key_id=settings.r2_access_key_id,
-        r2_secret_access_key=settings.r2_secret_access_key,
-        r2_bucket_name=settings.r2_bucket_name,
-    )
+    repo = DataRepository.from_settings(settings)
     config = _build_config(req)
 
     n_excluded_no_projection = 0
@@ -956,11 +932,7 @@ async def create_optimize_job(req: OptimizationRequest, strategy_name: str = "Bi
     if req.pool_override is not None:
         pool = _pool_from_override(req)
     else:
-        repo = DataRepository(
-            artifacts_dir=settings.artifacts_dir, r2_endpoint_url=settings.r2_endpoint_url,
-            r2_access_key_id=settings.r2_access_key_id, r2_secret_access_key=settings.r2_secret_access_key,
-            r2_bucket_name=settings.r2_bucket_name,
-        )
+        repo = DataRepository.from_settings(settings)
         rows, excluded = await repo.get_player_pool(
             db,
             season_start=req.season_start,

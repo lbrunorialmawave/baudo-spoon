@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from ml.auction.decision_score import compute_decision_score
+from ml.rollout.config_hash import compute_config_hash
 from ml.sample_reliability import (
     classify_cohort,
     continuous_reliability_weight,
@@ -124,8 +125,14 @@ def write_shadow_artifact(
     challenger_mode: str = "continuous",
     canary_ids: set[str] | None = None,
     meta: Mapping[str, Any] | None = None,
+    config_snapshot: Mapping[str, Any] | None = None,
 ) -> Path:
-    """Write a machine-readable shadow comparison JSON artifact."""
+    """Write a machine-readable shadow comparison JSON artifact.
+
+    If ``config_snapshot`` is provided, its canonical SHA-256
+    (``config_hash``, plan §18) is included in the payload so the
+    artifact can be cross-checked against the deployment config.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     rows = build_shadow_rows(
@@ -142,5 +149,8 @@ def write_shadow_artifact(
         "meta": dict(meta or {}),
         "rows": [asdict(r) for r in rows],
     }
+    if config_snapshot is not None:
+        payload["config_snapshot"] = dict(config_snapshot)
+        payload["config_hash"] = compute_config_hash(config_snapshot)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return path

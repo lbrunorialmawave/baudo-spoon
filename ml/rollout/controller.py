@@ -24,6 +24,11 @@ Design principles (enforced by plan §48–55):
    that could be persisted accidentally.
 4. **Auditable.**  Every transition is appended to an in-memory event
    log that callers can persist alongside the artefact.
+5. **Gate-protected ACTIVE (WS6).**  Promotion to ``ACTIVE`` goes
+   through :meth:`RolloutController.promote_to_active`, which runs the
+   promotion gate and refuses the transition unless the gate passes.
+   Break-glass is available for emergencies but must NEVER be used in
+   the normal CI path (plan §8.5).
 """
 
 from __future__ import annotations
@@ -33,9 +38,44 @@ import random
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Final
+from pathlib import Path
+from typing import Any, Callable, Final, Mapping
+
+from .audit import (
+    AuditLog,
+    record_denied,
+    record_transition,
+)
+from .config_hash import compute_config_hash
 
 log = logging.getLogger(__name__)
+
+
+# ── Gate integration (WS6) ────────────────────────────────────────────────
+
+# Re-export the gate types so callers can do
+#   from ml.rollout import PromotionGateDenied
+# without having to know which sub-module owns them.
+from ml.scripts.check_promotion_gate import (  # noqa: E402
+    PromotionGateDenied,
+    PromotionGateError,
+    PromotionGateReport,
+    evaluate_report as _default_evaluate_report,
+)
+
+# A gate function is anything that takes a report path (and optionally
+# a config snapshot) and returns a structured PromotionGateReport.
+# We accept ``Callable[..., PromotionGateReport]`` so callers can use
+# ``functools.partial`` to pre-bind thresholds.
+GateFn = Callable[..., PromotionGateReport]
+
+
+# ── Default rollout percentage ────────────────────────────────────────────
+
+# Default traffic share used by ``promote_to_active`` when the caller
+# does not pass ``new_rollout_pct`` explicitly.  Kept here (above
+# ``RolloutController``) so the dataclass default can reference it.
+DEFAULT_ROLLOUT_PCT: Final[float] = 10.0
 
 
 # ── Feature flag definitions ─────────────────────────────────────────────────
@@ -145,12 +185,29 @@ class RolloutController:
     an in-memory event log of every transition so that operators can
     audit the rollout.  The event log is intentionally a plain list —
     persisting it is a caller concern.
+
+    Attributes added in WS6:
+
+    * ``audit_log`` — optional :class:`AuditLog` instance.  When
+      provided, every successful and denied transition is recorded
+      alongside the in-memory event list, with gate outcome and
+      config hash.  When ``None``, only the in-memory event list is
+      maintained (legacy behaviour).
+    * ``gate_fn`` — optional callable used by
+      :meth:`promote_to_active` to evaluate the promotion gate.  When
+      ``None``, the controller defaults to
+      :func:`ml.scripts.check_promotion_gate.evaluate_report`.  A
+      custom gate function MUST be a callable that accepts
+      ``report_path`` (and optionally ``config_snapshot``) and
+      returns a :class:`PromotionGateReport`.
     """
 
     flag: FeatureFlag
     stage: FlagStage = FlagStage.DISABLED
     rollout_pct: float = 0.0
     random_seed: int = 0
+    audit_log: AuditLog | None = None
+    gate_fn: GateFn | None = None
     _events: list[dict] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -159,6 +216,8 @@ class RolloutController:
         if self.stage == FlagStage.ACTIVE and self.rollout_pct <= 0.0:
             raise ValueError("ACTIVE stage requires rollout_pct > 0")
         self._rng = random.Random(self.random_seed)
+        if self.gate_fn is None:
+            self.gate_fn = _default_evaluate_report
 
     def is_active(self) -> bool:
         return self.stage == FlagStage.ACTIVE
@@ -180,12 +239,23 @@ class RolloutController:
             return False
         return self._rng.random() * 100.0 < self.rollout_pct
 
-    def promote(self, *, new_stage: FlagStage, new_rollout_pct: float | None = None) -> None:
+    def promote(
+        self,
+        *,
+        new_stage: FlagStage,
+        new_rollout_pct: float | None = None,
+        config_snapshot: Mapping[str, object] | None = None,
+    ) -> None:
         """Atomically transition to a new stage.
 
         Promotion must be monotonic (``DISABLED → SHADOW → ACTIVE``);
         a rewind is allowed (e.g. for an emergency rollback) but emits
         an ``"emergency_rollback"`` reason.
+
+        If ``config_snapshot`` is provided, its canonical SHA-256
+        (``config_hash``, plan §18) is recorded on the transition
+        event.  This makes the audit log self-describing: every stage
+        change carries the exact configuration that produced it.
 
         Operational gate (plan-limited-cohort-hardening WS4 — manual,
         not enforced in this method which stays I/O-free by design):
@@ -221,6 +291,8 @@ class RolloutController:
             "reason": reason,
             "at": datetime.now(tz=timezone.utc).isoformat(),
         }
+        if config_snapshot is not None:
+            event["config_hash"] = compute_config_hash(config_snapshot)
         self.stage = new_stage
         if new_rollout_pct is not None:
             if not 0.0 <= new_rollout_pct <= 100.0:
@@ -237,10 +309,228 @@ class RolloutController:
     def events(self) -> list[dict]:
         return list(self._events)
 
+    # ── Gate-protected ACTIVE transition (WS6) ────────────────────────────
+
+    def promote_to_active(
+        self,
+        *,
+        report_path: Path | str,
+        config_snapshot: Mapping[str, object] | None = None,
+        config_snapshot_path: Path | str | None = None,
+        actor: str = "unknown",
+        commit_sha: str | None = None,
+        new_rollout_pct: float = DEFAULT_ROLLOUT_PCT,
+        break_glass: bool = False,
+        break_glass_reason: str | None = None,
+    ) -> PromotionGateReport:
+        """Atomically transition to ``ACTIVE`` iff the promotion gate PASSES.
+
+        Plan §8 — "Hard promotion gate" — forbids promoting a
+        low-sample flag to ``ACTIVE`` without an experiment-harness
+        report whose cohort-aware metrics, canary status, and
+        config-hash cross-check all pass.
+
+        Behaviour:
+
+        1. The configured ``gate_fn`` (default:
+           :func:`ml.scripts.check_promotion_gate.evaluate_report`)
+           evaluates the report and returns a
+           :class:`PromotionGateReport`.
+        2. If ``passed`` is True → the transition happens through
+           :meth:`promote` and the in-memory event carries
+           ``gate_result="PASS"`` and the candidate ``config_hash``.
+           The audit log (when present) receives a
+           ``TRANSITION`` record with ``gate_result="PASS"``.
+        3. If ``passed`` is False and ``break_glass`` is False →
+           :class:`PromotionGateDenied` is raised.  No state change
+           occurs.  When an audit log is attached, a ``DENIED``
+           record is appended with the full list of failures.
+        4. If ``passed`` is False and ``break_glass`` is True →
+           ``break_glass_reason`` MUST be supplied (otherwise
+           :class:`ValueError` is raised).  The transition proceeds
+           with ``reason="break_glass"``; the audit log records the
+           break-glass event with the reason.
+
+        Break-glass is **NEVER** meant to be set in the normal CI
+        promotion workflow (plan §8.5).  It exists solely for an
+        operator to override the gate during an incident, with full
+        audit trail.
+
+        Returns the :class:`PromotionGateReport` (whether the gate
+        passed or was overridden).
+        """
+        if break_glass and not (break_glass_reason and break_glass_reason.strip()):
+            raise ValueError(
+                "break_glass=True requires a non-empty break_glass_reason"
+            )
+
+        report_path = Path(report_path)
+        snapshot_path: Path | None = None
+        snapshot_map: Mapping[str, object] | None = config_snapshot
+        if config_snapshot_path is not None:
+            snapshot_path = Path(config_snapshot_path)
+
+        # The default gate function accepts (report_path, *, config_snapshot=...).
+        # It also accepts the legacy positional variant; we pass the path
+        # as a keyword to be unambiguous.
+        if self.gate_fn is None:
+            # Should not happen because __post_init__ defaults it, but be
+            # explicit: fail-closed means no gate = no ACTIVE.
+            raise PromotionGateError(
+                "RolloutController.gate_fn is None — refuse to promote to ACTIVE"
+            )
+
+        try:
+            outcome = self.gate_fn(
+                report_path,
+                config_snapshot=snapshot_path,
+            )
+        except (OSError, ValueError) as exc:
+            # I/O or schema errors are treated as a hard gate failure.
+            denial = PromotionGateReport(
+                passed=False,
+                failures=(f"gate evaluation error: {exc!r}",),
+                report_path=str(report_path),
+                variant="?",
+            )
+            self._record_promotion_outcome(
+                outcome=denial,
+                actor=actor,
+                commit_sha=commit_sha,
+                config_snapshot=snapshot_map,
+                config_snapshot_path=snapshot_path,
+                target_stage=FlagStage.ACTIVE,
+            )
+            raise PromotionGateDenied(
+                f"promotion gate could not be evaluated: {exc!r}",
+                denial,
+            ) from exc
+
+        # Compute the candidate config_hash for audit, even if no snapshot
+        # was supplied to the gate (e.g. tests that don't pass one).
+        candidate_hash: str | None = None
+        if snapshot_map is not None:
+            candidate_hash = compute_config_hash(snapshot_map)
+        elif outcome.config_hash is not None:
+            candidate_hash = outcome.config_hash
+
+        if not outcome.passed:
+            if not break_glass:
+                self._record_promotion_outcome(
+                    outcome=outcome,
+                    actor=actor,
+                    commit_sha=commit_sha,
+                    config_snapshot=snapshot_map,
+                    config_snapshot_path=snapshot_path,
+                    target_stage=FlagStage.ACTIVE,
+                )
+                raise PromotionGateDenied(
+                    f"promotion gate FAILED for flag={self.flag.value!r}: "
+                    f"{len(outcome.failures)} check(s) failed",
+                    outcome,
+                )
+            # Break-glass path: record the override and proceed.
+            log.warning(
+                "RolloutController[%s] BREAK-GLASS override by actor=%s "
+                "reason=%r despite %d gate failure(s)",
+                self.flag.value, actor, break_glass_reason, len(outcome.failures),
+            )
+
+        # Transition (gate PASS or break-glass override).
+        from_stage = self.stage
+        from_pct = self.rollout_pct
+        self.promote(
+            new_stage=FlagStage.ACTIVE,
+            new_rollout_pct=new_rollout_pct,
+            config_snapshot=snapshot_map,
+        )
+        # Annotate the most recent event with gate outcome.
+        if self._events:
+            ev = self._events[-1]
+            ev["gate_result"] = "BREAK_GLASS" if break_glass else "PASS"
+            ev["gate_failures"] = list(outcome.failures)
+            if candidate_hash is not None:
+                ev["config_hash"] = candidate_hash
+            ev["report_path"] = str(report_path)
+            ev["actor"] = actor
+            ev["commit_sha"] = commit_sha
+            if break_glass:
+                ev["reason"] = "break_glass"
+                ev["break_glass_reason"] = break_glass_reason
+            ev["from_stage"] = from_stage.value
+            ev["from_pct"] = from_pct
+
+        if self.audit_log is not None:
+            extra: dict[str, Any] = {
+                "report_path": str(report_path),
+                "variant": outcome.variant,
+                "config_hash_status": outcome.config_hash_status,
+            }
+            if break_glass:
+                extra["break_glass_reason"] = break_glass_reason
+                extra["gate_failures_at_override"] = list(outcome.failures)
+            reason_text = (
+                "break_glass" if break_glass else "promotion_gate_passed"
+            )
+            self.audit_log.append(
+                record_transition(
+                    actor=actor,
+                    flag=self.flag.value,
+                    from_stage=from_stage.value,
+                    to_stage=FlagStage.ACTIVE.value,
+                    from_pct=from_pct,
+                    to_pct=self.rollout_pct,
+                    reason=reason_text,
+                    commit_sha=commit_sha,
+                    promotion_report=str(report_path),
+                    gate_result="BREAK_GLASS" if break_glass else "PASS",
+                    config_hash=candidate_hash,
+                    extra=extra,
+                )
+            )
+        return outcome
+
+    def _record_promotion_outcome(
+        self,
+        *,
+        outcome: PromotionGateReport,
+        actor: str,
+        commit_sha: str | None,
+        config_snapshot: Mapping[str, object] | None,
+        config_snapshot_path: Path | None,
+        target_stage: FlagStage,
+    ) -> None:
+        """Append a ``DENIED`` audit record (when an audit log is attached)."""
+        if self.audit_log is None:
+            return
+        candidate_hash: str | None = None
+        if config_snapshot is not None:
+            candidate_hash = compute_config_hash(config_snapshot)
+        elif outcome.config_hash is not None:
+            candidate_hash = outcome.config_hash
+        self.audit_log.append(
+            record_denied(
+                actor=actor,
+                attempted_from=self.stage.value,
+                attempted_to=target_stage.value,
+                reason="promotion_gate_failed",
+                failed_checks=outcome.failures,
+                commit_sha=commit_sha,
+                config_hash=candidate_hash,
+                flag=self.flag.value,
+                extra={
+                    "report_path": outcome.report_path,
+                    "variant": outcome.variant,
+                    "config_hash_status": outcome.config_hash_status,
+                    "config_snapshot_path": str(config_snapshot_path)
+                    if config_snapshot_path is not None
+                    else None,
+                },
+            )
+        )
+
 
 # ── Default controllers ─────────────────────────────────────────────────────
-
-DEFAULT_ROLLOUT_PCT: Final[float] = 10.0
 
 
 def default_controllers(*, random_seed: int = 0) -> dict[FeatureFlag, RolloutController]:

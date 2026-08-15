@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any, Final, Optional
+from typing import Any, Final, Literal, Optional
 
 import sqlalchemy as sa
 from sqlalchemy import and_, case, func, select
@@ -30,6 +30,11 @@ log = logging.getLogger(__name__)
 # Cache key used in Redis for the latest ML result artifact.
 _CACHE_KEY = "ml:results_latest"
 _NEXT_CACHE_KEY = "ml:next_season_predictions"
+
+# Canonical reliability-weight mode values (plan §6.5).  Used as a Literal
+# alias to keep the surface self-documenting; values must match the keys
+# accepted by ``get_reliability_weight`` (``bucket`` / ``continuous``).
+ReliabilityWeightMode = Literal["bucket", "continuous"]
 
 
 # Mapping from canonical ML role names (English) to optimizer role codes
@@ -109,6 +114,73 @@ class DataRepository:
                 bucket_name=r2_bucket_name or "baudo-spoon-ml-artifacts",
             ),
         )
+
+    # ── Factories ─────────────────────────────────────────────────────────────
+
+    @classmethod
+    def from_settings(
+        cls,
+        settings: Any,
+        *,
+        redis_client: Any | None = None,
+        artifact_store: ArtifactStore | None = None,
+    ) -> "DataRepository":
+        """Build a :class:`DataRepository` from the canonical ``settings`` object.
+
+        This is the **only** way production code should construct a repository
+        — the factory enforces propagation of ``reliability_weight_mode``,
+        ``artifacts_dir``, and R2 credentials from the single configuration
+        source of truth (plan §6, WS-04).  Direct ``DataRepository(...)`` calls
+        remain available for tests and fixtures, but are flagged by code review.
+
+        Args:
+            settings: An object exposing ``artifacts_dir``, ``reliability_weight_mode``,
+                ``cache_ttl_seconds``, ``r2_endpoint_url``, ``r2_access_key_id``,
+                ``r2_secret_access_key``, and ``r2_bucket_name``.  The API
+                ``APISettings`` satisfies this protocol.
+            redis_client: Optional async Redis client.  Defaults to ``None``
+                (caching disabled) — the FastAPI lifespan passes the
+                startup-built client explicitly.
+            artifact_store: Optional pre-built :class:`ArtifactStore` (the
+                ``app.state.artifact_store`` instance).  When ``None`` a
+                fresh store is constructed from the R2 settings.
+
+        Raises:
+            AttributeError: if ``settings`` is missing one of the required
+                attributes.  This is intentional — silent fallbacks to
+                ``continuous`` are exactly what WS-04 was created to prevent.
+        """
+        required = (
+            "artifacts_dir",
+            "reliability_weight_mode",
+            "cache_ttl_seconds",
+            "r2_endpoint_url",
+            "r2_access_key_id",
+            "r2_secret_access_key",
+            "r2_bucket_name",
+        )
+        missing = [name for name in required if not hasattr(settings, name)]
+        if missing:
+            raise AttributeError(
+                "DataRepository.from_settings: settings is missing required "
+                f"attributes: {missing!r}"
+            )
+        return cls(
+            artifacts_dir=settings.artifacts_dir,
+            redis_client=redis_client,
+            cache_ttl=settings.cache_ttl_seconds,
+            r2_endpoint_url=settings.r2_endpoint_url,
+            r2_access_key_id=settings.r2_access_key_id,
+            r2_secret_access_key=settings.r2_secret_access_key,
+            r2_bucket_name=settings.r2_bucket_name,
+            artifact_store=artifact_store,
+            reliability_weight_mode=settings.reliability_weight_mode,
+        )
+
+    @property
+    def reliability_weight_mode(self) -> str:
+        """The active reliability-weight mode (canonical, lower-case)."""
+        return self._reliability_weight_mode
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
