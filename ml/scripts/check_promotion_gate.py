@@ -5,6 +5,14 @@ Reads an experiment harness report.json and exits non-zero when
 cohort-aware quality gates fail. Intended to be run manually or in CI
 before RolloutController.promote(new_stage=ACTIVE).
 
+Operational note (WS14-bis): the first SHADOW→ACTIVE promotion of a
+flag requires a multi-variant harness report produced by
+ml-experiments.yml.  The single-variant convenience report emitted by
+run_pipeline is not sufficient — it only reflects flags already ACTIVE
+and will be rejected by the provenance guard when a non-control
+variant is requested.  Use ``--flag <FeatureFlag>`` to derive the
+expected harness variant automatically.
+
 Exit codes:
     0 — gates passed
     1 — gates failed
@@ -21,11 +29,16 @@ from pathlib import Path
 from typing import Any
 
 # Late import to keep the CLI fast on cold-start.
-from ml.rollout.config_hash import compute_config_hash, verify_config_hash
+from ml.rollout.config_hash import (
+    compute_config_hash,
+    unwrap_config_bundle,
+    verify_config_hash,
+)
 
 
 DEFAULT_VARIANT = "C_shrinkage"
 CONTROL_VARIANT = "A_control"
+DEFAULT_A_CONTROL_LABEL = "A_control"
 
 REQUIRED_REPORT_KEYS = (
     "mae",
@@ -125,6 +138,34 @@ def _overrepresentation(v: dict[str, Any]) -> tuple[float | None, float | None]:
         float(ratio) if isinstance(ratio, (int, float)) else None,
         float(delta) if isinstance(delta, (int, float)) else None,
     )
+
+
+def _check_report_provenance(
+    report: dict[str, Any],
+    *,
+    variant: str,
+    control: str,
+) -> list[str]:
+    """Reject a single-variant convenience report when the requested
+    variant is not the default control (A_control).
+
+    A genuine harness report always contains at least control + candidate
+    (>= 2 variants). A convenience report always contains exactly 1.
+    If we are verifying a non-control variant but the report has only one
+    entry, it is by construction a convenience report that cannot satisfy
+    the gate — better to fail with a clear provenance message than with
+    "variant X missing from report", which suggests a data problem rather
+    than an artefact-origin problem (WS14-bis / WS3).
+    """
+    variants = report.get("variants") or {}
+    if variant != DEFAULT_A_CONTROL_LABEL and len(variants) < 2:
+        return [
+            f"report contains only {list(variants)!r} — appears to be a "
+            "single-variant convenience report (run_pipeline), not a "
+            "multi-variant harness report. Run ml-experiments.yml with "
+            f"variant {variant!r} before promoting this flag."
+        ]
+    return []
 
 
 def _check_variant(
@@ -227,8 +268,9 @@ def _check_variant(
 def evaluate_report(
     report_path: Path,
     *,
-    variant: str = DEFAULT_VARIANT,
+    variant: str | None = None,
     control: str = CONTROL_VARIANT,
+    flag: str | None = None,
     max_phenom_leakage: float = 0.25,
     max_mae_delta_pct: float = 3.0,
     max_overrep_delta_pp: float = 5.0,
@@ -251,27 +293,70 @@ def evaluate_report(
     This function never raises :class:`PromotionGateDenied`; that is
     the controller's job.  It is the lowest-level structured
     evaluator and the right place to add new checks.
+
+    Variant resolution (WS14-bis):
+    * If ``variant`` is supplied explicitly it is used as-is.
+    * Else if ``flag`` is supplied, variant is derived via
+      :func:`ml.rollout.variant_mapping.variant_for_flag`.
+    * Else the module default (``C_shrinkage``) is used.
+    Explicit ``variant`` always wins over ``flag``.
     """
+    if variant is None:
+        if flag is not None:
+            from ml.rollout.variant_mapping import variant_for_flag
+
+            try:
+                variant = variant_for_flag(flag)
+            except KeyError as exc:
+                # Surface as a structured failure rather than an uncaught
+                # exception so CI gets a clean DENY with an actionable message.
+                return PromotionGateReport(
+                    passed=False,
+                    failures=(str(exc),),
+                    report_path=str(report_path),
+                    variant=DEFAULT_VARIANT,
+                    control=control,
+                )
+        else:
+            variant = DEFAULT_VARIANT
+
     report = _load_report(report_path)
-    failures = list(
-        _check_variant(
+    failures: list[str] = []
+    failures.extend(
+        _check_report_provenance(
             report,
             variant=variant,
             control=control,
-            max_phenom_leakage=max_phenom_leakage,
-            max_mae_delta_pct=max_mae_delta_pct,
-            max_overrep_delta_pp=max_overrep_delta_pp,
-            require_cohort_keys=require_cohort_keys,
-            require_canary_clean=require_canary_clean,
         )
     )
+    if not failures:
+        failures.extend(
+            _check_variant(
+                report,
+                variant=variant,
+                control=control,
+                max_phenom_leakage=max_phenom_leakage,
+                max_mae_delta_pct=max_mae_delta_pct,
+                max_overrep_delta_pp=max_overrep_delta_pp,
+                require_cohort_keys=require_cohort_keys,
+                require_canary_clean=require_canary_clean,
+            )
+        )
 
     config_hash: str | None = None
     config_hash_status: str | None = None
     snapshot_path_str: str | None = None
     if config_snapshot is not None:
         snapshot_path_str = str(config_snapshot)
-        snapshot = json.loads(config_snapshot.read_text(encoding="utf-8"))
+        # ``effective_config.json`` is persisted as a self-describing
+        # *bundle* (``{"config":..., "extra":..., "config_hash":...}``,
+        # see ``run_pipeline._build_effective_config_payload``), while
+        # the report's own ``config_hash`` was computed over the *bare*
+        # canonical config only. Unwrap before hashing so both sides
+        # are compared over the identical byte stream (plan §18).
+        snapshot = unwrap_config_bundle(
+            json.loads(config_snapshot.read_text(encoding="utf-8"))
+        )
         config_hash = compute_config_hash(snapshot)
         reported_hash = report.get("config_hash")
         if reported_hash is None:
@@ -301,6 +386,17 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("report", type=Path, help="Path to harness report.json")
     parser.add_argument("--variant", default=DEFAULT_VARIANT)
+    parser.add_argument(
+        "--flag",
+        default=None,
+        help=(
+            "Name of the FeatureFlag being promoted (e.g. "
+            "'enable_shrinkage'). When provided, derives --variant "
+            "automatically from ml.rollout.variant_mapping instead of "
+            "using the hardcoded default. Explicit --variant still wins "
+            "if the operator passed it on the command line."
+        ),
+    )
     parser.add_argument("--control", default=CONTROL_VARIANT)
     parser.add_argument("--max-phenom-leakage", type=float, default=0.25)
     parser.add_argument("--max-mae-delta-pct", type=float, default=3.0)
@@ -323,11 +419,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    # Only auto-derive variant from --flag when the operator did not
+    # pass an explicit --variant on the command line.  Passing
+    # variant=None lets evaluate_report resolve via flag.
+    explicit_variant = "--variant" in (argv or sys.argv[1:])
+    variant_kw: str | None = args.variant if explicit_variant else None
+    if not explicit_variant and args.flag is None:
+        variant_kw = DEFAULT_VARIANT
+
     try:
         outcome = evaluate_report(
             args.report,
-            variant=args.variant,
+            variant=variant_kw,
             control=args.control,
+            flag=args.flag if not explicit_variant else None,
             max_phenom_leakage=args.max_phenom_leakage,
             max_mae_delta_pct=args.max_mae_delta_pct,
             max_overrep_delta_pp=args.max_overrep_delta_pp,
@@ -341,7 +446,7 @@ def main(argv: list[str] | None = None) -> int:
 
     failures = list(outcome.failures)
     summary: dict[str, Any] = {
-        "variant": args.variant,
+        "variant": outcome.variant,
         "passed": outcome.passed,
         "failures": failures,
     }
@@ -360,14 +465,14 @@ def main(argv: list[str] | None = None) -> int:
         }
 
     if not outcome.passed:
-        print(f"PROMOTION GATE FAILED for variant={args.variant}:")
+        print(f"PROMOTION GATE FAILED for variant={outcome.variant}:")
         for f in failures:
             print(f"  - {f}")
         if args.json_summary:
             print(json.dumps(summary, indent=2))
         return 1
 
-    print(f"PROMOTION GATE PASSED for variant={args.variant}")
+    print(f"PROMOTION GATE PASSED for variant={outcome.variant}")
     if args.json_summary:
         print(json.dumps(summary, indent=2))
     return 0

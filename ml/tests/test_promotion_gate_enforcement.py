@@ -678,3 +678,294 @@ class TestIdempotencyGuard:
         assert last["reason"] == "break_glass"
         assert last["gate_result"] == "BREAK_GLASS"
 
+
+# ── Regression: bundle-shaped effective_config.json (Run "Idempotenza") ───
+#
+# ``run_pipeline._build_effective_config_payload`` persists
+# ``effective_config.json`` as a *bundle* — ``{"config":..., "extra":...,
+# "config_hash":...}`` — via ``build_config_bundle``. The report's own
+# ``config_hash`` (also produced by ``build_config_bundle``) is computed
+# over the *bare* inner config only. Before the fix, ``evaluate_report``
+# hashed the whole bundle it read from disk, so a config-hash mismatch
+# was reported on every single run, even with zero drift. This is
+# exactly the "Phase 10 — ACTIVE" CI failure from run
+# https://github.com/lbrunorialmawave/baudo-spoon/actions/runs/31898300912.
+
+
+class TestConfigSnapshotBundleUnwrapping:
+    """The real artefact shape (bundle) must hash-match the report."""
+
+    def test_evaluate_report_accepts_bundle_shaped_effective_config(
+        self, tmp_path: Path
+    ) -> None:
+        from ml.rollout.config_hash import build_config_bundle
+        from ml.scripts.check_promotion_gate import evaluate_report
+
+        bare_config = {
+            "min_minutes": 800,
+            "min_minutes_hard": 100,
+            "enable_limited_sample_training": False,
+            "enable_shrinkage": True,
+            "enable_recent_role_features": False,
+            "enable_breakout_model": False,
+            "weighting_strategy": "sqrt",
+            "shrinkage_prior_strength": 300,
+            "reliability_weight_mode": "bucket",
+        }
+
+        # report.json: config_hash computed over the BARE config, as
+        # ``_build_promotion_report_payload`` does in run_pipeline.py.
+        report_bundle = build_config_bundle(config=bare_config)
+        report = _make_report(tmp_path)
+        report_payload = json.loads(report.read_text(encoding="utf-8"))
+        report_payload["config_hash"] = report_bundle["config_hash"]
+        report.write_text(json.dumps(report_payload), encoding="utf-8")
+
+        # effective_config.json: the real on-disk shape is the FULL
+        # bundle, not the bare config — this is what run_pipeline.py
+        # actually writes and what ml-training.yml passes as
+        # --config-snapshot.
+        effective_config_path = tmp_path / "effective_config.json"
+        effective_config_path.write_text(
+            json.dumps(build_config_bundle(config=bare_config)),
+            encoding="utf-8",
+        )
+
+        outcome = evaluate_report(
+            report,
+            variant="C_shrinkage",
+            config_snapshot=effective_config_path,
+        )
+
+        assert outcome.config_hash_status == "match"
+        assert not any("config_hash mismatch" in f for f in outcome.failures)
+        assert outcome.passed is True
+
+    def test_controller_idempotency_guard_unwraps_bundle_path(
+        self, tmp_path: Path
+    ) -> None:
+        """The idempotency short-circuit must also survive the bundle shape."""
+        from ml.rollout.config_hash import build_config_bundle, compute_config_hash
+
+        bare_config = {
+            "min_minutes": 600,
+            "min_minutes_hard": 270,
+            "enable_shrinkage": True,
+        }
+        bundle_path = tmp_path / "effective_config.json"
+        bundle_path.write_text(
+            json.dumps(build_config_bundle(config=bare_config)),
+            encoding="utf-8",
+        )
+
+        report = _make_report(tmp_path)
+        c = _make_controller(stage=FlagStage.SHADOW, gate_fn=_passing_gate)
+
+        c.promote(
+            new_stage=FlagStage.ACTIVE,
+            new_rollout_pct=10.0,
+            config_snapshot=bare_config,
+        )
+        assert c.events[-1]["config_hash"] == compute_config_hash(bare_config)
+
+        first_event_count = len(c.events)
+        outcome = c.promote_to_active(
+            report_path=report,
+            config_snapshot_path=bundle_path,
+            actor="ci-bot",
+        )
+        assert outcome.extra.get("idempotent_replay") is True
+        assert len(c.events) == first_event_count
+
+
+
+# ── WS14-bis: variant mapping + provenance ─────────────────────────────────
+
+
+class TestVariantFlagPropagation:
+    def test_promote_to_active_propagates_flag_to_gate_fn(self, tmp_path: Path) -> None:
+        """controller.promote_to_active must pass flag=self.flag.value."""
+        received: dict[str, Any] = {}
+
+        def recording_gate(report_path, **kwargs):  # type: ignore[no-untyped-def]
+            received.update(kwargs)
+            received["report_path"] = report_path
+            return PromotionGateReport(
+                passed=True,
+                failures=(),
+                report_path=str(report_path),
+                variant=kwargs.get("flag", "?"),
+            )
+
+        report = _make_report(tmp_path)
+        c = RolloutController(
+            flag=FeatureFlag.LIMITED_SAMPLE_TRAINING,
+            stage=FlagStage.SHADOW,
+            gate_fn=recording_gate,
+        )
+        c.promote_to_active(report_path=report, actor="test")
+        assert received.get("flag") == "enable_limited_sample_training"
+
+
+class TestProvenanceAndFlagOverride:
+    def test_evaluate_report_flag_overrides_default_variant(self, tmp_path: Path) -> None:
+        from ml.scripts.check_promotion_gate import evaluate_report
+
+        # Harness-shaped report with B_weighting (not the default C_shrinkage).
+        report_path = tmp_path / "report.json"
+        payload = {
+            "variants": {
+                "A_control": {
+                    "status": "ok",
+                    "mae": 0.32,
+                    "rmse": 0.40,
+                    "mae_by_cohort": {"LIMITED": 0.35, "STANDARD": 0.30},
+                    "rmse_by_cohort": {"LIMITED": 0.42, "STANDARD": 0.38},
+                    "phenom_leakage_rate": 0.05,
+                    "canary_anomalies_remaining": 0,
+                },
+                "B_weighting": {
+                    "status": "ok",
+                    "mae": 0.30,
+                    "rmse": 0.38,
+                    "mae_by_cohort": {"LIMITED": 0.33, "STANDARD": 0.28},
+                    "rmse_by_cohort": {"LIMITED": 0.40, "STANDARD": 0.36},
+                    "phenom_leakage_rate": 0.04,
+                    "canary_anomalies_remaining": 0,
+                },
+            }
+        }
+        report_path.write_text(json.dumps(payload), encoding="utf-8")
+        outcome = evaluate_report(
+            report_path,
+            flag="enable_limited_sample_training",
+        )
+        assert outcome.variant == "B_weighting"
+        assert outcome.passed is True
+
+    def test_evaluate_report_explicit_variant_wins_over_flag(self, tmp_path: Path) -> None:
+        from ml.scripts.check_promotion_gate import evaluate_report
+
+        report_path = tmp_path / "report.json"
+        payload = {
+            "variants": {
+                "A_control": {
+                    "status": "ok",
+                    "mae": 0.32,
+                    "rmse": 0.40,
+                    "mae_by_cohort": {"LIMITED": 0.35, "STANDARD": 0.30},
+                    "rmse_by_cohort": {"LIMITED": 0.42, "STANDARD": 0.38},
+                    "phenom_leakage_rate": 0.05,
+                    "canary_anomalies_remaining": 0,
+                },
+                "C_shrinkage": {
+                    "status": "ok",
+                    "mae": 0.29,
+                    "rmse": 0.37,
+                    "mae_by_cohort": {"LIMITED": 0.32, "STANDARD": 0.27},
+                    "rmse_by_cohort": {"LIMITED": 0.39, "STANDARD": 0.35},
+                    "phenom_leakage_rate": 0.03,
+                    "canary_anomalies_remaining": 0,
+                },
+            }
+        }
+        report_path.write_text(json.dumps(payload), encoding="utf-8")
+        # Explicit variant=C_shrinkage must win even if flag maps to B.
+        outcome = evaluate_report(
+            report_path,
+            variant="C_shrinkage",
+            flag="enable_limited_sample_training",
+        )
+        assert outcome.variant == "C_shrinkage"
+        assert outcome.passed is True
+
+    def test_convenience_report_rejected_for_non_control_variant(
+        self, tmp_path: Path
+    ) -> None:
+        from ml.scripts.check_promotion_gate import evaluate_report
+
+        report_path = tmp_path / "convenience.json"
+        payload = {
+            "variants": {
+                "A_control": {
+                    "status": "ok",
+                    "mae": 0.32,
+                    "rmse": 0.40,
+                    "mae_by_cohort": {"LIMITED": 0.35, "STANDARD": 0.30},
+                    "rmse_by_cohort": {"LIMITED": 0.42, "STANDARD": 0.38},
+                    "phenom_leakage_rate": 0.05,
+                    "canary_anomalies_remaining": 0,
+                }
+            }
+        }
+        report_path.write_text(json.dumps(payload), encoding="utf-8")
+        outcome = evaluate_report(report_path, variant="C_shrinkage")
+        assert outcome.passed is False
+        assert any("convenience report" in f for f in outcome.failures)
+
+    def test_harness_report_with_two_variants_passes_provenance_check(
+        self, tmp_path: Path
+    ) -> None:
+        from ml.scripts.check_promotion_gate import evaluate_report
+
+        report_path = tmp_path / "harness.json"
+        payload = {
+            "variants": {
+                "A_control": {
+                    "status": "ok",
+                    "mae": 0.32,
+                    "rmse": 0.40,
+                    "mae_by_cohort": {"LIMITED": 0.35, "STANDARD": 0.30},
+                    "rmse_by_cohort": {"LIMITED": 0.42, "STANDARD": 0.38},
+                    "phenom_leakage_rate": 0.05,
+                    "canary_anomalies_remaining": 0,
+                },
+                "C_shrinkage": {
+                    "status": "ok",
+                    "mae": 0.29,
+                    "rmse": 0.37,
+                    "mae_by_cohort": {"LIMITED": 0.32, "STANDARD": 0.27},
+                    "rmse_by_cohort": {"LIMITED": 0.39, "STANDARD": 0.35},
+                    "phenom_leakage_rate": 0.03,
+                    "canary_anomalies_remaining": 0,
+                },
+            }
+        }
+        report_path.write_text(json.dumps(payload), encoding="utf-8")
+        outcome = evaluate_report(report_path, variant="C_shrinkage")
+        assert outcome.passed is True
+        assert not any("convenience" in f for f in outcome.failures)
+
+    def test_e2e_shadow_flag_cannot_promote_without_harness_report(
+        self, tmp_path: Path
+    ) -> None:
+        """Regression: convenience report + flag still in SHADOW must DENY."""
+        from ml.scripts.check_promotion_gate import evaluate_report
+
+        # Simulate the convenience report that run_pipeline would emit
+        # when enable_shrinkage is still False (SHADOW).
+        report_path = tmp_path / "promotion_report.json"
+        payload = {
+            "variants": {
+                "A_control": {
+                    "status": "ok",
+                    "mae": 0.32,
+                    "rmse": 0.40,
+                    "mae_by_cohort": {"LIMITED": 0.35, "STANDARD": 0.30},
+                    "rmse_by_cohort": {"LIMITED": 0.42, "STANDARD": 0.38},
+                    "phenom_leakage_rate": 0.05,
+                    "canary_anomalies_remaining": 0,
+                }
+            }
+        }
+        report_path.write_text(json.dumps(payload), encoding="utf-8")
+        outcome = evaluate_report(
+            report_path,
+            flag="enable_shrinkage",
+        )
+        assert outcome.passed is False
+        assert outcome.variant == "C_shrinkage"
+        assert any(
+            "convenience report" in f or "harness report" in f
+            for f in outcome.failures
+        )

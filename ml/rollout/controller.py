@@ -46,7 +46,7 @@ from .audit import (
     record_denied,
     record_transition,
 )
-from .config_hash import compute_config_hash
+from .config_hash import compute_config_hash, unwrap_config_bundle
 
 log = logging.getLogger(__name__)
 
@@ -356,6 +356,15 @@ class RolloutController:
         operator to override the gate during an incident, with full
         audit trail.
 
+        Operational note (WS14-bis): the first SHADOW→ACTIVE promotion
+        of a flag ALWAYS requires a prior successful run of
+        ml-experiments.yml (multi-variant harness) for that flag.  A
+        routine training run (ml-training.yml without promote_flag)
+        does NOT produce a sufficient artefact: it only emits a
+        single-variant convenience report that reflects flags already
+        ACTIVE.  See plan-promotion-report-variant-fidelity.md for the
+        full root-cause analysis.
+
         Returns the :class:`PromotionGateReport` (whether the gate
         passed or was overridden).
         """
@@ -366,7 +375,16 @@ class RolloutController:
 
         report_path = Path(report_path)
         snapshot_path: Path | None = None
-        snapshot_map: Mapping[str, object] | None = config_snapshot
+        # Callers may hand us either a bare canonical-config mapping or
+        # the self-describing bundle written to ``effective_config.json``
+        # (``{"config":..., "extra":..., "config_hash":...}``). Unwrap
+        # eagerly so every downstream hash (idempotency guard, gate call,
+        # audit event) is computed over the same canonical shape.
+        snapshot_map: Mapping[str, object] | None = (
+            unwrap_config_bundle(config_snapshot)
+            if config_snapshot is not None
+            else None
+        )
         if config_snapshot_path is not None:
             snapshot_path = Path(config_snapshot_path)
 
@@ -396,7 +414,9 @@ class RolloutController:
                 try:
                     import json as _json
                     candidate_hash = compute_config_hash(
-                        _json.loads(snapshot_path.read_text(encoding="utf-8"))
+                        unwrap_config_bundle(
+                            _json.loads(snapshot_path.read_text(encoding="utf-8"))
+                        )
                     )
                 except (OSError, ValueError):
                     candidate_hash = None
@@ -435,9 +455,12 @@ class RolloutController:
             outcome = self.gate_fn(
                 report_path,
                 config_snapshot=snapshot_path,
+                flag=self.flag.value,
             )
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, TypeError, KeyError) as exc:
             # I/O or schema errors are treated as a hard gate failure.
+            # TypeError covers older gate_fn mocks that do not accept
+            # the new ``flag`` kwarg (they should use **kwargs).
             denial = PromotionGateReport(
                 passed=False,
                 failures=(f"gate evaluation error: {exc!r}",),

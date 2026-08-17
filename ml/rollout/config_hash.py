@@ -154,6 +154,45 @@ def build_config_bundle(
     return bundle
 
 
+def unwrap_config_bundle(payload: Mapping[str, Any] | Any) -> Mapping[str, Any] | Any:
+    """Return the canonical config mapping from a snapshot payload.
+
+    Every artefact that carries a config snapshot for hashing purposes
+    can arrive in one of two shapes:
+
+    * **bare** — a plain mapping keyed by
+      :data:`ml.rollout.config_snapshot.ML_CONFIG_SNAPSHOT_KEYS`
+      (what ``compute_config_hash`` was actually run against when the
+      report's own ``config_hash`` was produced), or
+    * **bundle** — the self-describing wrapper produced by
+      :func:`build_config_bundle`: ``{"config": ..., "extra": ...,
+      "config_hash": ...}`` (what ``effective_config.json`` is
+      persisted as on disk, see ``run_pipeline._build_effective_config_payload``).
+
+    Hashing a *bundle* wholesale (extra fields and the ``config_hash``
+    field itself included) can never reproduce the hash that was
+    computed over the *bare* config — the byte streams are structurally
+    different, so the comparison is guaranteed to mismatch regardless
+    of whether the underlying configuration actually drifted. Every
+    caller that re-hashes a snapshot loaded from disk (or received as
+    a dict that might be either shape) MUST unwrap it through this
+    helper first, so ``config_hash`` verification (plan §18) always
+    compares like-for-like.
+
+    A bare mapping is returned unchanged; only a mapping carrying both
+    ``"config"`` and ``"config_hash"`` top-level keys (the bundle
+    fingerprint) is unwrapped.
+    """
+    if (
+        isinstance(payload, Mapping)
+        and "config" in payload
+        and "config_hash" in payload
+        and isinstance(payload["config"], Mapping)
+    ):
+        return payload["config"]
+    return payload
+
+
 __all__ = [
     "HASH_ALGORITHM",
     "HASH_PREFIX",
@@ -162,4 +201,5 @@ __all__ = [
     "verify_config_hash",
     "short_hash",
     "build_config_bundle",
+    "unwrap_config_bundle",
 ]

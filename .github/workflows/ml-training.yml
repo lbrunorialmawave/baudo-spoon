@@ -762,7 +762,31 @@ jobs:
           # canary_report e promotion_report; shadow_comparison viene generato in SHADOW.
           ARGS+=(--emit-effective-config "$ARTIFACT_EFFECTIVE_CONFIG")
           ARGS+=(--emit-canary-report "$ARTIFACT_CANARY_REPORT")
-          ARGS+=(--emit-promotion-report "$ARTIFACT_PROMOTION_REPORT")
+
+          # WS14-bis: never overwrite a resolved multi-variant harness report
+          # when we are promoting a flag.  The convenience report from
+          # run_pipeline only reflects already-ACTIVE flags and would
+          # destroy the candidate variant needed by the promotion gate.
+          PROMOTING="false"
+          if [ -n "${{ github.event.inputs.promote_flag }}" ]; then
+            PROMOTING="true"
+          fi
+
+          HARNESS_REPORT_RESOLVED="false"
+          if [ -n "${{ needs.build.outputs.promotion_report_resolved }}" ] \
+             && [ -s "$ARTIFACT_PROMOTION_REPORT" ] \
+             && jq -e '.source == "run_experiments" or (.variants | length) > 1' \
+                "$ARTIFACT_PROMOTION_REPORT" >/dev/null 2>&1; then
+            HARNESS_REPORT_RESOLVED="true"
+          fi
+
+          if [ "$PROMOTING" = "true" ] && [ "$HARNESS_REPORT_RESOLVED" = "true" ]; then
+            echo "::notice::Promotion in progress with harness report already resolved — " \
+                 "run_pipeline will NOT overwrite promotion_report.json."
+            # --emit-promotion-report intentionally omitted
+          else
+            ARGS+=(--emit-promotion-report "$ARTIFACT_PROMOTION_REPORT")
+          fi
 
           echo "Pipeline args: ${ARGS[*]}"
 
@@ -819,6 +843,27 @@ jobs:
             fi
           done
           if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+          # WS14-bis: fail early with an actionable message when a promotion
+          # was requested but no multi-variant harness report is available.
+          PROMOTING="false"
+          if [ -n "${{ github.event.inputs.promote_flag }}" ]; then
+            PROMOTING="true"
+          fi
+          HARNESS_REPORT_RESOLVED="false"
+          if [ -n "${{ needs.build.outputs.promotion_report_resolved }}" ] \
+             && [ -s "$ARTIFACT_PROMOTION_REPORT" ] \
+             && jq -e '.source == "run_experiments" or (.variants | length) > 1' \
+                "$ARTIFACT_PROMOTION_REPORT" >/dev/null 2>&1; then
+            HARNESS_REPORT_RESOLVED="true"
+          fi
+          if [ "$PROMOTING" = "true" ] && [ "$HARNESS_REPORT_RESOLVED" = "false" ]; then
+            echo "::error::promote_flag='${{ github.event.inputs.promote_flag }}' requested but "\
+                 "no multi-variant harness report was found (artifacts/experiments/ "\
+                 "or R2 experiments/). Run ml-experiments.yml first with the matching "\
+                 "variant, then re-run ml-training.yml with the same promote_flag."
             exit 1
           fi
 
@@ -894,6 +939,10 @@ jobs:
       - name: Run check_promotion_gate (must PASS)
         run: |
           mkdir -p artifacts
+          FLAG_ARG=()
+          if [ -n "${{ github.event.inputs.promote_flag }}" ]; then
+            FLAG_ARG=(--flag "${{ github.event.inputs.promote_flag }}")
+          fi
           docker run --rm \
             -v "${{ github.workspace }}/artifacts:/app/artifacts" \
             -e PYTHONPATH=/app \
@@ -901,6 +950,7 @@ jobs:
             python -m ml.scripts.check_promotion_gate \
               "$ARTIFACT_PROMOTION_REPORT" \
               --config-snapshot "$ARTIFACT_EFFECTIVE_CONFIG" \
+              "${FLAG_ARG[@]}" \
               --json-summary \
               | tee artifacts/promotion_gate.json
           echo "exit_code=${PIPESTATUS[0]}" > artifacts/promotion_gate.exit
