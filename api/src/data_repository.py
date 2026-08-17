@@ -18,7 +18,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import MatchMethodEnum, PlayerIdMap, PlayerMantraRole, PlayerQuotation
 from ml.domain.predictions import resolve_season_value_fields
+from ml.domain.projection_prior import (
+    MAX_PLAUSIBLE_SCORE,
+    MIN_PLAUSIBLE_SCORE,
+    PROJECTION_SOURCE_ML,
+    PROJECTION_SOURCE_ROLE_PRIOR,
+    UnprojectedPolicy,
+    is_plausible_projection,
+    role_prior_score,
+)
 from ml.sample_reliability.cohort import (
+    COHORT_INSUFFICIENT,
     COHORT_STANDARD,
     RELIABILITY_WEIGHT_BY_COHORT,
     get_reliability_weight,
@@ -1073,6 +1083,7 @@ class DataRepository:
         min_qt_a: int = 1,
         ruleset: str = "CLASSIC",
         return_exclusions: bool = False,
+        unprojected_policy: UnprojectedPolicy = "exclude",
     ) -> list[dict] | tuple[list[dict], list[dict]]:
         """Return optimizer-ready player records joined with ML predictions.
 
@@ -1091,31 +1102,28 @@ class DataRepository:
           otherwise ``fantavoto_medio`` from the ML prediction artifact.
           FVM from the quotations listone is **not** used as a fallback
           (it is a proprietary valuation index on a different scale).
-          Players without a valid in-range projection are excluded.
-        * ``season_value`` — predicted season-total fanta-points
-          (rating × predicted appearances), or ``None`` when unavailable.
-        * ``start_probability`` — estimated probability of starting
-          (derived from expected minutes), or ``None``.
-        * ``eligible_roles`` — list of MANTRA role codes (only when
-          ``ruleset == "MANTRA"`` and the player has a row in
-          ``player_mantra_roles``; empty list otherwise).
-        * ``sample_cohort`` — ``INSUFFICIENT`` / ``LIMITED`` / ``STANDARD``
-          from the ML output-reliability layer (defaults to ``STANDARD``
-          when the artifact lacks the field).
-        * ``reliability_weight`` — decision-layer weight derived from
-          minutes (continuous curve) when available, otherwise from
-          ``sample_cohort`` (legacy bucket). Used by the Optimizer ILP
-          objective; Auction currently inherits the primary damping via
-          the already-shrunk ``projected_score`` (see WS3 alignment plan).
+        * ``projection_source`` — ``"ml"`` or ``"role_prior"`` (see
+          ``unprojected_policy``).
+        * ``season_value`` / ``start_probability`` — from the ML artifact
+          when present; ``None`` for role-prior rows.
+        * ``eligible_roles`` — MANTRA role codes when applicable.
+        * ``sample_cohort`` / ``reliability_weight`` — from ML when present;
+          role-prior rows are tagged ``INSUFFICIENT`` with the bucket floor
+          weight so the decision layer does not treat them as STANDARD.
+
+        ``unprojected_policy``
+            * ``"exclude"`` (default) — drop players without a plausible
+              ML projection (optimizer-safe; historical behaviour).
+            * ``"role_prior"`` — admit them with a role-based prior score
+              and damped reliability (auction-safe full listino coverage).
 
         When ``return_exclusions=True``, returns
-        ``(pool, excluded_no_projection)`` so callers can surface how many
-        players were dropped solely for lack of a valid projection.
+        ``(pool, excluded_no_projection)``.  Under ``role_prior``, the
+        exclusion list only contains players that still cannot be admitted
+        (e.g. unknown role already skipped earlier; normally empty for
+        projection reasons).
 
-        The list is *not* deduplicated; the optimizer orchestrator is
-        responsible for that. The repository guarantees deterministic
-        ordering: by role, then by ``qt_a`` desc, then by ``player_id`` for
-        reproducibility across requests.
+        Ordering: by role, then ``qt_a`` desc, then ``player_id``.
         """
         # 1) Quotations joined to id-map (left join — players without
         #    fotmob mapping still surface, with player_id derived from
@@ -1226,47 +1234,58 @@ class DataRepository:
                         predicted_score = float(raw_val)
                     elif isinstance(pred.get("fantavoto_medio"), (int, float)):
                         predicted_score = float(pred["fantavoto_medio"])
+            projection_source = PROJECTION_SOURCE_ML
             # Plausible range for a single-match Fantacalcio voto. Values
             # outside this band are treated as missing projection (same bucket
-            # as true absences) so they cannot enter the ILP objective.
-            # Checked after display/raw selection so a shrunk value that lands
-            # in-range is admitted even if the raw was extreme.
-            _MIN_PLAUSIBLE_SCORE = 3.0
-            _MAX_PLAUSIBLE_SCORE = 10.0
-            if (
-                predicted_score is None
-                or predicted_score <= 0.0
-                or predicted_score < _MIN_PLAUSIBLE_SCORE
-                or predicted_score > _MAX_PLAUSIBLE_SCORE
-            ):
+            # as true absences).  Checked after display/raw selection so a
+            # shrunk value that lands in-range is admitted even if the raw
+            # was extreme.
+            if not is_plausible_projection(predicted_score):
                 reason = "no_projection"
                 if (
                     predicted_score is not None
-                    and predicted_score > 0.0
-                    and (
-                        predicted_score < _MIN_PLAUSIBLE_SCORE
-                        or predicted_score > _MAX_PLAUSIBLE_SCORE
+                    and isinstance(predicted_score, (int, float))
+                    and float(predicted_score) > 0.0
+                    and not (
+                        MIN_PLAUSIBLE_SCORE
+                        <= float(predicted_score)
+                        <= MAX_PLAUSIBLE_SCORE
                     )
                 ):
                     reason = "implausible_projection"
-                    import logging as _logging
-                    _logging.getLogger(__name__).warning(
-                        "get_player_pool: excluding player %s (%s) — "
-                        "projected_score=%.3f outside plausible range [%.1f, %.1f]",
+                    log.warning(
+                        "get_player_pool: player %s (%s) projected_score=%.3f "
+                        "outside plausible range [%.1f, %.1f] — policy=%s",
                         player_id,
                         name,
-                        predicted_score,
-                        _MIN_PLAUSIBLE_SCORE,
-                        _MAX_PLAUSIBLE_SCORE,
+                        float(predicted_score),
+                        MIN_PLAUSIBLE_SCORE,
+                        MAX_PLAUSIBLE_SCORE,
+                        unprojected_policy,
                     )
-                excluded_no_projection.append({
-                    "player_id": player_id,
-                    "name": name,
-                    "role": optimizer_role,
-                    "cost": cost,
-                    "reason": reason,
-                })
-                continue
+
+                if unprojected_policy == "role_prior":
+                    # Full-listino coverage for live auction: admit with a
+                    # conservative role prior and strong decision damping.
+                    predicted_score = role_prior_score(optimizer_role)
+                    projection_source = PROJECTION_SOURCE_ROLE_PRIOR
+                    sample_cohort = COHORT_INSUFFICIENT
+                    reliability_weight = float(
+                        RELIABILITY_WEIGHT_BY_COHORT.get(
+                            COHORT_INSUFFICIENT,
+                            0.30,
+                        )
+                    )
+                    pred = None  # no ML artifact fields for season_value
+                else:
+                    excluded_no_projection.append({
+                        "player_id": player_id,
+                        "name": name,
+                        "role": optimizer_role,
+                        "cost": cost,
+                        "reason": reason,
+                    })
+                    continue
 
             # Best-effort team name (id-map wins when present).
             if pq.team:
@@ -1283,9 +1302,8 @@ class DataRepository:
                     pred_std = float(raw_std)
 
             # Season-value metrics — prefer pre-computed values from the artifact
-            # (P0-2); fall back to deriving from expected_minutes. The same
-            # helper is reused by the MANTRA runner so the two surfaces stay
-            # in lock-step.
+            # (P0-2); fall back to deriving from expected_minutes. Role-prior
+            # rows intentionally leave these None (no invented minutes model).
             season_value, start_probability = resolve_season_value_fields(
                 pred,
                 fallback_predicted_score=predicted_score,
@@ -1309,19 +1327,25 @@ class DataRepository:
                     "eligible_roles": eligible_roles,
                     "sample_cohort": sample_cohort,
                     "reliability_weight": reliability_weight,
+                    "projection_source": projection_source,
                 }
             )
 
         # Deterministic ordering for reproducibility.
         pool.sort(key=lambda r: (r["role"], -r["cost"], r["player_id"]))
-        if excluded_no_projection:
-            import logging as _logging
-            _logging.getLogger(__name__).info(
-                "get_player_pool: excluded %d player(s) for no_projection "
-                "(season_start=%s, min_qt_a=%s)",
-                len(excluded_no_projection),
+        n_role_prior = sum(
+            1 for r in pool if r.get("projection_source") == PROJECTION_SOURCE_ROLE_PRIOR
+        )
+        if excluded_no_projection or n_role_prior:
+            log.info(
+                "get_player_pool: season_start=%s min_qt_a=%s policy=%s "
+                "pool=%d excluded_no_projection=%d included_role_prior=%d",
                 season_start,
                 min_qt_a,
+                unprojected_policy,
+                len(pool),
+                len(excluded_no_projection),
+                n_role_prior,
             )
         if return_exclusions:
             return pool, excluded_no_projection

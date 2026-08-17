@@ -368,6 +368,7 @@ async def init_auction(
     participants = [_participant_from_schema(p) for p in payload.participants]
 
     n_excluded_no_projection = 0
+    n_included_role_prior = 0
     if payload.player_pool is not None:
         pool: list[Player] = [_player_from_schema(p) for p in payload.player_pool]
     else:
@@ -378,8 +379,12 @@ async def init_auction(
             min_qt_a=1,
             ruleset=payload.config.ruleset,
             return_exclusions=True,
+            unprojected_policy="role_prior",
         )
         n_excluded_no_projection = len(excluded)
+        n_included_role_prior = sum(
+            1 for r in rows if r.get("projection_source") == "role_prior"
+        )
         pool = [
             Player(
                 player_id=r["player_id"],
@@ -403,8 +408,7 @@ async def init_auction(
                 detail=(
                     f"Empty player pool from DB for season_start="
                     f"{payload.season_start} (min_qt_a=1). Check that "
-                    f"quotations and ML predictions are available, or "
-                    f"pass an explicit player_pool."
+                    f"quotations are available, or pass an explicit player_pool."
                 ),
             )
 
@@ -413,15 +417,18 @@ async def init_auction(
     _get_session_store(request)[session_id] = session
 
     logger.info(
-        "auction_session_initialized session_id=%s participants=%d pool=%d excluded_no_projection=%d",
+        "auction_session_initialized session_id=%s participants=%d pool=%d "
+        "excluded_no_projection=%d included_role_prior=%d",
         session_id,
         len(participants),
         len(pool),
         n_excluded_no_projection,
+        n_included_role_prior,
     )
     return InitializeAuctionResponse(
         session_id=session_id,
         n_excluded_no_projection=n_excluded_no_projection,
+        n_included_role_prior=n_included_role_prior,
     )
 
 
@@ -454,6 +461,7 @@ async def simulate_auction_endpoint(
             min_qt_a=1,
             ruleset=payload.config.ruleset,
             return_exclusions=True,
+            unprojected_policy="role_prior",
         )
         n_excluded_no_projection = len(excluded)
         pool = [

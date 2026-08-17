@@ -917,6 +917,9 @@ class InitializeAuctionResponse(_CamelModel):
 
     session_id: str
     n_excluded_no_projection: int = 0
+    """Players still omitted after policy (should be ~0 with role_prior)."""
+    n_included_role_prior: int = 0
+    """Listino players admitted via role prior (no ML projection)."""
 
 
 class RecordAssignmentRequest(_CamelModel):
