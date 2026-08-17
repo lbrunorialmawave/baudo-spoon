@@ -229,39 +229,81 @@ def run_experiment(
         variant_cfg = apply_variant(base_cfg, variant)
         variant_dir = out_dir / name
         variant_dir.mkdir(parents=True, exist_ok=True)
-        # Prefer model_copy over copy.copy so BaseSettings fields cannot
-        # silently revert when only artifacts_dir is overridden.
-        variant_cfg = variant_cfg.model_copy(update={"artifacts_dir": variant_dir})
-        if (
-            bool(variant_cfg.enable_limited_sample_training)
-            != bool(variant.enable_limited_sample_training)
-            or bool(variant_cfg.enable_shrinkage) != bool(variant.enable_shrinkage)
-            or bool(variant_cfg.enable_recent_role_features)
-            != bool(variant.enable_recent_role_features)
-        ):
-            log.warning(
-                "Variant %s flags drifted after artifacts_dir copy — forcing via model_construct",
-                name,
-            )
-            payload = variant_cfg.model_dump()
-            payload.update(
-                {
-                    "enable_limited_sample_training": bool(
-                        variant.enable_limited_sample_training
-                    ),
-                    "enable_shrinkage": bool(variant.enable_shrinkage),
-                    "enable_recent_role_features": bool(
-                        variant.enable_recent_role_features
-                    ),
-                    "weighting_strategy": variant.weighting_strategy,
-                    "shrinkage_prior_strength": int(variant.shrinkage_prior_strength),
-                    "enable_breakout_model": False,
-                    "artifacts_dir": variant_dir,
-                }
-            )
-            variant_cfg = MLConfig.model_construct(**payload)
+        # Always force final cfg via model_construct so BaseSettings/env
+        # cannot wipe experiment flags when only artifacts_dir changes.
+        # (Root cause of run 20260817_065857: flags True after apply_variant,
+        # False by the time Trainer.run evaluated drop_floor.)
+        payload = variant_cfg.model_dump()
+        payload.update(
+            {
+                "enable_limited_sample_training": bool(
+                    variant.enable_limited_sample_training
+                ),
+                "enable_shrinkage": bool(variant.enable_shrinkage),
+                "enable_recent_role_features": bool(
+                    variant.enable_recent_role_features
+                ),
+                "weighting_strategy": variant.weighting_strategy,
+                "shrinkage_prior_strength": int(variant.shrinkage_prior_strength),
+                "enable_breakout_model": False,
+                "artifacts_dir": variant_dir,
+            }
+        )
+        variant_cfg = MLConfig.model_construct(**payload)
+        log.info(
+            "Variant %s effective flags at Trainer entry: limited=%s "
+            "shrinkage=%s recent_role=%s artifacts_dir=%s",
+            name,
+            variant_cfg.enable_limited_sample_training,
+            variant_cfg.enable_shrinkage,
+            variant_cfg.enable_recent_role_features,
+            variant_cfg.artifacts_dir,
+        )
         try:
             trainer = Trainer(variant_cfg)
+            # Absolute last-resort force: setattr on the live cfg object the
+            # Trainer holds. Guards against any BaseSettings/model_copy quirk
+            # that wiped flags between apply_variant and Trainer.__init__.
+            # (Root cause of run 20260817_065857 / 20260817_074700.)
+            object.__setattr__(
+                trainer.cfg,
+                "enable_limited_sample_training",
+                bool(variant.enable_limited_sample_training),
+            )
+            object.__setattr__(
+                trainer.cfg,
+                "enable_shrinkage",
+                bool(variant.enable_shrinkage),
+            )
+            object.__setattr__(
+                trainer.cfg,
+                "enable_recent_role_features",
+                bool(variant.enable_recent_role_features),
+            )
+            object.__setattr__(
+                trainer.cfg,
+                "weighting_strategy",
+                variant.weighting_strategy,
+            )
+            object.__setattr__(
+                trainer.cfg,
+                "shrinkage_prior_strength",
+                int(variant.shrinkage_prior_strength),
+            )
+            object.__setattr__(trainer.cfg, "enable_breakout_model", False)
+            log.info(
+                "Variant %s Trainer.cfg forced flags: limited=%s shrinkage=%s "
+                "recent_role=%s drop_floor_would_be=%s",
+                name,
+                trainer.cfg.enable_limited_sample_training,
+                trainer.cfg.enable_shrinkage,
+                trainer.cfg.enable_recent_role_features,
+                (
+                    trainer.cfg.min_minutes_hard
+                    if trainer.cfg.enable_limited_sample_training
+                    else trainer.cfg.min_minutes
+                ),
+            )
             output = trainer.run(external_fantavoto_csv=external_fantavoto_csv)
         except Exception as exc:  # noqa: BLE001 — capture and report
             log.exception("Variant %s failed", name)
@@ -273,7 +315,9 @@ def run_experiment(
             continue
 
         summary = _variant_summary(output, variant)
-        summary["effective_config"] = _cfg_summary(variant_cfg)
+        # Snapshot the live Trainer.cfg (post-force) so the report reflects
+        # the flags that actually drove training.
+        summary["effective_config"] = _cfg_summary(trainer.cfg)
         report["variants"][name] = summary
         log.info(
             "Variant %s done: RMSE=%.4f MAE=%.4f R²=%.4f",
