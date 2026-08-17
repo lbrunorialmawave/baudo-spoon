@@ -76,6 +76,42 @@ class TestApplyVariant:
         assert cfg.weighting_strategy == "bucketed"
         assert cfg.enable_limited_sample_training is True
 
+    def test_b_weighting_enables_limited_flag(self, tmp_path: Path) -> None:
+        """Regression: B must land enable_limited_sample_training=True.
+
+        Run 20260817_065857 showed drop_floor=800 on every variant because
+        the flag stayed False after apply_variant — this test guards that.
+        """
+        base = _base_cfg(tmp_path)
+        assert base.enable_limited_sample_training is False
+        cfg = apply_variant(base, default_variants()[VARIANT_B])
+        assert cfg.enable_limited_sample_training is True
+        assert cfg.enable_shrinkage is False
+        assert cfg.enable_recent_role_features is False
+
+    def test_c_shrinkage_enables_limited_and_shrinkage(self, tmp_path: Path) -> None:
+        base = _base_cfg(tmp_path)
+        cfg = apply_variant(base, default_variants()[VARIANT_C])
+        assert cfg.enable_limited_sample_training is True
+        assert cfg.enable_shrinkage is True
+        assert cfg.enable_recent_role_features is False
+
+    def test_d_enables_all_three_flags(self, tmp_path: Path) -> None:
+        base = _base_cfg(tmp_path)
+        cfg = apply_variant(base, default_variants()[VARIANT_D])
+        assert cfg.enable_limited_sample_training is True
+        assert cfg.enable_shrinkage is True
+        assert cfg.enable_recent_role_features is True
+
+    def test_flags_survive_artifacts_dir_model_copy(self, tmp_path: Path) -> None:
+        """artifacts_dir override must not wipe limited-sample flags."""
+        base = _base_cfg(tmp_path)
+        cfg = apply_variant(base, default_variants()[VARIANT_C])
+        cfg2 = cfg.model_copy(update={"artifacts_dir": tmp_path / "C_shrinkage"})
+        assert cfg2.enable_limited_sample_training is True
+        assert cfg2.enable_shrinkage is True
+        assert cfg2.artifacts_dir == tmp_path / "C_shrinkage"
+
 
 class TestRunExperiment:
     def test_report_is_persisted(self, tmp_path: Path) -> None:

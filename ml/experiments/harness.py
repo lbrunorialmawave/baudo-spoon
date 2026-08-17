@@ -33,7 +33,6 @@ Key invariants (validated by tests):
 
 from __future__ import annotations
 
-import copy
 import json
 import logging
 from dataclasses import dataclass
@@ -127,20 +126,69 @@ def apply_variant(
 
     Pure function: does not mutate the input.  The caller is expected to
     pass the returned config to a fresh :class:`Trainer` instance.
+
+    Fail-closed: after applying the update we **verify** that the boolean
+    flags (and related fields) actually landed on the returned config.
+    A silent no-op here is exactly the bug that made A/B/C/D bit-identical
+    in run ``20260817_065857`` (trainer always dropped at ``min_minutes=800``
+    because ``enable_limited_sample_training`` stayed ``False``).
     """
-    # ``MLConfig`` is a Pydantic v2 model, so we use ``model_copy`` rather
-    # than ``dataclasses.replace``.  The result is a fully validated
-    # ``MLConfig`` instance.
-    return cfg.model_copy(
-        update={
-            "enable_limited_sample_training": variant.enable_limited_sample_training,
-            "enable_shrinkage": variant.enable_shrinkage,
-            "weighting_strategy": variant.weighting_strategy,
-            "shrinkage_prior_strength": variant.shrinkage_prior_strength,
-            "enable_recent_role_features": variant.enable_recent_role_features,
-            "enable_breakout_model": False,  # never auto-enable breakout in experiments
-        }
+    updates: dict = {
+        "enable_limited_sample_training": bool(
+            variant.enable_limited_sample_training
+        ),
+        "enable_shrinkage": bool(variant.enable_shrinkage),
+        "weighting_strategy": variant.weighting_strategy,
+        "shrinkage_prior_strength": int(variant.shrinkage_prior_strength),
+        "enable_recent_role_features": bool(variant.enable_recent_role_features),
+        # never auto-enable breakout in experiments
+        "enable_breakout_model": False,
+    }
+
+    out = cfg.model_copy(update=updates)
+
+    def _mismatches(candidate: MLConfig) -> list[str]:
+        bad: list[str] = []
+        for key, expected in updates.items():
+            actual = getattr(candidate, key)
+            if actual != expected:
+                bad.append(f"{key}: expected {expected!r}, got {actual!r}")
+        return bad
+
+    bad = _mismatches(out)
+    if bad:
+        # Fallback: bypass Settings env re-binding via model_construct.
+        # model_copy on BaseSettings has been observed to drop boolean
+        # updates in some runtime/image combinations; constructing from a
+        # dumped payload + explicit overrides is deterministic.
+        log.warning(
+            "apply_variant(%s): model_copy did not stick (%s) — "
+            "falling back to model_construct",
+            variant.name,
+            "; ".join(bad),
+        )
+        payload = cfg.model_dump()
+        payload.update(updates)
+        out = MLConfig.model_construct(**payload)
+        bad = _mismatches(out)
+        if bad:
+            raise RuntimeError(
+                f"apply_variant({variant.name!r}) failed to apply overrides: "
+                + "; ".join(bad)
+            )
+
+    log.info(
+        "apply_variant(%s): enable_limited_sample_training=%s "
+        "enable_shrinkage=%s enable_recent_role_features=%s "
+        "weighting_strategy=%s shrinkage_prior_strength=%s",
+        variant.name,
+        out.enable_limited_sample_training,
+        out.enable_shrinkage,
+        out.enable_recent_role_features,
+        out.weighting_strategy,
+        out.shrinkage_prior_strength,
     )
+    return out
 
 
 def run_experiment(
@@ -181,10 +229,39 @@ def run_experiment(
         variant_cfg = apply_variant(base_cfg, variant)
         variant_dir = out_dir / name
         variant_dir.mkdir(parents=True, exist_ok=True)
-        variant_cfg_artifacts = copy.copy(variant_cfg)
-        variant_cfg_artifacts.artifacts_dir = variant_dir
+        # Prefer model_copy over copy.copy so BaseSettings fields cannot
+        # silently revert when only artifacts_dir is overridden.
+        variant_cfg = variant_cfg.model_copy(update={"artifacts_dir": variant_dir})
+        if (
+            bool(variant_cfg.enable_limited_sample_training)
+            != bool(variant.enable_limited_sample_training)
+            or bool(variant_cfg.enable_shrinkage) != bool(variant.enable_shrinkage)
+            or bool(variant_cfg.enable_recent_role_features)
+            != bool(variant.enable_recent_role_features)
+        ):
+            log.warning(
+                "Variant %s flags drifted after artifacts_dir copy — forcing via model_construct",
+                name,
+            )
+            payload = variant_cfg.model_dump()
+            payload.update(
+                {
+                    "enable_limited_sample_training": bool(
+                        variant.enable_limited_sample_training
+                    ),
+                    "enable_shrinkage": bool(variant.enable_shrinkage),
+                    "enable_recent_role_features": bool(
+                        variant.enable_recent_role_features
+                    ),
+                    "weighting_strategy": variant.weighting_strategy,
+                    "shrinkage_prior_strength": int(variant.shrinkage_prior_strength),
+                    "enable_breakout_model": False,
+                    "artifacts_dir": variant_dir,
+                }
+            )
+            variant_cfg = MLConfig.model_construct(**payload)
         try:
-            trainer = Trainer(variant_cfg_artifacts)
+            trainer = Trainer(variant_cfg)
             output = trainer.run(external_fantavoto_csv=external_fantavoto_csv)
         except Exception as exc:  # noqa: BLE001 — capture and report
             log.exception("Variant %s failed", name)
@@ -196,6 +273,7 @@ def run_experiment(
             continue
 
         summary = _variant_summary(output, variant)
+        summary["effective_config"] = _cfg_summary(variant_cfg)
         report["variants"][name] = summary
         log.info(
             "Variant %s done: RMSE=%.4f MAE=%.4f R²=%.4f",

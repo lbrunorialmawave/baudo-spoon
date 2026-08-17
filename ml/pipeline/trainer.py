@@ -859,6 +859,17 @@ class Trainer:
         drop_floor = (
             cfg.min_minutes_hard if cfg.enable_limited_sample_training else cfg.min_minutes
         )
+        log.info(
+            "Target attachment gates: enable_limited_sample_training=%s "
+            "enable_shrinkage=%s enable_recent_role_features=%s "
+            "min_minutes=%s min_minutes_hard=%s drop_floor=%s",
+            bool(cfg.enable_limited_sample_training),
+            bool(cfg.enable_shrinkage),
+            bool(cfg.enable_recent_role_features),
+            int(cfg.min_minutes),
+            int(cfg.min_minutes_hard),
+            int(drop_floor),
+        )
         df = attach_target(
             df_raw,
             external_fantavoto_csv,
