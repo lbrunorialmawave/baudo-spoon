@@ -357,19 +357,47 @@
 }
 .rejection-msg { font-size:11px; color:var(--color-text-secondary); margin:0; }
 
-/* History */
-.history-card { padding:0; overflow:hidden; }
-.history-card .card-section-label { padding:12px 14px 0; }
-.history-table-wrap {
-  max-height:320px; overflow:auto;
-  margin:0 -12px;
+/* History — must remain discoverable after record (scroll target + no clip) */
+.history-card {
+  padding: 0;
+  overflow: visible; /* was hidden: clipped the table in flex/grid parents */
+  scroll-margin-top: 12px;
+  flex-shrink: 0;
 }
-@media (min-width: 640px) {
-  .history-table-wrap { margin:0 -14px; }
+.history-card .card-section-label {
+  padding: 12px 14px 8px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-surface, #141518);
+}
+.history-table-wrap {
+  max-height: min(40vh, 360px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  /* Keep table fully reachable: both axes, no negative margin clip */
+  margin: 0;
+  border-top: 1px solid var(--color-border, #27272a);
 }
 .empty-history {
-  padding:24px; text-align:center;
-  font-size:13px; color:var(--color-text-secondary);
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+/* Newest assignment flash (post-record feedback) */
+.squad-table tbody tr.row-just-assigned {
+  animation: auc-row-flash 2.4s ease-out;
+}
+@keyframes auc-row-flash {
+  0% {
+    background: color-mix(in srgb, var(--color-accent, #3b82f6) 28%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
 }
 
 /* Tier badge */

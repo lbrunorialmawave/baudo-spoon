@@ -743,7 +743,11 @@ function makeParticipants(
 
             <!-- Assignment history -->
             @if (reversedAssignments().length) {
-              <div class="card history-card">
+              <div
+                class="card history-card"
+                id="auction-assignment-history"
+                #assignmentHistory
+              >
                 <p class="card-section-label">
                   Storico assegnazioni ({{ reversedAssignments().length }})
                 </p>
@@ -770,6 +774,7 @@ function makeParticipants(
                     <tbody>
                       @for (a of reversedAssignments(); track a.sequenceNumber) {
                         <tr class="clickable-row"
+                            [class.row-just-assigned]="a.sequenceNumber === highlightedSequence()"
                             (click)="openAssignmentPlayer(a)"
                             (keydown.enter)="openAssignmentPlayer(a)"
                             (keydown.space)="$event.preventDefault(); openAssignmentPlayer(a)"
@@ -2017,6 +2022,10 @@ export class AuctionComponent {
   private readonly initialBudgets = new Map<string, number>();
 
   readonly reversedAssignments = computed(() => [...(this.summary()?.assignments ?? [])].reverse());
+  /** Sequence number of the assignment just recorded — drives row flash + scroll target. */
+  readonly highlightedSequence = signal<number | null>(null);
+  private highlightClearTimer: ReturnType<typeof setTimeout> | null = null;
+  private scrollHistoryAfterSummary = false;
 
   /**
    * Cicla lo stato di ordinamento sulla colonna indicata.
@@ -2472,6 +2481,10 @@ export class AuctionComponent {
             this.altResult.set(null);
             this.lookupId = '';
             this.lookupQuery = '';
+            if (typeof res.sequenceNumber === 'number') {
+              this.flashAssignment(res.sequenceNumber);
+            }
+            this.scrollHistoryAfterSummary = true;
             this.refreshSummary();
           }
           this.recordLoading.set(false);
@@ -2539,9 +2552,53 @@ export class AuctionComponent {
           });
         }
         this.refreshVarRanking();
+        if (this.scrollHistoryAfterSummary) {
+          this.scrollHistoryAfterSummary = false;
+          // Double rAF: first paint mounts the @if history card, second measures layout.
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => this.scrollAssignmentHistoryIntoView()),
+          );
+        }
       },
       error: () => this.summaryLoading.set(false),
     });
+  }
+
+  /**
+   * After a successful record: flash the new row and ensure the history table
+   * is in the scrollport. Primary workflow feedback — without this the row is
+   * written to state but often sits above/below the visible main pane.
+   */
+  private flashAssignment(sequenceNumber: number): void {
+    if (this.highlightClearTimer) {
+      clearTimeout(this.highlightClearTimer);
+      this.highlightClearTimer = null;
+    }
+    this.highlightedSequence.set(sequenceNumber);
+    this.highlightClearTimer = setTimeout(() => {
+      this.highlightedSequence.set(null);
+      this.highlightClearTimer = null;
+    }, 2400);
+  }
+
+  private scrollAssignmentHistoryIntoView(): void {
+    const el =
+      document.getElementById('auction-assignment-history') ??
+      document.querySelector('.history-card');
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    // Prefer scrolling the auction-main pane when it is the actual overflow root.
+    const main = el.closest('.auction-main') as HTMLElement | null;
+    if (main && main.scrollHeight > main.clientHeight) {
+      const mainRect = main.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      if (elRect.top < mainRect.top || elRect.bottom > mainRect.bottom) {
+        main.scrollTo({
+          top: main.scrollTop + (elRect.top - mainRect.top) - 12,
+          behavior: 'smooth',
+        });
+      }
+    }
   }
 
   refreshVarRanking(): void {
