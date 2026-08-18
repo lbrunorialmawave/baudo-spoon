@@ -1,4 +1,11 @@
-import { Component, Input, OnChanges, SimpleChanges, inject, signal } from '@angular/core';
+import {
+  Component,
+  Input,
+  OnChanges,
+  SimpleChanges,
+  inject,
+  signal,
+} from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { AuctionService } from '../../../core/services/auction.service';
 import {
@@ -26,69 +33,107 @@ const ROLE_COLOR: Record<string, string> = {
   Pc: 'var(--color-role-fwd)',
 };
 
+const STORAGE_KEY = 'fi.auction.deptBudgetExpanded';
+
 @Component({
   selector: 'app-department-budget-panel',
   standalone: true,
   imports: [DecimalPipe],
   template: `
-    <div class="dept-budget-panel">
-      <div class="panel-header">
-        <p class="panel-title">Tetti di spesa per reparto</p>
-        <p class="panel-subtitle">
-          Hard cap = limite matematico di fattibilità.
-          Banda consigliata = prior di mercato + peso slot (±{{ tolerance * 100 | number:'1.0-0' }}%).
-        </p>
-      </div>
-      @if (loading()) {
-        <p class="muted">Calcolo in corso…</p>
-      } @else if (error()) {
-        <p class="error-text">{{ error() }}</p>
-      } @else if (plan(); as p) {
-        @if (p.warnings.length) {
-          <ul class="warnings">
-            @for (w of p.warnings; track w) {
-              <li>{{ w }}</li>
+    <div
+      class="dept-budget-panel"
+      [class.is-collapsed]="!expanded()"
+      [class.is-live]="collapsible"
+    >
+      <button
+        type="button"
+        class="panel-toggle"
+        (click)="toggle()"
+        [attr.aria-expanded]="expanded()"
+        [attr.aria-controls]="panelId"
+        [id]="toggleId"
+      >
+        <span class="toggle-left">
+          <span class="chevron" aria-hidden="true">{{ expanded() ? '▾' : '▸' }}</span>
+          <span class="panel-title">Tetti di spesa per reparto</span>
+          @if (plan(); as p) {
+            <span class="compact-meta">{{ p.departments.length }} reparti</span>
+            @if (p.warnings.length) {
+              <span class="badge warn" [title]="p.warnings[0]">attenzione</span>
             }
-          </ul>
-        }
-        <div class="dept-list">
-          @for (d of p.departments; track d.departmentId) {
-            <div class="dept-row">
-              <div class="dept-meta">
-                <span class="dept-dot" [style.background]="departmentColor(d)"></span>
-                <span class="dept-label">{{ d.labelIt }}</span>
-                <span class="dept-slots">{{ d.slots }} slot</span>
-                @if (d.marketShareSource === 'fallback_slot_only') {
-                  <span class="badge structural">strutturale</span>
+          }
+        </span>
+        <span class="toggle-hint muted">
+          {{ expanded() ? 'Nascondi' : 'Mostra' }}
+        </span>
+      </button>
+
+      @if (expanded()) {
+        <div
+          class="panel-body"
+          [id]="panelId"
+          role="region"
+          [attr.aria-labelledby]="toggleId"
+        >
+          <p class="panel-subtitle">
+            Hard cap = limite matematico di fattibilità. Banda consigliata =
+            prior di mercato + peso slot (±{{ tolerance * 100 | number: '1.0-0' }}%).
+          </p>
+
+          @if (loading()) {
+            <p class="muted">Calcolo in corso…</p>
+          } @else if (error()) {
+            <p class="error-text">{{ error() }}</p>
+          } @else if (plan(); as p) {
+            @if (p.warnings.length) {
+              <ul class="warnings">
+                @for (w of p.warnings; track w) {
+                  <li>{{ w }}</li>
                 }
-                @if (d.clampedToHardCap) {
-                  <span class="badge clamped">clamped</span>
-                }
-              </div>
-              <div
-                class="bar-track"
-                [title]="'Hard cap: ' + d.hardCap.credits + ' cr (' + d.hardCap.percent + '%)'"
-              >
-                <div
-                  class="bar-hard"
-                  [style.width.%]="Math.min(100, d.hardCap.percent)"
-                ></div>
-                <div
-                  class="bar-rec"
-                  [style.left.%]="recLeft(d, p.budgetInitial)"
-                  [style.width.%]="recWidth(d, p.budgetInitial)"
-                  [style.background]="departmentColor(d)"
-                ></div>
-              </div>
-              <div class="dept-numbers">
-                <span class="rec">
-                  consigliato {{ d.recommendedMin.credits }}–{{ d.recommendedMax.credits }} cr
-                  ({{ d.recommendedMin.percent }}–{{ d.recommendedMax.percent }}%)
-                </span>
-                <span class="hard muted">
-                  max assoluto {{ d.hardCap.credits }} cr ({{ d.hardCap.percent }}%)
-                </span>
-              </div>
+              </ul>
+            }
+            <div class="dept-list">
+              @for (d of p.departments; track d.departmentId) {
+                <div class="dept-row">
+                  <div class="dept-meta">
+                    <span class="dept-dot" [style.background]="departmentColor(d)"></span>
+                    <span class="dept-label">{{ d.labelIt }}</span>
+                    <span class="dept-slots">{{ d.slots }} slot</span>
+                    @if (d.marketShareSource === 'fallback_slot_only') {
+                      <span class="badge structural">strutturale</span>
+                    }
+                    @if (d.clampedToHardCap) {
+                      <span class="badge clamped">clamped</span>
+                    }
+                  </div>
+                  <div
+                    class="bar-track"
+                    [title]="
+                      'Hard cap: ' + d.hardCap.credits + ' cr (' + d.hardCap.percent + '%)'
+                    "
+                  >
+                    <div
+                      class="bar-hard"
+                      [style.width.%]="Math.min(100, d.hardCap.percent)"
+                    ></div>
+                    <div
+                      class="bar-rec"
+                      [style.left.%]="recLeft(d, p.budgetInitial)"
+                      [style.width.%]="recWidth(d, p.budgetInitial)"
+                      [style.background]="departmentColor(d)"
+                    ></div>
+                  </div>
+                  <div class="dept-numbers">
+                    <span class="rec">
+                      consigliato {{ d.recommendedMin.credits }}–{{ d.recommendedMax.credits }}
+                      cr ({{ d.recommendedMin.percent }}–{{ d.recommendedMax.percent }}%)
+                    </span>
+                    <span class="hard muted">
+                      max assoluto {{ d.hardCap.credits }} cr ({{ d.hardCap.percent }}%)
+                    </span>
+                  </div>
+                </div>
+              }
             </div>
           }
         </div>
@@ -97,26 +142,86 @@ const ROLE_COLOR: Record<string, string> = {
   `,
   styles: [
     `
-      /* Align with auction.component theme tokens (dark surface). */
       .dept-budget-panel {
-        margin-top: 12px;
-        padding: 14px 16px;
-        border-radius: 10px;
-        border: 1px solid var(--color-border, #27272a);
+        flex-shrink: 0;
+        margin: 0;
+        border-bottom: 1px solid var(--color-border, #27272a);
         background: var(--color-surface, #141518);
         color: var(--color-text-primary, #f4f4f5);
       }
-      .panel-header {
-        margin-bottom: 12px;
+      /* Setup context: keep card look when not in live chrome */
+      .dept-budget-panel:not(.is-live) {
+        margin: 12px 16px;
+        border: 1px solid var(--color-border, #27272a);
+        border-radius: 10px;
+        border-bottom: 1px solid var(--color-border, #27272a);
+      }
+
+      .panel-toggle {
+        display: flex;
+        width: 100%;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 16px;
+        margin: 0;
+        border: none;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+        text-align: left;
+        min-height: 44px;
+      }
+      .panel-toggle:hover {
+        background: color-mix(in srgb, var(--color-text-primary, #f4f4f5) 4%, transparent);
+      }
+      .panel-toggle:focus-visible {
+        outline: 2px solid var(--color-accent, #3b82f6);
+        outline-offset: -2px;
+      }
+      .toggle-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        flex-wrap: wrap;
+      }
+      .chevron {
+        font-size: 11px;
+        color: var(--color-text-secondary, #a1a1aa);
+        width: 12px;
+        flex-shrink: 0;
       }
       .panel-title {
-        margin: 0 0 4px;
+        margin: 0;
         font-size: 13px;
         font-weight: 700;
         color: var(--color-text-primary, #f4f4f5);
       }
+      .compact-meta {
+        font-size: 11px;
+        color: var(--color-text-secondary, #a1a1aa);
+        font-variant-numeric: tabular-nums;
+      }
+      .toggle-hint {
+        font-size: 11px;
+        flex-shrink: 0;
+      }
+
+      /* Expanded body: capped height so live layout never loses the main task */
+      .panel-body {
+        padding: 0 16px 14px;
+        max-height: min(40vh, 360px);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+      }
+      .dept-budget-panel:not(.is-live) .panel-body {
+        max-height: none;
+      }
+
       .panel-subtitle {
-        margin: 0;
+        margin: 0 0 12px;
         font-size: 11px;
         line-height: 1.45;
         color: var(--color-text-secondary, #a1a1aa);
@@ -159,6 +264,7 @@ const ROLE_COLOR: Record<string, string> = {
         align-items: center;
         gap: 6px;
         font-size: 12px;
+        flex-wrap: wrap;
       }
       .dept-dot {
         width: 8px;
@@ -190,6 +296,11 @@ const ROLE_COLOR: Record<string, string> = {
         background: color-mix(in srgb, var(--color-accent, #3b82f6) 12%, transparent);
       }
       .badge.clamped {
+        border-color: color-mix(in srgb, #f59e0b 45%, transparent);
+        color: #f59e0b;
+        background: color-mix(in srgb, #f59e0b 12%, transparent);
+      }
+      .badge.warn {
         border-color: color-mix(in srgb, #f59e0b 45%, transparent);
         color: #f59e0b;
         background: color-mix(in srgb, #f59e0b 12%, transparent);
@@ -235,6 +346,11 @@ const ROLE_COLOR: Record<string, string> = {
 })
 export class DepartmentBudgetPanelComponent implements OnChanges {
   private readonly auctionService = inject(AuctionService);
+  private static nextId = 0;
+  private readonly instanceId = DepartmentBudgetPanelComponent.nextId++;
+
+  readonly panelId = `dept-budget-body-${this.instanceId}`;
+  readonly toggleId = `dept-budget-toggle-${this.instanceId}`;
 
   @Input({ required: true }) ruleset!: AuctionRuleset | string;
   /**
@@ -247,14 +363,55 @@ export class DepartmentBudgetPanelComponent implements OnChanges {
   @Input() minSlotPrice = 1;
   @Input() alphaMarketVsSlot = 0.65;
   @Input() tolerance = 0.2;
+  /**
+   * When true (live tracker), panel is collapsible and starts collapsed so the
+   * primary workflow (search + record) keeps the viewport. Setup view can pass
+   * false to keep it always expanded.
+   */
+  @Input() collapsible = false;
+  /** Initial expanded state when collapsible. Ignored if user has a stored preference. */
+  @Input() defaultExpanded = true;
 
   readonly plan = signal<DepartmentBudgetPlan | null>(null);
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
+  readonly expanded = signal(true);
   readonly Math = Math;
 
-  ngOnChanges(_changes: SimpleChanges): void {
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['collapsible'] || changes['defaultExpanded']) {
+      this.initExpandedState();
+    }
     this.refresh();
+  }
+
+  toggle(): void {
+    const next = !this.expanded();
+    this.expanded.set(next);
+    if (this.collapsible) {
+      try {
+        sessionStorage.setItem(STORAGE_KEY, next ? '1' : '0');
+      } catch {
+        /* private mode / blocked storage */
+      }
+    }
+  }
+
+  private initExpandedState(): void {
+    if (!this.collapsible) {
+      this.expanded.set(true);
+      return;
+    }
+    try {
+      const stored = sessionStorage.getItem(STORAGE_KEY);
+      if (stored === '1' || stored === '0') {
+        this.expanded.set(stored === '1');
+        return;
+      }
+    } catch {
+      /* ignore */
+    }
+    this.expanded.set(this.defaultExpanded);
   }
 
   private normalizedRoleQuotas(): Record<string, number> {

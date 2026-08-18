@@ -354,6 +354,8 @@ function makeParticipants(
           [roleQuotas]="roleQuotas"
           [budgetInitial]="budgetInitial"
           [referenceBudget]="referenceBudget"
+          [collapsible]="true"
+          [defaultExpanded]="false"
         />
 
         <!-- Price index strip -->
