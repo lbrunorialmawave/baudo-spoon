@@ -7,6 +7,25 @@ import {
   DepartmentCap,
 } from '../../../core/models/auction.models';
 
+/* Same grouping used in AuctionComponent's ROLE_COLOR: classic P/D/C/A
+   plus the MANTRA 12-role palette, mapped onto the classic line colors. */
+const ROLE_COLOR: Record<string, string> = {
+  P: 'var(--color-role-gk)',
+  D: 'var(--color-role-def)',
+  C: 'var(--color-role-mid)',
+  A: 'var(--color-role-fwd)',
+  Por: 'var(--color-role-gk)',
+  Dc: 'var(--color-role-def)',
+  B: 'var(--color-role-def)',
+  Dd: 'var(--color-role-def)',
+  Ds: 'var(--color-role-def)',
+  E: 'var(--color-role-mid)',
+  M: 'var(--color-role-mid)',
+  T: 'var(--color-role-fwd)',
+  W: 'var(--color-role-fwd)',
+  Pc: 'var(--color-role-fwd)',
+};
+
 @Component({
   selector: 'app-department-budget-panel',
   standalone: true,
@@ -14,7 +33,7 @@ import {
   template: `
     <div class="dept-budget-panel">
       <div class="panel-header">
-        <h3 class="panel-title">Tetti di spesa per reparto</h3>
+        <p class="panel-title">Tetti di spesa per reparto</p>
         <p class="panel-subtitle">
           Hard cap = limite matematico di fattibilità.
           Banda consigliata = prior di mercato + peso slot (±{{ tolerance * 100 | number:'1.0-0' }}%).
@@ -23,7 +42,7 @@ import {
       @if (loading()) {
         <p class="muted">Calcolo in corso…</p>
       } @else if (error()) {
-        <p class="error">{{ error() }}</p>
+        <p class="error-text">{{ error() }}</p>
       } @else if (plan(); as p) {
         @if (p.warnings.length) {
           <ul class="warnings">
@@ -36,6 +55,7 @@ import {
           @for (d of p.departments; track d.departmentId) {
             <div class="dept-row">
               <div class="dept-meta">
+                <span class="dept-dot" [style.background]="departmentColor(d)"></span>
                 <span class="dept-label">{{ d.labelIt }}</span>
                 <span class="dept-slots">{{ d.slots }} slot</span>
                 @if (d.marketShareSource === 'fallback_slot_only') {
@@ -57,6 +77,7 @@ import {
                   class="bar-rec"
                   [style.left.%]="recLeft(d, p.budgetInitial)"
                   [style.width.%]="recWidth(d, p.budgetInitial)"
+                  [style.background]="departmentColor(d)"
                 ></div>
               </div>
               <div class="dept-numbers">
@@ -76,72 +97,108 @@ import {
   `,
   styles: [
     `
+      /* Align with auction.component theme tokens (dark surface). */
       .dept-budget-panel {
-        margin-top: 1rem;
-        padding: 0.75rem 1rem;
-        border: 1px solid var(--color-border, #e2e8f0);
-        border-radius: 8px;
-        background: var(--color-surface-2, #f8fafc);
+        margin-top: 12px;
+        padding: 14px 16px;
+        border-radius: 10px;
+        border: 1px solid var(--color-border, #27272a);
+        background: var(--color-surface, #141518);
+        color: var(--color-text-primary, #f4f4f5);
+      }
+      .panel-header {
+        margin-bottom: 12px;
       }
       .panel-title {
-        margin: 0 0 0.25rem;
-        font-size: 0.95rem;
-        font-weight: 600;
+        margin: 0 0 4px;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--color-text-primary, #f4f4f5);
       }
       .panel-subtitle {
-        margin: 0 0 0.75rem;
-        font-size: 0.8rem;
-        color: var(--color-muted, #64748b);
+        margin: 0;
+        font-size: 11px;
+        line-height: 1.45;
+        color: var(--color-text-secondary, #a1a1aa);
+      }
+      .muted {
+        font-size: 12px;
+        color: var(--color-text-secondary, #a1a1aa);
+      }
+      .error-text {
+        margin: 0;
+        font-size: 12px;
+        color: #ef4444;
       }
       .warnings {
-        margin: 0 0 0.75rem;
-        padding-left: 1.1rem;
-        font-size: 0.8rem;
-        color: var(--color-warning, #b45309);
+        margin: 0 0 12px;
+        padding: 8px 10px 8px 24px;
+        border-radius: 8px;
+        border: 1px solid color-mix(in srgb, #f59e0b 35%, transparent);
+        background: color-mix(in srgb, #f59e0b 10%, transparent);
+        font-size: 11px;
+        line-height: 1.5;
+        color: #f59e0b;
       }
       .dept-list {
         display: flex;
         flex-direction: column;
-        gap: 0.75rem;
+        gap: 10px;
       }
       .dept-row {
         display: flex;
         flex-direction: column;
-        gap: 0.25rem;
+        gap: 6px;
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px solid var(--color-border, #27272a);
+        background: var(--color-bg, #0b0c0f);
       }
       .dept-meta {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
-        font-size: 0.85rem;
+        gap: 6px;
+        font-size: 12px;
+      }
+      .dept-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
+        flex-shrink: 0;
       }
       .dept-label {
         font-weight: 600;
+        color: var(--color-text-primary, #f4f4f5);
       }
       .dept-slots {
-        color: var(--color-muted, #64748b);
-        font-size: 0.8rem;
+        color: var(--color-text-secondary, #a1a1aa);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
       }
       .badge {
-        font-size: 0.7rem;
-        padding: 0.1rem 0.4rem;
-        border-radius: 4px;
-        background: #e2e8f0;
-        color: #475569;
+        font-size: 10px;
+        font-weight: 600;
+        padding: 2px 7px;
+        border-radius: 999px;
+        border: 1px solid var(--color-border, #27272a);
+        color: var(--color-text-secondary, #a1a1aa);
+        white-space: nowrap;
       }
       .badge.structural {
-        background: #e0e7ff;
-        color: #3730a3;
+        border-color: color-mix(in srgb, var(--color-accent, #3b82f6) 45%, transparent);
+        color: var(--color-accent, #3b82f6);
+        background: color-mix(in srgb, var(--color-accent, #3b82f6) 12%, transparent);
       }
       .badge.clamped {
-        background: #fef3c7;
-        color: #92400e;
+        border-color: color-mix(in srgb, #f59e0b 45%, transparent);
+        color: #f59e0b;
+        background: color-mix(in srgb, #f59e0b 12%, transparent);
       }
       .bar-track {
         position: relative;
-        height: 10px;
-        background: #e2e8f0;
-        border-radius: 5px;
+        height: 6px;
+        border-radius: 999px;
+        background: var(--color-border, #27272a);
         overflow: hidden;
       }
       .bar-hard {
@@ -149,32 +206,29 @@ import {
         left: 0;
         top: 0;
         bottom: 0;
-        background: #cbd5e1;
-        border-radius: 5px;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--color-text-secondary, #a1a1aa) 35%, transparent);
       }
       .bar-rec {
         position: absolute;
         top: 0;
         bottom: 0;
-        background: var(--color-primary, #2563eb);
-        border-radius: 5px;
-        opacity: 0.85;
+        border-radius: 999px;
+        opacity: 0.9;
       }
       .dept-numbers {
         display: flex;
         flex-wrap: wrap;
-        gap: 0.75rem;
-        font-size: 0.78rem;
+        gap: 10px;
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
       }
       .rec {
-        font-weight: 500;
+        font-weight: 600;
+        color: var(--color-text-primary, #f4f4f5);
       }
-      .muted {
-        color: var(--color-muted, #64748b);
-      }
-      .error {
-        color: var(--color-danger, #b91c1c);
-        font-size: 0.85rem;
+      .hard {
+        color: var(--color-text-secondary, #a1a1aa);
       }
     `,
   ],
@@ -260,5 +314,9 @@ export class DepartmentBudgetPanelComponent implements OnChanges {
     const left = (d.recommendedMin.credits / budget) * 100;
     const right = (d.recommendedMax.credits / budget) * 100;
     return Math.max(0, Math.min(100 - left, right - left));
+  }
+
+  departmentColor(d: DepartmentCap): string {
+    return ROLE_COLOR[d.roles?.[0]] ?? 'var(--color-text-secondary)';
   }
 }
