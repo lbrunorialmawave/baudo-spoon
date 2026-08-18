@@ -41,6 +41,7 @@ import {
   AuctionPreset,
   findAuctionPreset,
 } from '../../core/constants/auction-presets';
+import { DepartmentBudgetPanelComponent } from './department-budget-panel/department-budget-panel.component';
 
 
 const ROLE_COLOR: Record<string, string> = {
@@ -311,6 +312,7 @@ function makeParticipants(
     FieldLegendComponent,
     AuctionPlayerDrawerComponent,
     AuctionSimulationComponent,
+    DepartmentBudgetPanelComponent
   ],
   template: `
     @if (sessionId()) {
@@ -1366,6 +1368,13 @@ function makeParticipants(
                   [examples]="SETUP_LEGENDS['budgetInitial'].examples"
                 />
               </div>
+
+              <app-department-budget-panel
+                [ruleset]="ruleset"
+                [roleQuotas]="roleQuotas"
+                [budgetInitial]="budgetInitial"
+                [referenceBudget]="referenceBudget"
+              />
             </div>
 
             <p class="section-divider">Metrica ranking VAR/ESV</p>

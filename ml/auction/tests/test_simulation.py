@@ -68,3 +68,48 @@ def test_single_bidder_completes():
 def test_bidder_policy_validation():
     with pytest.raises(ValueError): BidderPolicy(aggressiveness=1.5)
     with pytest.raises(ValueError): BidderPolicy(max_overpay_ratio=0.5)
+
+
+def test_budget_share_none_preserves_behaviour():
+    participants, pool, config = _two_participants(), _small_pool(), _config()
+    profiles = [
+        BidderProfile(participant_id="u0", policy=BidderPolicy(aggressiveness=0.4)),
+        BidderProfile(participant_id="u1", policy=BidderPolicy(aggressiveness=0.6)),
+    ]
+    sim_cfg = AuctionSimulationConfig(n_simulations=5, random_seed=99)
+    r1 = simulate_auction(participants, profiles, config, pool, sim_cfg)
+    r2 = simulate_auction(participants, profiles, config, pool, sim_cfg)
+    assert r1.per_participant["u0"].spend_p50 == r2.per_participant["u0"].spend_p50
+
+
+def test_mantra_block_share_mapping():
+    from ml.auction.simulation import MANTRA_BLOCK_ROLES, _ROLE_TO_BLOCK
+    assert "Dc" in MANTRA_BLOCK_ROLES["Difesa_Pura"]
+    assert _ROLE_TO_BLOCK["Pc"] == "Attacco"
+
+
+def test_share_cap_blocks_when_overspent():
+    from ml.auction.simulation import _share_cap_for_player, _bot_bid
+    from ml.auction.orchestrator import initialize_auction, record_assignment
+    import numpy as np
+    participants = [ParticipantSetup(participant_id="u0", display_name="U0", budget_initial=100)]
+    pool = (
+        [_mk_player(f"p{i}", f"P{i}", "P", 5, 5.0) for i in range(2)]
+        + [_mk_player(f"d{i}", f"D{i}", "D", 5, 5.0) for i in range(2)]
+        + [_mk_player(f"c{i}", f"C{i}", "C", 5, 5.0) for i in range(2)]
+        + [_mk_player(f"a{i}", f"A{i}", "A", 25, 7.0) for i in range(4)]
+    )
+    config = AuctionConfig(num_participants=1, role_quotas={"P":1,"D":1,"C":1,"A":2},
+                           budget_initial=100, reference_budget=300)
+    state = initialize_auction(participants, config, pool)
+    policy = BidderPolicy(aggressiveness=0.9, max_overpay_ratio=2.0, budget_elasticity=0.0,
+                          min_residual_credits_per_slot=0.0,
+                          budget_share_by_role={"P":0.1,"D":0.2,"C":0.2,"A":0.2})
+    r = record_assignment(state, player_id="a0", winner_participant_id="u0", final_price=20)
+    assert r.success
+    state = r.updated_state
+    bidder = state.participants["u0"]
+    a1 = next(p for p in pool if p.player_id == "a1")
+    cap = _share_cap_for_player(a1, bidder, state, policy, {"P":1,"D":1,"C":1,"A":1})
+    assert cap is not None and cap < 1.0
+    assert _bot_bid(a1, bidder, state, policy, np.random.default_rng(0), 0.0) is None

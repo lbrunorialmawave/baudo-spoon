@@ -342,13 +342,14 @@ def record_assignment(
     role = slot
 
     # -- 4. regola della riserva crediti:
-    #       final_price <= budget_residual - (slots_ancora_da_riempire - 1)
+    #       final_price <= budget_residual - (slots_ancora_da_riempire - 1) * min_slot_price
     total_squad_size = _compute_total_squad_size(state.config.role_quotas)
     current_squad_size = sum(winner.role_breakdown.values())
     slots_remaining_before = total_squad_size - current_squad_size
-    # L'acquisto attuale riempie uno slot; dopo, devono restare crediti >= 1
+    min_price = getattr(state.config, "min_slot_price", 1)
+    # L'acquisto attuale riempie uno slot; dopo, devono restare crediti >= min_slot_price
     # per ciascuno degli slot ancora vuoti (slots_remaining_before - 1).
-    max_allowed = winner.budget_residual - (slots_remaining_before - 1)
+    max_allowed = winner.budget_residual - (slots_remaining_before - 1) * min_price
     if final_price > max_allowed:
         return _reject(
             "credit_reserve_violation",
@@ -356,7 +357,8 @@ def record_assignment(
                 f"prezzo {final_price} viola la regola della riserva crediti: "
                 f"max consentito {max_allowed} "
                 f"(budget_residuo={winner.budget_residual}, "
-                f"slot_ancora_da_riempire={slots_remaining_before})"
+                f"slot_ancora_da_riempire={slots_remaining_before}, "
+                f"min_slot_price={min_price})"
             ),
         )
 

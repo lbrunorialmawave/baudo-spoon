@@ -37,6 +37,10 @@ from ..schemas import (
     AuctionSummarySchema,
     BidderPolicySchema,
     BidderProfileSchema,
+    CreditsAndPercentSchema,
+    DepartmentBudgetPlanRequestSchema,
+    DepartmentBudgetPlanResponseSchema,
+    DepartmentCapSchema,
     FormationCoverageSchema,
     InitializeAuctionRequest,
     InitializeAuctionResponse,
@@ -165,6 +169,7 @@ def _auction_config_from_schema(
         ),
         reference_budget=cfg.reference_budget,
         budget_initial=cfg.budget_initial,
+        min_slot_price=getattr(cfg, "min_slot_price", 1),
     )
 
 
@@ -326,6 +331,78 @@ def _get_session(request: Request, session_id: str) -> AuctionSession:
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/department-budget-plan",
+    response_model=DepartmentBudgetPlanResponseSchema,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_role("member"))],
+)
+def department_budget_plan_endpoint(
+    payload: DepartmentBudgetPlanRequestSchema,
+) -> DepartmentBudgetPlanResponseSchema:
+    """Calcola i tetti di spesa per reparto in fase di pre-asta (hard + recommended)."""
+    from ml.auction.department_budget import (
+        DepartmentCapConfig,
+        compute_department_budget_plan,
+    )
+    from ml.auction.models import AuctionConfig
+
+    try:
+        cfg = AuctionConfig(
+            num_participants=8,
+            role_quotas=dict(payload.role_quotas),
+            ruleset=cast(RulesetType, payload.ruleset),
+            budget_initial=payload.budget_initial,
+            reference_budget=payload.reference_budget,
+            min_slot_price=payload.min_slot_price,
+        )
+        cap_cfg = DepartmentCapConfig(
+            min_slot_price=payload.min_slot_price,
+            alpha_market_vs_slot=payload.alpha_market_vs_slot,
+            tolerance=payload.tolerance,
+        )
+        plan = compute_department_budget_plan(cfg, cap_cfg)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    return DepartmentBudgetPlanResponseSchema(
+        ruleset=plan.ruleset,
+        budget_initial=plan.budget_initial,
+        reference_budget=plan.reference_budget,
+        total_slots=plan.total_slots,
+        min_slot_price=plan.min_slot_price,
+        departments=[
+            DepartmentCapSchema(
+                department_id=d.department_id,
+                label_it=d.label_it,
+                roles=list(d.roles),
+                slots=d.slots,
+                hard_cap=CreditsAndPercentSchema(
+                    credits=d.hard_cap.credits, percent=d.hard_cap.percent
+                ),
+                recommended_min=CreditsAndPercentSchema(
+                    credits=d.recommended_min.credits,
+                    percent=d.recommended_min.percent,
+                ),
+                recommended_max=CreditsAndPercentSchema(
+                    credits=d.recommended_max.credits,
+                    percent=d.recommended_max.percent,
+                ),
+                clamped_to_hard_cap=d.clamped_to_hard_cap,
+                market_share_prior=d.market_share_prior,
+                slot_share=d.slot_share,
+                market_share_source=d.market_share_source,
+            )
+            for d in plan.departments
+        ],
+        sum_recommended_max_percent=plan.sum_recommended_max_percent,
+        warnings=list(plan.warnings),
+    )
 
 
 @router.post(

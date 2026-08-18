@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Generic, Optional, TypeVar
+from typing import Any, Generic, Literal, Optional, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
@@ -854,6 +854,9 @@ class AuctionConfigSchema(_CamelModel):
     Default True aligns Auction with Optimizer decision discounting.
     Set False only to restore pre-hardening Auction ranking behaviour."""
 
+    min_slot_price: int = 1
+    """Prezzo minimo per uno slot (default 1)."""
+
     @field_validator("reference_budget", "budget_initial")
     @classmethod
     def _validate_positive_budget(cls, v: int) -> int:
@@ -866,6 +869,13 @@ class AuctionConfigSchema(_CamelModel):
     def _validate_ruleset(cls, v: str) -> str:
         if v not in ("CLASSIC", "MANTRA"):
             raise ValueError(f"ruleset must be CLASSIC or MANTRA, got {v!r}")
+        return v
+
+    @field_validator("min_slot_price")
+    @classmethod
+    def _validate_min_slot_price(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError(f"min_slot_price must be >= 1, got {v}")
         return v
 
 
@@ -1148,3 +1158,49 @@ class AuctionSimulationResponse(_CamelModel):
     wall_time_seconds: float
     warnings: list[str] = Field(default_factory=list)
     n_excluded_no_projection: int = 0
+
+# ---------------------------------------------------------------------------
+# Department budget plan (pre-auction ceilings)
+# ---------------------------------------------------------------------------
+
+
+class CreditsAndPercentSchema(_CamelModel):
+    credits: int
+    percent: float
+
+
+class DepartmentCapSchema(_CamelModel):
+    department_id: str
+    label_it: str
+    roles: list[str]
+    slots: int
+    hard_cap: CreditsAndPercentSchema
+    recommended_min: CreditsAndPercentSchema
+    recommended_max: CreditsAndPercentSchema
+    clamped_to_hard_cap: bool
+    market_share_prior: Optional[float] = None
+    slot_share: float
+    market_share_source: str
+
+
+class DepartmentBudgetPlanRequestSchema(_CamelModel):
+    ruleset: Literal["CLASSIC", "MANTRA"] = "CLASSIC"
+    role_quotas: dict[str, int] = Field(
+        default_factory=lambda: {"P": 3, "D": 8, "C": 8, "A": 6}
+    )
+    budget_initial: int = Field(default=500, gt=0)
+    reference_budget: int = Field(default=300, gt=0)
+    min_slot_price: int = Field(default=1, ge=1)
+    alpha_market_vs_slot: float = Field(default=0.65, ge=0.0, le=1.0)
+    tolerance: float = Field(default=0.20, ge=0.0, lt=1.0)
+
+
+class DepartmentBudgetPlanResponseSchema(_CamelModel):
+    ruleset: str
+    budget_initial: int
+    reference_budget: int
+    total_slots: int
+    min_slot_price: int
+    departments: list[DepartmentCapSchema]
+    sum_recommended_max_percent: float
+    warnings: list[str] = Field(default_factory=list)

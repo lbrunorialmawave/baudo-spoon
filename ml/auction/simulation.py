@@ -51,6 +51,9 @@ class BidderPolicy:
     prefer_alternatives: bool = True
     prefer_low_cost_alternative: bool = False
     rebid_trigger_pct_above_expected: float = 0.12
+    # Target fraction of budget_initial per CLASSIC role (P/D/C/A). When set,
+    # _bot_bid caps the bid so cumulative spend on that role stays near the
+    # share (± budget_elasticity overshoot). None = unconstrained (legacy).
     budget_share_by_role: Mapping[str, float] | None = None
     phase_bias: str | None = None
     prefer_young_players: bool = False
@@ -60,6 +63,8 @@ class BidderPolicy:
     prefer_high_variance: bool = False
     prefer_multi_role: bool = False
     min_num_roles: int | None = None
+    # Target fraction of budget_initial per MANTRA block (keys from
+    # MANTRA_BLOCK_ROLES). Preferred over budget_share_by_role under MANTRA.
     budget_share_by_block: Mapping[str, float] | None = None
     max_top_tier_count: int | None = None
     target_top_tier_count: int | None = None
@@ -230,6 +235,98 @@ def _total_remaining_slots(remaining: Mapping[str, int]) -> int:
     return sum(remaining.values())
 
 
+# Informal MANTRA "block" keys used in auction-presets.ts → canonical roles.
+MANTRA_BLOCK_ROLES: dict[str, tuple[str, ...]] = {
+    "Por": ("Por",),
+    "Difesa_Pura": ("Dc", "B"),
+    "Ibridi_Difensivi": ("Dd", "Ds", "E"),
+    "Centro_Nevralgico": ("M", "C"),
+    "Linea_Fantasia": ("T", "W"),
+    "Attacco": ("A", "Pc"),
+}
+
+_ROLE_TO_BLOCK: dict[str, str] = {
+    role: block
+    for block, roles in MANTRA_BLOCK_ROLES.items()
+    for role in roles
+}
+
+
+def _spent_by_role(state: AuctionState, participant_id: str) -> dict[str, int]:
+    """Sum of final prices paid by participant_id, keyed by assigned slot/role."""
+    spent: dict[str, int] = defaultdict(int)
+    for a in state.assignments:
+        if a.winner_participant_id != participant_id:
+            continue
+        slot = a.assigned_slot or a.role
+        spent[str(slot)] += int(a.final_price)
+    return dict(spent)
+
+
+def _share_cap_for_player(
+    player: Player,
+    bidder: ParticipantState,
+    state: AuctionState,
+    policy: BidderPolicy,
+    remaining: Mapping[str, int],
+) -> float | None:
+    """Extra max-bid ceiling from budget_share_by_role / _by_block.
+
+    Returns None when no share constraint applies (backward-compatible).
+    """
+    config = state.config
+    roles_with_slots = [
+        r for r in _player_roles(player, config.ruleset) if remaining.get(r, 0) > 0
+    ]
+    if not roles_with_slots:
+        return None
+
+    spent = _spent_by_role(state, bidder.participant_id)
+    budget_initial = float(bidder.budget_residual + sum(spent.values()))
+    if budget_initial <= 0:
+        budget_initial = float(config.budget_initial)
+    if budget_initial <= 0:
+        return None
+
+    elasticity = float(policy.budget_elasticity)
+
+    if config.ruleset == "MANTRA" and policy.budget_share_by_block:
+        best_cap: float | None = None
+        for role in roles_with_slots:
+            block = _ROLE_TO_BLOCK.get(role)
+            if block is None or block not in policy.budget_share_by_block:
+                continue
+            share = float(policy.budget_share_by_block[block])
+            if share <= 0:
+                continue
+            group_roles = MANTRA_BLOCK_ROLES.get(block, (role,))
+            group_spent = sum(spent.get(r, 0) for r in group_roles)
+            target = share * budget_initial
+            overshoot = elasticity * float(bidder.budget_residual) * share
+            allowance = (target - group_spent) + overshoot
+            if best_cap is None or allowance > best_cap:
+                best_cap = allowance
+        return best_cap
+
+    if policy.budget_share_by_role:
+        best_cap = None
+        for role in roles_with_slots:
+            if role not in policy.budget_share_by_role:
+                continue
+            share = float(policy.budget_share_by_role[role])
+            if share <= 0:
+                continue
+            role_spent = spent.get(role, 0)
+            target = share * budget_initial
+            overshoot = elasticity * float(bidder.budget_residual) * share
+            allowance = (target - role_spent) + overshoot
+            if best_cap is None or allowance > best_cap:
+                best_cap = allowance
+        return best_cap
+
+    return None
+
+
 def _bot_bid(
     player: Player,
     bidder: ParticipantState,
@@ -256,6 +353,14 @@ def _bot_bid(
     max_affordable = max(0.0, float(bidder.budget_residual) - reserve)
     if max_affordable < 1:
         return None
+
+    # G1 / DBC-7: honour budget_share_by_role / budget_share_by_block when set.
+    share_cap = _share_cap_for_player(player, bidder, state, policy, remaining)
+    if share_cap is not None:
+        if share_cap < 1:
+            return None
+        max_affordable = min(max_affordable, share_cap)
+
     overpay = policy.max_overpay_ratio * (0.85 + 0.3 * policy.aggressiveness)
     noise = float(rng.normal(0.0, price_noise_std_ratio))
     raw_bid = expected * overpay * (1.0 + noise)

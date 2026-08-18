@@ -7,6 +7,8 @@ import {
   AlternativesResponse,
   AuctionPlayerSummary,
   AuctionSummary,
+  DepartmentBudgetPlan,
+  DepartmentBudgetPlanRequest,
   DeserializeAuctionRequest,
   InitializeAuctionRequest,
   InitializeAuctionResponse,
@@ -36,6 +38,16 @@ export class AuctionService {
   init(req: InitializeAuctionRequest): Observable<InitializeAuctionResponse> {
     return this.http.post<InitializeAuctionResponse>(
       `${this.baseUrl}/auction/init`,
+      req,
+    );
+  }
+
+  /** POST /auction/department-budget-plan — pre-auction spending ceilings. */
+  getDepartmentBudgetPlan(
+    req: DepartmentBudgetPlanRequest,
+  ): Observable<DepartmentBudgetPlan> {
+    return this.http.post<DepartmentBudgetPlan>(
+      `${this.baseUrl}/auction/department-budget-plan`,
       req,
     );
   }

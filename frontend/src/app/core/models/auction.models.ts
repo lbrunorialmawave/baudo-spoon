@@ -105,6 +105,8 @@ export interface AuctionConfig {
   budgetInitial: number;
   /** Score metric: PER_MATCH_RATING (default) or SEASON_VALUE. */
   valuationMode?: ValuationMode;
+  /** Minimum price per empty slot (default 1). */
+  minSlotPrice?: number;
 }
 
 // ── Setup payloads ─────────────────────────────────────────────────────────
@@ -400,4 +402,49 @@ export interface AuctionSimulationResponse {
   warnings: string[];
   /** Players dropped from the server-built pool for missing projection. */
   nExcludedNoProjection?: number;
+}
+
+
+// ---------------------------------------------------------------------------
+// Department budget plan (pre-auction ceilings)
+// ---------------------------------------------------------------------------
+
+export interface CreditsAndPercent {
+  credits: number;
+  percent: number;
+}
+
+export interface DepartmentCap {
+  departmentId: string;
+  labelIt: string;
+  roles: string[];
+  slots: number;
+  hardCap: CreditsAndPercent;
+  recommendedMin: CreditsAndPercent;
+  recommendedMax: CreditsAndPercent;
+  clampedToHardCap: boolean;
+  marketSharePrior: number | null;
+  slotShare: number;
+  marketShareSource: 'listino_prior' | 'fallback_slot_only' | string;
+}
+
+export interface DepartmentBudgetPlanRequest {
+  ruleset?: 'CLASSIC' | 'MANTRA';
+  roleQuotas?: Record<string, number>;
+  budgetInitial?: number;
+  referenceBudget?: number;
+  minSlotPrice?: number;
+  alphaMarketVsSlot?: number;
+  tolerance?: number;
+}
+
+export interface DepartmentBudgetPlan {
+  ruleset: string;
+  budgetInitial: number;
+  referenceBudget: number;
+  totalSlots: number;
+  minSlotPrice: number;
+  departments: DepartmentCap[];
+  sumRecommendedMaxPercent: number;
+  warnings: string[];
 }

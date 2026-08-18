@@ -253,6 +253,14 @@ class AuctionConfig:
     (fattore di scala = 1.0).
     """
 
+    min_slot_price: int = 1
+    """Prezzo minimo per uno slot in fase d'asta. Usato dalla regola di
+    fattibilità sia negli assegnamenti live (orchestrator.py) sia nel
+    calcolo dei tetti di spesa per reparto (department_budget.py).
+    Reso esplicito e configurabile per leghe con regole di prezzo minimo
+    diverse da 1 credito. Deve essere >= 1.
+    """
+
     def __post_init__(self) -> None:
         if self.num_participants < 1:
             raise ValueError(
@@ -314,6 +322,10 @@ class AuctionConfig:
         if self.risk_aversion < 0.0:
             raise ValueError(
                 f"AuctionConfig.risk_aversion must be >= 0, got {self.risk_aversion}"
+            )
+        if self.min_slot_price < 1:
+            raise ValueError(
+                f"AuctionConfig.min_slot_price must be >= 1, got {self.min_slot_price}"
             )
 
 
