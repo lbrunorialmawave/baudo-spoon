@@ -116,7 +116,7 @@ const ROLE_COLORS: Record<string, string> = {
             <app-error-boundary [message]="tableError()!" />
           } @else {
             <div class="overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0" style="-webkit-overflow-scrolling:touch">
-              <table class="w-full text-sm" style="border-collapse:collapse;min-width:520px">
+              <table class="w-full text-sm rt-card-table" style="border-collapse:collapse;min-width:520px">
                 <thead>
                   <tr class="border-b text-xs font-medium uppercase tracking-wide"
                       style="border-color:var(--color-border);color:var(--color-text-secondary)">
@@ -137,16 +137,16 @@ const ROLE_COLORS: Record<string, string> = {
                         (mouseenter)="hoverId = q.id"
                         (mouseleave)="hoverId = null"
                         [style.backgroundColor]="hoverId === q.id ? 'var(--color-surface)' : 'transparent'">
-                      <td class="px-3 py-2.5 font-medium" style="color:var(--color-text-primary)">
+                      <td class="px-3 py-2.5 font-medium" data-label="Player" style="color:var(--color-text-primary)">
                         {{ q.playerName }}
                       </td>
-                      <td class="px-3 py-2.5 text-xs hidden sm:table-cell" style="color:var(--color-text-secondary)">{{ q.team }}</td>
-                      <td class="px-3 py-2.5 text-center">
+                      <td class="px-3 py-2.5 text-xs hidden sm:table-cell" data-label="Team" style="color:var(--color-text-secondary)">{{ q.team }}</td>
+                      <td class="px-3 py-2.5 text-center" data-label="Role">
                         <span class="badge text-white text-xs" [style.background]="roleColor(q.role)">
                           {{ q.role }}
                         </span>
                       </td>
-                      <td class="px-3 py-2.5 text-center">
+                      <td class="px-3 py-2.5 text-center" data-label="Mapping">
                         @if (!q.matchMethod || q.matchMethod === 'unmatched') {
                           <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-white"
                                 style="background:#EF4444"
@@ -169,13 +169,13 @@ const ROLE_COLORS: Record<string, string> = {
                           <span class="text-xs" style="color:var(--color-text-secondary)">✓</span>
                         }
                       </td>
-                      <td class="px-3 py-2.5 text-right font-mono font-semibold"
+                      <td class="px-3 py-2.5 text-right font-mono font-semibold" data-label="qtA"
                           style="color:var(--color-accent)">{{ q.qtA }}</td>
-                      <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell"
+                      <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell" data-label="qtI"
                           style="color:var(--color-text-secondary)">{{ q.qtI }}</td>
-                      <td class="px-3 py-2.5 text-right font-mono text-xs hidden lg:table-cell"
+                      <td class="px-3 py-2.5 text-right font-mono text-xs hidden lg:table-cell" data-label="FVM"
                           style="color:var(--color-text-secondary)">{{ q.fvm ?? '—' }}</td>
-                      <td class="px-3 py-2.5 text-right font-mono text-xs hidden sm:table-cell"
+                      <td class="px-3 py-2.5 text-right font-mono text-xs hidden sm:table-cell" data-label="Diff"
                           [style.color]="q.diffVal > 0 ? '#22C55E' : q.diffVal < 0 ? '#EF4444' : 'var(--color-text-secondary)'">
                         {{ q.diffVal > 0 ? '+' : '' }}{{ q.diffVal }}
                       </td>

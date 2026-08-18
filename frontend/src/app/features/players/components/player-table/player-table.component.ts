@@ -10,7 +10,7 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
   imports: [SkeletonComponent, DecimalPipe],
   template: `
     <div class="overflow-x-auto -mx-3 sm:-mx-4 md:mx-0">
-      <table class="w-full text-sm" style="border-collapse:collapse;min-width:560px">
+      <table class="w-full text-sm rt-card-table" style="border-collapse:collapse;min-width:560px">
         <thead>
           <tr class="border-b text-xs font-medium uppercase tracking-wide"
               style="border-color:var(--color-border);color:var(--color-text-secondary)">
@@ -64,42 +64,42 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                   (mouseenter)="hoverId = item.id"
                   (mouseleave)="hoverId = null"
                   [style.backgroundColor]="hoverId === item.id ? 'var(--color-surface)' : 'transparent'">
-                <td class="px-3 py-2.5 text-right font-mono text-xs"
+                <td class="px-3 py-2.5 text-right font-mono text-xs" data-label="#"
                     style="color:var(--color-text-secondary)">{{ (page() - 1) * pageSize() + i + 1 }}</td>
-                <td class="px-3 py-2.5 font-medium" style="color:var(--color-text-primary)">
+                <td class="px-3 py-2.5 font-medium" data-label="Player" style="color:var(--color-text-primary)">
                   {{ item.player_name }}
                 </td>
-                <td class="px-3 py-2.5 text-xs hidden sm:table-cell" style="color:var(--color-text-secondary)">
+                <td class="px-3 py-2.5 text-xs hidden sm:table-cell" data-label="Team" style="color:var(--color-text-secondary)">
                   {{ item.team ?? item.team_name ?? '—' }}
                   @if (teamStrength()[item.team ?? item.team_name]; as elo) {
                     <span class="elo-badge" [title]="'Elo: ' + (elo * 100 | number:'1.0-0') + '%'"
                           [style.opacity]="0.4 + elo * 0.6">●</span>
                   }
                 </td>
-                <td class="px-3 py-2.5 text-xs">
+                <td class="px-3 py-2.5 text-xs" data-label="Mantra">
                   @if (mp?.ruolo_primario) {
                     <span class="font-medium" style="color:var(--color-text-primary)">{{ mp.ruolo_primario }}</span>
                   } @else {
                     <span class="italic opacity-50">—</span>
                   }
                 </td>
-                <td class="px-3 py-2.5 text-xs hidden lg:table-cell" style="color:var(--color-text-secondary)">
+                <td class="px-3 py-2.5 text-xs hidden lg:table-cell" data-label="Category" style="color:var(--color-text-secondary)">
                   {{ item.stat_category ?? (mp?.ruoli_mantra?.join(', ') ?? '') }}
                 </td>
-                <td class="px-3 py-2.5 text-right font-mono text-sm font-semibold"
+                <td class="px-3 py-2.5 text-right font-mono text-sm font-semibold" data-label="FP"
                     style="color:var(--color-accent)">
                   {{ mp?.FP_Mantra != null ? (mp.FP_Mantra | number:'1.1-1') : '—' }}
                 </td>
-                <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell"
+                <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell" data-label="VR"
                     style="color:var(--color-text-secondary)">
                   {{ mp?.VR != null ? (mp.VR | number:'1.0-0') : '—' }}
                 </td>
-                <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell"
+                <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell" data-label="SP%"
                     style="color:var(--color-text-secondary)">
                   @let sp = mp?.start_probability;
                   {{ sp != null ? (sp * 100 | number:'1.0-0') + '%' : '—' }}
                 </td>
-                <td class="px-3 py-2.5 text-xs hidden md:table-cell">
+                <td class="px-3 py-2.5 text-xs hidden md:table-cell" data-label="Status">
                   @let mds = matchdayStatus()[item.fantacalcio_id];
                   @if (mds) {
                     <span class="rounded-full px-2 py-0.5 text-xs font-medium text-white"
@@ -110,7 +110,7 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                     <span class="text-xs opacity-30">—</span>
                   }
                 </td>
-                <td class="px-3 py-2.5">
+                <td class="px-3 py-2.5" data-label="Profilo">
                   @if (mp && mp.Fase7) {
                     @let f7 = FASE7_LABELS[mp.Fase7];
                     <span class="rounded-full px-2 py-0.5 text-xs font-medium text-white"
@@ -128,11 +128,11 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                     </span>
                   }
                 </td>
-                <td class="px-3 py-2.5 text-right font-mono text-xs whitespace-nowrap"
+                <td class="px-3 py-2.5 text-right font-mono text-xs whitespace-nowrap" data-label="Prezzo"
                     style="color:var(--color-text-secondary)">
                   {{ mp?.Pz1 != null ? (mp.Pz1 | number:'1.0-0') + ' cr' : '—' }}
                 </td>
-                <td class="px-3 py-2.5 text-xs hidden lg:table-cell whitespace-nowrap">
+                <td class="px-3 py-2.5 text-xs hidden lg:table-cell whitespace-nowrap" data-label="Esperti">
                   @let er = expertRatings()[item.fantacalcio_id];
                   @if (er && er.rating != null) {
                     <span style="color:var(--color-accent)" [title]="expertTooltip(er)">

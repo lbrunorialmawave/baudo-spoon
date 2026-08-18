@@ -95,7 +95,7 @@ const MANTRA_METRICS = {
         <section class="card runs-card">
           <h2 class="section-title">Pipeline runs</h2>
           <div class="table-scroll">
-            <table class="runs-table">
+            <table class="runs-table rt-card-table">
               <thead>
                 <tr>
                   <th>Run ID</th>
@@ -113,8 +113,8 @@ const MANTRA_METRICS = {
                 @for (run of runs(); track run.run_id) {
                   <tr [class.degraded-row]="run.status === 'degraded'"
                       [class.mantra-row]="isMantraRun(run)">
-                    <td class="run-id-cell">{{ run.run_id }}</td>
-                    <td>
+                    <td class="run-id-cell" data-label="Run ID">{{ run.run_id }}</td>
+                    <td data-label="Model">
                       <div class="model-cell">
                         <span>{{ run.model_name }}</span>
                         @if (isMantraRun(run)) {
@@ -125,11 +125,11 @@ const MANTRA_METRICS = {
                         }
                       </div>
                     </td>
-                    <td>{{ run.trained_at | date:'dd MMM yy HH:mm' }}</td>
-                    <td class="col-season">{{ run.season_start ?? '—' }}</td>
-                    <td class="mono col-git">{{ run.git_commit ?? '—' }}</td>
+                    <td data-label="Trained at">{{ run.trained_at | date:'dd MMM yy HH:mm' }}</td>
+                    <td class="col-season" data-label="Season">{{ run.season_start ?? '—' }}</td>
+                    <td class="mono col-git" data-label="Git">{{ run.git_commit ?? '—' }}</td>
                     @if (isMantraRun(run)) {
-                      <td class="mono" colspan="3" title="Metriche di ranking MANTRA (non RMSE/MAE/R²)">
+                      <td class="mono" colspan="3" data-label="Metriche MANTRA" title="Metriche di ranking MANTRA (non RMSE/MAE/R²)">
                         <span class="mantra-metrics">
                           <span>
                             <span class="metric-k">Spearman</span>
@@ -142,11 +142,11 @@ const MANTRA_METRICS = {
                         </span>
                       </td>
                     } @else {
-                      <td class="mono">{{ metricValue(run, 'rmse', 'test') }}</td>
-                      <td class="mono col-mae">{{ metricValue(run, 'mae', 'test') }}</td>
-                      <td class="mono col-r2">{{ metricValue(run, 'r2', 'test') }}</td>
+                      <td class="mono" data-label="RMSE (test)">{{ metricValue(run, 'rmse', 'test') }}</td>
+                      <td class="mono col-mae" data-label="MAE (test)">{{ metricValue(run, 'mae', 'test') }}</td>
+                      <td class="mono col-r2" data-label="R² (test)">{{ metricValue(run, 'r2', 'test') }}</td>
                     }
-                    <td>
+                    <td data-label="Status">
                       <span class="status-badge" [attr.data-status]="run.status">
                         {{ run.status }}
                       </span>

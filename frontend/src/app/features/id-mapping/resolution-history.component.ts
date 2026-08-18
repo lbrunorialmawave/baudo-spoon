@@ -103,7 +103,7 @@ import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/e
         } @else {
           <div class="card p-0 overflow-hidden">
             <div class="overflow-x-auto" style="-webkit-overflow-scrolling:touch">
-              <table class="w-full text-sm" style="min-width:640px">
+              <table class="w-full text-sm rt-card-table" style="min-width:640px">
                 <thead>
                   <tr style="color:var(--color-text-secondary);border-color:var(--color-border)">
                     <th class="text-left px-3 py-2 sm:px-4 sm:py-2.5 font-medium text-xs">Fantacalcio</th>
@@ -129,7 +129,7 @@ import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/e
                   } @else {
                     @for (item of items(); track item.id) {
                       <tr class="border-t" style="border-color:var(--color-border)">
-                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 font-medium" style="color:var(--color-text-primary)">
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 font-medium" data-label="Fantacalcio" style="color:var(--color-text-primary)">
                           <div class="min-w-0">
                             <div class="truncate">{{ item.nameFantacalcio }}</div>
                             <div class="md:hidden text-xs" style="color:var(--color-text-secondary)">
@@ -138,31 +138,31 @@ import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/e
                             </div>
                           </div>
                         </td>
-                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 font-mono text-xs hidden md:table-cell" style="color:var(--color-text-secondary)">
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 font-mono text-xs hidden md:table-cell" data-label="Season" style="color:var(--color-text-secondary)">
                           {{ item.seasonStart }}/{{ item.seasonStart + 1 }}
                         </td>
-                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs hidden lg:table-cell" style="color:var(--color-text-secondary)">
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs hidden lg:table-cell" data-label="Team" style="color:var(--color-text-secondary)">
                           {{ item.teamFantacalcio ?? '—' }}
                         </td>
-                        <td class="px-3 py-2 sm:px-4 sm:py-2.5">
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5" data-label="Role">
                           <span class="rounded-full px-2 py-0.5 text-xs font-medium text-white whitespace-nowrap"
                                 [style.background]="roleColor(item.canonicalRole ?? '')">
                             {{ item.canonicalRole ?? '—' }}
                           </span>
                         </td>
-                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs hidden lg:table-cell" style="color:var(--color-text-secondary)">
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs hidden lg:table-cell" data-label="FotMob Name" style="color:var(--color-text-secondary)">
                           {{ item.nameFotmob ?? '—' }}
                         </td>
-                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 font-mono text-xs hidden lg:table-cell" style="color:var(--color-text-secondary)">
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 font-mono text-xs hidden lg:table-cell" data-label="FotMob ID" style="color:var(--color-text-secondary)">
                           {{ item.playerFotmobId }}
                         </td>
-                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs hidden lg:table-cell" style="color:var(--color-text-secondary);max-width:200px">
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs hidden lg:table-cell" data-label="Note" style="color:var(--color-text-secondary);max-width:200px">
                           <span class="truncate block">{{ item.note ?? '—' }}</span>
                         </td>
-                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs whitespace-nowrap" style="color:var(--color-text-secondary)">
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs whitespace-nowrap" data-label="Resolved" style="color:var(--color-text-secondary)">
                           {{ item.createdAt | date:'dd/MM/yy' }}
                         </td>
-                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-right">
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-right" data-label="Action">
                           <button class="rounded-lg border px-3 py-1 text-xs font-medium whitespace-nowrap"
                                   style="border-color:#EF4444;color:#EF4444"
                                   (click)="confirmDelete(item)">

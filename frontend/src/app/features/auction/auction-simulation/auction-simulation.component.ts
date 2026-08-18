@@ -245,7 +245,7 @@ interface ParticipantRow {
                   </p>
                   @if (sel.stats.typicalSquad?.length) {
                     <div class="player-table-wrap">
-                      <table class="player-table">
+                      <table class="player-table rt-card-table">
                         <thead>
                           <tr>
                             <th>Giocatore</th>
@@ -257,13 +257,13 @@ interface ParticipantRow {
                         <tbody>
                           @for (pl of sel.stats.typicalSquad; track pl.playerId) {
                             <tr>
-                              <td>
+                              <td data-label="Giocatore">
                                 <span class="pl-name">{{ pl.name }}</span>
                                 <code class="pl-id">{{ pl.playerId }}</code>
                               </td>
-                              <td>{{ pl.role }}</td>
-                              <td>{{ pl.frequency | percent: '1.0-1' }}</td>
-                              <td>{{ pl.avgPrice | number: '1.0-1' }} cr</td>
+                              <td data-label="Ruolo">{{ pl.role }}</td>
+                              <td data-label="Frequenza">{{ pl.frequency | percent: '1.0-1' }}</td>
+                              <td data-label="Prezzo medio">{{ pl.avgPrice | number: '1.0-1' }} cr</td>
                             </tr>
                           }
                         </tbody>
@@ -281,16 +281,16 @@ interface ParticipantRow {
             <div class="acq-block">
               <p class="card-section-label">Probabilità acquisizione (obiettivi)</p>
               <p class="hint">Su tutti i manager: quanto spesso il player finisce assegnato in un’asta simulata.</p>
-              <table class="player-table">
+              <table class="player-table rt-card-table">
                 <thead>
                   <tr><th>Player</th><th>Prob.</th><th>Prezzo medio</th></tr>
                 </thead>
                 <tbody>
                   @for (row of targetAcquisitions(); track row.playerId) {
                     <tr>
-                      <td><code>{{ row.playerId }}</code></td>
-                      <td>{{ row.prob | percent: '1.0-1' }}</td>
-                      <td>{{ row.avgPrice | number: '1.0-1' }} cr</td>
+                      <td data-label="Player"><code>{{ row.playerId }}</code></td>
+                      <td data-label="Prob.">{{ row.prob | percent: '1.0-1' }}</td>
+                      <td data-label="Prezzo medio">{{ row.avgPrice | number: '1.0-1' }} cr</td>
                     </tr>
                   }
                 </tbody>

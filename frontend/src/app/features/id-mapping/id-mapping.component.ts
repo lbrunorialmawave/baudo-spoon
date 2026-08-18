@@ -172,7 +172,7 @@ const METHOD_COLORS: Record<string, string> = {
         } @else {
           <div class="card p-0 overflow-hidden">
             <div class="overflow-x-auto" style="-webkit-overflow-scrolling:touch">
-              <table class="w-full text-sm" style="min-width:640px">
+              <table class="w-full text-sm rt-card-table" style="min-width:640px">
                 <thead>
                   <tr style="color:var(--color-text-secondary);border-color:var(--color-border)">
                     <th class="text-left px-3 py-2 sm:px-4 sm:py-2.5 font-medium text-xs cursor-pointer select-none"
@@ -207,7 +207,7 @@ const METHOD_COLORS: Record<string, string> = {
                   } @else {
                     @for (item of sortedItems(); track item.id) {
                       <tr class="border-t" style="border-color:var(--color-border)">
-                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 font-medium" style="color:var(--color-text-primary)">
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 font-medium" data-label="Fantacalcio" style="color:var(--color-text-primary)">
                           <div class="min-w-0">
                             <div class="truncate">{{ item.nameFantacalcio }}</div>
                             <div class="md:hidden text-xs" style="color:var(--color-text-secondary)">
@@ -216,19 +216,19 @@ const METHOD_COLORS: Record<string, string> = {
                             </div>
                           </div>
                         </td>
-                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 font-mono text-xs hidden md:table-cell" style="color:var(--color-text-secondary)">
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 font-mono text-xs hidden md:table-cell" data-label="Season" style="color:var(--color-text-secondary)">
                           {{ item.seasonStart }}/{{ item.seasonStart + 1 }}
                         </td>
-                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs hidden lg:table-cell" style="color:var(--color-text-secondary)">
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs hidden lg:table-cell" data-label="Team" style="color:var(--color-text-secondary)">
                           {{ item.teamFantacalcio }}
                         </td>
-                        <td class="px-3 py-2 sm:px-4 sm:py-2.5">
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5" data-label="Role">
                           <span class="rounded-full px-2 py-0.5 text-xs font-medium text-white whitespace-nowrap"
                                 [style.background]="roleColor(item.canonicalRole ?? '')">
                             {{ item.canonicalRole ?? '—' }}
                           </span>
                         </td>
-                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs hidden lg:table-cell" style="color:var(--color-text-secondary)">
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs hidden lg:table-cell" data-label="Mantra Roles" style="color:var(--color-text-secondary)">
                           @if (item.ruoloPrimario) {
                             <span class="font-medium" style="color:var(--color-text-primary)">{{ item.ruoloPrimario }}</span>
                             @if (item.ruoliMantra && item.ruoliMantra.length > 1) {
@@ -238,7 +238,7 @@ const METHOD_COLORS: Record<string, string> = {
                             <span class="italic opacity-50">—</span>
                           }
                         </td>
-                        <td class="px-3 py-2 sm:px-4 sm:py-2.5">
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5" data-label="Method">
                           <span class="rounded-full px-2 py-0.5 text-xs font-medium text-white whitespace-nowrap"
                                 [style.background]="methodColor(item.matchMethod)">
                             {{ methodLabel(item.matchMethod) }}
@@ -250,13 +250,13 @@ const METHOD_COLORS: Record<string, string> = {
                             </span>
                           }
                         </td>
-                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs hidden lg:table-cell" style="color:var(--color-text-secondary)">
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-xs hidden lg:table-cell" data-label="FotMob Name" style="color:var(--color-text-secondary)">
                           {{ item.nameFotmob ?? '—' }}
                         </td>
-                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 font-mono text-xs hidden lg:table-cell" style="color:var(--color-text-secondary)">
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 font-mono text-xs hidden lg:table-cell" data-label="FotMob ID" style="color:var(--color-text-secondary)">
                           {{ item.playerFotmobId ?? '—' }}
                         </td>
-                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-right">
+                        <td class="px-3 py-2 sm:px-4 sm:py-2.5 text-right" data-label="Action">
                           <div class="flex items-center justify-end gap-1">
                             @if (item.matchMethod !== 'exact_name_team' && item.matchMethod !== 'exact_name_team_role_season' && item.matchMethod !== 'exact_name_role' && item.matchMethod !== 'exact_relaxed_role') {
                               <button class="rounded px-1.5 py-0.5 text-xs hover:opacity-70"

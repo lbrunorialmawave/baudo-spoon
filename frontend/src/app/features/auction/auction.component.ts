@@ -737,7 +737,7 @@ function makeParticipants(
                   Storico assegnazioni ({{ reversedAssignments().length }})
                 </p>
                 <div class="history-table-wrap">
-                  <table class="squad-table">
+                  <table class="squad-table rt-card-table">
                     <thead>
                       <tr>
                         <th title="Numero progressivo dell'asta nella sessione">#</th>
@@ -765,8 +765,8 @@ function makeParticipants(
                             tabindex="0"
                             role="button"
                             [attr.aria-label]="'Dettaglio ' + a.player.name">
-                          <td class="seq">{{ a.sequenceNumber }}</td>
-                          <td>
+                          <td class="seq" data-label="#">{{ a.sequenceNumber }}</td>
+                          <td data-label="Giocatore">
                             <p class="player-name">
                               {{ a.player.name }}
                               @if (a.player.sampleCohort === 'LIMITED' || a.player.sampleCohort === 'INSUFFICIENT') {
@@ -775,8 +775,8 @@ function makeParticipants(
                             </p>
                             <p class="team-name">{{ a.player.realTeam }}</p>
                           </td>
-                          <td>{{ winnerName(a.winnerParticipantId) }}</td>
-                          <td>
+                          <td data-label="Aggiudicatario">{{ winnerName(a.winnerParticipantId) }}</td>
+                          <td data-label="Ruolo">
                             <span
                               class="role-badge"
                               [style.color]="roleColor(a.role)"
@@ -784,8 +784,8 @@ function makeParticipants(
                               >{{ a.assignedSlot || a.role }}</span
                             >
                           </td>
-                          <td class="num accent">{{ a.finalPrice }}</td>
-                          <td>
+                          <td class="num accent" data-label="Prezzo">{{ a.finalPrice }}</td>
+                          <td data-label="Tier">
                             <span
                               class="tier-badge"
                               [style.color]="tierColor(a.tier)"
@@ -793,7 +793,7 @@ function makeParticipants(
                               >{{ a.tier }}</span
                             >
                           </td>
-                          <td class="num faded">
+                          <td class="num faded" data-label="Δ Indice">
                             {{ a.priceIndexAfter - a.priceIndexBefore | number: '+1.3-3' }}
                           </td>
                         </tr>
@@ -827,7 +827,7 @@ function makeParticipants(
                 />
                 @if (varRanking().length) {
                   <div class="history-table-wrap">
-                    <table class="squad-table">
+                    <table class="squad-table rt-card-table">
                       <thead>
                         <tr>
                           <th
@@ -948,7 +948,7 @@ function makeParticipants(
                               tabindex="0"
                               role="button"
                               [attr.aria-label]="'Dettaglio ' + v.name">
-                            <td>
+                            <td data-label="Giocatore">
                               {{ v.name }}
                               @if (v.sampleCohort === 'LIMITED' || v.sampleCohort === 'INSUFFICIENT') {
                                 <span class="ml-noisy-badge"
@@ -959,7 +959,7 @@ function makeParticipants(
                                 </span>
                               }
                             </td>
-                            <td>
+                            <td data-label="Ruolo">
                               <span
                                 class="role-badge"
                                 [style.color]="roleColor(v.role)"
@@ -969,6 +969,7 @@ function makeParticipants(
                             </td>
                             <td
                               class="num"
+                              data-label="ESV"
                               [style.color]="
                                 v.esv > 0
                                   ? 'var(--color-success, #22C55E)'
@@ -977,18 +978,18 @@ function makeParticipants(
                             >
                               {{ v.esv | number: '1.1-1' }}
                             </td>
-                            <td class="num faded">{{ v.expectedPrice | number: '1.0-0' }}</td>
-                            <td class="num faded">
+                            <td class="num faded" data-label="Prezzo atteso">{{ v.expectedPrice | number: '1.0-0' }}</td>
+                            <td class="num faded" data-label="Val. stagione">
                               {{ v.seasonValue != null ? (v.seasonValue | number: '1.1-1') : '—' }}
                             </td>
-                            <td class="num faded">
+                            <td class="num faded" data-label="% Titolarità">
                               {{
                                 v.startProbability != null
                                   ? (v.startProbability * 100 | number: '1.0-0') + '%'
                                   : '—'
                               }}
                             </td>
-                            <td>
+                            <td data-label="Segnale">
                               @if (v.buySignal) {
                                 <span class="esv-badge esv-buy" title="Affare: ESV positivo"
                                   >COMPRA</span

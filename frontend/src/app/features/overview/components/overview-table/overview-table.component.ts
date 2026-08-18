@@ -16,7 +16,7 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
   imports: [SkeletonComponent, DecimalPipe, TitolaritaBadgesComponent],
   template: `
     <div class="overflow-x-auto -mx-3 sm:-mx-4 md:mx-0">
-      <table class="w-full text-sm" style="border-collapse:collapse;min-width:760px">
+      <table class="w-full text-sm rt-card-table" style="border-collapse:collapse;min-width:760px">
         <thead>
           <tr class="border-b text-xs font-medium uppercase tracking-wide"
               style="border-color:var(--color-border);color:var(--color-text-secondary)">
@@ -75,16 +75,16 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                   (mouseenter)="hoverId = item.fantacalcioId"
                   (mouseleave)="hoverId = null"
                   [style.backgroundColor]="hoverId === item.fantacalcioId ? 'var(--color-surface)' : 'transparent'">
-                <td class="px-3 py-2.5 text-right font-mono text-xs" style="color:var(--color-text-secondary)">
+                <td class="px-3 py-2.5 text-right font-mono text-xs" data-label="#" style="color:var(--color-text-secondary)">
                   {{ (page() - 1) * pageSize() + i + 1 }}
                 </td>
-                <td class="px-3 py-2.5 font-medium" style="color:var(--color-text-primary)">
+                <td class="px-3 py-2.5 font-medium" data-label="Player" style="color:var(--color-text-primary)">
                   {{ item.playerName ?? '—' }}
                 </td>
-                <td class="px-3 py-2.5 text-xs hidden sm:table-cell" style="color:var(--color-text-secondary)">
+                <td class="px-3 py-2.5 text-xs hidden sm:table-cell" data-label="Team" style="color:var(--color-text-secondary)">
                   {{ item.team ?? '—' }}
                 </td>
-                <td class="px-3 py-2.5 text-xs hidden md:table-cell whitespace-nowrap">
+                <td class="px-3 py-2.5 text-xs hidden md:table-cell whitespace-nowrap" data-label="Ruolo">
                   @if (roles(item); as r) {
                     <span class="font-medium" style="color:var(--color-text-primary)">{{ r.primary }}</span>
                     @if (r.secondary.length) {
@@ -94,29 +94,29 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                     <span class="italic opacity-50">—</span>
                   }
                 </td>
-                <td class="px-3 py-2.5 text-right font-mono text-sm font-semibold" style="color:var(--color-accent)">
+                <td class="px-3 py-2.5 text-right font-mono text-sm font-semibold" data-label="FP Ibrido" style="color:var(--color-accent)">
                   {{ item.fpIbrido != null ? (item.fpIbrido | number:'1.1-1') : '—' }}
                 </td>
-                <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell" style="color:var(--color-text-secondary)">
+                <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell" data-label="FP Mantra" style="color:var(--color-text-secondary)">
                   {{ item.FP_Mantra != null ? (item.FP_Mantra | number:'1.1-1') : '—' }}
                 </td>
-                <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell" style="color:var(--color-text-secondary)">
+                <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell" data-label="Voto ML" style="color:var(--color-text-secondary)">
                   {{ (item.predictedDisplay ?? item.predictedFantavoto) != null ? ((item.predictedDisplay ?? item.predictedFantavoto)! | number:'1.2-2') : '—' }}
                 </td>
-                <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell" style="color:var(--color-text-secondary)">
+                <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell" data-label="Conf." style="color:var(--color-text-secondary)">
                   {{ item.confidenceScore != null ? (item.confidenceScore | number:'1.0-0') : '—' }}
                 </td>
-                <td class="px-3 py-2.5 text-right font-mono text-xs hidden lg:table-cell" style="color:var(--color-text-secondary)">
+                <td class="px-3 py-2.5 text-right font-mono text-xs hidden lg:table-cell" data-label="VR" style="color:var(--color-text-secondary)">
                   {{ item.VR != null ? (item.VR | number:'1.0-0') : '—' }}
                 </td>
-                <td class="px-3 py-2.5">
+                <td class="px-3 py-2.5" data-label="Titolarità">
                   <app-titolarita-badges size="sm"
                     [statusScraped]="item.statusScraped"
                     [probabilityScraped]="item.probabilityScraped"
                     [startProbability]="item.startProbability"
                     [expertTitolarita]="item.expertTitolarita" />
                 </td>
-                <td class="px-3 py-2.5">
+                <td class="px-3 py-2.5" data-label="Profilo">
                   @if (item.Fase7) {
                     @let f7 = FASE7_LABELS[item.Fase7];
                     <span class="rounded-full px-2 py-0.5 text-xs font-medium text-white"
@@ -132,7 +132,7 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                     </span>
                   }
                 </td>
-                <td class="px-3 py-2.5 hidden lg:table-cell whitespace-nowrap">
+                <td class="px-3 py-2.5 hidden lg:table-cell whitespace-nowrap" data-label="Segnali">
                   @if (item.hybridLabels?.length) {
                     <span class="inline-flex items-center gap-1">
                       @for (id of item.hybridLabels!.slice(0, 2); track id) {
@@ -151,10 +151,10 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                     <span class="text-xs opacity-30">—</span>
                   }
                 </td>
-                <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell whitespace-nowrap" style="color:var(--color-text-secondary)">
+                <td class="px-3 py-2.5 text-right font-mono text-xs hidden md:table-cell whitespace-nowrap" data-label="Prezzo" style="color:var(--color-text-secondary)">
                   {{ item.Pz1 != null ? (item.Pz1 | number:'1.0-0') + ' cr' : '—' }}
                 </td>
-                <td class="px-3 py-2.5 text-xs hidden lg:table-cell whitespace-nowrap">
+                <td class="px-3 py-2.5 text-xs hidden lg:table-cell whitespace-nowrap" data-label="Esperti">
                   @if (item.expertRating != null) {
                     <span style="color:var(--color-accent)" [title]="expertTooltip(item)">
                       {{ stars(item.expertRating) }}

@@ -109,3 +109,64 @@ html {
   font-size: 0.75rem;
   font-weight: 500;
 }
+
+/* ── Responsive Table → Mobile Card View ────────────────────
+ * Shared, CSS-only pattern applied to every data table in the app.
+ * Add class="rt-card-table" to any <table>, and data-label="<Header>"
+ * (static or via [attr.data-label]) to every <td>. Below the `sm`
+ * breakpoint the table collapses into a stack of labelled-row cards
+ * instead of a horizontally-scrolling grid — mirrors the reference
+ * table.component pattern used across the other Angular apps.
+ * No JS/component logic required; safe to apply to any table. */
+@media screen and (max-width: 640px) {
+  table.rt-card-table {
+    min-width: 100% !important;
+    border-collapse: separate;
+    border-spacing: 0 0.625rem;
+  }
+
+  table.rt-card-table thead {
+    display: none;
+  }
+
+  table.rt-card-table tbody tr {
+    display: block;
+    margin-bottom: 0.75rem;
+    border-radius: 0.75rem;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-raised);
+    overflow: hidden;
+  }
+
+  table.rt-card-table tbody td {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    width: 100% !important;
+    padding: 0.5rem 0.75rem !important;
+    text-align: right !important;
+    white-space: normal !important;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  table.rt-card-table tbody td:last-child {
+    border-bottom: none;
+  }
+
+  table.rt-card-table tbody td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    color: var(--color-text-secondary);
+    margin-right: auto;
+    flex-shrink: 0;
+  }
+
+  /* cells with no data-label (e.g. pure icon/action cells) keep centered */
+  table.rt-card-table tbody td:not([data-label])::before {
+    content: none;
+  }
+}

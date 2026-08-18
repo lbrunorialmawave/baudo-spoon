@@ -1068,7 +1068,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                   <span class="muted">Tocca un giocatore per il dettaglio</span>
                 </div>
                 <div class="table-scroll">
-                  <table class="data-table">
+                  <table class="data-table rt-card-table">
                     <thead>
                       <tr>
                         <th>Ruolo</th>
@@ -1088,14 +1088,14 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                             tabindex="0"
                             role="button"
                             [attr.aria-label]="'Dettaglio ' + p.name">
-                          <td>
+                          <td data-label="Ruolo">
                             <span class="role-badge" [style.color]="roleColor(p.role)"
                                   [style.border-color]="roleColor(p.role)">{{ roleLabel(p.role) }}</span>
                             @if (p.eligibleRoles?.length) {
                               <span class="mantra-role-hint" title="Ruoli Mantra">{{ p.eligibleRoles!.join('/') }}</span>
                             }
                           </td>
-                          <td class="name-cell">
+                          <td class="name-cell" data-label="Giocatore">
                             {{ p.name }}
                             @if (p.sampleCohort === 'LIMITED' || p.sampleCohort === 'INSUFFICIENT') {
                               <span class="ml-noisy-badge"
@@ -1106,10 +1106,10 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                               </span>
                             }
                           </td>
-                          <td class="hide-sm muted">{{ p.realTeam }}</td>
-                          <td class="num">{{ p.cost }}</td>
-                          <td class="num hide-sm muted">{{ p.effectiveCost | number:'1.1-1' }}</td>
-                          <td class="num accent">{{ p.projectedScore | number:'1.2-2' }}</td>
+                          <td class="hide-sm muted" data-label="Squadra">{{ p.realTeam }}</td>
+                          <td class="num" data-label="Costo">{{ p.cost }}</td>
+                          <td class="num hide-sm muted" data-label="Eff.">{{ p.effectiveCost | number:'1.1-1' }}</td>
+                          <td class="num accent" data-label="Score">{{ p.projectedScore | number:'1.2-2' }}</td>
                         </tr>
                       }
                     </tbody>
@@ -1175,7 +1175,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                   <div class="table-card">
                     <div class="table-card__head"><h3>{{ paramLabel(param.parameter) }}</h3></div>
                     <div class="table-scroll">
-                      <table class="data-table">
+                      <table class="data-table rt-card-table">
                         <thead>
                           <tr>
                             <th>Valore</th><th>Status</th>
@@ -1186,13 +1186,13 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                         <tbody>
                           @for (pt of param.points; track pt.value) {
                             <tr [class.row-baseline]="pt.scoreDelta === 0">
-                              <td>{{ pt.value | number:'1.2-2' }}</td>
-                              <td><span class="status-chip">{{ pt.status }}</span></td>
-                              <td class="num">{{ pt.totalScore | number:'1.2-2' }}</td>
-                              <td class="num" [class.delta-pos]="pt.scoreDelta > 0" [class.delta-neg]="pt.scoreDelta < 0">{{ pt.scoreDelta | number:'1.2-2' }}</td>
-                              <td class="num" [class.delta-pos]="pt.scoreDeltaPct > 0" [class.delta-neg]="pt.scoreDeltaPct < 0">{{ pt.scoreDeltaPct | number:'1.1-1' }}%</td>
-                              <td class="num hide-sm">{{ pt.jaccardVsBaseline | number:'1.2-2' }}</td>
-                              <td class="num hide-sm">{{ pt.playersChanged }}</td>
+                              <td data-label="Valore">{{ pt.value | number:'1.2-2' }}</td>
+                              <td data-label="Status"><span class="status-chip">{{ pt.status }}</span></td>
+                              <td class="num" data-label="Score">{{ pt.totalScore | number:'1.2-2' }}</td>
+                              <td class="num" data-label="Δ" [class.delta-pos]="pt.scoreDelta > 0" [class.delta-neg]="pt.scoreDelta < 0">{{ pt.scoreDelta | number:'1.2-2' }}</td>
+                              <td class="num" data-label="Δ%" [class.delta-pos]="pt.scoreDeltaPct > 0" [class.delta-neg]="pt.scoreDeltaPct < 0">{{ pt.scoreDeltaPct | number:'1.1-1' }}%</td>
+                              <td class="num hide-sm" data-label="Jaccard">{{ pt.jaccardVsBaseline | number:'1.2-2' }}</td>
+                              <td class="num hide-sm" data-label="Δ rosa">{{ pt.playersChanged }}</td>
                             </tr>
                           }
                         </tbody>
@@ -1256,7 +1256,7 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                   </div>
                   <div class="table-card">
                     <div class="table-scroll">
-                      <table class="data-table">
+                      <table class="data-table rt-card-table">
                         <thead>
                           <tr>
                             <th>λ</th><th>Status</th>
@@ -1269,13 +1269,13 @@ export const OPTIMIZER_LEGENDS: Readonly<Record<string, { description: string; e
                         <tbody>
                           @for (pt of pr.points; track pt.riskLambda) {
                             <tr [class.row-baseline]="!pt.dominated">
-                              <td>{{ pt.riskLambda | number:'1.2-2' }}</td>
-                              <td><span class="status-chip">{{ pt.status }}</span></td>
-                              <td class="num">{{ pt.score | number:'1.2-2' }}</td>
-                              <td class="num">{{ pt.risk | number:'1.2-2' }}</td>
-                              <td class="num hide-sm">{{ pt.winProbability != null ? (pt.winProbability | percent:'1.0-0') : '—' }}</td>
-                              <td class="num hide-sm">{{ pt.squadSize }}</td>
-                              <td>{{ pt.dominated ? '—' : '✓' }}</td>
+                              <td data-label="λ">{{ pt.riskLambda | number:'1.2-2' }}</td>
+                              <td data-label="Status"><span class="status-chip">{{ pt.status }}</span></td>
+                              <td class="num" data-label="Score">{{ pt.score | number:'1.2-2' }}</td>
+                              <td class="num" data-label="Risk">{{ pt.risk | number:'1.2-2' }}</td>
+                              <td class="num hide-sm" data-label="P(asta)">{{ pt.winProbability != null ? (pt.winProbability | percent:'1.0-0') : '—' }}</td>
+                              <td class="num hide-sm" data-label="Size">{{ pt.squadSize }}</td>
+                              <td data-label="Front.">{{ pt.dominated ? '—' : '✓' }}</td>
                             </tr>
                           }
                         </tbody>
