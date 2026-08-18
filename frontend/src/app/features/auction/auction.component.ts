@@ -349,6 +349,13 @@ function makeParticipants(
           </div>
         </header>
 
+        <app-department-budget-panel
+          [ruleset]="ruleset"
+          [roleQuotas]="roleQuotas"
+          [budgetInitial]="budgetInitial"
+          [referenceBudget]="referenceBudget"
+        />
+
         <!-- Price index strip -->
         @if (summary(); as s) {
           <div
@@ -1369,12 +1376,6 @@ function makeParticipants(
                 />
               </div>
 
-              <app-department-budget-panel
-                [ruleset]="ruleset"
-                [roleQuotas]="roleQuotas"
-                [budgetInitial]="budgetInitial"
-                [referenceBudget]="referenceBudget"
-              />
             </div>
 
             <p class="section-divider">Metrica ranking VAR/ESV</p>
@@ -1729,6 +1730,13 @@ function makeParticipants(
 
           <!-- Participants editor -->
           <section class="setup-right">
+            <app-department-budget-panel
+              [ruleset]="ruleset"
+              [roleQuotas]="roleQuotas"
+              [budgetInitial]="budgetInitial"
+              [referenceBudget]="referenceBudget"
+            />
+
             <div class="card">
               <p class="card-section-label" style="margin-bottom:12px">
                 Elenco partecipanti ({{ participants().length }}) — modifica nome e budget
