@@ -176,7 +176,8 @@ async def trades_dashboard(
     body: TradesDashboardRequest,
     db: AsyncSession = Depends(get_db),
 ) -> ORJSONResponse:
-    del db
+    # `db` viene passato a `_load_hybrid_map` per risolvere la stagione
+    # corrente da `player_quotations` (vedi commento in `_load_hybrid_map`).
     store = _get_store(request)
     ctx = store.get(body.context_id)
     if ctx is None:
