@@ -113,7 +113,11 @@ async def _load_enrichment_maps(
 
     # Hybrid predictions (artifact — may be missing)
     try:
-        hybrid_data = await repo.get_hybrid_predictions()
+        # Pass `db` so get_hybrid_predictions() resolves the current season
+        # from player_quotations instead of falling back to the hardcoded
+        # 2025 default — the 2025 artefact would silently load stale data
+        # in 2026-27.
+        hybrid_data = await repo.get_hybrid_predictions(db=db)
         rows: list = []
         if isinstance(hybrid_data, dict):
             rows = (

@@ -78,12 +78,15 @@ def _get_repo(request: Request) -> DataRepository | None:
     return getattr(request.app.state, "repo", None)
 
 
-async def _load_hybrid_map(request: Request) -> dict[int, Any]:
+async def _load_hybrid_map(request: Request, db: AsyncSession) -> dict[int, Any]:
     repo = _get_repo(request)
     if repo is None:
         return {}
     try:
-        hybrid_data = await repo.get_hybrid_predictions()
+        # Pass `db` so get_hybrid_predictions() resolves the current season
+        # from player_quotations instead of falling back to the hardcoded
+        # 2025 default — see lineup._load_enrichment_maps for context.
+        hybrid_data = await repo.get_hybrid_predictions(db=db)
         rows: list = []
         if isinstance(hybrid_data, dict):
             rows = (
@@ -187,7 +190,7 @@ async def trades_dashboard(
     if team.is_empty:
         raise HTTPException(status_code=400, detail="Squadra vuota")
 
-    hybrid_map = await _load_hybrid_map(request)
+    hybrid_map = await _load_hybrid_map(request, db)
     notes: list[str] = []
     if not hybrid_map:
         notes.append("Hybrid non disponibile — FP_Corr baseline 50")

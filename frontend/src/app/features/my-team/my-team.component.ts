@@ -10,6 +10,7 @@ import { DecimalPipe, PercentPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { finalize } from 'rxjs';
 import { MyTeamService } from '../../core/services/my-team.service';
+import { MANTRA_MODULE_LABELS } from '../../core/constants/shared-presets';
 import {
   LineupOptimizeResponse,
   RosterImportResponse,
@@ -20,6 +21,7 @@ import {
 } from '../../core/models/my-team.models';
 import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.component';
 import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/error-boundary.component';
+import { FieldLegendComponent, FieldLegendExample } from '../../shared/components/field-legend/field-legend.component';
 import { PitchFieldComponent, toPitchPlayers } from './pitch-field/pitch-field.component';
 import { canSwap, swapStarterWithBench } from './lineup-swap';
 
@@ -35,6 +37,7 @@ type Tab = 'formation' | 'trades';
     PercentPipe,
     SkeletonComponent,
     ErrorBoundaryComponent,
+    FieldLegendComponent,
     PitchFieldComponent,
   ],
   template: `
@@ -358,6 +361,46 @@ type Tab = 'formation' | 'trades';
 
             @if (tab() === 'trades') {
               <div class="rounded-xl border p-4 space-y-4">
+                <section class="space-y-2">
+                  <h3 class="text-sm font-medium">Moduli da analizzare</h3>
+                  <p class="text-xs opacity-60">
+                    Seleziona i moduli MANTRA da usare per il calcolo di copertura
+                    e per i candidati scambio. Default allineato al backend
+                    (4-3-3, 3-5-2, 3-4-3).
+                  </p>
+                  <div
+                    class="flex flex-wrap gap-2"
+                    role="group"
+                    aria-label="Selezione moduli MANTRA"
+                    id="formation-prefs-group"
+                  >
+                    @for (m of mantraModuleLabels; track m) {
+                      <label
+                        class="cursor-pointer rounded-full border px-3 py-1 text-xs flex items-center gap-1"
+                        [class.border-emerald-500]="isFormationSelected(m)"
+                        [class.bg-emerald-500]="isFormationSelected(m)"
+                        [class.text-white]="isFormationSelected(m)"
+                      >
+                        <input
+                          type="checkbox"
+                          class="hidden"
+                          [checked]="isFormationSelected(m)"
+                          (change)="toggleFormationPref(m)"
+                        />
+                        {{ m }}
+                      </label>
+                    }
+                  </div>
+                  <app-field-legend
+                    fieldId="legend-formation-prefs"
+                    description="Ogni modulo selezionato viene valutato per la copertura
+                                della rosa. I target in entrata vengono filtrati in base
+                                agli slot deficitari dei moduli scelti. La modifica
+                                invalida la cache della dashboard e rilancia la request."
+                    [examples]="formationPrefsExamples"
+                  />
+                </section>
+
                 @if (loading() && !trades()) {
                   <app-skeleton height="120px" />
                 }
@@ -541,6 +584,26 @@ export class MyTeamComponent {
   decayPercent = 25;
   floorPercent = 25;
 
+  /** Default allineato a `TradesDashboardRequest.formation_prefs` in `trades.py`. */
+  static readonly DEFAULT_TRADES_FORMATION_PREFS: readonly string[] = [
+    '4-3-3',
+    '3-5-2',
+    '3-4-3',
+  ] as const;
+
+  /** Moduli MANTRA selezionati per la dashboard scambi (modificabili da UI). */
+  readonly formationPrefs = signal<string[]>([
+    ...MyTeamComponent.DEFAULT_TRADES_FORMATION_PREFS,
+  ]);
+  /** Catalogo completo moduli MANTRA 2026/27 esposto al template. */
+  readonly mantraModuleLabels = MANTRA_MODULE_LABELS;
+  /** Esempi statici per la legenda del campo formationPrefs. */
+  readonly formationPrefsExamples: readonly FieldLegendExample[] = [
+    { label: '3 moduli', value: 'default bilanciato' },
+    { label: '5+ moduli', value: 'analisi ampia, più candidati' },
+    { label: '1 modulo', value: 'focus chirurgico su un assetto' },
+  ];
+
   readonly divisions = computed(() => this.importResult()?.divisions ?? []);
   readonly pitchPlayers = computed(() => toPitchPlayers(this.lineup()?.startingXi));
 
@@ -629,6 +692,10 @@ export class MyTeamComponent {
           this.receiveSelection.set([]);
           this.lastTransfer.set(null);
           this.counterpartyTeam = '';
+          // Reset formationPrefs al default backend quando si cambia squadra
+          this.formationPrefs.set([
+            ...MyTeamComponent.DEFAULT_TRADES_FORMATION_PREFS,
+          ]);
           this.tab.set('formation');
           this.step.set('workspace');
         },
@@ -698,8 +765,14 @@ export class MyTeamComponent {
 
   openTrades(): void {
     this.tab.set('trades');
+    if (!this.contextId() || this.trades()) return;
+    this.refreshTrades();
+  }
+
+  /** Fetch esplicito della dashboard scambi con i `formationPrefs` correnti. */
+  refreshTrades(): void {
     const cid = this.contextId();
-    if (!cid || this.trades()) return;
+    if (!cid) return;
     this.loading.set(true);
     this.error.set(null);
     this.api
@@ -707,6 +780,7 @@ export class MyTeamComponent {
         contextId: cid,
         sheetName: this.claimedSheet(),
         teamName: this.claimedTeamName(),
+        formationPrefs: [...this.formationPrefs()],
       })
       .pipe(
         takeUntilDestroyed(this.destroyRef),
@@ -720,6 +794,27 @@ export class MyTeamComponent {
           );
         },
       });
+  }
+
+  isFormationSelected(moduleLabel: string): boolean {
+    return this.formationPrefs().includes(moduleLabel);
+  }
+
+  /**
+   * Toggle di un modulo nei `formationPrefs`.
+   * Se la dashboard era già stata caricata, invalida la cache e rilancia
+   * la request con il nuovo set di moduli.
+   */
+  toggleFormationPref(moduleLabel: string): void {
+    const cur = this.formationPrefs();
+    const next = cur.includes(moduleLabel)
+      ? cur.filter((f) => f !== moduleLabel)
+      : [...cur, moduleLabel];
+    this.formationPrefs.set(next);
+    if (this.trades() !== null && this.contextId()) {
+      this.trades.set(null);
+      this.refreshTrades();
+    }
   }
   isGiveSelected(id: string): boolean {
     return this.giveSelection().some((x) => x.playerId === id);
