@@ -581,14 +581,13 @@ class DataRepository:
                 params[f"id{i}"] = int(fid)
             sql = (
                 "SELECT fantacalcio_id, matchday, season_start, status, "
-                "probability, team, opponent "
+                "probability, team "
                 "FROM player_matchday_status "
                 f"WHERE matchday = :md AND fantacalcio_id IN ({placeholders})"
             )
             try:
                 result = await db.execute(sa.text(sql), params)
             except Exception:
-                # older schema may lack opponent column
                 sql = (
                     "SELECT fantacalcio_id, matchday, season_start, status, "
                     "probability, team "
@@ -601,7 +600,7 @@ class DataRepository:
                 result = await db.execute(
                     sa.text(
                         "SELECT fantacalcio_id, matchday, season_start, status, "
-                        "probability, team, opponent "
+                        "probability, team "
                         "FROM player_matchday_status WHERE matchday = :md"
                     ),
                     {"md": matchday},
