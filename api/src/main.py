@@ -14,7 +14,7 @@ from ml.storage.artifact_store import ArtifactStore, R2Config
 from .config import settings
 from .data_repository import DataRepository
 from .logging_cfg import configure_logging
-from .routers import auction, leagues, matches, optimizer, quotations, seasons, stats
+from .routers import auction, leagues, lineup, matches, optimizer, quotations, roster, seasons, stats, trades
 from .routers import admin_scrape, auth, expert_ratings, mantra, matchday, ml_pipeline, model_metrics, overview
 from .routers.intelligence import intelligence_router, predictions_router
 
@@ -61,6 +61,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
     log.info("DataRepository initialised (artifacts_dir=%s)", settings.artifacts_dir)
 
+    from ml.roster_import.store import get_default_store
+    app.state.roster_store = get_default_store()
+    log.info("RosterContextStore initialised (process-local TTL store)")
+
     yield
 
     if redis_client is not None:
@@ -105,6 +109,9 @@ app.include_router(quotations.quotations_router, prefix=settings.api_prefix)
 app.include_router(quotations.id_mapping_router, prefix=settings.api_prefix)
 app.include_router(optimizer.router, prefix=settings.api_prefix)
 app.include_router(auction.router, prefix=settings.api_prefix)
+app.include_router(roster.router, prefix=settings.api_prefix)
+app.include_router(lineup.router, prefix=settings.api_prefix)
+app.include_router(trades.router, prefix=settings.api_prefix)
 app.include_router(mantra.router, prefix=settings.api_prefix)
 app.include_router(overview.router, prefix=settings.api_prefix)
 app.include_router(admin_scrape.router, prefix=settings.api_prefix)

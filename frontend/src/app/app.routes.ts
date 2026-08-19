@@ -47,6 +47,11 @@ export const routes: Routes = [
           import('./features/auction/auction.component').then((m) => m.AuctionComponent),
       },
       {
+        path: 'my-team',
+        loadComponent: () =>
+          import('./features/my-team/my-team.component').then((m) => m.MyTeamComponent),
+      },
+      {
         path: 'id-mapping',
         loadComponent: () =>
           import('./features/id-mapping/id-mapping.component').then((m) => m.IdMappingComponent),

@@ -1204,3 +1204,79 @@ class DepartmentBudgetPlanResponseSchema(_CamelModel):
     departments: list[DepartmentCapSchema]
     sum_recommended_max_percent: float
     warnings: list[str] = Field(default_factory=list)
+
+
+# ── Roster import / La Mia Squadra (runtime-only) ─────────────────────────────
+
+
+class RosterTeamCardSchema(_CamelModel):
+    """Card shown in the team-selection UI after import."""
+
+    sheet_name: str
+    team_name: str
+    player_count: int
+    total_spent: int
+    is_empty: bool
+    match_rate: float = Field(
+        description="Fraction of players auto/provisional matched [0, 1]"
+    )
+
+
+class RosterMatchQualitySchema(_CamelModel):
+    total_players: int
+    auto: int
+    provisional: int
+    unmatched: int
+    match_rate: float
+
+
+class RosterImportResponseSchema(_CamelModel):
+    context_id: str
+    source_filename: Optional[str] = None
+    quality: RosterMatchQualitySchema
+    teams: list[RosterTeamCardSchema]
+    divisions: list[str] = Field(
+        description="Sheet names discovered in the workbook (variable count)"
+    )
+    expires_in_seconds: int = Field(
+        description="TTL of the in-memory RosterContext"
+    )
+
+
+class RosterClaimRequestSchema(_CamelModel):
+    context_id: str
+    sheet_name: str
+    team_name: str
+
+
+class RosterClaimResponseSchema(_CamelModel):
+    context_id: str
+    user_team_key: str
+    team_name: str
+    sheet_name: str
+    player_count: int
+    total_spent: int
+    match_rate: float
+
+
+class RosterPlayerSchema(_CamelModel):
+    name_raw: str
+    name_clean: str
+    cost: int
+    status: str
+    score: float
+    needs_review: bool
+    fantacalcio_id: Optional[int] = None
+    catalog_name: Optional[str] = None
+    catalog_team: Optional[str] = None
+    role_classic: Optional[str] = None
+    roles_mantra: list[str] = Field(default_factory=list)
+
+
+class RosterDetailResponseSchema(_CamelModel):
+    context_id: str
+    sheet_name: str
+    team_name: str
+    total_spent: int
+    match_rate: float
+    players: list[RosterPlayerSchema]

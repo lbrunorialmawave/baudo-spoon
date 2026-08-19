@@ -496,6 +496,129 @@ class DataRepository:
         stmt = select(func.max(PlayerQuotation.season_start))
         return (await db.execute(stmt)).scalar_one_or_none()
 
+    async def load_catalog_for_roster_matching(
+        self,
+        db: AsyncSession,
+        season_start: Optional[int] = None,
+    ) -> list[dict]:
+        """Load the full listone (+ mantra roles) for roster name matching.
+
+        Returns a list of dicts with keys:
+        ``fantacalcio_id``, ``name``, ``team``, ``role_classic``, ``roles_mantra``.
+        Designed for conversion into ``CatalogPlayer`` in the roster router.
+        """
+        if season_start is None:
+            season_start = await self.get_current_season_start(db)
+        if season_start is None:
+            return []
+
+        mantra_join = and_(
+            PlayerQuotation.fantacalcio_id == PlayerMantraRole.fantacalcio_id,
+            PlayerQuotation.season_start == PlayerMantraRole.season_start,
+        )
+        stmt = (
+            select(
+                PlayerQuotation.fantacalcio_id,
+                PlayerQuotation.player_name,
+                PlayerQuotation.team,
+                PlayerQuotation.role,
+                PlayerMantraRole.ruoli_mantra,
+            )
+            .select_from(PlayerQuotation)
+            .join(PlayerMantraRole, mantra_join, isouter=True)
+            .where(PlayerQuotation.season_start == season_start)
+            .order_by(PlayerQuotation.player_name)
+        )
+        result = await db.execute(stmt)
+        rows: list[dict] = []
+        for r in result:
+            m = r._mapping
+            roles = m.get("ruoli_mantra") or []
+            if not isinstance(roles, list):
+                roles = list(roles) if roles else []
+            rows.append(
+                {
+                    "fantacalcio_id": int(m["fantacalcio_id"]),
+                    "name": str(m["player_name"]),
+                    "team": str(m["team"] or ""),
+                    "role_classic": str(m["role"]) if m.get("role") is not None else None,
+                    "roles_mantra": roles,
+                }
+            )
+        return rows
+
+    async def load_matchday_status_bulk(
+        self,
+        db: AsyncSession,
+        *,
+        matchday: int | None = None,
+        fantacalcio_ids: list[int] | None = None,
+    ) -> tuple[int, list[dict]]:
+        """Load matchday status rows for enrichment.
+
+        Returns ``(resolved_matchday, rows)``.  When ``matchday`` is None the
+        latest matchday of the latest season is used (same rule as the
+        matchday router).
+        """
+        if matchday is None:
+            latest = (
+                await db.execute(
+                    sa.text(
+                        "SELECT matchday FROM player_matchday_status "
+                        "WHERE season_start = ("
+                        "  SELECT MAX(season_start) FROM player_matchday_status"
+                        ") ORDER BY matchday DESC LIMIT 1"
+                    )
+                )
+            ).scalar_one_or_none()
+            matchday = int(latest) if latest is not None else 1
+
+        if fantacalcio_ids:
+            # Parameterized IN list
+            placeholders = ", ".join(f":id{i}" for i in range(len(fantacalcio_ids)))
+            params: dict = {"md": matchday}
+            for i, fid in enumerate(fantacalcio_ids):
+                params[f"id{i}"] = int(fid)
+            sql = (
+                "SELECT fantacalcio_id, matchday, season_start, status, "
+                "probability, team, opponent "
+                "FROM player_matchday_status "
+                f"WHERE matchday = :md AND fantacalcio_id IN ({placeholders})"
+            )
+            try:
+                result = await db.execute(sa.text(sql), params)
+            except Exception:
+                # older schema may lack opponent column
+                sql = (
+                    "SELECT fantacalcio_id, matchday, season_start, status, "
+                    "probability, team "
+                    "FROM player_matchday_status "
+                    f"WHERE matchday = :md AND fantacalcio_id IN ({placeholders})"
+                )
+                result = await db.execute(sa.text(sql), params)
+        else:
+            try:
+                result = await db.execute(
+                    sa.text(
+                        "SELECT fantacalcio_id, matchday, season_start, status, "
+                        "probability, team, opponent "
+                        "FROM player_matchday_status WHERE matchday = :md"
+                    ),
+                    {"md": matchday},
+                )
+            except Exception:
+                result = await db.execute(
+                    sa.text(
+                        "SELECT fantacalcio_id, matchday, season_start, status, "
+                        "probability, team "
+                        "FROM player_matchday_status WHERE matchday = :md"
+                    ),
+                    {"md": matchday},
+                )
+
+        rows = [dict(r._mapping) for r in result]
+        return int(matchday), rows
+
     async def resolve_season_candidates(self, db: AsyncSession, window: int = 3) -> list[int]:
         """Ordered season candidates for artifact lookup: DB latest, then N-1 behind.
 
