@@ -535,6 +535,7 @@ export class MyTeamComponent {
   readonly giveSelection = signal<Array<{ playerId: string; cost: number }>>([]);
   readonly receiveSelection = signal<Array<{ playerId: string; cost: number }>>([]);
   readonly lastTransfer = signal<TradeExecuteResponse | null>(null);
+  readonly selectedStarterId = signal<string | null>(null);
   counterpartyTeam = '';
   penaltyEnabled = false;
   decayPercent = 25;
