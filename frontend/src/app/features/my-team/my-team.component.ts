@@ -12,6 +12,7 @@ import { finalize } from 'rxjs';
 import { MyTeamService } from '../../core/services/my-team.service';
 import { MANTRA_MODULE_LABELS } from '../../core/constants/shared-presets';
 import {
+  FormationAlternative,
   LineupOptimizeResponse,
   RosterImportResponse,
   RosterTeamCard,
@@ -349,6 +350,56 @@ type Tab = 'formation' | 'trades';
                       }
                     </div>
                   </div>
+
+                  @if (topAlternatives().length) {
+                    <section class="mt-4 space-y-2" aria-labelledby="alts-heading">
+                      <h3 id="alts-heading" class="text-sm font-medium">
+                        Moduli alternativi considerati
+                        <span class="opacity-60 font-normal">
+                          · prime {{ topAlternatives().length }} di
+                          {{ lu.alternativesConsidered.length }}
+                        </span>
+                      </h3>
+                      <app-field-legend
+                        fieldId="legend-alts"
+                        description="Lista delle formazioni valutate dall'ottimizzatore
+                                    oltre a quella scelta. Il confronto dei punteggi
+                                    evidenzia quanto il modulo titolare sia superiore
+                                    alle alternative. I moduli 'non fattibili' sono
+                                    quelli esclusi per mancanza di copertura slot
+                                    rispetto alla rosa corrente."
+                        [examples]="alternativesExamples"
+                      />
+                      <ul class="grid gap-2 sm:grid-cols-3">
+                        @for (a of topAlternatives(); track a.formation) {
+                          <li
+                            class="rounded-lg border p-2 text-sm space-y-1"
+                            [class.border-emerald-500]="a.formation === lu.chosenFormation"
+                            [class.opacity-60]="!a.feasible"
+                          >
+                            <div class="flex justify-between items-baseline">
+                              <span class="font-medium">{{ a.formation }}</span>
+                              <span
+                                class="text-xs px-1.5 py-0.5 rounded"
+                                [class.bg-emerald-500]="a.feasible"
+                                [class.text-white]="a.feasible"
+                                [class.bg-amber-500]="!a.feasible"
+                                [class.text-black]="!a.feasible"
+                              >
+                                {{ a.feasible ? 'fattibile' : 'non fattibile' }}
+                              </span>
+                            </div>
+                            <div class="tabular-nums opacity-80">
+                              score {{ a.scoreTotale | number: '1.2-2' }}
+                            </div>
+                            @if (a.reason) {
+                              <div class="text-xs opacity-60">{{ a.reason }}</div>
+                            }
+                          </li>
+                        }
+                      </ul>
+                    </section>
+                  }
                 } @else if (loading()) {
                   <app-skeleton height="160px" />
                 } @else {
@@ -604,8 +655,37 @@ export class MyTeamComponent {
     { label: '1 modulo', value: 'focus chirurgico su un assetto' },
   ];
 
+  /** Esempi statici per la legenda delle alternative di formazione. */
+  readonly alternativesExamples: readonly FieldLegendExample[] = [
+    { label: '4-3-3', value: 'modulo scelto, score migliore' },
+    { label: '3-5-2', value: 'alternativa con voto simile' },
+    { label: '3-4-3', value: 'alternativa penalizzata da score più basso' },
+  ];
+
+  /**
+   * Numero massimo di alternative di formazione mostrate nella UI.
+   * Coerente con il default del backend (tutte le alternative) ma limitato
+   * per leggibilità: vengono ordinate per score decrescente.
+   */
+  static readonly MAX_ALTERNATIVES_DISPLAYED = 3;
+
   readonly divisions = computed(() => this.importResult()?.divisions ?? []);
   readonly pitchPlayers = computed(() => toPitchPlayers(this.lineup()?.startingXi));
+
+  /**
+   * Top-N alternative di formazione ordinate per score decrescente.
+   * Mostra prima i moduli fattibili (più utili per il confronto) e poi
+   * quelli non fattibili come diagnostica.
+   */
+  readonly topAlternatives = computed<FormationAlternative[]>(() => {
+    const alts = this.lineup()?.alternativesConsidered ?? [];
+    if (!alts.length) return [];
+    const sorted = [...alts].sort((a, b) => {
+      if (a.feasible !== b.feasible) return a.feasible ? -1 : 1;
+      return b.scoreTotale - a.scoreTotale;
+    });
+    return sorted.slice(0, MyTeamComponent.MAX_ALTERNATIVES_DISPLAYED);
+  });
 
   readonly filteredTeams = computed(() => {
     const teams = this.importResult()?.teams ?? [];
