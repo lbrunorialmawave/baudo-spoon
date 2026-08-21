@@ -1,6 +1,7 @@
 import {
   Component,
   DestroyRef,
+  afterNextRender,
   computed,
   inject,
   signal,
@@ -8,7 +9,8 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DecimalPipe, PercentPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { finalize } from 'rxjs';
+import { firstValueFrom } from 'rxjs';
+import { finalize } from 'rxjs/operators';
 import { MyTeamService } from '../../core/services/my-team.service';
 import { MANTRA_MODULE_LABELS } from '../../core/constants/shared-presets';
 import {
@@ -26,6 +28,16 @@ import { FieldLegendComponent, FieldLegendExample } from '../../shared/component
 import { PitchFieldComponent, toPitchPlayers } from './pitch-field/pitch-field.component';
 import { TradeEvaluatorComponent } from './trade-evaluator/trade-evaluator.component';
 import { canSwap, swapStarterWithBench } from './lineup-swap';
+import {
+  clearMyTeamSession,
+  isContextMissingError,
+  loadMyTeamSession,
+  loadRosterFile,
+  saveMyTeamSession,
+  saveRosterFile,
+  sessionDaysRemaining,
+  type MyTeamSessionSnapshot,
+} from './my-team-session';
 
 type Step = 'ruleset' | 'upload' | 'select' | 'workspace';
 type Tab = 'formation' | 'trades';
@@ -50,15 +62,57 @@ type Tab = 'formation' | 'trades';
           <h1 class="text-2xl font-semibold tracking-tight">La Mia Squadra</h1>
           <p class="text-sm opacity-70 mt-1">
             Import rose Fantagazzetta · ottimizza formazione · cruscotto scambi
-            (runtime-only, senza persistenza rosa)
           </p>
         </div>
-        @if (contextId()) {
-          <div class="text-xs opacity-60 font-mono">
-            context {{ contextId()!.slice(0, 8) }}…
-          </div>
-        }
+        <div class="flex flex-wrap items-center gap-2">
+          @if (contextId()) {
+            <div class="text-xs opacity-60 font-mono">
+              context {{ contextId()!.slice(0, 8) }}…
+            </div>
+          }
+          @if (hasPersistedSession()) {
+            <button
+              type="button"
+              class="rounded-lg border px-3 py-1.5 text-xs font-medium hover:border-emerald-500"
+              (click)="requestNewUpload()"
+              title="Cancella la sessione salvata e carica un nuovo Excel"
+            >
+              Carica nuovo file
+            </button>
+          }
+        </div>
       </header>
+
+      @if (sessionHydrating()) {
+        <div class="rounded-lg border border-dashed px-3 py-2 text-xs opacity-70">
+          Ripristino sessione salvata…
+        </div>
+      }
+
+      @if (sessionBanner(); as banner) {
+        <div
+          class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs"
+        >
+          <span>
+            Sessione salvata
+            @if (banner.filename) {
+              · <span class="font-medium">{{ banner.filename }}</span>
+            }
+            · valida ancora {{ banner.daysLeft }}
+            {{ banner.daysLeft === 1 ? 'giorno' : 'giorni' }}
+            @if (banner.restored) {
+              · ripristinata da questo dispositivo
+            }
+          </span>
+          <button
+            type="button"
+            class="underline opacity-80 hover:opacity-100"
+            (click)="requestNewUpload()"
+          >
+            Sostituisci file
+          </button>
+        </div>
+      }
 
       <!-- Step indicator -->
       <nav class="flex flex-wrap gap-2 text-sm">
@@ -219,8 +273,8 @@ type Tab = 'formation' | 'trades';
                 </button>
               }
             </div>
-            <button type="button" class="rounded-lg border px-4 py-2 text-sm" (click)="step.set('upload')">
-              Altro file
+            <button type="button" class="rounded-lg border px-4 py-2 text-sm" (click)="requestNewUpload()">
+              Carica nuovo file
             </button>
           </section>
         }
@@ -635,6 +689,34 @@ export class MyTeamComponent {
   readonly claimedTeamName = signal<string>('');
   readonly opponents = signal<RosterTeamCard[]>([]);
 
+  /** Client-side session expiry (ms epoch); null if nothing persisted. */
+  readonly sessionExpiresAt = signal<number | null>(null);
+  /** True after a successful restore from localStorage this page load. */
+  readonly sessionRestored = signal(false);
+  /** True while probing / re-importing a saved session. */
+  readonly sessionHydrating = signal(false);
+
+  readonly hasPersistedSession = computed(
+    () => this.sessionExpiresAt() != null && this.importResult() != null,
+  );
+
+  readonly sessionBanner = computed(() => {
+    const exp = this.sessionExpiresAt();
+    if (exp == null || !this.importResult()) return null;
+    return {
+      filename: this.selectedFileName() || this.importResult()?.sourceFilename || null,
+      daysLeft: sessionDaysRemaining(exp),
+      restored: this.sessionRestored(),
+    };
+  });
+
+  constructor() {
+    // Browser-only: restore session after first render (SSR-safe).
+    afterNextRender(() => {
+      void this.restoreSession();
+    });
+  }
+
   opponentTeamName = '';
 
   readonly lineup = signal<LineupOptimizeResponse | null>(null);
@@ -745,9 +827,7 @@ export class MyTeamComponent {
       )
       .subscribe({
         next: (res) => {
-          this.importResult.set(res);
-          this.contextId.set(res.contextId);
-          this.step.set('select');
+          void this.onImportSuccess(res, file, /*keepClaim*/ false);
         },
         error: (err) => {
           this.error.set(
@@ -755,6 +835,52 @@ export class MyTeamComponent {
           );
         },
       });
+  }
+
+  /**
+   * Apply import result to UI state, persist session + Excel blob.
+   * @param keepClaim when re-hydrating after silent re-import, preserve claimed team.
+   */
+  private async onImportSuccess(
+    res: RosterImportResponse,
+    file: File | null,
+    keepClaim: boolean,
+  ): Promise<void> {
+    this.importResult.set(res);
+    this.contextId.set(res.contextId);
+    if (file) {
+      this.selectedFile.set(file);
+      this.selectedFileName.set(file.name);
+      await saveRosterFile(file);
+    }
+
+    const claimed =
+      keepClaim && this.claimedSheet() && this.claimedTeamName()
+        ? { sheetName: this.claimedSheet(), teamName: this.claimedTeamName() }
+        : null;
+
+    if (!keepClaim) {
+      this.claimedSheet.set('');
+      this.claimedTeamName.set('');
+      this.opponents.set([]);
+      this.lineup.set(null);
+      this.trades.set(null);
+      this.giveSelection.set([]);
+      this.receiveSelection.set([]);
+      this.lastTransfer.set(null);
+      this.counterpartyTeam = '';
+      this.sessionRestored.set(false);
+      this.step.set('select');
+    }
+
+    const snap = saveMyTeamSession({
+      ruleset: this.ruleset(),
+      importResult: res,
+      claimed,
+      sourceFilename:
+        file?.name ?? res.sourceFilename ?? this.selectedFileName() ?? null,
+    });
+    this.sessionExpiresAt.set(snap.expiresAt);
   }
 
   claim(t: RosterTeamCard): void {
@@ -770,32 +896,208 @@ export class MyTeamComponent {
       )
       .subscribe({
         next: () => {
-          this.claimedSheet.set(t.sheetName);
-          this.claimedTeamName.set(t.teamName);
-          const opps = (this.importResult()?.teams ?? []).filter(
-            (x) =>
-              x.sheetName === t.sheetName &&
-              x.teamName !== t.teamName &&
-              !x.isEmpty,
-          );
-          this.opponents.set(opps);
-          this.lineup.set(null);
-          this.trades.set(null);
-          this.giveSelection.set([]);
-          this.receiveSelection.set([]);
-          this.lastTransfer.set(null);
-          this.counterpartyTeam = '';
-          // Reset formationPrefs al default backend quando si cambia squadra
-          this.formationPrefs.set([
-            ...MyTeamComponent.DEFAULT_TRADES_FORMATION_PREFS,
-          ]);
-          this.tab.set('formation');
-          this.step.set('workspace');
+          this.applyClaim(t.sheetName, t.teamName);
+          this.persistSessionClaim(t.sheetName, t.teamName);
         },
         error: (err) => {
+          if (isContextMissingError(err)) {
+            void this.handleExpiredContext();
+            return;
+          }
           this.error.set(err?.error?.detail ?? err?.message ?? 'Claim fallito');
         },
       });
+  }
+
+  private applyClaim(sheetName: string, teamName: string): void {
+    this.claimedSheet.set(sheetName);
+    this.claimedTeamName.set(teamName);
+    const opps = (this.importResult()?.teams ?? []).filter(
+      (x) =>
+        x.sheetName === sheetName &&
+        x.teamName !== teamName &&
+        !x.isEmpty,
+    );
+    this.opponents.set(opps);
+    this.lineup.set(null);
+    this.trades.set(null);
+    this.giveSelection.set([]);
+    this.receiveSelection.set([]);
+    this.lastTransfer.set(null);
+    this.counterpartyTeam = '';
+    this.formationPrefs.set([...MyTeamComponent.DEFAULT_TRADES_FORMATION_PREFS]);
+    this.tab.set('formation');
+    this.step.set('workspace');
+  }
+
+  private persistSessionClaim(sheetName: string, teamName: string): void {
+    const ir = this.importResult();
+    if (!ir) return;
+    const snap = saveMyTeamSession({
+      ruleset: this.ruleset(),
+      importResult: ir,
+      claimed: { sheetName, teamName },
+      sourceFilename:
+        this.selectedFileName() || ir.sourceFilename || null,
+    });
+    this.sessionExpiresAt.set(snap.expiresAt);
+  }
+
+  /**
+   * Restore last session from localStorage (+ Excel from IndexedDB if server context died).
+   */
+  private async restoreSession(): Promise<void> {
+    const session = loadMyTeamSession();
+    if (!session) return;
+
+    this.sessionHydrating.set(true);
+    this.error.set(null);
+    try {
+      this.ruleset.set(session.ruleset);
+      this.importResult.set(session.importResult);
+      this.contextId.set(session.importResult.contextId);
+      this.selectedFileName.set(session.sourceFilename ?? '');
+      this.sessionExpiresAt.set(session.expiresAt);
+      this.sessionRestored.set(true);
+
+      const alive = await this.probeContext(session.importResult.contextId);
+      if (!alive) {
+        const reimported = await this.reimportFromStoredFile(session);
+        if (!reimported) {
+          this.error.set(
+            'Il context sul server è scaduto e non è disponibile una copia del file. Carica di nuovo l’Excel.',
+          );
+          this.step.set('upload');
+          return;
+        }
+      }
+
+      if (session.claimed) {
+        await this.reclaimAfterRestore(
+          session.claimed.sheetName,
+          session.claimed.teamName,
+        );
+      } else {
+        this.step.set('select');
+      }
+    } catch (err) {
+      console.warn('[my-team] restoreSession failed', err);
+      this.step.set('upload');
+    } finally {
+      this.sessionHydrating.set(false);
+    }
+  }
+
+  private async probeContext(contextId: string): Promise<boolean> {
+    try {
+      await firstValueFrom(this.api.listTeams(contextId));
+      return true;
+    } catch {
+      // Any failure → treat as dead context and attempt silent re-import.
+      return false;
+    }
+  }
+
+  private async reimportFromStoredFile(
+    session: MyTeamSessionSnapshot,
+  ): Promise<boolean> {
+    const file = await loadRosterFile();
+    if (!file) return false;
+    try {
+      this.loading.set(true);
+      const res = await firstValueFrom(this.api.importRoster(file));
+      if (session.claimed) {
+        this.claimedSheet.set(session.claimed.sheetName);
+        this.claimedTeamName.set(session.claimed.teamName);
+      }
+      await this.onImportSuccess(res, file, /*keepClaim*/ !!session.claimed);
+      return true;
+    } catch (err) {
+      this.error.set(
+        (err as { error?: { detail?: string }; message?: string })?.error
+          ?.detail ??
+          (err as { message?: string })?.message ??
+          'Re-import automatico fallito',
+      );
+      return false;
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  private async reclaimAfterRestore(
+    sheetName: string,
+    teamName: string,
+  ): Promise<void> {
+    const cid = this.contextId();
+    if (!cid) {
+      this.step.set('select');
+      return;
+    }
+    try {
+      this.loading.set(true);
+      await firstValueFrom(this.api.claimTeam(cid, sheetName, teamName));
+      this.applyClaim(sheetName, teamName);
+      this.persistSessionClaim(sheetName, teamName);
+    } catch (err) {
+      if (isContextMissingError(err)) {
+        await this.handleExpiredContext();
+        return;
+      }
+      // Claim failed for other reasons — fall back to team picker.
+      this.error.set(
+        (err as { error?: { detail?: string } })?.error?.detail ??
+          'Impossibile ripristinare la squadra selezionata',
+      );
+      this.step.set('select');
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  /** Context died mid-session: try silent re-import, else force upload. */
+  private async handleExpiredContext(): Promise<void> {
+    const session = loadMyTeamSession();
+    if (session) {
+      const ok = await this.reimportFromStoredFile(session);
+      if (ok && session.claimed) {
+        await this.reclaimAfterRestore(
+          session.claimed.sheetName,
+          session.claimed.teamName,
+        );
+        return;
+      }
+    }
+    this.error.set(
+      'Context scaduto sul server. Carica di nuovo il file Excel.',
+    );
+    this.requestNewUpload(/*preserveError*/ true);
+  }
+
+  /**
+   * Clear persisted session and return to the upload step.
+   * @param preserveError when true, do not wipe the current error banner.
+   */
+  requestNewUpload(preserveError = false): void {
+    clearMyTeamSession();
+    this.sessionExpiresAt.set(null);
+    this.sessionRestored.set(false);
+    this.importResult.set(null);
+    this.contextId.set(null);
+    this.claimedSheet.set('');
+    this.claimedTeamName.set('');
+    this.opponents.set([]);
+    this.lineup.set(null);
+    this.trades.set(null);
+    this.giveSelection.set([]);
+    this.receiveSelection.set([]);
+    this.lastTransfer.set(null);
+    this.counterpartyTeam = '';
+    this.selectedFile.set(null);
+    this.selectedFileName.set('');
+    this.divisionFilter.set(null);
+    if (!preserveError) this.error.set(null);
+    this.step.set('upload');
   }
 
   doOptimize(): void {
@@ -819,6 +1121,10 @@ export class MyTeamComponent {
       .subscribe({
         next: (res) => this.lineup.set(res),
         error: (err) => {
+          if (isContextMissingError(err)) {
+            void this.handleExpiredContext();
+            return;
+          }
           this.error.set(
             err?.error?.detail ?? err?.message ?? 'Ottimizzazione fallita',
           );
@@ -882,6 +1188,10 @@ export class MyTeamComponent {
       .subscribe({
         next: (res) => this.trades.set(res),
         error: (err) => {
+          if (isContextMissingError(err)) {
+            void this.handleExpiredContext();
+            return;
+          }
           this.error.set(
             err?.error?.detail ?? err?.message ?? 'Dashboard scambi fallita',
           );
@@ -981,6 +1291,10 @@ export class MyTeamComponent {
           this.receiveSelection.set([]);
         },
         error: (err) => {
+          if (isContextMissingError(err)) {
+            void this.handleExpiredContext();
+            return;
+          }
           this.error.set(
             err?.error?.detail ?? err?.message ?? 'Esecuzione scambio fallita',
           );
