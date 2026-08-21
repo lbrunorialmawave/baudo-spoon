@@ -13,10 +13,11 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { finalize } from 'rxjs/operators';
 import { MyTeamService } from '../../../core/services/my-team.service';
 import {
+  RosterPlayer,
+  RosterTeamCard,
   TradeConfidence,
   TradeEvaluateResponse,
   TradeMode,
-  TradePlayerPtvView,
   TradeVerdict,
   TradesDashboardResponse,
 } from '../../../core/models/my-team.models';
@@ -28,7 +29,10 @@ export interface EvaluatorPlayerOption {
   roles: string[];
   fpCorr?: number;
   teamSerieA?: string;
-  side: 'own' | 'market';
+  /** Origin of the option — drives grouping in the Ricevo column. */
+  side: 'own' | 'market' | 'suggested' | 'roster';
+  /** True when the roster row has no fantacalcioId (cannot be evaluated). */
+  unmatched?: boolean;
 }
 
 @Component({
@@ -72,6 +76,7 @@ export interface EvaluatorPlayerOption {
 
       <!-- Two columns: Cedo / Ricevo -->
       <div class="grid gap-4 md:grid-cols-2">
+        <!-- ── Cedo ─────────────────────────────────────────────────────── -->
         <section class="space-y-2">
           <h4 class="text-xs font-semibold uppercase tracking-wide opacity-70">
             Cedo ({{ giveIds().length }})
@@ -99,49 +104,126 @@ export interface EvaluatorPlayerOption {
           </div>
         </section>
 
+        <!-- ── Ricevo ──────────────────────────────────────────────────── -->
         <section class="space-y-2">
           <h4 class="text-xs font-semibold uppercase tracking-wide opacity-70">
             Ricevo ({{ receiveIds().length }})
           </h4>
+
+          <!-- Step 1: counterparty team -->
+          <label class="block text-xs space-y-1">
+            <span class="opacity-70">Squadra controparte</span>
+            <select
+              class="block w-full rounded-lg border bg-transparent px-3 py-1.5 text-sm"
+              [ngModel]="selectedTeamName()"
+              (ngModelChange)="onTeamSelected($event)"
+              [disabled]="!counterpartyTeams.length"
+            >
+              <option value="">— seleziona squadra —</option>
+              @for (t of counterpartyTeams; track t.sheetName + t.teamName) {
+                <option [value]="t.teamName">
+                  {{ t.teamName }} ({{ t.playerCount }})
+                </option>
+              }
+            </select>
+          </label>
+
+          @if (!counterpartyTeams.length) {
+            <p class="text-xs opacity-50 px-1">
+              Nessuna altra squadra nella divisione. Importa un file con più rose.
+            </p>
+          }
+
+          <!-- Step 2: players from selected roster -->
           <div class="max-h-56 overflow-y-auto space-y-1 rounded-lg border p-2">
-            @for (p of marketOptions(); track p.playerId) {
-              <label
-                class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5"
-                [class.bg-sky-500/10]="isReceive(p.playerId)"
-              >
-                <input
-                  type="checkbox"
-                  [checked]="isReceive(p.playerId)"
-                  (change)="toggleReceive(p.playerId)"
-                />
-                <span class="flex-1 truncate">{{ p.name }}</span>
-                <span class="text-[10px] opacity-50">{{ p.roles.join('/') }}</span>
-                @if (p.fpCorr != null) {
-                  <span class="tabular-nums text-xs opacity-70">{{ p.fpCorr | number: '1.0-0' }}</span>
-                }
-              </label>
-            } @empty {
+            @if (rosterLoading()) {
+              <p class="text-xs opacity-50 px-2 py-3">Caricamento rosa…</p>
+            } @else if (rosterError()) {
+              <p class="text-xs text-red-600 dark:text-red-300 px-2 py-3">{{ rosterError() }}</p>
+            } @else if (!selectedTeamName()) {
               <p class="text-xs opacity-50 px-2 py-3">
-                Carica la dashboard scambi per vedere i target di mercato, oppure inserisci un ID sotto.
+                Seleziona una squadra per vedere i giocatori disponibili.
               </p>
+            } @else {
+              @for (p of rosterOptions(); track p.playerId) {
+                <label
+                  class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm"
+                  [class.cursor-pointer]="!p.unmatched"
+                  [class.opacity-40]="p.unmatched"
+                  [class.hover:bg-black/5]="!p.unmatched"
+                  [class.dark:hover:bg-white/5]="!p.unmatched"
+                  [class.bg-sky-500/10]="!p.unmatched && isReceive(p.playerId)"
+                >
+                  <input
+                    type="checkbox"
+                    [checked]="isReceive(p.playerId)"
+                    [disabled]="p.unmatched"
+                    (change)="toggleReceive(p.playerId)"
+                  />
+                  <span class="flex-1 truncate">{{ p.name }}</span>
+                  <span class="text-[10px] opacity-50">{{ p.roles.join('/') }}</span>
+                  @if (p.unmatched) {
+                    <span class="text-[10px] rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 px-1.5 py-0.5">
+                      non matchato
+                    </span>
+                  }
+                </label>
+              } @empty {
+                <p class="text-xs opacity-50 px-2 py-3">Rosa vuota o nessun giocatore matchato.</p>
+              }
             }
           </div>
-          <div class="flex gap-2">
-            <input
-              type="text"
-              class="flex-1 rounded-lg border bg-transparent px-3 py-1.5 text-sm"
-              placeholder="Aggiungi playerId libero…"
-              [(ngModel)]="freeReceiveId"
-              (keydown.enter)="addFreeReceive(); $event.preventDefault()"
-            />
-            <button
-              type="button"
-              class="rounded-lg border px-3 py-1.5 text-xs font-medium"
-              (click)="addFreeReceive()"
-            >
-              Aggiungi
-            </button>
-          </div>
+
+          <!-- Suggested targets from dashboard (optional shortcuts) -->
+          @if (suggestedOptions().length) {
+            <details class="text-xs">
+              <summary class="cursor-pointer opacity-70 hover:opacity-100 select-none">
+                Suggeriti dalla dashboard ({{ suggestedOptions().length }})
+              </summary>
+              <div class="mt-1 max-h-40 overflow-y-auto space-y-1 rounded-lg border p-2">
+                @for (p of suggestedOptions(); track p.playerId) {
+                  <label
+                    class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5"
+                    [class.bg-sky-500/10]="isReceive(p.playerId)"
+                  >
+                    <input
+                      type="checkbox"
+                      [checked]="isReceive(p.playerId)"
+                      (change)="toggleReceive(p.playerId)"
+                    />
+                    <span class="flex-1 truncate">{{ p.name }}</span>
+                    <span class="text-[10px] opacity-50">{{ p.roles.join('/') }}</span>
+                    @if (p.fpCorr != null) {
+                      <span class="tabular-nums text-xs opacity-70">{{ p.fpCorr | number: '1.0-0' }}</span>
+                    }
+                  </label>
+                }
+              </div>
+            </details>
+          }
+
+          <!-- Advanced: free playerId (power users) -->
+          <details class="text-xs">
+            <summary class="cursor-pointer opacity-70 hover:opacity-100 select-none">
+              Avanzato: aggiungi per ID
+            </summary>
+            <div class="mt-1 flex gap-2">
+              <input
+                type="text"
+                class="flex-1 rounded-lg border bg-transparent px-3 py-1.5 text-sm"
+                placeholder="fantacalcioId…"
+                [(ngModel)]="freeReceiveId"
+                (keydown.enter)="addFreeReceive(); $event.preventDefault()"
+              />
+              <button
+                type="button"
+                class="rounded-lg border px-3 py-1.5 text-xs font-medium"
+                (click)="addFreeReceive()"
+              >
+                Aggiungi
+              </button>
+            </div>
+          </details>
         </section>
       </div>
 
@@ -185,7 +267,6 @@ export interface EvaluatorPlayerOption {
       }
 
       @if (result(); as res) {
-        <!-- Coverage warning above verdict (plan §7) -->
         @if (res.squadImpact?.warning) {
           <div class="rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-sm">
             ⚠ {{ res.squadImpact!.warning }}
@@ -221,7 +302,6 @@ export interface EvaluatorPlayerOption {
             <span class="text-xs opacity-50 uppercase">{{ res.mode }}</span>
           </div>
 
-          <!-- Delta bar -->
           @if (res.valid && res.valueDeltaPercent != null) {
             <div class="relative h-2 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
               <div
@@ -317,13 +397,21 @@ export class TradeEvaluatorComponent implements OnChanges {
   private readonly api = inject(MyTeamService);
   private readonly destroyRef = inject(DestroyRef);
 
+  /** Monotonic token to ignore stale roster responses after rapid team switches. */
+  private rosterRequestId = 0;
+
   @Input({ required: true }) contextId!: string;
   @Input({ required: true }) sheetName!: string;
   @Input({ required: true }) teamName!: string;
   @Input() formationPrefs: string[] = ['4-3-3', '3-5-2', '3-4-3'];
   @Input() ruleset: 'MANTRA' | 'CLASSIC' = 'MANTRA';
-  /** Optional dashboard data used to populate Cedo / Ricevo lists. */
+  /** Optional dashboard data used to populate Cedo / suggested Ricevo lists. */
   @Input() trades: TradesDashboardResponse | null = null;
+  /**
+   * Other teams in the same division (from parent claim flow).
+   * Single source of truth — avoids a redundant listTeams call.
+   */
+  @Input() counterpartyTeams: RosterTeamCard[] = [];
 
   readonly mode = signal<TradeMode>('mantra');
   readonly giveIds = signal<string[]>([]);
@@ -334,7 +422,12 @@ export class TradeEvaluatorComponent implements OnChanges {
   readonly result = signal<TradeEvaluateResponse | null>(null);
 
   readonly ownOptions = signal<EvaluatorPlayerOption[]>([]);
-  readonly marketOptions = signal<EvaluatorPlayerOption[]>([]);
+  readonly suggestedOptions = signal<EvaluatorPlayerOption[]>([]);
+  readonly rosterOptions = signal<EvaluatorPlayerOption[]>([]);
+
+  readonly selectedTeamName = signal<string>('');
+  readonly rosterLoading = signal(false);
+  readonly rosterError = signal<string | null>(null);
 
   freeReceiveId = '';
 
@@ -343,17 +436,22 @@ export class TradeEvaluatorComponent implements OnChanges {
       this.mode.set(this.ruleset === 'CLASSIC' ? 'classic' : 'mantra');
     }
     if (changes['trades']) {
-      this.rebuildOptions();
+      this.rebuildOwnAndSuggested();
+    }
+    // Reset counterparty selection when context / own team changes
+    if (changes['contextId'] || changes['teamName'] || changes['sheetName']) {
+      this.resetCounterparty();
     }
   }
 
-  private rebuildOptions(): void {
+  private rebuildOwnAndSuggested(): void {
     const tr = this.trades;
     if (!tr) {
       this.ownOptions.set([]);
-      this.marketOptions.set([]);
+      this.suggestedOptions.set([]);
       return;
     }
+
     const own: EvaluatorPlayerOption[] = tr.tradeOutCandidates.map((c) => ({
       playerId: c.player.playerId,
       name: c.player.name,
@@ -362,7 +460,7 @@ export class TradeEvaluatorComponent implements OnChanges {
       teamSerieA: c.player.teamSerieA,
       side: 'own',
     }));
-    // Also surface excluded top performers as own-side options
+
     for (const e of tr.excludedTopPerformers ?? []) {
       if (!own.some((o) => o.playerId === e.player.playerId)) {
         own.push({
@@ -375,20 +473,101 @@ export class TradeEvaluatorComponent implements OnChanges {
         });
       }
     }
-    const market: EvaluatorPlayerOption[] = tr.tradeInTargets.map((t) => ({
+
+    const suggested: EvaluatorPlayerOption[] = tr.tradeInTargets.map((t) => ({
       playerId: t.playerId,
       name: t.name,
       roles: t.roles ?? [],
       fpCorr: t.fpCorr,
-      side: 'market',
+      side: 'suggested',
     }));
+
     this.ownOptions.set(own);
-    this.marketOptions.set(market);
+    this.suggestedOptions.set(suggested);
+  }
+
+  private resetCounterparty(): void {
+    this.selectedTeamName.set('');
+    this.rosterOptions.set([]);
+    this.rosterError.set(null);
+    this.rosterLoading.set(false);
+    // Keep give/receive cleared only when identity of the workspace changes
+    this.receiveIds.set([]);
+    this.result.set(null);
   }
 
   setMode(m: TradeMode): void {
     this.mode.set(m);
     this.result.set(null);
+  }
+
+  onTeamSelected(teamName: string): void {
+    this.selectedTeamName.set(teamName);
+    this.rosterOptions.set([]);
+    this.rosterError.set(null);
+    this.result.set(null);
+
+    if (!teamName) {
+      this.rosterLoading.set(false);
+      return;
+    }
+
+    this.loadRoster(teamName);
+  }
+
+  private loadRoster(teamName: string): void {
+    const requestId = ++this.rosterRequestId;
+    this.rosterLoading.set(true);
+    this.rosterError.set(null);
+
+    this.api
+      .getTeamRoster(this.contextId, this.sheetName, teamName)
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          if (requestId === this.rosterRequestId) {
+            this.rosterLoading.set(false);
+          }
+        }),
+      )
+      .subscribe({
+        next: (res) => {
+          if (requestId !== this.rosterRequestId) return;
+          this.rosterOptions.set(this.mapRosterPlayers(res.players));
+        },
+        error: (err) => {
+          if (requestId !== this.rosterRequestId) return;
+          this.rosterOptions.set([]);
+          this.rosterError.set(
+            err?.error?.detail ?? err?.message ?? 'Impossibile caricare la rosa',
+          );
+        },
+      });
+  }
+
+  /**
+   * Map roster rows to selectable options.
+   * Players without fantacalcioId cannot be evaluated — keep them visible but disabled.
+   */
+  private mapRosterPlayers(players: RosterPlayer[]): EvaluatorPlayerOption[] {
+    return players.map((p) => {
+      const fid = p.fantacalcioId;
+      const hasId = fid != null && Number.isFinite(fid);
+      const roles =
+        p.rolesMantra?.length
+          ? p.rolesMantra
+          : p.roleClassic
+            ? [p.roleClassic]
+            : [];
+      return {
+        playerId: hasId ? String(fid) : `unmatched:${p.nameClean || p.nameRaw}`,
+        name: p.catalogName || p.nameClean || p.nameRaw,
+        roles,
+        teamSerieA: p.catalogTeam ?? undefined,
+        side: 'roster' as const,
+        unmatched: !hasId,
+      };
+    });
   }
 
   isGive(id: string): boolean {
@@ -408,6 +587,7 @@ export class TradeEvaluatorComponent implements OnChanges {
   }
 
   toggleReceive(id: string): void {
+    if (id.startsWith('unmatched:')) return;
     const cur = this.receiveIds();
     this.receiveIds.set(
       cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id],
@@ -420,11 +600,14 @@ export class TradeEvaluatorComponent implements OnChanges {
     if (!id) return;
     if (!this.receiveIds().includes(id)) {
       this.receiveIds.set([...this.receiveIds(), id]);
-      // surface in market list if missing
-      if (!this.marketOptions().some((p) => p.playerId === id)) {
-        this.marketOptions.set([
-          ...this.marketOptions(),
-          { playerId: id, name: `ID ${id}`, roles: [], side: 'market' },
+      // Surface in suggested list so the user sees the selection
+      if (
+        !this.suggestedOptions().some((p) => p.playerId === id) &&
+        !this.rosterOptions().some((p) => p.playerId === id)
+      ) {
+        this.suggestedOptions.set([
+          ...this.suggestedOptions(),
+          { playerId: id, name: `ID ${id}`, roles: [], side: 'suggested' },
         ]);
       }
     }

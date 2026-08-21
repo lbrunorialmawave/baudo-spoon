@@ -547,6 +547,7 @@ type Tab = 'formation' | 'trades';
                     [formationPrefs]="formationPrefs()"
                     [ruleset]="ruleset()"
                     [trades]="tr"
+                    [counterpartyTeams]="opponents()"
                   />
 
                   <div class="rounded-lg border border-dashed p-4 space-y-3">
