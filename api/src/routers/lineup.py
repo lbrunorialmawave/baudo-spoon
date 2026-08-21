@@ -1,13 +1,15 @@
 """Lineup optimize endpoint — consumes runtime RosterContext.
 
-Enriches candidates with hybrid predictions + matchday starter probability
-when available; falls back to neutral baseline otherwise.
+Enriches candidates with hybrid predictions, matchday starter probability,
+and pre-match form (EWMA of ``player_matchday_votes`` fantavoto, giornate
+strictly before the target matchday). Falls back to neutral baseline when
+signals are missing.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import ORJSONResponse
@@ -23,6 +25,9 @@ from ml.lineup.enrichment import (
 from ml.lineup.optimizer import OptimizeResult, optimize_lineup
 from ml.roster_import.matcher import MatchStatus
 from ml.roster_import.store import get_default_store
+from ml.trades.signals import MatchdayVote
+
+import sqlalchemy as sa
 
 from ..data_repository import DataRepository
 from ..deps import get_db, rate_limit, require_role
@@ -97,17 +102,74 @@ def _get_repo(request: Request) -> DataRepository:
     return repo
 
 
+async def _load_votes_map(
+    db: AsyncSession,
+    fantacalcio_ids: list[int],
+    *,
+    window: int = 12,
+) -> dict[int, list[MatchdayVote]]:
+    """Recent fantavoto rows from ``player_matchday_votes`` (fantacalcio fonte).
+
+    Fetches a wider window than the EWMA uses so pre-match filtering
+    (giornata < target) still leaves enough samples.
+    """
+    if not fantacalcio_ids:
+        return {}
+
+    row = (
+        await db.execute(sa.text("SELECT MAX(season_start) FROM player_matchday_votes"))
+    ).scalar_one_or_none()
+    season_start = int(row) if row is not None else 0
+    if season_start == 0:
+        return {}
+
+    placeholders = ", ".join(f":id{i}" for i in range(len(fantacalcio_ids)))
+    params: dict[str, Any] = {"ss": season_start}
+    for i, fid in enumerate(fantacalcio_ids):
+        params[f"id{i}"] = int(fid)
+
+    sql = f"""
+        SELECT fantacalcio_id, giornata, fantavoto
+        FROM player_matchday_votes
+        WHERE season_start = :ss
+          AND fantacalcio_id IN ({placeholders})
+          AND fonte = 'fantacalcio'
+        ORDER BY giornata DESC
+    """
+    try:
+        result = await db.execute(sa.text(sql), params)
+    except Exception as exc:  # noqa: BLE001 — table may not exist yet
+        log.warning("player_matchday_votes unavailable: %s", exc)
+        return {}
+
+    out: dict[int, list[MatchdayVote]] = {}
+    for r in result:
+        m = r._mapping
+        fid = int(m["fantacalcio_id"])
+        fv = m["fantavoto"]
+        out.setdefault(fid, []).append(
+            MatchdayVote(
+                giornata=int(m["giornata"]),
+                fantavoto=float(fv) if fv is not None else None,
+            )
+        )
+    for fid in out:
+        out[fid] = out[fid][:window]
+    return out
+
+
 async def _load_enrichment_maps(
     request: Request,
     db: AsyncSession,
     *,
     matchday: int | None,
     fantacalcio_ids: list[int],
-) -> tuple[dict, dict, int | None, list[str]]:
-    """Load hybrid + matchday maps; never raises — degrades gracefully."""
+) -> tuple[dict, dict, dict[int, list[MatchdayVote]], int | None, list[str]]:
+    """Load hybrid + matchday + votes maps; never raises — degrades gracefully."""
     notes: list[str] = []
     hybrid_map: dict = {}
     matchday_map: dict = {}
+    votes_map: dict[int, list[MatchdayVote]] = {}
     resolved_md: int | None = matchday
     repo = _get_repo(request)
 
@@ -155,7 +217,21 @@ async def _load_enrichment_maps(
         notes.append("Matchday status non disponibile — SP di default")
         resolved_md = matchday
 
-    return hybrid_map, matchday_map, resolved_md, notes
+    # Historical + current fantavoto (form). Pre-match filter applied in enrichment.
+    try:
+        votes_map = await _load_votes_map(db, fantacalcio_ids)
+        if not votes_map:
+            notes.append("Nessun voto storico (player_matchday_votes) — solo hybrid")
+        else:
+            notes.append(
+                f"Forma da player_matchday_votes su {len(votes_map)} giocatori "
+                f"(pre-match: giornata < {resolved_md if resolved_md is not None else 'n/d'})"
+            )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Votes map unavailable: %s", exc)
+        notes.append("Voti storici non disponibili — solo hybrid")
+
+    return hybrid_map, matchday_map, votes_map, resolved_md, notes
 
 
 def _result_to_response(
@@ -226,6 +302,7 @@ def _result_to_response(
             "candidates": enrichment_stats.total,
             "withHybrid": enrichment_stats.with_hybrid,
             "withMatchday": enrichment_stats.with_matchday,
+            "withForm": enrichment_stats.with_form,
             "excludedOut": enrichment_stats.excluded_out,
             "baselineFallback": enrichment_stats.baseline_fallback,
         }
@@ -253,8 +330,9 @@ def _result_to_response(
     summary="Optimize starting XI for a matchday",
     description=(
         "Exact assignment over official Mantra modules (Hungarian algorithm). "
-        "EV = FP_Ibrido × StarterProbability × OpponentAdjustment when hybrid "
-        "and matchday data are available; otherwise neutral baseline. "
+        "EV = FP_eff × StarterProbability × OpponentAdjustment, where FP_eff "
+        "blends FP_Ibrido with pre-match form (EWMA fantavoto from "
+        "player_matchday_votes, giornate < target matchday only). "
         "Requires a live RosterContext from POST /roster/import. "
         "Opponent (same division only) is optional and informational."
     ),
@@ -294,14 +372,18 @@ async def optimize(
         if mp.catalog is not None:
             fids.append(int(mp.catalog.fantacalcio_id))
 
-    hybrid_map, matchday_map, resolved_md, enrich_notes = await _load_enrichment_maps(
-        request, db, matchday=body.matchday, fantacalcio_ids=fids
+    hybrid_map, matchday_map, votes_map, resolved_md, enrich_notes = (
+        await _load_enrichment_maps(
+            request, db, matchday=body.matchday, fantacalcio_ids=fids
+        )
     )
 
     candidates, stats = enrich_matched_players(
         team.players,
         hybrid_by_fid=hybrid_map,
         matchday_by_fid=matchday_map,
+        votes_by_fid=votes_map,
+        target_matchday=resolved_md,
     )
 
     notes = list(enrich_notes)
@@ -311,6 +393,11 @@ async def optimize(
         )
     if stats.baseline_fallback and stats.with_hybrid == 0:
         notes.append("Tutti gli EV usano FP baseline (hybrid assente)")
+    if stats.with_form:
+        notes.append(
+            f"Forma recente applicata a {stats.with_form}/{stats.total} candidati "
+            "(blend conservativo, solo voti pre-match)"
+        )
 
     # Opponent head-to-head (same division only)
     opponent_h2h: dict | None = None
@@ -346,6 +433,8 @@ async def optimize(
                 opp.players,
                 hybrid_by_fid=hybrid_map,
                 matchday_by_fid=matchday_map,
+                votes_by_fid=votes_map,
+                target_matchday=resolved_md,
             )
             opp_candidates.sort(key=lambda c: c.expected_value, reverse=True)
             top11 = opp_candidates[:11]

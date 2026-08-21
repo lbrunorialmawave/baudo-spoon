@@ -17,6 +17,9 @@ from .enrichment import (
     enrich_matched_players,
     parse_hybrid_rows,
     parse_matchday_rows,
+    filter_votes_pre_match,
+    blend_fp_with_form,
+    form_blend_weight,
 )
 
 __all__ = [
@@ -34,4 +37,7 @@ __all__ = [
     "enrich_matched_players",
     "parse_hybrid_rows",
     "parse_matchday_rows",
+    "filter_votes_pre_match",
+    "blend_fp_with_form",
+    "form_blend_weight",
 ]

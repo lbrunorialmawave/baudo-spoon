@@ -113,3 +113,86 @@ def test_baseline_when_no_data():
     assert stats.with_hybrid == 0
     assert cands[0].expected_value > 0
     assert "baseline" in cands[0].breakdown_note.lower() or "FP" in cands[0].breakdown_note
+
+
+# ── Form blend / pre-match ───────────────────────────────────────────────────
+
+from ml.lineup.enrichment import (
+    blend_fp_with_form,
+    filter_votes_pre_match,
+    form_blend_weight,
+)
+from ml.trades.signals import MatchdayVote
+
+
+def test_form_blend_weight_schedule():
+    assert form_blend_weight(0) == 0.0
+    assert form_blend_weight(1) == 0.15
+    assert form_blend_weight(2) == 0.15
+    assert form_blend_weight(3) == 0.25
+    assert form_blend_weight(4) == 0.25
+    assert form_blend_weight(5) == 0.35
+    assert form_blend_weight(10) == 0.35
+
+
+def test_filter_votes_pre_match_excludes_target_and_future():
+    votes = [
+        MatchdayVote(giornata=5, fantavoto=6.5),
+        MatchdayVote(giornata=6, fantavoto=7.0),  # target
+        MatchdayVote(giornata=7, fantavoto=8.0),  # future leak
+        MatchdayVote(giornata=4, fantavoto=5.5),
+    ]
+    filtered = filter_votes_pre_match(votes, target_matchday=6)
+    assert sorted(v.giornata for v in filtered) == [4, 5]
+    # No target → no filter
+    assert len(filter_votes_pre_match(votes, target_matchday=None)) == 4
+
+
+def test_blend_fp_with_form_conservative():
+    fp, lam, note = blend_fp_with_form(7.0, form_ewma=None, games_available=0)
+    assert fp == 7.0 and lam == 0.0
+
+    fp, lam, note = blend_fp_with_form(7.0, form_ewma=8.0, games_available=5)
+    assert abs(lam - 0.35) < 1e-9
+    # (1-0.35)*7 + 0.35*8 = 4.55 + 2.8 = 7.35
+    assert abs(fp - 7.35) < 1e-9
+    assert "form blend" in note
+
+
+def test_enrich_blends_form_pre_match_only():
+    """Target matchday 6: vote on giornata 6 must not move EV."""
+    players = [_mp("Hot", 1, ("A",))]
+    hybrid = {1: HybridInfo(1, 7.0)}
+    matchday = {1: MatchdayInfo(1, 1.0, "starter")}
+    # Strong vote only on target giornata — must be ignored pre-match
+    votes = {
+        1: [
+            MatchdayVote(giornata=6, fantavoto=10.0),
+            MatchdayVote(giornata=5, fantavoto=6.0),
+        ]
+    }
+    cands, stats = enrich_matched_players(
+        players,
+        hybrid_by_fid=hybrid,
+        matchday_by_fid=matchday,
+        votes_by_fid=votes,
+        target_matchday=6,
+    )
+    assert len(cands) == 1
+    assert stats.with_form == 1
+    # λ=0.15 (1 game), form=6.0 → fp_eff = 0.85*7 + 0.15*6 = 6.85
+    # EV = 6.85 * 1.0 * adj(~1)
+    assert abs(cands[0].expected_value - 6.85) < 0.2
+    assert "form blend" in cands[0].breakdown_note
+
+    # If only target-day vote exists → no form blend
+    votes_only_target = {1: [MatchdayVote(giornata=6, fantavoto=10.0)]}
+    cands2, stats2 = enrich_matched_players(
+        players,
+        hybrid_by_fid=hybrid,
+        matchday_by_fid=matchday,
+        votes_by_fid=votes_only_target,
+        target_matchday=6,
+    )
+    assert stats2.with_form == 0
+    assert abs(cands2[0].expected_value - 7.0) < 0.15
