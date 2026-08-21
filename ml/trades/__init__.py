@@ -1,4 +1,4 @@
-"""Trade advisor: coverage gaps, retention score, credit penalty."""
+"""Trade advisor + fairness engine: coverage, retention, bilateral evaluation."""
 
 from .credit_penalty import recompute_value_on_transfer, round_half_up
 from .advisor import (
@@ -8,6 +8,20 @@ from .advisor import (
     TradeDashboard,
     build_trade_dashboard,
     retention_score,
+)
+from .fairness import (
+    EnrichedTradePlayer,
+    PTVWeights,
+    TradeEvaluation,
+    evaluate_trade,
+    player_trade_value,
+)
+from .signals import (
+    FormaResult,
+    MatchdayVote,
+    TitolaritaResult,
+    forma_recente_score,
+    indice_titolarita,
 )
 
 __all__ = [
@@ -19,4 +33,14 @@ __all__ = [
     "TradeDashboard",
     "build_trade_dashboard",
     "retention_score",
+    "EnrichedTradePlayer",
+    "PTVWeights",
+    "TradeEvaluation",
+    "evaluate_trade",
+    "player_trade_value",
+    "FormaResult",
+    "MatchdayVote",
+    "TitolaritaResult",
+    "forma_recente_score",
+    "indice_titolarita",
 ]

@@ -190,13 +190,25 @@ def _strip_trailing_initial(name_norm: str) -> str:
     return name_norm
 
 
-def last_name_token(name_norm: str) -> str:
+def last_name_token(
+    name_norm: str,
+    *,
+    assume_surname_first: bool = False,
+) -> str:
     """Extract the *surname* token (or multi-word surname) for matching.
 
     The Fantacalcio listone almost always stores a surname-only form
     (``"Benedyczak"``, ``"Martinez L."``, ``"De Ketelaere"``), while FotMob
     stores "First Last" (``"Adrian Benedyczak"``). Comparing the *surnames*
     on both sides is the only way to bridge the two formats.
+
+    Two name shapes are supported:
+
+    * **First Last** (default) — ``"Adrian Benedyczak"`` → ``"benedyczak"``.
+      This matches what FotMob / ``player_id_map`` typically store.
+    * **Surname First** (Italian listone) — ``"Benedyczak Adrian"`` →
+      ``"benedyczak"``.  Opt in with ``assume_surname_first=True`` when
+      indexing a Fantacalcio listone / voti source.
 
     Examples::
 
@@ -212,6 +224,12 @@ def last_name_token(name_norm: str) -> str:
         'martinez'
         >>> last_name_token("joao felix")
         'felix'
+        >>> last_name_token("benedyczak adrian", assume_surname_first=True)
+        'benedyczak'
+        >>> last_name_token("carnesecchi marco", assume_surname_first=True)
+        'carnesecchi'
+        >>> last_name_token("de ketelaere charles", assume_surname_first=True)
+        'de ketelaere'
     """
     stripped = _strip_trailing_initial(name_norm)
     tokens = stripped.split()
@@ -227,6 +245,13 @@ def last_name_token(name_norm: str) -> str:
     # Handles 3-token input ("charles de ketelaere" → "de ketelaere")
     # AND 2-token input where the first token is the prefix
     # ("di gregorio" → "di gregorio", "de gea" → "de gea").
+    if assume_surname_first:
+        # Italian listone format: surname comes first.  If the leading
+        # token is a compound-surname prefix, the next token is part of
+        # the surname too (e.g. "de ketelaere charles" → "de ketelaere").
+        if len(tokens) >= 2 and tokens[0] in _COMPOUND_PREFIXES:
+            return " ".join(tokens[:2])
+        return tokens[0]
     if len(tokens) >= 2 and tokens[-2] in _COMPOUND_PREFIXES:
         return " ".join(tokens[-2:])
     if len(tokens) >= 2 and tokens[-1] in _COMPOUND_PREFIXES:

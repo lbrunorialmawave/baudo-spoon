@@ -24,6 +24,7 @@ import { SkeletonComponent } from '../../shared/components/skeleton/skeleton.com
 import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/error-boundary.component';
 import { FieldLegendComponent, FieldLegendExample } from '../../shared/components/field-legend/field-legend.component';
 import { PitchFieldComponent, toPitchPlayers } from './pitch-field/pitch-field.component';
+import { TradeEvaluatorComponent } from './trade-evaluator/trade-evaluator.component';
 import { canSwap, swapStarterWithBench } from './lineup-swap';
 
 type Step = 'ruleset' | 'upload' | 'select' | 'workspace';
@@ -40,6 +41,7 @@ type Tab = 'formation' | 'trades';
     ErrorBoundaryComponent,
     FieldLegendComponent,
     PitchFieldComponent,
+    TradeEvaluatorComponent,
   ],
   template: `
     <div class="mx-auto max-w-6xl px-4 py-6 space-y-6">
@@ -537,6 +539,16 @@ type Tab = 'formation' | 'trades';
                       </ul>
                     </div>
                   </div>
+
+                  <app-trade-evaluator
+                    [contextId]="contextId()!"
+                    [sheetName]="claimedSheet()"
+                    [teamName]="claimedTeamName()"
+                    [formationPrefs]="formationPrefs()"
+                    [ruleset]="ruleset()"
+                    [trades]="tr"
+                  />
+
                   <div class="rounded-lg border border-dashed p-4 space-y-3">
                     <h3 class="text-sm font-medium">Esegui scambio</h3>
                     <label class="block text-sm space-y-1">

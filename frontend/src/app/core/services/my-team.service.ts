@@ -10,6 +10,8 @@ import {
   RosterImportResponse,
   TradesDashboardRequest,
   TradesDashboardResponse,
+  TradeEvaluateRequest,
+  TradeEvaluateResponse,
   TradeExecuteRequest,
   TradeExecuteResponse,
 } from '../models/my-team.models';
@@ -79,5 +81,9 @@ export class MyTeamService {
 
   executeTrade(req: TradeExecuteRequest): Observable<TradeExecuteResponse> {
     return this.http.post<TradeExecuteResponse>(`${this.baseUrl}/trades/execute`, req);
+  }
+
+  evaluateTrade(req: TradeEvaluateRequest): Observable<TradeEvaluateResponse> {
+    return this.http.post<TradeEvaluateResponse>(`${this.baseUrl}/trades/evaluate`, req);
   }
 }

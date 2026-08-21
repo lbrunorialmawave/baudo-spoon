@@ -194,3 +194,50 @@ export interface TradeExecuteResponse {
   recordedAt: number;
   notes?: string[];
 }
+
+// ── Trade fairness evaluation ───────────────────────────────────────────────
+
+export type TradeMode = 'classic' | 'mantra';
+export type TradeVerdict = 'vantaggioso' | 'equilibrato' | 'sfavorevole';
+export type TradeConfidence = 'assente' | 'bassa' | 'media' | 'alta';
+
+export interface TradeEvaluateRequest {
+  contextId: string;
+  sheetName: string;
+  teamName: string;
+  mode: TradeMode;
+  give: string[];
+  receive: string[];
+  formationPrefs?: string[];
+  tolerancePercent?: number;
+}
+
+export interface TradePlayerPtvView {
+  playerId: string;
+  name: string;
+  ptv: number;
+  confidence: TradeConfidence;
+  flags: string[];
+  classicRole: string;
+  breakdown: Record<string, number | null>;
+}
+
+export interface TradeSquadImpact {
+  coverageBefore: Record<string, boolean>;
+  coverageAfter: Record<string, boolean>;
+  warning?: string | null;
+}
+
+export interface TradeEvaluateResponse {
+  mode: TradeMode;
+  valid: boolean;
+  validationErrors: string[];
+  verdict: TradeVerdict | null;
+  valueDeltaPercent: number | null;
+  toleranceBandPercent: number;
+  give: TradePlayerPtvView[];
+  receive: TradePlayerPtvView[];
+  squadImpact?: TradeSquadImpact | null;
+  rationale: string[];
+  seasonNotice?: string | null;
+}

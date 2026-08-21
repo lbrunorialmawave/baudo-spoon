@@ -1,0 +1,116 @@
+# Refresh per-matchday Fantacalcio grades after each Serie A round.
+# Runs the existing Node scraper in incremental mode, then the Python loader.
+#
+# Trigger: manual + schedule (Tue 06:00 UTC ≈ post-Monday recovery).
+# Secrets: ML_DATABASE_URL (preferred) or DATABASE_URL
+# Variables (schedule only): CURRENT_GIORNATA, CURRENT_SEASON
+
+name: voti-refresh
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      stagione:
+        description: "Season label (e.g. 2025-26)"
+        required: true
+        default: "2025-26"
+      giornata:
+        description: "Matchday number to scrape"
+        required: true
+        type: number
+  schedule:
+    # Tuesday 06:00 UTC — adjust if kick-off calendar changes
+    - cron: "0 6 * * 2"
+
+concurrency:
+  group: voti-refresh
+  cancel-in-progress: false
+
+jobs:
+  scrape-and-ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      DATABASE_URL: ${{ secrets.ML_DATABASE_URL || secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate database secret
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::Set secret ML_DATABASE_URL (or DATABASE_URL)"
+            exit 1
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: voti/package-lock.json
+
+      - name: Install Node deps
+        working-directory: voti
+        run: npm ci --ignore-scripts
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python deps
+        run: |
+          pip install -q "sqlalchemy>=2" psycopg2-binary pandas
+
+      - name: Resolve giornata
+        id: md
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            G="${{ inputs.giornata }}"
+            S="${{ inputs.stagione }}"
+          else
+            G="${{ vars.CURRENT_GIORNATA }}"
+            S="${{ vars.CURRENT_SEASON }}"
+            S="${S:-2025-26}"
+          fi
+          if [ -z "${G}" ] || [ "${G}" = "0" ]; then
+            echo "::error::giornata non impostata (input workflow_dispatch o var CURRENT_GIORNATA)"
+            exit 1
+          fi
+          echo "giornata=${G}" >> "$GITHUB_OUTPUT"
+          echo "stagione=${S}" >> "$GITHUB_OUTPUT"
+          echo "Resolved stagione=${S} giornata=${G}"
+
+      - name: Ensure migration applied hint
+        run: |
+          echo "Prerequisite: db/migrations/030_add_player_matchday_votes.sql must be applied."
+          echo "If the loader fails with 'relation player_matchday_votes does not exist', run the migration first."
+
+      - name: Scrape matchday
+        working-directory: voti
+        run: |
+          set -euo pipefail
+          node scraper.js \
+            --anno=${{ steps.md.outputs.stagione }} \
+            --giornata=${{ steps.md.outputs.giornata }} \
+            --output=stdout \
+            > /tmp/voti-giornata.json
+          bytes=$(wc -c < /tmp/voti-giornata.json)
+          echo "Scraped bytes: ${bytes}"
+          if [ "${bytes}" -lt 100 ]; then
+            echo "::error::Scrape output troppo piccolo — possibile pagina vuota o blocco"
+            head -c 500 /tmp/voti-giornata.json || true
+            exit 1
+          fi
+
+      - name: Ingest into player_matchday_votes
+        run: |
+          python -m ml.data.voti_matchday_loader \
+            --json /tmp/voti-giornata.json \
+            --season ${{ steps.md.outputs.stagione }} \
+            -v

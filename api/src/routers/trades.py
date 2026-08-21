@@ -9,8 +9,9 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from typing import Any
+from typing import Any, Literal, Optional
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import ORJSONResponse
 from pydantic import Field
@@ -21,6 +22,9 @@ from ml.roster_import.matcher import MatchStatus
 from ml.roster_import.store import get_default_store
 from ml.trades.advisor import TradePlayer, build_trade_dashboard
 from ml.trades.credit_penalty import recompute_value_on_transfer
+from ml.trades.enrichment import enrich_players, season_notice_if_cold_start
+from ml.trades.fairness import evaluate_trade
+from ml.trades.signals import MatchdayVote
 
 from ..data_repository import DataRepository
 from ..deps import get_db, rate_limit, require_role
@@ -64,6 +68,21 @@ class TradeExecuteRequest(_CamelModel):
     credit_penalty_enabled: bool = False
     decay_step_percent: float = Field(25.0, ge=0, le=100)
     floor_percent: float = Field(25.0, ge=0, le=100)
+
+
+class TradeEvaluateRequest(_CamelModel):
+    """Bilateral trade fairness evaluation (read-only simulation)."""
+
+    context_id: str
+    sheet_name: str
+    team_name: str
+    mode: Literal["classic", "mantra"] = "mantra"
+    give: list[str] = Field(default_factory=list)  # player_id (fantacalcio_id)
+    receive: list[str] = Field(default_factory=list)
+    formation_prefs: list[str] = Field(
+        default_factory=lambda: ["4-3-3", "3-5-2", "3-4-3"]
+    )
+    tolerance_percent: float = Field(10.0, ge=0, le=50)
 
 
 def _get_store(request: Request):
@@ -389,3 +408,351 @@ async def execute_trade(
     }
     _log_transfer(record)
     return ORJSONResponse(record)
+
+
+# ── Fairness evaluation (read-only) ──────────────────────────────────────────
+
+
+async def _load_votes_map(
+    db: AsyncSession,
+    fantacalcio_ids: list[int],
+    *,
+    season_start: int | None = None,
+    window: int = 8,
+) -> dict[int, list[MatchdayVote]]:
+    """Recent matchday fantavoto rows for the given players."""
+    if not fantacalcio_ids:
+        return {}
+
+    if season_start is None:
+        row = (
+            await db.execute(
+                sa.text("SELECT MAX(season_start) FROM player_matchday_votes")
+            )
+        ).scalar_one_or_none()
+        season_start = int(row) if row is not None else 0
+        if season_start == 0:
+            return {}
+
+    placeholders = ", ".join(f":id{i}" for i in range(len(fantacalcio_ids)))
+    params: dict[str, Any] = {"ss": season_start}
+    for i, fid in enumerate(fantacalcio_ids):
+        params[f"id{i}"] = int(fid)
+
+    # Fetch a slightly wider window; EWMA will keep the last N usable games
+    sql = f"""
+        SELECT fantacalcio_id, giornata, fantavoto
+        FROM player_matchday_votes
+        WHERE season_start = :ss
+          AND fantacalcio_id IN ({placeholders})
+          AND fonte = 'fantacalcio'
+        ORDER BY giornata DESC
+    """
+    try:
+        result = await db.execute(sa.text(sql), params)
+    except Exception as exc:  # noqa: BLE001 — table may not exist yet
+        log.warning("player_matchday_votes unavailable: %s", exc)
+        return {}
+
+    out: dict[int, list[MatchdayVote]] = {}
+    for r in result:
+        m = r._mapping
+        fid = int(m["fantacalcio_id"])
+        fv = m["fantavoto"]
+        out.setdefault(fid, []).append(
+            MatchdayVote(
+                giornata=int(m["giornata"]),
+                fantavoto=float(fv) if fv is not None else None,
+            )
+        )
+    # Trim per player
+    for fid in out:
+        out[fid] = out[fid][:window]
+    return out
+
+
+async def _load_status_map(
+    db: AsyncSession,
+    fantacalcio_ids: list[int],
+) -> dict[int, dict]:
+    if not fantacalcio_ids:
+        return {}
+    placeholders = ", ".join(f":id{i}" for i in range(len(fantacalcio_ids)))
+    params: dict[str, Any] = {}
+    for i, fid in enumerate(fantacalcio_ids):
+        params[f"id{i}"] = int(fid)
+
+    # Latest matchday per player (or global latest)
+    sql = f"""
+        SELECT DISTINCT ON (fantacalcio_id)
+            fantacalcio_id, matchday, status, probability, team
+        FROM player_matchday_status
+        WHERE fantacalcio_id IN ({placeholders})
+        ORDER BY fantacalcio_id, season_start DESC, matchday DESC
+    """
+    try:
+        result = await db.execute(sa.text(sql), params)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("player_matchday_status unavailable: %s", exc)
+        return {}
+    return {int(r._mapping["fantacalcio_id"]): dict(r._mapping) for r in result}
+
+
+async def _load_experts_map(
+    db: AsyncSession,
+    fantacalcio_ids: list[int],
+) -> dict[int, dict]:
+    """Latest gruppo_esperti titolarità per player."""
+    if not fantacalcio_ids:
+        return {}
+    # expert_ratings.player_id is stored as "fc-{id}" or plain id
+    placeholders = ", ".join(f":id{i}" for i in range(len(fantacalcio_ids)))
+    params: dict[str, Any] = {}
+    id_list: list[str] = []
+    for i, fid in enumerate(fantacalcio_ids):
+        key = f"fc-{fid}"
+        params[f"id{i}"] = key
+        id_list.append(key)
+        params[f"raw{i}"] = str(fid)
+
+    # Match both "fc-123" and "123" forms
+    raw_ph = ", ".join(f":raw{i}" for i in range(len(fantacalcio_ids)))
+    sql = f"""
+        SELECT DISTINCT ON (player_id)
+            player_id, titolarita, consiglio_esperti_raw, season_start, matchday
+        FROM expert_ratings
+        WHERE source = 'gruppo_esperti'
+          AND (player_id IN ({placeholders}) OR player_id IN ({raw_ph}))
+        ORDER BY player_id, season_start DESC, matchday DESC NULLS LAST
+    """
+    try:
+        result = await db.execute(sa.text(sql), params)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("expert_ratings unavailable: %s", exc)
+        return {}
+
+    out: dict[int, dict] = {}
+    for r in result:
+        m = dict(r._mapping)
+        pid = str(m["player_id"])
+        if pid.startswith("fc-"):
+            fid = int(pid[3:])
+        else:
+            try:
+                fid = int(pid)
+            except ValueError:
+                continue
+        out[fid] = m
+    return out
+
+
+async def _load_classic_roles(
+    db: AsyncSession,
+    fantacalcio_ids: list[int],
+) -> dict[int, str]:
+    if not fantacalcio_ids:
+        return {}
+    placeholders = ", ".join(f":id{i}" for i in range(len(fantacalcio_ids)))
+    params: dict[str, Any] = {}
+    for i, fid in enumerate(fantacalcio_ids):
+        params[f"id{i}"] = int(fid)
+    sql = f"""
+        SELECT DISTINCT ON (fantacalcio_id)
+            fantacalcio_id, role
+        FROM player_quotations
+        WHERE fantacalcio_id IN ({placeholders})
+        ORDER BY fantacalcio_id, season_start DESC
+    """
+    try:
+        result = await db.execute(sa.text(sql), params)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("player_quotations role lookup failed: %s", exc)
+        return {}
+    out: dict[int, str] = {}
+    for r in result:
+        role = (r._mapping["role"] or "").upper()
+        if role in ("GK", "DEF", "MID", "FWD"):
+            out[int(r._mapping["fantacalcio_id"])] = role
+    return out
+
+
+def _resolve_players_from_context(
+    ctx,
+    sheet_name: str,
+    player_ids: list[str],
+    hybrid_map: dict,
+    *,
+    own_team_name: str | None = None,
+) -> tuple[list[TradePlayer], list[str]]:
+    """Find TradePlayers for the given ids across all teams in the division."""
+    wanted = set(player_ids)
+    found: dict[str, TradePlayer] = {}
+
+    teams: list = []
+    if own_team_name:
+        own = ctx.get_team(sheet_name, own_team_name)
+        if own is not None:
+            teams.append(own)
+    teams.extend(ctx.teams_in_same_division(sheet_name, exclude_team=own_team_name))
+
+    for team in teams:
+        for mp in team.players:
+            tp = _matched_to_trade_player(mp, hybrid_map)
+            if tp and tp.player_id in wanted:
+                found[tp.player_id] = tp
+
+    missing = [pid for pid in player_ids if pid not in found]
+    ordered = [found[pid] for pid in player_ids if pid in found]
+    return ordered, missing
+
+
+@router.post(
+    "/evaluate",
+    response_class=ORJSONResponse,
+    summary="Evaluate bilateral trade fairness (Classic / Mantra)",
+    description=(
+        "Read-only simulation. Returns PTV breakdown, validity, coverage impact "
+        "and a transparent verdict. Does not modify the roster."
+    ),
+    dependencies=[Depends(rate_limit), Depends(require_role("member"))],
+)
+async def evaluate_trade_endpoint(
+    request: Request,
+    body: TradeEvaluateRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ORJSONResponse:
+    if not body.give and not body.receive:
+        raise HTTPException(
+            status_code=400,
+            detail="Specifica almeno un giocatore in give o receive",
+        )
+
+    store = _get_store(request)
+    ctx = store.get(body.context_id)
+    if ctx is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Context non trovato o scaduto. Ricarica il file Excel.",
+        )
+
+    team = ctx.get_team(body.sheet_name, body.team_name)
+    if team is None:
+        raise HTTPException(status_code=404, detail="Squadra non trovata")
+
+    hybrid_map = await _load_hybrid_map(request, db)
+
+    # Build current roster (for Mantra coverage impact)
+    roster: list[TradePlayer] = []
+    for mp in team.players:
+        tp = _matched_to_trade_player(mp, hybrid_map)
+        if tp:
+            roster.append(tp)
+
+    # Resolve give / receive players (may live on other teams in the context)
+    all_ids = list(dict.fromkeys(body.give + body.receive))
+    resolved, missing = _resolve_players_from_context(
+        ctx,
+        body.sheet_name,
+        all_ids,
+        hybrid_map,
+        own_team_name=body.team_name,
+    )
+    by_id = {p.player_id: p for p in resolved}
+
+    # Also accept receive players that are free agents: try hybrid-only stub
+    for pid in missing:
+        try:
+            fid = int(pid)
+        except ValueError:
+            continue
+        fp = _fp_from_hybrid(hybrid_map, fid)
+        by_id[pid] = TradePlayer(
+            player_id=pid,
+            name=f"Player {pid}",
+            eligible_roles=frozenset({"C"}),
+            fp_corr=fp,
+        )
+        missing = [m for m in missing if m != pid]
+
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Giocatori non risolti nel context: {', '.join(missing)}",
+        )
+
+    give_players = [by_id[pid] for pid in body.give if pid in by_id]
+    recv_players = [by_id[pid] for pid in body.receive if pid in by_id]
+
+    # Load live signals
+    fids = []
+    for p in give_players + recv_players + roster:
+        try:
+            fids.append(int(p.player_id))
+        except ValueError:
+            pass
+    fids = list(dict.fromkeys(fids))
+
+    votes_map = await _load_votes_map(db, fids)
+    status_map = await _load_status_map(db, fids)
+    experts_map = await _load_experts_map(db, fids)
+    classic_roles = await _load_classic_roles(db, fids)
+
+    give_enriched = enrich_players(
+        give_players,
+        votes_by_fid=votes_map,
+        status_by_fid=status_map,
+        experts_by_fid=experts_map,
+        classic_role_by_fid=classic_roles,
+    )
+    recv_enriched = enrich_players(
+        recv_players,
+        votes_by_fid=votes_map,
+        status_by_fid=status_map,
+        experts_by_fid=experts_map,
+        classic_role_by_fid=classic_roles,
+    )
+
+    notice = season_notice_if_cold_start(
+        votes_map, [p.player_id for p in give_players + recv_players]
+    )
+
+    evaluation = evaluate_trade(
+        mode=body.mode,
+        give=give_enriched,
+        receive=recv_enriched,
+        current_roster=roster if body.mode == "mantra" else None,
+        formation_prefs=body.formation_prefs,
+        tolerance_percent=body.tolerance_percent,
+        season_notice=notice,
+    )
+
+    def _player_view(v) -> dict:
+        return {
+            "playerId": v.player_id,
+            "name": v.name,
+            "ptv": v.ptv,
+            "confidence": v.confidence,
+            "flags": list(v.flags),
+            "classicRole": v.classic_role,
+            "breakdown": v.breakdown,
+        }
+
+    payload: dict[str, Any] = {
+        "mode": evaluation.mode,
+        "valid": evaluation.valid,
+        "validationErrors": list(evaluation.validation_errors),
+        "verdict": evaluation.verdict,
+        "valueDeltaPercent": evaluation.value_delta_percent,
+        "toleranceBandPercent": evaluation.tolerance_band_percent,
+        "give": [_player_view(v) for v in evaluation.give],
+        "receive": [_player_view(v) for v in evaluation.receive],
+        "rationale": list(evaluation.rationale),
+        "seasonNotice": evaluation.season_notice,
+    }
+    if evaluation.squad_impact is not None:
+        payload["squadImpact"] = {
+            "coverageBefore": evaluation.squad_impact.coverage_before,
+            "coverageAfter": evaluation.squad_impact.coverage_after,
+            "warning": evaluation.squad_impact.warning,
+        }
+    return ORJSONResponse(payload)
