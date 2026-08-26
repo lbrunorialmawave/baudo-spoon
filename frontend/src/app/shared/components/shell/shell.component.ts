@@ -12,29 +12,31 @@ interface NavItem {
 
 const NAV_ITEMS: readonly NavItem[] = [
   {
-    path: '/players',
-    label: 'Players',
-    shortLabel: 'Players',
-    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path stroke-linecap="round" d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`,
+    path: '/overview',
+    label: 'Overview Giocatori',
+    shortLabel: 'Overview',
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>`,
   },
+  // Players and Previsioni are hidden from the nav (not removed — uncomment
+  // to bring them back).
+  // {
+  //   path: '/players',
+  //   label: 'Players',
+  //   shortLabel: 'Players',
+  //   icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path stroke-linecap="round" d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`,
+  // },
   {
     path: '/quotations',
     label: 'Quotations',
     shortLabel: 'Quote',
     icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M7 7h10M7 12h6m-6 5h4"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`,
   },
-  {
-    path: '/predictions',
-    label: 'Previsioni',
-    shortLabel: 'Prev.',
-    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 17l5-5 4 4 9-10"/></svg>`,
-  },
-  {
-    path: '/overview',
-    label: 'Overview Giocatori',
-    shortLabel: 'Overview',
-    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>`,
-  },
+  // {
+  //   path: '/predictions',
+  //   label: 'Previsioni',
+  //   shortLabel: 'Prev.',
+  //   icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 17l5-5 4 4 9-10"/></svg>`,
+  // },
   {
     path: '/optimizer',
     label: 'Optimizer',

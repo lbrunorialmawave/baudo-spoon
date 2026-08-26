@@ -21,7 +21,8 @@ export class MantraService {
   /** List all players with MANTRA scores (paginated). */
   listPlayers(opts: {
     ruolo?: string;
-    fase7?: string;
+    fase7Rendimento?: string;
+    fase7Prezzo?: string;
     team?: string;
     search?: string;
     minFp?: number;
@@ -36,8 +37,9 @@ export class MantraService {
     let params = new HttpParams()
       .set('page', opts.page ?? 1)
       .set('size', opts.size ?? 50);
-    if (opts.ruolo)     params = params.set('ruolo', opts.ruolo);
-    if (opts.fase7)     params = params.set('fase7', opts.fase7);
+    if (opts.ruolo)            params = params.set('ruolo', opts.ruolo);
+    if (opts.fase7Rendimento)  params = params.set('fase7_rendimento', opts.fase7Rendimento);
+    if (opts.fase7Prezzo)      params = params.set('fase7_prezzo', opts.fase7Prezzo);
     if (opts.team)      params = params.set('team', opts.team);
     if (opts.search)    params = params.set('search', opts.search);
     if (opts.minFp != null)     params = params.set('min_fp', opts.minFp);

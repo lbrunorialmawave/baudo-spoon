@@ -1,7 +1,13 @@
 import { Component, input, output } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { OverviewPlayer, SortKey } from '../../../../core/models/overview.models';
-import { FASE7_LABELS, FASE7_TOOLTIPS, HYBRID_LABELS } from '../../../../core/models/mantra.models';
+import {
+  FASE7_RENDIMENTO_LABELS,
+  FASE7_PREZZO_LABELS,
+  FASE7_TOOLTIPS,
+  HYBRID_LABELS,
+  fase7Stars,
+} from '../../../../core/models/mantra.models';
 import { TitolaritaBadgesComponent } from '../titolarita-badges/titolarita-badges.component';
 import { SkeletonComponent } from '../../../../shared/components/skeleton/skeleton.component';
 
@@ -46,9 +52,7 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
               VR @if (sortDirFor('VR'); as dir) { <span style="color:var(--color-accent)"><sup>{{ sortRankLabel('VR') }}</sup>{{ dir === 'asc' ? '▲' : '▼' }}</span> }
             </th>
             <th class="px-3 py-2 text-left" title="Titolarità: Reale (probabili formazioni) · ML · Gruppo Esperti — 3 segnali distinti, non ordinabile come colonna unica">Titolarità</th>
-            <th class="px-3 py-2 text-left sortable" (click)="sortChanged.emit({ column: 'Fase7', additive: $event.shiftKey })" [title]="sortHint()">
-              Profilo @if (sortDirFor('Fase7'); as dir) { <span style="color:var(--color-accent)"><sup>{{ sortRankLabel('Fase7') }}</sup>{{ dir === 'asc' ? '▲' : '▼' }}</span> }
-            </th>
+            <th class="px-3 py-2 text-left" title="Rendimento/Affidabilità + Prezzo/Valore — due assi indipendenti, non ordinabile come colonna unica">Profilo</th>
             <th class="px-3 py-2 text-left hidden lg:table-cell" title="Segnali di classificazione ibrida MANTRA vs ML — non ordinabile (più etichette per riga)">Segnali</th>
             <th class="px-3 py-2 text-right sortable hidden md:table-cell" (click)="sortChanged.emit({ column: 'Pz1', additive: $event.shiftKey })" [title]="'Quotazione ufficiale corrente del listone · ' + sortHint()">
               Prezzo @if (sortDirFor('Pz1'); as dir) { <span style="color:var(--color-accent)"><sup>{{ sortRankLabel('Pz1') }}</sup>{{ dir === 'asc' ? '▲' : '▼' }}</span> }
@@ -117,20 +121,30 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                     [expertTitolarita]="item.expertTitolarita" />
                 </td>
                 <td class="px-3 py-2.5" data-label="Profilo">
-                  @if (item.Fase7) {
-                    @let f7 = FASE7_LABELS[item.Fase7];
-                    <span class="rounded-full px-2 py-0.5 text-xs font-medium text-white"
-                          [style.background]="f7?.color ?? '#6B7280'"
-                          [title]="FASE7_TOOLTIPS[item.Fase7]">
-                      <span class="sm:hidden">{{ f7?.icon ?? '' }}</span>
-                      <span class="hidden sm:inline">{{ f7?.icon ?? '' }} {{ f7?.label ?? item.Fase7 }}</span>
-                    </span>
-                  } @else {
-                    <span class="rounded-full border px-2 py-0.5 text-xs font-medium"
-                          style="border-color:var(--color-border);color:var(--color-text-secondary)">
-                      ➖
-                    </span>
-                  }
+                  <div class="flex flex-col items-start gap-1">
+                    @if (item.Fase7_Rendimento) {
+                      @let f7r = FASE7_RENDIMENTO_LABELS[item.Fase7_Rendimento];
+                      <span class="rounded-full px-1.5 py-0.5 text-[10px] font-medium text-white"
+                            [style.background]="f7r?.color ?? '#6B7280'"
+                            [title]="FASE7_TOOLTIPS[item.Fase7_Rendimento]">
+                        {{ f7r?.icon ?? '' }} {{ f7r?.label ?? item.Fase7_Rendimento }}{{ starBadge(item.Fase7_Rendimento_Gap, RENDIMENTO_GAP_BASE) }}
+                      </span>
+                    }
+                    @if (item.Fase7_Prezzo) {
+                      @let f7p = FASE7_PREZZO_LABELS[item.Fase7_Prezzo];
+                      <span class="rounded-full px-1.5 py-0.5 text-[10px] font-medium text-white"
+                            [style.background]="f7p?.color ?? '#6B7280'"
+                            [title]="FASE7_TOOLTIPS[item.Fase7_Prezzo]">
+                        {{ f7p?.icon ?? '' }} {{ f7p?.label ?? item.Fase7_Prezzo }}{{ starBadge(item.Fase7_Prezzo_Gap, PREZZO_GAP_BASE) }}
+                      </span>
+                    }
+                    @if (!item.Fase7_Rendimento && !item.Fase7_Prezzo) {
+                      <span class="rounded-full border px-1.5 py-0.5 text-[10px] font-medium"
+                            style="border-color:var(--color-border);color:var(--color-text-secondary)">
+                        ➖
+                      </span>
+                    }
+                  </div>
                 </td>
                 <td class="px-3 py-2.5 hidden lg:table-cell whitespace-nowrap" data-label="Segnali">
                   @if (item.hybridLabels?.length) {
@@ -191,8 +205,21 @@ export class OverviewTableComponent {
   hoverId: number | null = null;
   readonly skeletonRows = Array.from({ length: 8 });
 
-  readonly FASE7_LABELS = FASE7_LABELS;
+  readonly FASE7_RENDIMENTO_LABELS = FASE7_RENDIMENTO_LABELS;
+  readonly FASE7_PREZZO_LABELS = FASE7_PREZZO_LABELS;
   readonly FASE7_TOOLTIPS = FASE7_TOOLTIPS;
+
+  // Gap base thresholds mirroring ml/mantra/config.py's SCOMMESSA_GAP_MIN /
+  // GIUSTO_GAP_BAND — keep in sync if the backend retunes them.
+  readonly RENDIMENTO_GAP_BASE = 25;
+  readonly PREZZO_GAP_BASE = 15;
+
+  /** " ★★" (1-3 stars) confidence suffix for a Fase7 gap, or '' when there's
+   *  nothing to rate. */
+  readonly starBadge = (gap: number | null | undefined, base: number): string => {
+    const n = fase7Stars(gap, base);
+    return n ? ' ' + '★'.repeat(n) : '';
+  };
 
   private static readonly SUPERSCRIPTS = ['¹', '²', '³'];
 

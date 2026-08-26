@@ -166,8 +166,12 @@ def _patch_heavy_compute():
         patch(
             "ml.mantra.runner.classify_fase7",
             return_value=(
-                pd.Series(["starter", "bench"]),
-                pd.Series([None, None]),
+                pd.Series(["starter", "bench"]),  # label_rendimento
+                pd.Series([None, None]),  # motivo_rendimento
+                pd.Series([0.0, 0.0]),  # gap_rendimento
+                pd.Series([None, None]),  # label_prezzo
+                pd.Series([None, None]),  # motivo_prezzo
+                pd.Series([0.0, 0.0]),  # gap_prezzo
             ),
         ),
         patch("ml.mantra.runner.top_per_ruolo", return_value={}),

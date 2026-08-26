@@ -29,6 +29,10 @@ export class AdminComponent {
   readonly healthError = signal<string | null>(null);
   readonly allOk = signal(false);
   readonly mlCoverage = signal<DataHealthSource | null>(null);
+  /** Collapsed by default — these two lists can get long (neo-arrivi after
+   *  an active transfer window, pipeline run history over time). */
+  readonly neoArrivoExpanded = signal(false);
+  readonly pipelineRunsExpanded = signal(false);
 
   // Latest season derived from /quotations/seasons — avoids hardcoded year.
   readonly currentSeason = signal<number | null>(null);

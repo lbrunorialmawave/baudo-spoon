@@ -40,8 +40,9 @@ class OverviewSortField(str, Enum):
     - scoring.py writes fpIbrido/confidenceScore/fpGap/expectedValue/mlBoost
       directly in camelCase, so those raw keys ARE camelCase.
     - merger.py writes predicted_fantavoto/prediction_std/... in snake_case,
-      and the base MANTRA fields (player_name, ruolo_primario, Pz1, Fase7,
-      FP_Mantra, VR) keep the mantra runner's own casing.
+      and the base MANTRA fields (player_name, ruolo_primario, Pz1,
+      Fase7_Rendimento, Fase7_Prezzo, FP_Mantra, VR) keep the mantra
+      runner's own casing.
     (Note: HybridSortField in intelligence.py sorts `predictedFantavoto` and
     `playerName` against these same raw dicts — since those keys are
     actually snake_case, that lookup silently no-ops on /predictions/hybrid
@@ -60,7 +61,8 @@ class OverviewSortField(str, Enum):
     fp_corr = "FP_Corr"
     vr = "VR"
     pz1 = "Pz1"
-    fase7 = "Fase7"
+    fase7_rendimento = "Fase7_Rendimento"
+    fase7_prezzo = "Fase7_Prezzo"
     probability_scraped = "probability_scraped"
     start_probability = "start_probability"
     expert_totale = "expert_totale"
@@ -124,7 +126,12 @@ def _apply_single_sort(players: list[dict], field: OverviewSortField, reverse: b
             key=lambda p: _ROLE_ORDER.get(p.get("ruolo_primario", ""), 999),
             reverse=reverse,
         )
-    elif field in (OverviewSortField.player_name, OverviewSortField.team, OverviewSortField.fase7):
+    elif field in (
+        OverviewSortField.player_name,
+        OverviewSortField.team,
+        OverviewSortField.fase7_rendimento,
+        OverviewSortField.fase7_prezzo,
+    ):
         # String fields: sort by value in the requested direction, then a
         # second *stable* pass pushes missing values to the end either way
         # (a single reversed tuple key would flip None to the front on
@@ -159,7 +166,12 @@ async def list_overview_players(
     ruolo: str | None = Query(None, description="Filter by MANTRA primary role"),
     team: str | None = Query(None, description="Filter by team name"),
     search: str | None = Query(None, description="Search by player name"),
-    fase7: str | None = Query(None, description="Filter by Fase 7 label (TOP/AFFARE/...)"),
+    fase7_rendimento: str | None = Query(
+        None, description="Filter by Fase 7 Rendimento/Affidabilità axis label (TOP/CERTEZZA/SCOMMESSA)"
+    ),
+    fase7_prezzo: str | None = Query(
+        None, description="Filter by Fase 7 Prezzo/Valore axis label (AFFARE/GIUSTO/SOPRAVALUTATO)"
+    ),
     labels: str | None = Query(
         None, description="Comma-separated hybrid labels (e.g. ML_Confirmed,ML_Top) — OR-matched"
     ),
@@ -238,8 +250,10 @@ async def list_overview_players(
     if search:
         q = search.lower()
         players = [p for p in players if q in str(p.get("player_name", "")).lower()]
-    if fase7:
-        players = [p for p in players if p.get("Fase7") == fase7]
+    if fase7_rendimento:
+        players = [p for p in players if p.get("Fase7_Rendimento") == fase7_rendimento]
+    if fase7_prezzo:
+        players = [p for p in players if p.get("Fase7_Prezzo") == fase7_prezzo]
     if labels:
         wanted = {v.strip() for v in labels.split(",") if v.strip()}
         players = [p for p in players if wanted & set(p.get("hybridLabels") or [])]

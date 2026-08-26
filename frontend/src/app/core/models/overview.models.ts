@@ -27,7 +27,14 @@ export interface OverviewPlayer {
   Pz1: number | null;
   /** Prezzo massimo consigliato calcolato da MANTRA — non mostrato in tabella, solo nel drawer. */
   prezzoMassimo: number | null;
-  Fase7: string | null;
+  /** Asse Rendimento/Affidabilità: TOP | CERTEZZA | SCOMMESSA | null. */
+  Fase7_Rendimento: string | null;
+  Fase7_Rendimento_Motivo?: string | null;
+  Fase7_Rendimento_Gap?: number | null;
+  /** Asse Prezzo/Valore: AFFARE | GIUSTO | SOPRAVALUTATO | null. */
+  Fase7_Prezzo: string | null;
+  Fase7_Prezzo_Motivo?: string | null;
+  Fase7_Prezzo_Gap?: number | null;
   rischio: string | null;
 
   // Hybrid ML

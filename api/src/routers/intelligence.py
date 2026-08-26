@@ -417,7 +417,16 @@ _CAMEL_OVERRIDES = {
     "CP_Corr": "CP_Corr",
     "FP_Mantra": "FP_Mantra",
     "Prezzo_Massimo": "prezzoMassimo",
-    "Fase7": "Fase7",
+    # Fase7 v2 — two independent axes (Rendimento/Affidabilità, Prezzo/Valore),
+    # each with a label, a reason, and a numeric gap for a frontend "stars"
+    # confidence indicator. Redundant with the generic uppercase-passthrough
+    # rule below, kept explicit for readability.
+    "Fase7_Rendimento": "Fase7_Rendimento",
+    "Fase7_Rendimento_Motivo": "Fase7_Rendimento_Motivo",
+    "Fase7_Rendimento_Gap": "Fase7_Rendimento_Gap",
+    "Fase7_Prezzo": "Fase7_Prezzo",
+    "Fase7_Prezzo_Motivo": "Fase7_Prezzo_Motivo",
+    "Fase7_Prezzo_Gap": "Fase7_Prezzo_Gap",
 }
 
 
@@ -427,8 +436,9 @@ def _to_camel(key: str) -> str:
     # Keys already camelCase pass through unchanged
     if "_" not in key:
         return key
-    # Mixed-case keys with underscore (FP_Corr, CP_Corr, FP_Mantra, Prezzo_Massimo, Fase7)
-    # contain acronym parts — pass them through as-is
+    # Mixed-case keys with underscore (FP_Corr, CP_Corr, FP_Mantra, Prezzo_Massimo,
+    # Fase7_Rendimento, Fase7_Prezzo, ...) contain acronym parts — pass them
+    # through as-is
     if any(c.isupper() for c in key):
         return key
     # Generic snake_case → camelCase

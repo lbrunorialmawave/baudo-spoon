@@ -210,7 +210,8 @@ async def list_consigliati(
             mp = mantra_map[row["fantacalcio_id"]]
             row["fp_mantra"] = mp.get("FP_Mantra")
             row["vr"] = mp.get("VR")
-            row["fase7"] = mp.get("Fase7")
+            row["fase7_rendimento"] = mp.get("Fase7_Rendimento")
+            row["fase7_prezzo"] = mp.get("Fase7_Prezzo")
 
     # Sort by FP_Mantra descending (if available), else by probability
     rows.sort(key=lambda r: r.get("fp_mantra", 0) or r.get("probability", 0), reverse=True)

@@ -57,6 +57,7 @@ from ml.mantra.pilastro3 import (
 from ml.mantra.pilastro4 import compute_cp, compute_p4
 from ml.mantra.scoring import compute_fp, compute_fp_corr
 from ml.mantra.fase7 import classify_fase7
+from ml.trades.signals import MatchdayStatusRow, ewma_titolarita
 from ml.mantra.fase8 import (
     top_per_ruolo,
     multi_eleggibilita,
@@ -277,15 +278,110 @@ def _load_expert_ratings_by_fotmob(
     return {int(r[0]): float(r[1]) for r in rows if r[0] is not None and r[1] is not None}
 
 
+def _load_titolarita_status(
+    engine: sa.Engine,
+    season_start: int,
+) -> pd.DataFrame:
+    """Load ``player_matchday_status`` rows for the target season and the
+    prior one (fallback pool for pre-season runs). Failures are non-fatal
+    (empty frame — the titolarita_attesa gate is simply skipped downstream).
+    """
+    sql = sa.text(
+        """
+        SELECT fantacalcio_id, season_start, matchday, team, probability, status
+        FROM player_matchday_status
+        WHERE season_start IN (:season_start, :prev_season)
+        ORDER BY fantacalcio_id, season_start DESC, matchday DESC
+        """
+    )
+    try:
+        return pd.read_sql(
+            sql, engine,
+            params={"season_start": season_start, "prev_season": season_start - 1},
+        )
+    except Exception as exc:  # noqa: BLE001 — informational gate only
+        log.warning("Could not load matchday status for Fase7 titolarita: %s", exc)
+        return pd.DataFrame(
+            columns=["fantacalcio_id", "season_start", "matchday", "team", "probability", "status"]
+        )
+
+
+def _compute_titolarita_attesa(
+    df: pd.DataFrame,
+    status_df: pd.DataFrame,
+    season_start: int,
+    cfg: MantraConfig,
+) -> pd.Series:
+    """EWMA of matchday-status probability, per player.
+
+    Prefers rows from the target season. Falls back to the prior season's
+    rows ONLY when the player's team there matches his current-season team
+    (``df["team"]``, from this season's own quotations) — a transferred
+    player's old-club starting status would be misleading, so the fallback
+    is skipped (NaN, gate not applied) rather than trusted blindly.
+    """
+    out = pd.Series(np.nan, index=df.index)
+    if status_df.empty:
+        return out
+
+    current_team = dict(zip(df["fantacalcio_id"], df["team"]))
+    by_player = {fid: g for fid, g in status_df.groupby("fantacalcio_id")}
+    n_skipped_team_change = 0
+
+    for idx in df.index:
+        fid = int(df.at[idx, "fantacalcio_id"])
+        g = by_player.get(fid)
+        if g is None:
+            continue
+
+        target_rows = g[g["season_start"] == season_start]
+        if not target_rows.empty:
+            rows = target_rows
+        else:
+            prev_rows = g[g["season_start"] == season_start - 1]
+            if prev_rows.empty:
+                continue
+            prev_team = prev_rows.iloc[0]["team"]
+            if prev_team != current_team.get(fid):
+                n_skipped_team_change += 1
+                continue
+            rows = prev_rows
+
+        matchday_rows = [
+            MatchdayStatusRow(
+                giornata=int(r.matchday),
+                probability=float(r.probability),
+                status=str(r.status),
+            )
+            for r in rows.itertuples()
+        ]
+        ewma, n_games = ewma_titolarita(
+            matchday_rows,
+            lam=cfg.TITOLARITA_EWMA_LAMBDA,
+            window=cfg.TITOLARITA_EWMA_WINDOW,
+        )
+        if ewma is not None and n_games > 0:
+            out.at[idx] = ewma
+
+    if n_skipped_team_change:
+        log.info(
+            "Fase7 titolarita: skipped prior-season fallback for %d players "
+            "who changed team",
+            n_skipped_team_change,
+        )
+    return out
+
+
 def _attach_fase7_external_signals(
     df: pd.DataFrame,
     engine: sa.Engine,
     season_start: int,
     artifacts_dir: Optional[Path],
+    cfg: MantraConfig,
 ) -> pd.DataFrame:
     """Attach optional ``predicted_next_fantavoto`` / ``predicted_fantavoto``
-    / ``expert_rating`` columns used by Fase7 TOP gates. Missing sources
-    leave the columns as NaN (gate skipped).
+    / ``expert_rating`` / ``titolarita_attesa`` columns used by Fase7 gates.
+    Missing sources leave the columns as NaN (gate skipped).
     """
     out = df.copy()
 
@@ -327,11 +423,16 @@ def _attach_fase7_external_signals(
 
     out["expert_rating"] = out["player_fotmob_id"].map(_exp)
 
+    status_df = _load_titolarita_status(engine, season_start)
+    out["titolarita_attesa"] = _compute_titolarita_attesa(out, status_df, season_start, cfg)
+
     n_ml = int(out["predicted_next_fantavoto"].notna().sum())
     n_ex = int(out["expert_rating"].notna().sum())
+    n_tit = int(out["titolarita_attesa"].notna().sum())
     log.info(
-        "Fase7 external signals: %d/%d with ML next, %d/%d with expert rating",
-        n_ml, len(out), n_ex, len(out),
+        "Fase7 external signals: %d/%d with ML next, %d/%d with expert rating, "
+        "%d/%d with titolarita attesa",
+        n_ml, len(out), n_ex, len(out), n_tit, len(out),
     )
     return out
 
@@ -478,12 +579,15 @@ def run_mantra(
     fp = compute_fp(p1, p2, p3, p4, cfg)
     scores = compute_fp_corr(fp, cp, df["ruolo_primario"], df["num_ruoli"], df["Pz1"], cfg)
 
-    # 4. Fase 7 external signals (ML next + expert ratings) — optional gates
-    df = _attach_fase7_external_signals(df, engine, season_start, output_dir)
+    # 4. Fase 7 external signals (ML next, expert ratings, titolarita attesa) — optional gates
+    df = _attach_fase7_external_signals(df, engine, season_start, output_dir, cfg)
 
-    # 5. Fase 7
+    # 5. Fase 7 — two independent axes (Rendimento/Affidabilità, Prezzo/Valore)
     log.info("Classifying Fase 7 …")
-    fase7_label, fase7_motivo = classify_fase7(df, fp, scores["fp_mantra"], scores["vr"], p1, cfg)
+    (
+        fase7_label_rend, fase7_motivo_rend, fase7_gap_rend,
+        fase7_label_prezzo, fase7_motivo_prezzo, fase7_gap_prezzo,
+    ) = classify_fase7(df, fp, scores["fp_mantra"], scores["vr"], p1, cfg)
 
     # 6. Fase 8
     log.info("Classifying Fase 8 …")
@@ -496,13 +600,13 @@ def run_mantra(
     df_all["fp"] = fp
     for k, v in scores.items():
         df_all[k] = v
-    df_all["fase7_label"] = fase7_label
+    df_all["fase7_label"] = fase7_label_rend
 
     classification_8a = top_per_ruolo(df_all)
     classification_8a2 = multi_eleggibilita(df_all)
     classification_8c = low_cost(df_all, cfg.LOW_COST_SOGLIA)
     classification_8d = low_cost(df_all, cfg.LOW_COST_SOGLIA, require_titolare=True)
-    classification_8e = scommesse_multi_ruolo(df_all, fase7_label)
+    classification_8e = scommesse_multi_ruolo(df_all, fase7_label_rend)
     classification_8f = watchlist_giovani(df_all, cfg.GIOVANE_ETA_MAX)
     classification_8g = rischio_contestuale(df_all)
 
@@ -565,8 +669,12 @@ def run_mantra(
             "VR": round(float(scores["vr"].iloc[idx]), 2),
             "Prezzo_Massimo": round(float(scores["prezzo_massimo"].iloc[idx]), 2),
             "Percentile_Ruolo": round(float(scores["percentile_ruolo"].iloc[idx]), 4),
-            "Fase7": str(fase7_label.iloc[idx]) if pd.notna(fase7_label.iloc[idx]) else None,
-            "Fase7_Motivo": str(fase7_motivo.iloc[idx]) if pd.notna(fase7_motivo.iloc[idx]) else None,
+            "Fase7_Rendimento": str(fase7_label_rend.iloc[idx]) if pd.notna(fase7_label_rend.iloc[idx]) else None,
+            "Fase7_Rendimento_Motivo": str(fase7_motivo_rend.iloc[idx]) if pd.notna(fase7_motivo_rend.iloc[idx]) else None,
+            "Fase7_Rendimento_Gap": round(float(fase7_gap_rend.iloc[idx]), 2) if pd.notna(fase7_gap_rend.iloc[idx]) else None,
+            "Fase7_Prezzo": str(fase7_label_prezzo.iloc[idx]) if pd.notna(fase7_label_prezzo.iloc[idx]) else None,
+            "Fase7_Prezzo_Motivo": str(fase7_motivo_prezzo.iloc[idx]) if pd.notna(fase7_motivo_prezzo.iloc[idx]) else None,
+            "Fase7_Prezzo_Gap": round(float(fase7_gap_prezzo.iloc[idx]), 2) if pd.notna(fase7_gap_prezzo.iloc[idx]) else None,
             "rischio": str(classification_8g.iloc[idx]) if pd.notna(classification_8g.iloc[idx]) else None,
             # ML predictions — informational only, not blended with the
             # 4-pillar system. See P1-4 for the still-open reconciliation.

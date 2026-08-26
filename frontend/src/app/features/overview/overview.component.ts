@@ -6,7 +6,7 @@ import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { OverviewService } from '../../core/services/overview.service';
 import { MantraService } from '../../core/services/mantra.service';
 import { OverviewPlayer, SortKey } from '../../core/models/overview.models';
-import { FASE7_LABELS, FASE7_TOOLTIPS, HYBRID_LABELS, MANTRA_ROLES } from '../../core/models/mantra.models';
+import { FASE7_LABELS, FASE7_AXIS, FASE7_TOOLTIPS, HYBRID_LABELS, MANTRA_ROLES } from '../../core/models/mantra.models';
 import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/error-boundary.component';
 import { OverviewTableComponent } from './components/overview-table/overview-table.component';
 import { OverviewDrawerComponent } from './components/overview-drawer/overview-drawer.component';
@@ -385,7 +385,6 @@ export class OverviewComponent {
     predicted_fantavoto: 'Voto ML',
     confidenceScore: 'Conf.',
     VR: 'VR',
-    Fase7: 'Profilo',
     Pz1: 'Prezzo',
     expert_totale: 'Esperti',
   };
@@ -458,11 +457,14 @@ export class OverviewComponent {
     this.error.set(null);
 
     const mlFilter = this.hasMlDataFilter();
+    const fase7Selected = this.selectedFase7() || undefined;
+    const fase7Axis = fase7Selected ? FASE7_AXIS[fase7Selected] : undefined;
 
     this.overviewService.listPlayers({
       ruolo: this.selectedRuolo() || undefined,
       team: this.selectedTeam() || undefined,
-      fase7: this.selectedFase7() || undefined,
+      fase7Rendimento: fase7Axis === 'rendimento' ? fase7Selected : undefined,
+      fase7Prezzo: fase7Axis === 'prezzo' ? fase7Selected : undefined,
       labels: this.activeLabels().size ? Array.from(this.activeLabels()) : undefined,
       search: this.searchInput() || undefined,
       minPrice: this.priceMin() ?? undefined,

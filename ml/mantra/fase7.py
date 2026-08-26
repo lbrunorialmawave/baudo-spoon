@@ -1,42 +1,48 @@
-"""Fase 7 — Decision rules (mutually exclusive, evaluated in order).
+"""Fase 7 — two independent decision axes.
 
-Order
------
-1. 🏆 TOP            FP_Mantra above the role-pool's top percentile
-                     AND VR above the role-pool VR floor (median-ish)
-                     AND (optional) ML next-fantavoto ≥ role soglia when present
-                     AND (optional) expert rating ≥ TOP_EXPERT_MIN when present
-2. 💎 AFFARE         FP_Mantra and VR both above their role-pool percentiles
-3. 🔄 SCOMMESSA      raw FP low, VR high — both relative to the role pool
-4. ✅ CERTEZZA       Stagioni_IT >= 2 AND Pr >= 0.70 AND DV <= pool quantile AND P1 >= 55
-5. ⚠️ SOPRAVALUTATO  VR below the role-pool's low percentile
-6. ⚖️ GIUSTO         VR within the role-pool's "fair value" percentile band
-7. (none)            others — see Fase7_Motivo for why
+Axis 1: Rendimento/Affidabilità (mutually exclusive, first match wins)
+-----------------------------------------------------------------------
+1. 🏆 TOP        FP_Mantra above the role-pool's top percentile
+                 AND VR above the role-pool VR floor (median-ish)
+                 AND (optional) ML next-fantavoto ≥ role soglia when present
+                 AND (optional) expert rating ≥ TOP_EXPERT_MIN when present
+2. ✅ CERTEZZA   Stagioni_IT >= 2 AND Pr >= 0.70 AND DV <= pool quantile AND
+                 P1 >= 55 ... OR titolarita_attesa (EWMA of matchday-status
+                 probability) >= CERTEZZA_TITOLARITA_SOGLIA AND DV <= pool
+                 quantile — a forward-looking leg for players who lack
+                 Serie A history but have a locked-in starting spot.
+3. 🔄 SCOMMESSA  percentile(VR) - percentile(FP) > SCOMMESSA_GAP_MIN within
+                 the role pool — VR sees more upside than raw output shows.
+4. (none)        see Fase7_Rendimento_Motivo for why.
 
-Missing ML / expert values never block TOP (null = gate skipped). Present
-values that fail the threshold do block TOP — see ``cfg.TOP_EXPERT_MIN`` and
-``cfg.NEXT_FANTAVOTO_MIN_BY_ROLE``.
+Axis 2: Prezzo/Valore (three contiguous bands of one gap)
+-----------------------------------------------------------------------
+Let ``gap = percentile(quotation) - percentile(VR)`` within the role pool.
+- 💎 AFFARE          gap <= -GIUSTO_GAP_BAND   (priced well below its value)
+- ⚖️ GIUSTO          |gap| < GIUSTO_GAP_BAND    (price tracks value)
+- ⚠️ SOPRAVALUTATO   gap >= GIUSTO_GAP_BAND    (priced well above its value)
+- (none)             no quotation available — see Fase7_Prezzo_Motivo.
+
+A player can carry a label on both axes independently (e.g. CERTEZZA +
+AFFARE), one, or neither — the two axes never compete with each other.
 
 Threshold mode
 --------------
-``cfg.FASE7_THRESHOLD_MODE`` controls how TOP/AFFARE/SCOMMESSA/SOPRAVALUTATO/
-GIUSTO thresholds are resolved:
+``cfg.FASE7_THRESHOLD_MODE`` controls how TOP/CERTEZZA(DV) thresholds are
+resolved (the only two legs left that use a per-role threshold rather than
+a pool-wide percentile gap):
 
 - ``"percentile"`` (default): thresholds are computed per role-pool
-  (``calcola_pool_esteso``) so e.g. TOP means "top ~15% of FP_Mantra within
+  (``calcola_pool_esteso``) so e.g. TOP means "top ~10% of FP_Mantra within
   your role", not a single global number that may systematically favor or
-  disadvantage certain roles (FP/VR incorporate role-specific pillar
-  coefficients). Role pools smaller than ``cfg.SOGLIA_POOL`` fall back to the
-  fixed absolute thresholds below (too few players for a reliable
-  percentile).
-- ``"absolute"``: always use the fixed thresholds (pre-percentile behavior),
-  kept as an explicit rollback knob while only a few seasons of real data are
-  available.
+  disadvantage certain roles. Role pools smaller than ``cfg.SOGLIA_POOL``
+  fall back to the fixed absolute thresholds below.
+- ``"absolute"``: always use the fixed thresholds (pre-percentile
+  behavior), kept as an explicit rollback knob.
 
 CERTEZZA's ``Stagioni_IT``/``Pr``/``P1`` legs are always absolute — they are
-objectively comparable across roles (a season played is a season played).
-Only its ``DV`` leg is pool-relative (a quantile, default = median, matching
-the historical behavior).
+objectively comparable across roles. Only its ``DV`` leg is pool-relative
+(a quantile, default = median).
 """
 
 from __future__ import annotations
@@ -46,41 +52,19 @@ import pandas as pd
 
 from ml.mantra.config import MantraConfig
 from ml.mantra.roles import calcola_pool_esteso
+from ml.mantra.scoring import _pool_percentile
 
-
-_LABEL_ORDER: list[str] = [
-    "TOP",
-    "AFFARE",
-    "SCOMMESSA",
-    "CERTEZZA",
-    "SOPRAVALUTATO",
-    "GIUSTO",
-    None,  # catch-all
-]
-
-_THRESHOLD_KEYS = (
-    "top_fp_mantra",
-    "top_vr",
-    "affare_fp_mantra",
-    "affare_vr",
-    "scommessa_fp",
-    "scommessa_vr",
-    "sopravalutato_vr",
-    "giusto_vr_min",
-    "giusto_vr_max",
-    "certezza_dv",
-)
+_THRESHOLD_KEYS = ("top_fp_mantra", "top_vr", "certezza_dv")
 
 
 def _pool_thresholds(
     df: pd.DataFrame,
-    fp: pd.Series,
     fp_mantra: pd.Series,
     vr: pd.Series,
     cfg: MantraConfig,
 ) -> dict[str, dict[str, float]]:
-    """Precompute, once per role-pool (not per row), the percentile-based
-    thresholds used by TOP/AFFARE/SCOMMESSA/SOPRAVALUTATO/GIUSTO/CERTEZZA(DV).
+    """Precompute, once per role-pool, the percentile thresholds used by
+    TOP and CERTEZZA's DV leg — the only legs still threshold-based.
 
     Pools smaller than ``cfg.SOGLIA_POOL`` fall back to the fixed absolute
     thresholds (too few players for a reliable percentile).
@@ -101,53 +85,24 @@ def _pool_thresholds(
             out[ruolo] = {
                 "top_fp_mantra": cfg.TOP_FP_SOGLIA,
                 "top_vr": cfg.TOP_VR_SOGLIA,
-                "affare_fp_mantra": cfg.AFFARE_FP_SOGLIA,
-                "affare_vr": cfg.AFFARE_VR_SOGLIA,
-                "scommessa_fp": cfg.SCOMMESSA_FP_SOGLIA,
-                "scommessa_vr": cfg.SCOMMESSA_VR_SOGLIA,
-                "sopravalutato_vr": cfg.SOPRAVALUTATO_VR,
-                "giusto_vr_min": cfg.GIUSTO_VR_MIN,
-                "giusto_vr_max": cfg.GIUSTO_VR_MAX,
                 "certezza_dv": certezza_dv,
             }
             continue
 
         pool_fp_mantra = fp_mantra[pool_mask].dropna()
         pool_vr = vr[pool_mask].dropna()
-        pool_fp = fp[pool_mask].dropna()
         out[ruolo] = {
             "top_fp_mantra": float(pool_fp_mantra.quantile(cfg.TOP_FP_PERCENTILE)),
             "top_vr": float(pool_vr.quantile(cfg.TOP_VR_PERCENTILE)),
-            "affare_fp_mantra": float(pool_fp_mantra.quantile(cfg.AFFARE_FP_PERCENTILE)),
-            "affare_vr": float(pool_vr.quantile(cfg.AFFARE_VR_PERCENTILE)),
-            "scommessa_fp": float(pool_fp.quantile(cfg.SCOMMESSA_FP_PERCENTILE)),
-            "scommessa_vr": float(pool_vr.quantile(cfg.SCOMMESSA_VR_PERCENTILE)),
-            "sopravalutato_vr": float(pool_vr.quantile(cfg.SOPRAVALUTATO_VR_PERCENTILE)),
-            "giusto_vr_min": float(pool_vr.quantile(cfg.GIUSTO_VR_PERCENTILE_MIN)),
-            "giusto_vr_max": float(pool_vr.quantile(cfg.GIUSTO_VR_PERCENTILE_MAX)),
             "certezza_dv": certezza_dv,
         }
     return out
 
 
-def _absolute_thresholds(
-    df: pd.DataFrame,
-    cfg: MantraConfig,
-) -> pd.DataFrame:
+def _absolute_thresholds(df: pd.DataFrame, cfg: MantraConfig) -> pd.DataFrame:
     """Fixed thresholds (FASE7_THRESHOLD_MODE="absolute"): same value for
-    every row, except CERTEZZA's DV which stays pool-relative (matching
-    historical behavior — this is not new with percentile mode)."""
-    fixed = {k: cfg.__getattribute__(v) for k, v in {
-        "top_fp_mantra": "TOP_FP_SOGLIA",
-        "top_vr": "TOP_VR_SOGLIA",
-        "affare_fp_mantra": "AFFARE_FP_SOGLIA",
-        "affare_vr": "AFFARE_VR_SOGLIA",
-        "scommessa_fp": "SCOMMESSA_FP_SOGLIA",
-        "scommessa_vr": "SCOMMESSA_VR_SOGLIA",
-        "sopravalutato_vr": "SOPRAVALUTATO_VR",
-        "giusto_vr_min": "GIUSTO_VR_MIN",
-        "giusto_vr_max": "GIUSTO_VR_MAX",
-    }.items()}
+    every row, except CERTEZZA's DV which stays pool-relative."""
+    fixed = {"top_fp_mantra": cfg.TOP_FP_SOGLIA, "top_vr": cfg.TOP_VR_SOGLIA}
     th = pd.DataFrame([fixed] * len(df), index=df.index)
 
     dv_mediane: dict[str, float] = {}
@@ -165,42 +120,96 @@ def _absolute_thresholds(
 
 def _resolve_thresholds(
     df: pd.DataFrame,
-    fp: pd.Series,
     fp_mantra: pd.Series,
     vr: pd.Series,
     cfg: MantraConfig,
 ) -> pd.DataFrame:
-    """Return a per-row DataFrame with one column per threshold in
-    ``_THRESHOLD_KEYS``, resolved according to ``cfg.FASE7_THRESHOLD_MODE``."""
     if cfg.FASE7_THRESHOLD_MODE == "absolute":
         return _absolute_thresholds(df, cfg)
 
-    pool_th = _pool_thresholds(df, fp, fp_mantra, vr, cfg)
+    pool_th = _pool_thresholds(df, fp_mantra, vr, cfg)
     default = {k: np.nan for k in _THRESHOLD_KEYS}
     rows = [pool_th.get(ruolo, default) for ruolo in df["ruolo_primario"]]
-    th = pd.DataFrame(rows, index=df.index)
-    return th
+    return pd.DataFrame(rows, index=df.index)
 
 
-def _explain_unclassified(
+def _build_pool_map(df: pd.DataFrame, cfg: MantraConfig) -> dict[str, set[str]]:
+    role_counts = df["ruolo_primario"].value_counts().to_dict()
+    return {
+        r: calcola_pool_esteso(r, role_counts, cfg.SOGLIA_POOL)
+        for r in df["ruolo_primario"].dropna().unique()
+    }
+
+
+def _price_percentile(
+    price: pd.Series,
+    roles: pd.Series,
+    pool_map: dict[str, set[str]],
+) -> pd.Series:
+    """Percentile (0-100) of each player's own quotation within his role
+    pool, using only quoted players (price > 0) as the reference
+    population. Never-quoted players get NaN — excluded from the pool
+    population entirely, not given an arbitrary rank."""
+    valid = price.where(price > 0)
+    out = pd.Series(np.nan, index=price.index)
+    for ruolo, pool_set in pool_map.items():
+        mask = roles.isin(pool_set)
+        pool_vals = valid[mask].dropna()
+        n = len(pool_vals)
+        if n <= 1:
+            continue
+        ranks = pool_vals.rank(method="average") - 1.0
+        out[pool_vals.index] = (ranks / (n - 1)) * 100.0
+    return out
+
+
+def _external_ml_ok(df: pd.DataFrame, cfg: MantraConfig) -> pd.Series:
+    """True where ML next-fantavoto is missing OR meets the role soglia.
+
+    Looks for ``predicted_next_fantavoto`` first, then ``predicted_fantavoto``.
+    """
+    pred = None
+    for col in ("predicted_next_fantavoto", "predicted_fantavoto"):
+        if col in df.columns:
+            pred = pd.to_numeric(df[col], errors="coerce")
+            break
+    if pred is None:
+        return pd.Series(True, index=df.index)
+
+    roles = df.get("ruolo_primario", pd.Series(index=df.index, dtype=object))
+    soglie = cfg.NEXT_FANTAVOTO_MIN_BY_ROLE
+    min_req = roles.map(lambda r: soglie.get(r, 6.0) if isinstance(r, str) else 6.0)
+    return pred.isna() | (pred >= min_req)
+
+
+def _external_expert_ok(df: pd.DataFrame, cfg: MantraConfig) -> pd.Series:
+    """True where expert rating is missing OR >= TOP_EXPERT_MIN."""
+    if "expert_rating" not in df.columns:
+        return pd.Series(True, index=df.index)
+    rating = pd.to_numeric(df["expert_rating"], errors="coerce")
+    return rating.isna() | (rating >= cfg.TOP_EXPERT_MIN)
+
+
+def _explain_rendimento(
     df: pd.DataFrame,
     fp_mantra: pd.Series,
     vr: pd.Series,
     p1: pd.Series,
+    gap_rend: pd.Series,
     th: pd.DataFrame,
-    result: pd.Series,
+    label_rend: pd.Series,
     cfg: MantraConfig,
 ) -> pd.Series:
-    """Explain, for players with no Fase7 label, which rule(s) they came
-    closest to matching. Computed only for the unlabeled subset (typically
-    ~100-170 players/season) — not worth vectorizing.
-    """
+    """Explain, for players with no Rendimento-axis label, which rule(s)
+    they came closest to matching. Computed only for the unlabeled subset —
+    not worth vectorizing."""
     motivo = pd.Series([None] * len(df), index=df.index, dtype=object)
     stagioni = df.get("Stagioni_IT", pd.Series(0, index=df.index)).fillna(0)
     pr = df.get("Pr", pd.Series(0, index=df.index)).fillna(0)
     dv = df.get("DV", pd.Series(99, index=df.index)).fillna(99)
+    tit = df.get("titolarita_attesa", pd.Series(np.nan, index=df.index))
 
-    for idx in df.index[result.isna()]:
+    for idx in df.index[label_rend.isna()]:
         conditions = {
             "Stagioni_IT": (
                 stagioni.at[idx] >= cfg.CERTEZZA_STAGIONI,
@@ -221,8 +230,19 @@ def _explain_unclassified(
         }
         failing = [msg for ok, msg in conditions.values() if not ok]
         if len(failing) == 1:
-            motivo.at[idx] = f"Quasi CERTEZZA: manca solo {failing[0]}"
+            motivo.at[idx] = f"Quasi CERTEZZA (storico): manca solo {failing[0]}"
             continue
+
+        dv_ok = conditions["DV"][0]
+        tit_val = tit.at[idx]
+        if dv_ok and pd.notna(tit_val):
+            mancante = cfg.CERTEZZA_TITOLARITA_SOGLIA - float(tit_val)
+            if 0 < mancante <= 10:
+                motivo.at[idx] = (
+                    f"Quasi CERTEZZA (via titolarità attesa): {float(tit_val):.0f} "
+                    f"< {cfg.CERTEZZA_TITOLARITA_SOGLIA:.0f}"
+                )
+                continue
 
         # Near-TOP diagnostics (FP high but blocked by VR / ML / experts)
         top_th = th.at[idx, "top_fp_mantra"]
@@ -231,7 +251,7 @@ def _explain_unclassified(
         v = float(vr.at[idx])
         if fp_v > top_th:
             reasons = []
-            if not (v > top_vr_th):
+            if v <= top_vr_th:
                 reasons.append(f"VR {v:.0f} <= soglia TOP VR {top_vr_th:.0f}")
             pred_val = None
             for col in ("predicted_next_fantavoto", "predicted_fantavoto"):
@@ -264,50 +284,41 @@ def _explain_unclassified(
                 )
                 continue
 
-        sopra = th.at[idx, "sopravalutato_vr"]
-        gmin = th.at[idx, "giusto_vr_min"]
-        gmax = th.at[idx, "giusto_vr_max"]
-        if v > gmax:
-            affare_fp_th = th.at[idx, "affare_fp_mantra"]
+        g = gap_rend.at[idx]
+        if pd.notna(g):
             motivo.at[idx] = (
-                f"VR {v:.0f} sopra GIUSTO (>{gmax:.0f}) ma FP_Mantra "
-                f"{fp_v:.0f} non basta per AFFARE "
-                f"(serve >{affare_fp_th:.0f}) o TOP (serve >{top_th:.0f})"
+                f"Gap Rendimento (percentile VR-FP) {g:.0f}: serve "
+                f"> {cfg.SCOMMESSA_GAP_MIN:.0f} per SCOMMESSA"
             )
         else:
-            motivo.at[idx] = (
-                f"VR {v:.0f}: tra SOPRAVALUTATO (<{sopra:.0f}) e GIUSTO "
-                f"({gmin:.0f}-{gmax:.0f}): zona neutra"
-            )
+            motivo.at[idx] = "Dati insufficienti per calcolare il gap Rendimento"
     return motivo
 
 
-def _external_ml_ok(df: pd.DataFrame, cfg: MantraConfig) -> pd.Series:
-    """True where ML next-fantavoto is missing OR meets the role soglia.
-
-    Looks for ``predicted_next_fantavoto`` first, then ``predicted_fantavoto``.
-    """
-    pred = None
-    for col in ("predicted_next_fantavoto", "predicted_fantavoto"):
-        if col in df.columns:
-            pred = pd.to_numeric(df[col], errors="coerce")
-            break
-    if pred is None:
-        return pd.Series(True, index=df.index)
-
-    roles = df.get("ruolo_primario", pd.Series(index=df.index, dtype=object))
-    soglie = cfg.NEXT_FANTAVOTO_MIN_BY_ROLE
-    min_req = roles.map(lambda r: soglie.get(r, 6.0) if isinstance(r, str) else 6.0)
-    return pred.isna() | (pred >= min_req)
-
-
-def _external_expert_ok(df: pd.DataFrame, cfg: MantraConfig) -> pd.Series:
-    """True where expert rating is missing OR >= TOP_EXPERT_MIN."""
-    if "expert_rating" not in df.columns:
-        return pd.Series(True, index=df.index)
-    rating = pd.to_numeric(df["expert_rating"], errors="coerce")
-    return rating.isna() | (rating >= cfg.TOP_EXPERT_MIN)
-
+def _explain_prezzo(
+    df: pd.DataFrame,
+    gap_prezzo: pd.Series,
+    label_prezzo: pd.Series,
+    cfg: MantraConfig,
+) -> pd.Series:
+    """Explain, for players with no Prezzo-axis label, why (in practice this
+    is always "no quotation" — the three bands otherwise cover the whole
+    gap range contiguously)."""
+    motivo = pd.Series([None] * len(df), index=df.index, dtype=object)
+    for idx in df.index[label_prezzo.isna()]:
+        g = gap_prezzo.at[idx]
+        if pd.isna(g):
+            motivo.at[idx] = (
+                "Nessuna quotazione disponibile: impossibile calcolare il gap "
+                "prezzo/valore"
+            )
+        else:
+            motivo.at[idx] = (
+                f"Gap Prezzo/Valore (percentile prezzo-VR) {g:.0f}: nessuna fascia "
+                f"(serve <= -{cfg.GIUSTO_GAP_BAND:.0f} per AFFARE o "
+                f">= {cfg.GIUSTO_GAP_BAND:.0f} per SOPRAVALUTATO)"
+            )
+    return motivo
 
 
 def classify_fase7(
@@ -317,17 +328,19 @@ def classify_fase7(
     vr: pd.Series,
     p1: pd.Series,
     cfg: MantraConfig,
-) -> tuple[pd.Series, pd.Series]:
-    """Assign a Fase 7 label (and, for unlabeled players, a reason) to each player.
+) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
+    """Assign the two Fase7 axis labels, their reasons, and their raw gaps.
 
     Parameters
     ----------
     df:
         DataFrame with columns:
-        - ``Stagioni_IT``  — number of seasons in Serie A
-        - ``Pr``           — presence rate (0-1)
-        - ``DV``           — vote std dev
-        - ``ruolo_primario`` — MANTRA primary role
+        - ``Stagioni_IT``, ``Pr``, ``DV`` — CERTEZZA (historical leg)
+        - ``ruolo_primario`` — MANTRA primary role, used for all role pools
+        - ``Pz1`` — current official quotation (``qt_a``); missing/<=0 means
+          "never quoted", excluded from the Prezzo/Valore axis
+        - ``titolarita_attesa`` (optional) — EWMA of matchday-status
+          probability (0-100); CERTEZZA's forward-looking leg
         - ``predicted_next_fantavoto`` / ``predicted_fantavoto`` (optional)
           — ML projection; when present must meet role soglia for TOP
         - ``expert_rating`` (optional) — average expert score; when present
@@ -341,19 +354,27 @@ def classify_fase7(
     p1:
         P1 (Solidità) values.
     cfg:
-        MantraConfig with thresholds (see ``FASE7_THRESHOLD_MODE``).
+        MantraConfig with thresholds.
 
     Returns
     -------
-    ``(label, motivo)`` — two ``pd.Series`` aligned to ``df.index``.
-    ``motivo`` is populated only for rows where ``label`` is ``None``.
+    ``(label_rendimento, motivo_rendimento, gap_rendimento,
+    label_prezzo, motivo_prezzo, gap_prezzo)`` — six ``pd.Series`` aligned to
+    ``df.index``. The two gap series are always populated (when computable),
+    even for labeled players, as a numeric confidence signal (e.g. for a
+    frontend star rating) — see ``Fase7_*_Gap`` in ``ml/mantra/runner.py``.
     """
-    th = _resolve_thresholds(df, fp, fp_mantra, vr, cfg)
+    th = _resolve_thresholds(df, fp_mantra, vr, cfg)
+    pool_map = _build_pool_map(df, cfg)
 
-    result = pd.Series([None] * len(df), index=df.index, dtype=object)
+    fp_pct = _pool_percentile(fp, df["ruolo_primario"], pool_map) * 100.0
+    vr_pct = _pool_percentile(vr, df["ruolo_primario"], pool_map) * 100.0
+    price = df.get("Pz1", pd.Series(np.nan, index=df.index))
+    price_pct = _price_percentile(price, df["ruolo_primario"], pool_map)
 
-    # 1. TOP — quality (FP_Mantra) + value (VR) + optional external gates
-    # External gates: null/missing = pass; present failing value = block.
+    # ── Asse Rendimento/Affidabilità: TOP → CERTEZZA → SCOMMESSA ────────────
+    label_rend = pd.Series([None] * len(df), index=df.index, dtype=object)
+
     ml_ok = _external_ml_ok(df, cfg)
     expert_ok = _external_expert_ok(df, cfg)
     mask = (
@@ -362,37 +383,36 @@ def classify_fase7(
         & ml_ok
         & expert_ok
     )
-    result[mask] = "TOP"
+    label_rend[mask] = "TOP"
 
-    # 2. AFFARE — use fp_mantra (flexibility-adjusted) instead of raw fp
-    mask = result.isna() & (fp_mantra > th["affare_fp_mantra"]) & (vr > th["affare_vr"])
-    result[mask] = "AFFARE"
-
-    # 3. SCOMMESSA
-    mask = result.isna() & (fp < th["scommessa_fp"]) & (vr > th["scommessa_vr"])
-    result[mask] = "SCOMMESSA"
-
-    # 4. CERTEZZA
     stagioni = df.get("Stagioni_IT", pd.Series(0, index=df.index)).fillna(0)
     pr = df.get("Pr", pd.Series(0, index=df.index)).fillna(0)
     dv = df.get("DV", pd.Series(99, index=df.index)).fillna(99)
-    mask = (
-        result.isna()
-        & (stagioni >= cfg.CERTEZZA_STAGIONI)
+    certezza_storica = (
+        (stagioni >= cfg.CERTEZZA_STAGIONI)
         & (pr >= cfg.CERTEZZA_PR)
         & (dv <= th["certezza_dv"])
         & (p1 >= cfg.CERTEZZA_P1)
     )
-    result[mask] = "CERTEZZA"
+    tit = df.get("titolarita_attesa", pd.Series(np.nan, index=df.index))
+    certezza_forward = (tit >= cfg.CERTEZZA_TITOLARITA_SOGLIA) & (dv <= th["certezza_dv"])
+    mask = label_rend.isna() & (certezza_storica | certezza_forward)
+    label_rend[mask] = "CERTEZZA"
 
-    # 5. SOPRAVALUTATO
-    mask = result.isna() & (vr < th["sopravalutato_vr"])
-    result[mask] = "SOPRAVALUTATO"
+    gap_rend = vr_pct - fp_pct
+    mask = label_rend.isna() & (gap_rend > cfg.SCOMMESSA_GAP_MIN)
+    label_rend[mask] = "SCOMMESSA"
 
-    # 6. GIUSTO
-    mask = result.isna() & (vr >= th["giusto_vr_min"]) & (vr <= th["giusto_vr_max"])
-    result[mask] = "GIUSTO"
+    motivo_rend = _explain_rendimento(df, fp_mantra, vr, p1, gap_rend, th, label_rend, cfg)
 
-    motivo = _explain_unclassified(df, fp_mantra, vr, p1, th, result, cfg)
+    # ── Asse Prezzo/Valore: AFFARE / GIUSTO / SOPRAVALUTATO ─────────────────
+    gap_prezzo = price_pct - vr_pct
+    label_prezzo = pd.Series([None] * len(df), index=df.index, dtype=object)
+    label_prezzo[gap_prezzo <= -cfg.GIUSTO_GAP_BAND] = "AFFARE"
+    label_prezzo[gap_prezzo >= cfg.GIUSTO_GAP_BAND] = "SOPRAVALUTATO"
+    mid_mask = gap_prezzo.notna() & label_prezzo.isna()
+    label_prezzo[mid_mask] = "GIUSTO"
 
-    return result, motivo
+    motivo_prezzo = _explain_prezzo(df, gap_prezzo, label_prezzo, cfg)
+
+    return label_rend, motivo_rend, gap_rend, label_prezzo, motivo_prezzo, gap_prezzo

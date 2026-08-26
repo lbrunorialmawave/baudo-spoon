@@ -1,6 +1,13 @@
 import { Component, input, output } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
-import { MantraPlayer, FASE7_LABELS, FASE7_TOOLTIPS, MATCHDAY_STATUS_CONFIG } from '../../../../core/models/mantra.models';
+import {
+  MantraPlayer,
+  FASE7_RENDIMENTO_LABELS,
+  FASE7_PREZZO_LABELS,
+  FASE7_TOOLTIPS,
+  MATCHDAY_STATUS_CONFIG,
+  fase7Stars,
+} from '../../../../core/models/mantra.models';
 import { ExpertRatingWithFantacalcioId } from '../../../../core/models/expert-ratings.models';
 import { SkeletonComponent } from '../../../../shared/components/skeleton/skeleton.component';
 
@@ -111,22 +118,31 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                   }
                 </td>
                 <td class="px-3 py-2.5" data-label="Profilo">
-                  @if (mp && mp.Fase7) {
-                    @let f7 = FASE7_LABELS[mp.Fase7];
-                    <span class="rounded-full px-2 py-0.5 text-xs font-medium text-white"
-                          [style.background]="f7?.color ?? '#6B7280'"
-                          [title]="FASE7_TOOLTIPS[mp.Fase7]">
-                      <span class="sm:hidden">{{ f7?.icon ?? '' }} {{ mp.Fase7 }}</span>
-                      <span class="hidden sm:inline">{{ f7?.icon ?? '' }} {{ f7?.label ?? mp.Fase7 }}</span>
-                    </span>
-                  } @else {
-                    <span class="rounded-full border px-2 py-0.5 text-xs font-medium"
-                          style="border-color:var(--color-border);color:var(--color-text-secondary)"
-                          [title]="mp?.Fase7_Motivo ?? 'Nessuna delle 6 categorie si applica a questo giocatore'">
-                      <span class="sm:hidden">➖</span>
-                      <span class="hidden sm:inline">➖ Non profilato</span>
-                    </span>
-                  }
+                  <div class="flex flex-col items-start gap-1">
+                    @if (mp && mp.Fase7_Rendimento) {
+                      @let f7r = FASE7_RENDIMENTO_LABELS[mp.Fase7_Rendimento];
+                      <span class="rounded-full px-1.5 py-0.5 text-[10px] font-medium text-white"
+                            [style.background]="f7r?.color ?? '#6B7280'"
+                            [title]="FASE7_TOOLTIPS[mp.Fase7_Rendimento]">
+                        {{ f7r?.icon ?? '' }} {{ f7r?.label ?? mp.Fase7_Rendimento }}{{ starBadge(mp.Fase7_Rendimento_Gap, RENDIMENTO_GAP_BASE) }}
+                      </span>
+                    }
+                    @if (mp && mp.Fase7_Prezzo) {
+                      @let f7p = FASE7_PREZZO_LABELS[mp.Fase7_Prezzo];
+                      <span class="rounded-full px-1.5 py-0.5 text-[10px] font-medium text-white"
+                            [style.background]="f7p?.color ?? '#6B7280'"
+                            [title]="FASE7_TOOLTIPS[mp.Fase7_Prezzo]">
+                        {{ f7p?.icon ?? '' }} {{ f7p?.label ?? mp.Fase7_Prezzo }}{{ starBadge(mp.Fase7_Prezzo_Gap, PREZZO_GAP_BASE) }}
+                      </span>
+                    }
+                    @if (mp && !mp.Fase7_Rendimento && !mp.Fase7_Prezzo) {
+                      <span class="rounded-full border px-1.5 py-0.5 text-[10px] font-medium"
+                            style="border-color:var(--color-border);color:var(--color-text-secondary)"
+                            [title]="mp?.Fase7_Rendimento_Motivo ?? mp?.Fase7_Prezzo_Motivo ?? 'Nessuna categoria si applica a questo giocatore'">
+                        ➖ Non profilato
+                      </span>
+                    }
+                  </div>
                 </td>
                 <td class="px-3 py-2.5 text-right font-mono text-xs whitespace-nowrap" data-label="Prezzo"
                     style="color:var(--color-text-secondary)">
@@ -195,9 +211,22 @@ export class PlayerTableComponent {
   };
 
   // Expose constants for template
-  readonly FASE7_LABELS = FASE7_LABELS;
+  readonly FASE7_RENDIMENTO_LABELS = FASE7_RENDIMENTO_LABELS;
+  readonly FASE7_PREZZO_LABELS = FASE7_PREZZO_LABELS;
   readonly MATCHDAY_STATUS_CONFIG = MATCHDAY_STATUS_CONFIG;
   readonly FASE7_TOOLTIPS = FASE7_TOOLTIPS;
   /** Full legend of the 6 "Profilo" categories, shown on the column header's (i) icon. */
   readonly PROFILO_LEGEND = Object.values(FASE7_TOOLTIPS).join('\n');
+
+  // Gap base thresholds mirroring ml/mantra/config.py's SCOMMESSA_GAP_MIN /
+  // GIUSTO_GAP_BAND — keep in sync if the backend retunes them.
+  readonly RENDIMENTO_GAP_BASE = 25;
+  readonly PREZZO_GAP_BASE = 15;
+
+  /** " ★★" (1-3 stars) confidence suffix for a Fase7 gap, or '' when there's
+   *  nothing to rate. */
+  readonly starBadge = (gap: number | null | undefined, base: number): string => {
+    const n = fase7Stars(gap, base);
+    return n ? ' ' + '★'.repeat(n) : '';
+  };
 }

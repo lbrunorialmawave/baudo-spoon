@@ -385,7 +385,12 @@ export interface HybridPlayerPrediction {
   FP_Mantra: number | null;
   VR: number | null;
   Prezzo_Massimo: number | null;
-  Fase7: string | null;
+  Fase7_Rendimento: string | null;
+  Fase7_Rendimento_Motivo?: string | null;
+  Fase7_Rendimento_Gap?: number | null;
+  Fase7_Prezzo: string | null;
+  Fase7_Prezzo_Motivo?: string | null;
+  Fase7_Prezzo_Gap?: number | null;
   rischio: string | null;
   hasMlData: boolean;
   predictedFantavoto: number | null;

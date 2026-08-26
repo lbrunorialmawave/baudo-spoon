@@ -116,6 +116,52 @@ def pool_stats(
     return statistics.fmean(vals), statistics.pstdev(vals) or 0.8
 
 
+# ── Fase7 titolarità attesa (EWMA of matchday-status probability) ───────────
+
+
+@dataclass(frozen=True, slots=True)
+class MatchdayStatusRow:
+    """One ``player_matchday_status`` row used by the Fase7 CERTEZZA gate."""
+
+    giornata: int
+    probability: float  # 0-100, estimated starting-XI probability
+    status: str  # starter | bench | injured | suspended | doubtful | unknown
+
+
+def ewma_titolarita(
+    rows: Sequence[MatchdayStatusRow],
+    *,
+    lam: float = DEFAULT_EWMA_LAMBDA,
+    window: int = DEFAULT_FORM_WINDOW,
+) -> tuple[Optional[float], int]:
+    """Exponentially weighted moving average of recent starting-XI probability.
+
+    Same decay as ``ewma_fantavoto`` (most recent giornata weight 1, then
+    lam, lam², …). ``injured``/``suspended`` rows count as probability 0
+    regardless of the stored value: a player out injured this week has zero
+    real chance of starting, and an ongoing injury should pull the average
+    down rather than being skipped. ``probability`` is itself an external
+    estimate (not an observed outcome), so this EWMA smooths an estimate —
+    acceptable, but callers must not feed it stale rows from a season in
+    which the player was on a different team (see the guard in
+    ``ml/mantra/runner.py::_compute_titolarita_attesa``).
+    """
+    out_of_squad = {"injured", "suspended"}
+    usable = sorted(rows, key=lambda r: r.giornata, reverse=True)[:window]
+    if not usable:
+        return None, 0
+
+    num = 0.0
+    den = 0.0
+    w = 1.0
+    for r in usable:
+        p = 0.0 if r.status in out_of_squad else float(r.probability)
+        num += w * p
+        den += w
+        w *= lam
+    return num / den, len(usable)
+
+
 # ── Indice titolarità ────────────────────────────────────────────────────────
 
 

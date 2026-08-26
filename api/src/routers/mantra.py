@@ -87,7 +87,12 @@ async def _load_mantra_results(db: AsyncSession) -> dict:
 )
 async def list_mantra_players(
     ruolo: Optional[str] = Query(None, description="Filter by MANTRA primary role"),
-    fase7: Optional[str] = Query(None, description="Filter by Fase 7 label (TOP/AFFARE/...)"),
+    fase7_rendimento: Optional[str] = Query(
+        None, description="Filter by Fase 7 Rendimento/Affidabilità axis label (TOP/CERTEZZA/SCOMMESSA)"
+    ),
+    fase7_prezzo: Optional[str] = Query(
+        None, description="Filter by Fase 7 Prezzo/Valore axis label (AFFARE/GIUSTO/SOPRAVALUTATO)"
+    ),
     team: Optional[str] = Query(None, description="Filter by team name"),
     search: Optional[str] = Query(None, description="Search by player name"),
     min_fp: Optional[float] = Query(None, ge=0, le=100, description="Minimum FP_Mantra"),
@@ -123,8 +128,10 @@ async def list_mantra_players(
     # Apply filters
     if ruolo:
         players = [p for p in players if p.get("ruolo_primario") == ruolo]
-    if fase7:
-        players = [p for p in players if p.get("Fase7") == fase7]
+    if fase7_rendimento:
+        players = [p for p in players if p.get("Fase7_Rendimento") == fase7_rendimento]
+    if fase7_prezzo:
+        players = [p for p in players if p.get("Fase7_Prezzo") == fase7_prezzo]
     if team:
         players = [p for p in players if team.lower() in p.get("team", "").lower()]
     if search:
@@ -404,10 +411,13 @@ async def get_mantra_stats(db: AsyncSession = Depends(get_db)) -> ORJSONResponse
     if not players:
         return ORJSONResponse({"count": 0})
 
-    fase7_counts: dict[str, int] = {}
+    fase7_rendimento_counts: dict[str, int] = {}
+    fase7_prezzo_counts: dict[str, int] = {}
     for p in players:
-        label = p.get("Fase7") or "none"
-        fase7_counts[label] = fase7_counts.get(label, 0) + 1
+        rend_label = p.get("Fase7_Rendimento") or "none"
+        fase7_rendimento_counts[rend_label] = fase7_rendimento_counts.get(rend_label, 0) + 1
+        prezzo_label = p.get("Fase7_Prezzo") or "none"
+        fase7_prezzo_counts[prezzo_label] = fase7_prezzo_counts.get(prezzo_label, 0) + 1
 
     avg_fp = sum(p.get("FP_Mantra", 0) for p in players) / len(players)
     avg_vr = sum(p.get("VR", 0) for p in players) / len(players)
@@ -417,5 +427,6 @@ async def get_mantra_stats(db: AsyncSession = Depends(get_db)) -> ORJSONResponse
         "season_start": data.get("meta", {}).get("season_start"),
         "avg_fp_mantra": round(avg_fp, 2),
         "avg_vr": round(avg_vr, 2),
-        "fase7_distribution": fase7_counts,
+        "fase7_rendimento_distribution": fase7_rendimento_counts,
+        "fase7_prezzo_distribution": fase7_prezzo_counts,
     })

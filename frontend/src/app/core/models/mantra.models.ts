@@ -23,9 +23,20 @@ export interface MantraPlayer {
   Prezzo_Massimo: number;
   /** Percentile (0-1) di FP_Mantra nel pool esteso del ruolo del giocatore. */
   Percentile_Ruolo?: number;
-  Fase7: string | null;
-  /** Only populated when Fase7 is null — explains why no rule matched. */
-  Fase7_Motivo?: string | null;
+  /** Asse Rendimento/Affidabilità: TOP | CERTEZZA | SCOMMESSA | null. */
+  Fase7_Rendimento: string | null;
+  /** Only populated when Fase7_Rendimento is null — explains why no rule matched. */
+  Fase7_Rendimento_Motivo?: string | null;
+  /** Percentile(VR) - percentile(FP) nel pool di ruolo — confidenza numerica
+   *  per l'asse Rendimento (usata per le stelle su SCOMMESSA). */
+  Fase7_Rendimento_Gap?: number | null;
+  /** Asse Prezzo/Valore: AFFARE | GIUSTO | SOPRAVALUTATO | null. */
+  Fase7_Prezzo: string | null;
+  /** Only populated when Fase7_Prezzo is null — explains why no rule matched. */
+  Fase7_Prezzo_Motivo?: string | null;
+  /** Percentile(prezzo) - percentile(VR) nel pool di ruolo — confidenza
+   *  numerica per l'asse Prezzo (usata per le stelle su AFFARE/SOPRAVALUTATO). */
+  Fase7_Prezzo_Gap?: number | null;
   rischio: string | null;
   season_value?: number | null;
   start_probability?: number | null;
@@ -48,7 +59,8 @@ export interface MantraStatsResponse {
   season_start: number;
   avg_fp_mantra: number;
   avg_vr: number;
-  fase7_distribution: Record<string, number>;
+  fase7_rendimento_distribution: Record<string, number>;
+  fase7_prezzo_distribution: Record<string, number>;
 }
 
 export interface MantraTopResponse {
@@ -70,7 +82,8 @@ export interface MatchdayPlayerStatus {
   ruoli_mantra: string[] | null;
   fp_mantra?: number;
   vr?: number;
-  fase7?: string;
+  fase7_rendimento?: string;
+  fase7_prezzo?: string;
 }
 
 export interface DataHealthSource {
@@ -109,25 +122,68 @@ export interface DataHealthResponse {
   sources: DataHealthSource[];
 }
 
-export const FASE7_LABELS: Record<string, { label: string; color: string; icon: string }> = {
+/** Fase7 Asse Rendimento/Affidabilità: TOP > CERTEZZA > SCOMMESSA (mutually
+ *  exclusive within this axis only — see FASE7_PREZZO_LABELS for the other,
+ *  independent axis). */
+export const FASE7_RENDIMENTO_LABELS: Record<string, { label: string; color: string; icon: string }> = {
   TOP:            { label: 'TOP',            color: '#F59E0B', icon: '🏆' },
-  AFFARE:         { label: 'AFFARE',         color: '#22C55E', icon: '💎' },
-  SCOMMESSA:      { label: 'SCOMMESSA',      color: '#8B5CF6', icon: '🔄' },
   CERTEZZA:       { label: 'CERTEZZA',       color: '#06B6D4', icon: '✅' },
-  SOPRAVALUTATO:  { label: 'SOPRAVALUTATO',  color: '#EF4444', icon: '⚠️' },
+  SCOMMESSA:      { label: 'SCOMMESSA',      color: '#8B5CF6', icon: '🔄' },
+};
+
+/** Fase7 Asse Prezzo/Valore: tre fasce contigue di un unico gap tra
+ *  quotazione e VR — indipendente dall'asse Rendimento/Affidabilità. */
+export const FASE7_PREZZO_LABELS: Record<string, { label: string; color: string; icon: string }> = {
+  AFFARE:         { label: 'AFFARE',         color: '#22C55E', icon: '💎' },
   GIUSTO:         { label: 'GIUSTO',         color: '#6B7280', icon: '⚖️' },
+  SOPRAVALUTATO:  { label: 'SOPRAVALUTATO',  color: '#EF4444', icon: '⚠️' },
+};
+
+/** Combined lookup for UI surfaces (e.g. a single filter dropdown) that
+ *  don't need to distinguish the two axes — each key is still unique
+ *  across both maps. */
+export const FASE7_LABELS: Record<string, { label: string; color: string; icon: string }> = {
+  ...FASE7_RENDIMENTO_LABELS,
+  ...FASE7_PREZZO_LABELS,
+};
+
+/** Which axis a Fase7 label key belongs to — lets a combined dropdown/quick
+ *  filter route the selected value to the right query param
+ *  (fase7Rendimento vs fase7Prezzo). */
+export const FASE7_AXIS: Record<string, 'rendimento' | 'prezzo'> = {
+  TOP: 'rendimento',
+  CERTEZZA: 'rendimento',
+  SCOMMESSA: 'rendimento',
+  AFFARE: 'prezzo',
+  GIUSTO: 'prezzo',
+  SOPRAVALUTATO: 'prezzo',
 };
 
 /** Single source of truth for the 6 "Profilo" (Fase 7) category explanations —
  *  used by the legend, the quick-filter buttons, and the row badges. */
 export const FASE7_TOOLTIPS: Record<string, string> = {
   TOP:            '🏆 TOP — Giocatore d\'élite: FP alto e VR bilanciato. Investimento sicuro.',
-  AFFARE:         '💎 AFFARE — Sottovalutato dal mercato: FP alto, prezzo basso. Ottimo rapporto Q/P.',
-  SCOMMESSA:      '🔄 SCOMMESSA — Potenziale inespresso: FP basso ma VR alto. Può esplodere.',
-  CERTEZZA:       '✅ CERTEZZA — Rendimento stabile e affidabile. Poche sorprese.',
-  SOPRAVALUTATO:  '⚠️ SOPRAVALUTATO — Prezzo gonfiato: VR basso rispetto al FP. Rischi.',
-  GIUSTO:         '⚖️ GIUSTO — Nella media: FP e VR allineati al prezzo di mercato.',
+  CERTEZZA:       '✅ CERTEZZA — Rendimento stabile e affidabile (storico, o titolarità attesa blindata). Poche sorprese.',
+  SCOMMESSA:      '🔄 SCOMMESSA — Potenziale inespresso: FP basso ma VR nettamente più alto. Può esplodere.',
+  AFFARE:         '💎 AFFARE — Prezzo nettamente sotto il VR nel pool di ruolo. Ottimo rapporto Q/P.',
+  GIUSTO:         '⚖️ GIUSTO — Prezzo allineato al VR nel pool di ruolo.',
+  SOPRAVALUTATO:  '⚠️ SOPRAVALUTATO — Prezzo nettamente sopra il VR nel pool di ruolo. Rischi.',
 };
+
+/** Derive a 1-3 "star" confidence rating from a Fase7 gap value (percentile
+ *  points). `baseThreshold` is the gap magnitude at which the label itself
+ *  first kicks in (SCOMMESSA_GAP_MIN=25 for the Rendimento axis,
+ *  GIUSTO_GAP_BAND=15 for the Prezzo axis in ml/mantra/config.py — keep
+ *  these two numbers in sync with the backend if they're ever retuned).
+ *  Returns null when there's no gap to rate (e.g. never-quoted player). */
+export function fase7Stars(gap: number | null | undefined, baseThreshold: number): 1 | 2 | 3 | null {
+  if (gap == null || !Number.isFinite(gap)) return null;
+  const magnitude = Math.abs(gap);
+  if (magnitude < baseThreshold) return null;
+  if (magnitude < baseThreshold * 2) return 1;
+  if (magnitude < baseThreshold * 3) return 2;
+  return 3;
+}
 
 export const MANTRA_ROLES = [
   'Por', 'Dc', 'Dd', 'Ds', 'B', 'E', 'M', 'C', 'T', 'W', 'A', 'Pc',

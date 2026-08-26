@@ -9,7 +9,9 @@ pilastro2.py     — P2: Potenziale (xG/xA upside)
 pilastro3.py     — P3: Peso Squadra (team strength context)
 pilastro4.py     — P4: Mercato Storico (historical auction value)
 scoring.py       — FP → FP_Corr → VR → Prezzo_Massimo
-fase7.py         — Decision rules (TOP / AFFARE / SCOMMESSA / …)
+fase7.py         — Two-axis decision rules: Rendimento/Affidabilità
+                   (TOP / CERTEZZA / SCOMMESSA) + Prezzo/Valore
+                   (AFFARE / GIUSTO / SOPRAVALUTATO)
 fase8.py         — Classifications (Low Cost, Watchlist, Consigliati, …)
 runner.py        — Orchestrator: DB → compute → JSON
 

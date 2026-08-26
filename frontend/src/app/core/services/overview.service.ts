@@ -15,7 +15,8 @@ export class OverviewService {
     ruolo?: string;
     team?: string;
     search?: string;
-    fase7?: string;
+    fase7Rendimento?: string;
+    fase7Prezzo?: string;
     labels?: string[];
     confidenceMin?: number;
     minFp?: number;
@@ -50,7 +51,8 @@ export class OverviewService {
     if (opts.ruolo) params = params.set('ruolo', opts.ruolo);
     if (opts.team) params = params.set('team', opts.team);
     if (opts.search) params = params.set('search', opts.search);
-    if (opts.fase7) params = params.set('fase7', opts.fase7);
+    if (opts.fase7Rendimento) params = params.set('fase7_rendimento', opts.fase7Rendimento);
+    if (opts.fase7Prezzo) params = params.set('fase7_prezzo', opts.fase7Prezzo);
     if (opts.labels?.length) params = params.set('labels', opts.labels.join(','));
     if (opts.confidenceMin != null) params = params.set('confidenceMin', opts.confidenceMin);
     if (opts.minFp != null) params = params.set('min_fp', opts.minFp);

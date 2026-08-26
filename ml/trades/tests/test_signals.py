@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from ml.trades.signals import (
+    MatchdayStatusRow,
     MatchdayVote,
     TitolaritaInputs,
     ewma_fantavoto,
+    ewma_titolarita,
     forma_recente_score,
     indice_titolarita,
 )
@@ -69,6 +71,61 @@ class TestFormaScore:
         r = forma_recente_score(votes, pool_mean=6.0, pool_std=0.8)
         assert r.forma is not None
         assert abs(r.forma - 50.0) < 1.0
+
+
+class TestEwmaTitolarita:
+    def test_empty(self):
+        ewma, n = ewma_titolarita([])
+        assert ewma is None and n == 0
+
+    def test_all_starter_high_probability(self):
+        rows = [MatchdayStatusRow(i, 90.0, "starter") for i in range(1, 4)]
+        ewma, n = ewma_titolarita(rows)
+        assert n == 3
+        assert abs(ewma - 90.0) < 1e-6
+
+    def test_injured_counts_as_zero_regardless_of_stored_probability(self):
+        """An ongoing injury should pull the average down, not be ignored —
+        even if the scraper still stored a stale non-zero probability."""
+        rows = [
+            MatchdayStatusRow(3, 85.0, "injured"),
+            MatchdayStatusRow(2, 90.0, "starter"),
+            MatchdayStatusRow(1, 90.0, "starter"),
+        ]
+        ewma, _ = ewma_titolarita(rows)
+        # Most recent (highest weight) row is injured -> 0, pulling ewma well
+        # below the all-starter case.
+        all_starter, _ = ewma_titolarita(
+            [MatchdayStatusRow(i, 90.0, "starter") for i in range(1, 4)]
+        )
+        assert ewma < all_starter
+
+    def test_suspended_counts_as_zero(self):
+        rows = [MatchdayStatusRow(1, 100.0, "suspended")]
+        ewma, n = ewma_titolarita(rows)
+        assert n == 1
+        assert ewma == 0.0
+
+    def test_recency_bias(self):
+        recent_high = [
+            MatchdayStatusRow(3, 90.0, "starter"),
+            MatchdayStatusRow(2, 20.0, "bench"),
+            MatchdayStatusRow(1, 20.0, "bench"),
+        ]
+        older_high = [
+            MatchdayStatusRow(3, 20.0, "bench"),
+            MatchdayStatusRow(2, 20.0, "bench"),
+            MatchdayStatusRow(1, 90.0, "starter"),
+        ]
+        e1, _ = ewma_titolarita(recent_high)
+        e2, _ = ewma_titolarita(older_high)
+        assert e1 > e2
+
+    def test_window_limits_lookback(self):
+        rows = [MatchdayStatusRow(i, 90.0, "starter") for i in range(1, 10)]
+        rows.append(MatchdayStatusRow(10, 0.0, "bench"))
+        _, n = ewma_titolarita(rows, window=3)
+        assert n == 3
 
 
 class TestTitolarita:

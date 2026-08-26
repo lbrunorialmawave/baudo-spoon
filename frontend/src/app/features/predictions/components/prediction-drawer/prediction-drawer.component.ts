@@ -1,7 +1,7 @@
 import { Component, input, output } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { HybridPlayerPrediction } from '../../../../core/models/api.models';
-import { FASE7_LABELS } from '../../../../core/models/mantra.models';
+import { FASE7_RENDIMENTO_LABELS, FASE7_PREZZO_LABELS } from '../../../../core/models/mantra.models';
 
 /**
  * Read-only detail panel for a hybrid MANTRA+ML prediction row.
@@ -35,14 +35,21 @@ import { FASE7_LABELS } from '../../../../core/models/mantra.models';
       </div>
 
       <div class="drawer-body">
-        @if (player().Fase7 || (player().hybridLabels?.length ?? 0) > 0) {
+        @if (player().Fase7_Rendimento || player().Fase7_Prezzo || (player().hybridLabels?.length ?? 0) > 0) {
           <section class="mb-5">
             <div class="flex flex-wrap gap-1.5">
-              @if (player().Fase7; as f7) {
-                @let f7meta = FASE7_LABELS[f7];
+              @if (player().Fase7_Rendimento; as f7r) {
+                @let f7rMeta = FASE7_RENDIMENTO_LABELS[f7r];
                 <span class="rounded-full px-2 py-0.5 text-xs font-medium text-white"
-                      [style.background]="f7meta?.color ?? '#6B7280'">
-                  {{ f7meta?.icon ?? '' }} {{ f7meta?.label ?? f7 }}
+                      [style.background]="f7rMeta?.color ?? '#6B7280'">
+                  {{ f7rMeta?.icon ?? '' }} {{ f7rMeta?.label ?? f7r }}
+                </span>
+              }
+              @if (player().Fase7_Prezzo; as f7p) {
+                @let f7pMeta = FASE7_PREZZO_LABELS[f7p];
+                <span class="rounded-full px-2 py-0.5 text-xs font-medium text-white"
+                      [style.background]="f7pMeta?.color ?? '#6B7280'">
+                  {{ f7pMeta?.icon ?? '' }} {{ f7pMeta?.label ?? f7p }}
                 </span>
               }
               @for (l of player().hybridLabels ?? []; track l) {
@@ -174,7 +181,8 @@ export class PredictionDrawerComponent {
   readonly player = input.required<HybridPlayerPrediction>();
   readonly closed = output<void>();
 
-  readonly FASE7_LABELS = FASE7_LABELS;
+  readonly FASE7_RENDIMENTO_LABELS = FASE7_RENDIMENTO_LABELS;
+  readonly FASE7_PREZZO_LABELS = FASE7_PREZZO_LABELS;
 
   mantraRows(): { label: string; value: number | null }[] {
     const p = this.player();

@@ -10,7 +10,7 @@ import { TeamStrengthService } from '../../core/services/team-strength.service';
 import { QuotationService } from '../../core/services/quotation.service';
 import { ExpertRatingsService } from '../../core/services/expert-ratings.service';
 import { ExpertRatingWithFantacalcioId } from '../../core/models/expert-ratings.models';
-import { FASE7_LABELS, FASE7_TOOLTIPS, MANTRA_ROLES, MantraPlayer } from '../../core/models/mantra.models';
+import { FASE7_LABELS, FASE7_AXIS, FASE7_TOOLTIPS, MANTRA_ROLES, MantraPlayer } from '../../core/models/mantra.models';
 import { ErrorBoundaryComponent } from '../../shared/components/error-boundary/error-boundary.component';
 import { PlayerTableComponent } from './components/player-table/player-table.component';
 import { PlayerDrawerComponent } from './components/player-drawer/player-drawer.component';
@@ -332,10 +332,14 @@ export class PlayersComponent {
       fantacalcioIds = statusIds ?? expertIds ?? undefined;
     }
 
+    const fase7Selected = this.selectedFase7() || this.activeQuickFilter() || undefined;
+    const fase7Axis = fase7Selected ? FASE7_AXIS[fase7Selected] : undefined;
+
     this.mantraService.listPlayers({
       ruolo: this.selectedRuolo() || undefined,
       team: this.selectedTeam() || undefined,
-      fase7: this.selectedFase7() || this.activeQuickFilter() || undefined,
+      fase7Rendimento: fase7Axis === 'rendimento' ? fase7Selected : undefined,
+      fase7Prezzo: fase7Axis === 'prezzo' ? fase7Selected : undefined,
       search: this.searchInput() || undefined,
       minPrice: this.priceMin() ?? undefined,
       maxPrice: this.priceMax() ?? undefined,

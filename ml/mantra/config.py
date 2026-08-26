@@ -58,26 +58,39 @@ class MantraConfig:
     GIOVANE_ETA_MAX: int = 23              # age <= this = young
     # Fixed thresholds — used as-is in FASE7_THRESHOLD_MODE="absolute", and as
     # the small-pool fallback in "percentile" mode (pools under SOGLIA_POOL).
+    # Only TOP and CERTEZZA still use a threshold: SCOMMESSA (Rendimento axis)
+    # and AFFARE/GIUSTO/SOPRAVALUTATO (Prezzo/Valore axis) are gap-based (see
+    # SCOMMESSA_GAP_MIN / GIUSTO_GAP_BAND below) and need no per-role fallback.
     TOP_FP_SOGLIA: float = 80.0
     # Absolute VR floor for TOP (small-pool / absolute mode fallback).
-    # Lower than AFFARE_VR_SOGLIA: TOP requires quality + non-cheap VR, not
-    # necessarily "bargain" VR.
+    # Lower than the old AFFARE_VR_SOGLIA: TOP requires quality + non-cheap
+    # VR, not necessarily "bargain" VR.
     TOP_VR_SOGLIA: float = 95.0
-    AFFARE_FP_SOGLIA: float = 60.0
-    AFFARE_VR_SOGLIA: float = 140.0
-    SCOMMESSA_FP_SOGLIA: float = 50.0
-    SCOMMESSA_VR_SOGLIA: float = 130.0
     CERTEZZA_STAGIONI: int = 2
     CERTEZZA_PR: float = 0.70
     CERTEZZA_P1: float = 55.0
-    SOPRAVALUTATO_VR: float = 80.0
-    GIUSTO_VR_MIN: float = 90.0
-    GIUSTO_VR_MAX: float = 110.0
+    # Forward-looking CERTEZZA leg: EWMA of player_matchday_status.probability
+    # (0-100). Lets a newly-arrived player with a locked-in starting spot
+    # qualify even with Stagioni_IT below CERTEZZA_STAGIONI.
+    CERTEZZA_TITOLARITA_SOGLIA: float = 75.0
+    TITOLARITA_EWMA_LAMBDA: float = 0.65
+    TITOLARITA_EWMA_WINDOW: int = 5
+
+    # ── Fase 7 gap-based axes ─────────────────────────────────────────────────
+    # Rendimento/Affidabilità axis (TOP > CERTEZZA > SCOMMESSA): SCOMMESSA is
+    # the divergence between a player's VR percentile and his raw-FP
+    # percentile within his role pool, not two independent absolute
+    # thresholds (which almost never overlap in practice).
+    SCOMMESSA_GAP_MIN: float = 25.0
+    # Prezzo/Valore axis (AFFARE / GIUSTO / SOPRAVALUTATO): three contiguous
+    # bands of the gap between a player's quotation percentile and his VR
+    # percentile within his role pool. |gap| <= this band = GIUSTO.
+    GIUSTO_GAP_BAND: float = 15.0
 
     # ── Fase 7 threshold mode ─────────────────────────────────────────────────
-    # "percentile": TOP/AFFARE/SCOMMESSA/SOPRAVALUTATO/GIUSTO thresholds are
-    #   computed per role-pool (see ml/mantra/fase7.py) so e.g. TOP means "top
-    #   ~10% of FP_Mantra within your role", not one global number that may
+    # "percentile": TOP thresholds (and CERTEZZA's DV leg) are computed per
+    #   role-pool (see ml/mantra/fase7.py) so e.g. TOP means "top ~10% of
+    #   FP_Mantra within your role", not one global number that may
     #   favor/disadvantage specific roles. "absolute": always use the fixed
     #   thresholds above (pre-percentile behavior, useful as a rollback knob).
     FASE7_THRESHOLD_MODE: Literal["percentile", "absolute"] = "percentile"
@@ -85,13 +98,6 @@ class MantraConfig:
     TOP_FP_PERCENTILE: float = 0.88
     # TOP also requires VR at least around the role-pool median (anti-lowcost-only).
     TOP_VR_PERCENTILE: float = 0.40
-    AFFARE_FP_PERCENTILE: float = 0.65
-    AFFARE_VR_PERCENTILE: float = 0.85
-    SCOMMESSA_FP_PERCENTILE: float = 0.35
-    SCOMMESSA_VR_PERCENTILE: float = 0.80
-    SOPRAVALUTATO_VR_PERCENTILE: float = 0.35
-    GIUSTO_VR_PERCENTILE_MIN: float = 0.42
-    GIUSTO_VR_PERCENTILE_MAX: float = 0.58
     CERTEZZA_DV_PERCENTILE: float = 0.50   # 0.50 = median (unchanged historical behavior)
 
     # ── TOP external gates (optional columns on the player DataFrame) ─────────
