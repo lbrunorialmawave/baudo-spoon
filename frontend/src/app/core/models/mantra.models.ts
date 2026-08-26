@@ -165,9 +165,9 @@ export const FASE7_TOOLTIPS: Record<string, string> = {
   TOP:            '🏆 TOP — Giocatore d\'élite: FP alto e VR bilanciato. Investimento sicuro.',
   CERTEZZA:       '✅ CERTEZZA — Rendimento stabile e affidabile (storico, o titolarità attesa blindata). Poche sorprese.',
   SCOMMESSA:      '🔄 SCOMMESSA — Potenziale inespresso: FP basso ma VR nettamente più alto. Può esplodere.',
-  AFFARE:         '💎 AFFARE — Prezzo nettamente sotto il VR nel pool di ruolo. Ottimo rapporto Q/P.',
-  GIUSTO:         '⚖️ GIUSTO — Prezzo allineato al VR nel pool di ruolo.',
-  SOPRAVALUTATO:  '⚠️ SOPRAVALUTATO — Prezzo nettamente sopra il VR nel pool di ruolo. Rischi.',
+  AFFARE:         '💎 AFFARE — Prezzo nettamente sotto la qualità (FP_Mantra) nel pool di ruolo. Ottimo rapporto Q/P.',
+  GIUSTO:         '⚖️ GIUSTO — Prezzo allineato alla qualità (FP_Mantra) nel pool di ruolo.',
+  SOPRAVALUTATO:  '⚠️ SOPRAVALUTATO — Prezzo nettamente sopra la qualità (FP_Mantra) nel pool di ruolo. Rischi.',
 };
 
 /** Derive a 1-3 "star" confidence rating from a Fase7 gap value (percentile

@@ -149,30 +149,54 @@ class TestRendimentoIndividualLabels:
 
 class TestPrezzoAxis:
     def test_affare_and_sopravalutato_opposite_ends(self, cfg):
+        """Gap uses FP_Mantra (quality), not VR — see module docstring:
+        comparing price against VR would double-count cost, since VR
+        already discounts expensive/strong players via Fattore_Eroe."""
         df = pd.DataFrame({
             "ruolo_primario": ["C", "C"],
             "Stagioni_IT": [0, 0], "Pr": [0.0, 0.0], "DV": [5.0, 5.0],
             "Pz1": [10, 100],
         })
         _, _, _, label_prezzo, _, gap_prezzo = _classify(
-            df, fp=[40, 40], fp_mantra=[40, 40], vr=[130, 40], p1=[50, 50], cfg=cfg,
+            df, fp=[40, 40], fp_mantra=[130, 40], vr=[90, 90], p1=[50, 50], cfg=cfg,
         )
-        assert label_prezzo.iloc[0] == "AFFARE"  # cheap, high VR
-        assert label_prezzo.iloc[1] == "SOPRAVALUTATO"  # expensive, low VR
+        assert label_prezzo.iloc[0] == "AFFARE"  # cheap, high quality
+        assert label_prezzo.iloc[1] == "SOPRAVALUTATO"  # expensive, low quality
         assert gap_prezzo.iloc[0] < 0
         assert gap_prezzo.iloc[1] > 0
 
-    def test_giusto_when_price_tracks_value(self, cfg):
+    def test_giusto_when_price_tracks_quality(self, cfg):
         df = pd.DataFrame({
             "ruolo_primario": ["C"] * 3,
             "Stagioni_IT": [0] * 3, "Pr": [0.0] * 3, "DV": [5.0] * 3,
             "Pz1": [10, 50, 90],
         })
-        # Price and VR rank in the same order -> gap ~ 0 for all three.
+        # Price and FP_Mantra rank in the same order -> gap ~ 0 for all three.
         _, _, _, label_prezzo, _, _ = _classify(
-            df, fp=[40] * 3, fp_mantra=[40] * 3, vr=[60, 100, 140], p1=[50] * 3, cfg=cfg,
+            df, fp=[40] * 3, fp_mantra=[60, 100, 140], vr=[90] * 3, p1=[50] * 3, cfg=cfg,
         )
         assert (label_prezzo == "GIUSTO").all()
+
+    def test_expensive_elite_player_is_not_sopravalutato(self, cfg):
+        """Regression: an elite AND expensive player (highest price, highest
+        FP_Mantra in the pool) must land GIUSTO on the Prezzo axis, not
+        SOPRAVALUTATO — even though VR itself may be comparatively lower for
+        him (Fattore_Eroe dampens VR for high-CP/expensive players by
+        design; that's a Rendimento-axis nuance, not a pricing error)."""
+        n = 5
+        df = pd.DataFrame({
+            "ruolo_primario": ["C"] * n,
+            "Stagioni_IT": [0] * n, "Pr": [0.0] * n, "DV": [5.0] * n,
+            "Pz1": [10, 20, 30, 40, 100],
+        })
+        fp = [40] * n
+        fp_mantra = [40, 50, 60, 70, 95]  # candidate: also highest quality
+        vr = [90, 92, 94, 96, 60]  # candidate: dampened VR despite being the best
+        p1 = [50] * n
+        _, _, _, label_prezzo, _, _ = _classify(
+            df, fp=fp, fp_mantra=fp_mantra, vr=vr, p1=p1, cfg=cfg,
+        )
+        assert label_prezzo.iloc[-1] == "GIUSTO"
 
     def test_none_when_never_quoted(self, cfg):
         df = _base_df(1)  # no Pz1 column at all

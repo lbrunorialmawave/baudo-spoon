@@ -17,10 +17,19 @@ Axis 1: Rendimento/Affidabilità (mutually exclusive, first match wins)
 
 Axis 2: Prezzo/Valore (three contiguous bands of one gap)
 -----------------------------------------------------------------------
-Let ``gap = percentile(quotation) - percentile(VR)`` within the role pool.
-- 💎 AFFARE          gap <= -GIUSTO_GAP_BAND   (priced well below its value)
-- ⚖️ GIUSTO          |gap| < GIUSTO_GAP_BAND    (price tracks value)
-- ⚠️ SOPRAVALUTATO   gap >= GIUSTO_GAP_BAND    (priced well above its value)
+Let ``gap = percentile(quotation) - percentile(FP_Mantra)`` within the role
+pool. Deliberately FP_Mantra, not VR: VR already bakes in an anti-cost
+adjustment (``Fattore_Eroe`` discounts VR for high-CP/expensive players, to
+reward cheap sleepers), so comparing quotation against VR double-counts
+price — an elite AND expensive player (high quotation percentile) gets a
+*dampened* VR percentile by design, which would mislabel him SOPRAVALUTATO
+even though his price is fully justified by his output. FP_Mantra carries
+no such cost adjustment, so the gap here answers "is the price justified by
+how good he actually is", not "is he a bargain relative to an already
+cost-adjusted score".
+- 💎 AFFARE          gap <= -GIUSTO_GAP_BAND   (cheap relative to quality)
+- ⚖️ GIUSTO          |gap| < GIUSTO_GAP_BAND    (price tracks quality)
+- ⚠️ SOPRAVALUTATO   gap >= GIUSTO_GAP_BAND    (pricey relative to quality)
 - (none)             no quotation available — see Fase7_Prezzo_Motivo.
 
 A player can carry a label on both axes independently (e.g. CERTEZZA +
@@ -314,8 +323,8 @@ def _explain_prezzo(
             )
         else:
             motivo.at[idx] = (
-                f"Gap Prezzo/Valore (percentile prezzo-VR) {g:.0f}: nessuna fascia "
-                f"(serve <= -{cfg.GIUSTO_GAP_BAND:.0f} per AFFARE o "
+                f"Gap Prezzo/Valore (percentile prezzo-FP_Mantra) {g:.0f}: nessuna "
+                f"fascia (serve <= -{cfg.GIUSTO_GAP_BAND:.0f} per AFFARE o "
                 f">= {cfg.GIUSTO_GAP_BAND:.0f} per SOPRAVALUTATO)"
             )
     return motivo
@@ -368,6 +377,7 @@ def classify_fase7(
     pool_map = _build_pool_map(df, cfg)
 
     fp_pct = _pool_percentile(fp, df["ruolo_primario"], pool_map) * 100.0
+    fp_mantra_pct = _pool_percentile(fp_mantra, df["ruolo_primario"], pool_map) * 100.0
     vr_pct = _pool_percentile(vr, df["ruolo_primario"], pool_map) * 100.0
     price = df.get("Pz1", pd.Series(np.nan, index=df.index))
     price_pct = _price_percentile(price, df["ruolo_primario"], pool_map)
@@ -406,7 +416,11 @@ def classify_fase7(
     motivo_rend = _explain_rendimento(df, fp_mantra, vr, p1, gap_rend, th, label_rend, cfg)
 
     # ── Asse Prezzo/Valore: AFFARE / GIUSTO / SOPRAVALUTATO ─────────────────
-    gap_prezzo = price_pct - vr_pct
+    # Uses FP_Mantra (quality), not VR: VR already discounts expensive/strong
+    # players via Fattore_Eroe, so gauging price against VR double-counts
+    # cost and mislabels elite-and-pricey players as SOPRAVALUTATO even when
+    # their price is fully earned (see module docstring).
+    gap_prezzo = price_pct - fp_mantra_pct
     label_prezzo = pd.Series([None] * len(df), index=df.index, dtype=object)
     label_prezzo[gap_prezzo <= -cfg.GIUSTO_GAP_BAND] = "AFFARE"
     label_prezzo[gap_prezzo >= cfg.GIUSTO_GAP_BAND] = "SOPRAVALUTATO"
