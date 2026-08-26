@@ -2,6 +2,7 @@ import { Component, signal, afterRenderEffect, inject, PLATFORM_ID, computed, Ho
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { isPlatformBrowser } from '@angular/common';
 import { AuthService } from '../../../core/services/auth.service';
+import { HealthCheckService } from '../../../core/services/health-check.service';
 
 interface NavItem {
   path: string;
@@ -140,14 +141,29 @@ const NAV_ITEMS: readonly NavItem[] = [
           }
         </nav>
 
-        <!-- API key status -->
+        <!-- Keep-alive + API key status -->
         <div class="sidebar-footer">
-          <div class="status-dot" [class.status-dot--ok]="isAuthenticated()"></div>
-          @if (!collapsed()) {
-            <span class="status-label">
-              {{ isAuthenticated() ? (isAdmin() ? 'Admin' : 'Member') : 'Not logged in' }}
-            </span>
-          }
+          <button
+            type="button"
+            class="keep-alive-toggle"
+            [class.keep-alive-toggle--on]="healthCheck.keepAliveEnabled()"
+            (click)="healthCheck.toggleKeepAlive()"
+            [attr.aria-pressed]="healthCheck.keepAliveEnabled()"
+            [attr.title]="collapsed() ? keepAliveTitle : null"
+          >
+            <span class="keep-alive-dot" [class.keep-alive-dot--on]="healthCheck.keepAliveEnabled()"></span>
+            @if (!collapsed()) {
+              <span class="keep-alive-label" [title]="keepAliveTitle">Server sveglio</span>
+            }
+          </button>
+          <div class="status-row">
+            <div class="status-dot" [class.status-dot--ok]="isAuthenticated()"></div>
+            @if (!collapsed()) {
+              <span class="status-label">
+                {{ isAuthenticated() ? (isAdmin() ? 'Admin' : 'Member') : 'Not logged in' }}
+              </span>
+            }
+          </div>
         </div>
       </aside>
 
@@ -220,10 +236,22 @@ const NAV_ITEMS: readonly NavItem[] = [
             }
           </nav>
           <div class="mobile-menu-footer">
-            <div class="status-dot" [class.status-dot--ok]="isAuthenticated()"></div>
-            <span class="status-label">
-              {{ isAuthenticated() ? (isAdmin() ? 'Admin' : 'Member') : 'Not logged in' }}
-            </span>
+            <button
+              type="button"
+              class="keep-alive-toggle"
+              [class.keep-alive-toggle--on]="healthCheck.keepAliveEnabled()"
+              (click)="healthCheck.toggleKeepAlive()"
+              [attr.aria-pressed]="healthCheck.keepAliveEnabled()"
+            >
+              <span class="keep-alive-dot" [class.keep-alive-dot--on]="healthCheck.keepAliveEnabled()"></span>
+              <span class="keep-alive-label" [title]="keepAliveTitle">Server sveglio</span>
+            </button>
+            <div class="status-row">
+              <div class="status-dot" [class.status-dot--ok]="isAuthenticated()"></div>
+              <span class="status-label">
+                {{ isAuthenticated() ? (isAdmin() ? 'Admin' : 'Member') : 'Not logged in' }}
+              </span>
+            </div>
           </div>
         </div>
       }
@@ -364,11 +392,16 @@ const NAV_ITEMS: readonly NavItem[] = [
       }
       .sidebar-footer {
         display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 10px 14px 12px;
+        border-top: 1px solid var(--color-border);
+      }
+      .status-row {
+        display: flex;
         align-items: center;
         gap: 8px;
-        padding: 12px 14px;
-        border-top: 1px solid var(--color-border);
-        min-height: 48px;
+        min-height: 24px;
       }
       .status-dot {
         width: 8px;
@@ -386,6 +419,54 @@ const NAV_ITEMS: readonly NavItem[] = [
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+      }
+
+      /* ── Keep-alive toggle (prevents the Render free-tier backend from sleeping) ── */
+      .keep-alive-toggle {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 24px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--color-text-secondary);
+        font: inherit;
+        cursor: pointer;
+        width: 100%;
+        text-align: left;
+      }
+      .keep-alive-toggle:hover {
+        color: var(--color-text-primary);
+      }
+      .keep-alive-toggle--on {
+        color: #22c55e;
+      }
+      .keep-alive-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--color-text-secondary, #a1a1aa);
+        flex-shrink: 0;
+      }
+      .keep-alive-dot--on {
+        background: #22c55e;
+        animation: keep-alive-pulse 2s ease-in-out infinite;
+      }
+      .keep-alive-label {
+        font-size: 12px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      @keyframes keep-alive-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.35; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .keep-alive-dot--on {
+          animation: none;
+        }
       }
 
       /* ── Main: scroll container ─────────────────────── */
@@ -542,11 +623,15 @@ const NAV_ITEMS: readonly NavItem[] = [
       }
       .mobile-menu-footer {
         display: flex;
-        align-items: center;
+        flex-direction: column;
         gap: 8px;
         padding: 12px 14px;
         border-top: 1px solid var(--color-border);
-        min-height: 48px;
+      }
+      .mobile-menu-footer .status-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
       }
 
       @keyframes fade-in {
@@ -570,6 +655,10 @@ const NAV_ITEMS: readonly NavItem[] = [
 export class ShellComponent {
   private readonly auth = inject(AuthService);
   private readonly platformId = inject(PLATFORM_ID);
+  protected readonly healthCheck = inject(HealthCheckService);
+
+  protected readonly keepAliveTitle =
+    'Tiene sveglio il server (Render va in sleep dopo inattività) con un ping periodico finché una scheda con questa app resta aperta. Resta attivo anche dopo un refresh, finché non lo disattivi.';
 
   readonly collapsed = signal(false);
   readonly menuOpen = signal(false);
