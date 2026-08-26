@@ -127,7 +127,10 @@ async def list_mantra_players(
 
     # Apply filters
     if ruolo:
-        players = [p for p in players if p.get("ruolo_primario") == ruolo]
+        players = [
+            p for p in players
+            if ruolo in (p.get("ruoli_mantra") or [p.get("ruolo_primario")])
+        ]
     if fase7_rendimento:
         players = [p for p in players if p.get("Fase7_Rendimento") == fase7_rendimento]
     if fase7_prezzo:

@@ -112,3 +112,35 @@ def test_no_sort_by_preserves_artifact_order(overview_client):
     assert response.status_code == 200
     names = [p["playerName"] for p in response.json()["items"]]
     assert names == ["Alpha", "Beta", "Gamma"]
+
+
+def test_overview_filters_secondary_mantra_role(overview_client):
+    payload = _payload()
+    payload["players"][0]["ruolo_primario"] = "Dc"
+    payload["players"][0]["ruoli_mantra"] = ["Dc", "Dd"]
+
+    with patch(
+        "api.routers.overview._load_hybrid_results",
+        return_value=(2025, payload),
+    ):
+        response = overview_client.get("/overview/players", params={"ruolo": "Dd"})
+
+    assert response.status_code == 200
+    assert [item["playerName"] for item in response.json()["items"]] == ["Alpha"]
+
+
+def test_overview_classic_mode_uses_classic_price(overview_client):
+    payload = _payload()
+    payload["players"][0]["Pz1_Classic"] = 99
+
+    with patch(
+        "api.routers.overview._load_hybrid_results",
+        return_value=(2025, payload),
+    ):
+        response = overview_client.get(
+            "/overview/players", params={"quotation_mode": "classic"}
+        )
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["Pz1"] == 99
+    assert response.json()["meta"]["quotation_mode"] == "classic"

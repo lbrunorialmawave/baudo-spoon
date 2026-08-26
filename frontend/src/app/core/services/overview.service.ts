@@ -12,6 +12,7 @@ export class OverviewService {
   /** Paginated, server-side aggregated player list (MANTRA + Hybrid ML +
    *  Gruppo Esperti + titolarità). See GET /overview/players. */
   listPlayers(opts: {
+    quotationMode?: 'mantra' | 'classic';
     ruolo?: string;
     team?: string;
     search?: string;
@@ -48,6 +49,7 @@ export class OverviewService {
     let params = new HttpParams()
       .set('page', opts.page ?? 1)
       .set('size', opts.size ?? 50);
+    if (opts.quotationMode) params = params.set('quotation_mode', opts.quotationMode);
     if (opts.ruolo) params = params.set('ruolo', opts.ruolo);
     if (opts.team) params = params.set('team', opts.team);
     if (opts.search) params = params.set('search', opts.search);

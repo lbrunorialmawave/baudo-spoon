@@ -165,3 +165,15 @@ def test_mantra_players_endpoint_serves_plain_quotation(mantra_client):
     alpha = response.json()["items"][0]
     assert alpha["Prezzo_Massimo"] == pytest.approx(15.0)
     assert "Prezzo_Base_Listino" not in alpha
+
+
+def test_mantra_players_endpoint_filters_secondary_mantra_role(mantra_client):
+    payload = _mantra_payload()
+    payload["players"][0]["ruolo_primario"] = "Dc"
+    payload["players"][0]["ruoli_mantra"] = ["Dc", "Dd"]
+
+    with patch("api.routers.mantra._load_mantra_results", return_value=payload):
+        response = mantra_client.get("/mantra/players", params={"ruolo": "Dd"})
+
+    assert response.status_code == 200
+    assert [item["player_name"] for item in response.json()["items"]] == ["Alpha"]

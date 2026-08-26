@@ -1219,7 +1219,8 @@ class DataRepository:
         * ``role`` — optimizer role code (``P``/``D``/``C``/``A``); rows
           whose role is not recognised are dropped.
         * ``real_team`` — Fantacalcio canonical team name.
-        * ``cost`` — current quotation (``qt_a``).
+                * ``cost`` — current quotation (``qt_a_m`` for MANTRA,
+                    ``qt_a`` for CLASSIC).
         * ``projected_score`` — ML ``predicted_fantavoto`` if available,
           otherwise ``fantavoto_medio`` from the ML prediction artifact.
           FVM from the quotations listone is **not** used as a fallback
@@ -1266,7 +1267,8 @@ class DataRepository:
                 .join(PlayerIdMap, join_cond, isouter=True)
                 .join(PlayerMantraRole, mantra_join_cond, isouter=True)
                 .where(PlayerQuotation.season_start == season_start)
-                .where(PlayerQuotation.qt_a >= min_qt_a)
+                .where(PlayerQuotation.qt_a_m.is_not(None))
+                .where(PlayerQuotation.qt_a_m >= min_qt_a)
             )
         else:
             stmt = (
@@ -1300,7 +1302,8 @@ class DataRepository:
                 # Unknown / unsupported role (e.g. outdated enum) — skip.
                 continue
 
-            cost = int(pq.qt_a) if pq.qt_a is not None else 0
+            quotation = pq.qt_a_m if ruleset == "MANTRA" else pq.qt_a
+            cost = int(quotation) if quotation is not None else 0
             if cost <= 0:
                 continue
 

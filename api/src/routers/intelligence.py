@@ -510,7 +510,10 @@ async def list_hybrid_predictions(
 
     # Filters
     if ruolo:
-        players = [p for p in players if p.get("ruolo_primario") == ruolo]
+        players = [
+            p for p in players
+            if ruolo in (p.get("ruoli_mantra") or [p.get("ruolo_primario")])
+        ]
     if search:
         q = search.lower()
         players = [p for p in players if q in str(p.get("player_name", "")).lower()]

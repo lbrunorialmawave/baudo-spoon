@@ -80,9 +80,12 @@ _PLAYER_DATA_SQL = sa.text("""
         pq.season_start,
         pq.player_name,
         pq.team,
-        pq.qt_a AS "Pz1",
-        pq.qt_i AS "Pz2",
-        pq.fvm  AS "Pz3",
+        pq.qt_a_m AS "Pz1",
+        pq.qt_i_m AS "Pz2",
+        pq.fvm_m  AS "Pz3",
+        pq.qt_a AS "Pz1_Classic",
+        pq.qt_i AS "Pz2_Classic",
+        pq.fvm AS "Pz3_Classic",
         pmr.ruolo_primario,
         pmr.ruoli_mantra,
         pim.player_fotmob_id,
@@ -143,7 +146,9 @@ _PLAYER_DATA_SQL = sa.text("""
         ON ts_prev.team_name = pq.team
         AND ts_prev.season_start = pq.season_start - 1
         AND ts_prev.league_comp_id  = '55'
-    WHERE pq.season_start = :season_start
+        WHERE pq.season_start = :season_start
+            AND pq.qt_a_m IS NOT NULL
+            AND pq.qt_i_m IS NOT NULL
     ORDER BY pq.player_name
 """)
 
@@ -716,7 +721,10 @@ def run_mantra(
             # Newspaper prices
             "Pz1": int(df.at[idx, "Pz1"]),
             "Pz2": int(df.at[idx, "Pz2"]),
-            "Pz3": int(df.at[idx, "Pz3"]),
+            "Pz3": int(df.at[idx, "Pz3"]) if pd.notna(df.at[idx, "Pz3"]) else None,
+            "Pz1_Classic": int(df.at[idx, "Pz1_Classic"]),
+            "Pz2_Classic": int(df.at[idx, "Pz2_Classic"]),
+            "Pz3_Classic": int(df.at[idx, "Pz3_Classic"]) if pd.notna(df.at[idx, "Pz3_Classic"]) else None,
             # True when P1/P2/P3 fell back to the prior season's performance
             # data because the target season has no played matches yet.
             "stats_from_prior_season": bool(df.at[idx, "stats_from_prior_season"]),

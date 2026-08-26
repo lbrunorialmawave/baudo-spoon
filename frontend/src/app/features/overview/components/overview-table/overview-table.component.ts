@@ -30,6 +30,7 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
           <tr class="border-b text-xs font-medium uppercase tracking-wide"
               style="border-color:var(--color-border);color:var(--color-text-secondary)">
             <th class="px-3 py-2 text-right w-10 sm:w-12">#</th>
+            <th class="px-2 py-2 text-center" title="Preferito">★</th>
             <th class="px-3 py-2 text-left sortable" (click)="sortChanged.emit({ column: 'player_name', additive: $event.shiftKey })" [title]="sortHint()">
               Player @if (sortDirFor('player_name'); as dir) { <span style="color:var(--color-accent)"><sup>{{ sortRankLabel('player_name') }}</sup>{{ dir === 'asc' ? '▲' : '▼' }}</span> }
             </th>
@@ -84,6 +85,13 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                   [style.backgroundColor]="hoverId === item.fantacalcioId ? 'var(--color-surface)' : 'transparent'">
                 <td class="px-3 py-2.5 text-right font-mono text-xs" data-label="#" style="color:var(--color-text-secondary)">
                   {{ (page() - 1) * pageSize() + i + 1 }}
+                </td>
+                <td class="px-2 py-2.5 text-center">
+                  <button type="button" class="text-base" [style.color]="favoriteIds().has(item.fantacalcioId) ? 'var(--color-accent)' : 'var(--color-text-secondary)'"
+                          [attr.aria-label]="favoriteIds().has(item.fantacalcioId) ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'"
+                          (click)="$event.stopPropagation(); favoriteToggled.emit(item.fantacalcioId)">
+                    {{ favoriteIds().has(item.fantacalcioId) ? '★' : '☆' }}
+                  </button>
                 </td>
                 <td class="px-3 py-2.5 font-medium" data-label="Player" style="color:var(--color-text-primary)">
                   {{ item.playerName ?? '—' }}
@@ -205,9 +213,11 @@ export class OverviewTableComponent {
   readonly loading = input<boolean>(false);
   readonly page = input<number>(1);
   readonly pageSize = input<number>(50);
+  readonly favoriteIds = input<Set<number>>(new Set());
   readonly sortKeys = input<SortKey[]>([]);
   readonly sortChanged = output<{ column: string; additive: boolean }>();
   readonly playerSelected = output<OverviewPlayer>();
+  readonly favoriteToggled = output<number>();
 
   hoverId: number | null = null;
   readonly skeletonRows = Array.from({ length: 8 });

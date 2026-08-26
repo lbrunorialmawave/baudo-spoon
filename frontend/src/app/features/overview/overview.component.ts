@@ -87,6 +87,24 @@ import { OverviewDrawerComponent } from './components/overview-drawer/overview-d
                  [ngModel]="priceMax()" (ngModelChange)="priceMax.set($event)" />
         </div>
 
+        <div class="flex items-center gap-1 rounded-lg border px-1 py-1"
+             style="background:var(--color-surface-raised);border-color:var(--color-border)"
+             role="group" aria-label="Listino quotazioni">
+          <button class="rounded-md px-2 py-1 text-xs font-medium"
+            [style.background]="quotationMode() === 'mantra' ? 'var(--color-accent)' : 'transparent'"
+            [style.color]="quotationMode() === 'mantra' ? '#fff' : 'var(--color-text-secondary)'"
+            (click)="quotationMode.set('mantra')">Mantra</button>
+          <button class="rounded-md px-2 py-1 text-xs font-medium"
+            [style.background]="quotationMode() === 'classic' ? 'var(--color-accent)' : 'transparent'"
+            [style.color]="quotationMode() === 'classic' ? '#fff' : 'var(--color-text-secondary)'"
+            (click)="quotationMode.set('classic')">Classic</button>
+        </div>
+
+        <label class="flex items-center gap-2 px-1 text-xs" style="color:var(--color-text-secondary)">
+          <input type="checkbox" [ngModel]="onlyFavorites()" (ngModelChange)="onlyFavorites.set($event)" />
+          Solo preferiti ({{ favoriteIds().size }})
+        </label>
+
         <div class="flex items-center gap-1 rounded-lg border px-2 py-1"
              style="background:var(--color-surface-raised);border-color:var(--color-border)"
              title="Filtra per punteggio Gruppo Esperti (TOTALE su 50)">
@@ -271,8 +289,10 @@ import { OverviewDrawerComponent } from './components/overview-drawer/overview-d
               [loading]="loading()"
               [page]="currentPage()"
               [pageSize]="pageSize"
+              [favoriteIds]="favoriteIds()"
               [sortKeys]="sortKeys()"
               (sortChanged)="onSort($event)"
+              (favoriteToggled)="toggleFavorite($event)"
               (playerSelected)="selectedPlayer.set($event)" />
           </div>
           @let displayPages = totalPages();
@@ -314,6 +334,9 @@ export class OverviewComponent {
   readonly total = signal(0);
   readonly currentPage = signal(1);
   readonly pageSize = 50;
+  readonly quotationMode = signal<'mantra' | 'classic'>('mantra');
+  readonly onlyFavorites = signal(false);
+  readonly favoriteIds = signal<Set<number>>(this.readFavoriteIds());
 
   // ── Primary filters ──────────────────────────────────────────────
   readonly selectedRuolo = signal('');
@@ -428,6 +451,9 @@ export class OverviewComponent {
         this.expertSaluteMin(),
         this.hasMlDataFilter(),
         this.hasRiskFlag(),
+        this.quotationMode(),
+        this.onlyFavorites(),
+        Array.from(this.favoriteIds()).sort((a, b) => a - b),
       ]);
       const filtersChanged = signature !== this.lastFilterSignature;
       this.lastFilterSignature = signature;
@@ -461,6 +487,7 @@ export class OverviewComponent {
     const fase7Axis = fase7Selected ? FASE7_AXIS[fase7Selected] : undefined;
 
     this.overviewService.listPlayers({
+      quotationMode: this.quotationMode(),
       ruolo: this.selectedRuolo() || undefined,
       team: this.selectedTeam() || undefined,
       fase7Rendimento: fase7Axis === 'rendimento' ? fase7Selected : undefined,
@@ -487,6 +514,7 @@ export class OverviewComponent {
       expertSaluteMin: this.expertSaluteMin() ?? undefined,
       hasMlData: mlFilter === 'yes' ? true : mlFilter === 'no' ? false : undefined,
       hasRiskFlag: this.hasRiskFlag() ? true : undefined,
+      fantacalcioIds: this.onlyFavorites() ? Array.from(this.favoriteIds()) : undefined,
       sortBy: this.sortByParam(),
       page: this.currentPage(),
       size: this.pageSize,
@@ -502,6 +530,27 @@ export class OverviewComponent {
       },
     });
   }
+
+  private readFavoriteIds(): Set<number> {
+    if (typeof localStorage === 'undefined') return new Set();
+    try {
+      const value: unknown = JSON.parse(localStorage.getItem('overview-favorite-players') ?? '[]');
+      return new Set(Array.isArray(value) ? value.filter((id): id is number => Number.isInteger(id)) : []);
+    } catch {
+      return new Set();
+    }
+  }
+
+  readonly toggleFavorite = (id: number) => {
+    this.favoriteIds.update(ids => {
+      const next = new Set(ids);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try { localStorage.setItem('overview-favorite-players', JSON.stringify([...next])); } catch {}
+      return next;
+    });
+    this.currentPage.set(1);
+  };
 
   private extractErrorMessage(e: unknown): string {
     const detail = (e as { error?: { detail?: unknown } } | null)?.error?.detail;

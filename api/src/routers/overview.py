@@ -163,6 +163,7 @@ def _apply_single_sort(players: list[dict], field: OverviewSortField, reverse: b
     },
 )
 async def list_overview_players(
+    quotation_mode: str = Query("mantra", pattern="^(mantra|classic)$"),
     ruolo: str | None = Query(None, description="Filter by MANTRA primary role"),
     team: str | None = Query(None, description="Filter by team name"),
     search: str | None = Query(None, description="Search by player name"),
@@ -227,6 +228,18 @@ async def list_overview_players(
 
     players = data.get("players", [])
 
+    if quotation_mode == "classic":
+        players = [
+            {
+                **p,
+                "Pz1": p.get("Pz1_Classic"),
+                "Pz2": p.get("Pz2_Classic"),
+                "Pz3": p.get("Pz3_Classic"),
+            }
+            for p in players
+            if p.get("Pz1_Classic") is not None
+        ]
+
     # Arricchimenti — mai bloccanti: se una fonte non è disponibile, la lista
     # overview resta comunque servibile con quei campi a None (stesso
     # comportamento fail-safe di GET /mantra/players).
@@ -242,7 +255,10 @@ async def list_overview_players(
 
     # Filters
     if ruolo:
-        players = [p for p in players if p.get("ruolo_primario") == ruolo]
+        players = [
+            p for p in players
+            if ruolo in (p.get("ruoli_mantra") or [p.get("ruolo_primario")])
+        ]
     if team:
         # Exact match, not substring: `team` is always one value picked from
         # GET /mantra/teams' exact list on the frontend, never free text.
@@ -321,5 +337,5 @@ async def list_overview_players(
         "page": page,
         "size": size,
         "items": camel_items,
-        "meta": data.get("meta"),
+        "meta": {**(data.get("meta") or {}), "quotation_mode": quotation_mode},
     })
