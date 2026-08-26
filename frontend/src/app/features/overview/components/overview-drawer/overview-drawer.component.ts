@@ -1,7 +1,14 @@
 import { Component, effect, inject, input, output, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { OverviewPlayer } from '../../../../core/models/overview.models';
-import { FASE7_RENDIMENTO_LABELS, FASE7_PREZZO_LABELS } from '../../../../core/models/mantra.models';
+import {
+  FASE7_RENDIMENTO_LABELS,
+  FASE7_PREZZO_LABELS,
+  fase7StarsFor,
+  fase7BadgeText,
+  fase7BadgeTooltip,
+  fase7BadgeOpacity,
+} from '../../../../core/models/mantra.models';
 import { PlayerSeasonStat } from '../../../../core/models/stats.models';
 import { PlayerQuotation } from '../../../../core/models/quotations.models';
 import { NextSeasonPrediction } from '../../../../core/models/api.models';
@@ -39,16 +46,22 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
           <div class="flex flex-wrap gap-1.5">
             @if (player().Fase7_Rendimento; as f7r) {
               @let f7rMeta = FASE7_RENDIMENTO_LABELS[f7r];
+              @let f7rStars = fase7StarsFor(f7r, player().Fase7_Rendimento_Gap, 15);
               <span class="rounded-full px-2 py-0.5 text-xs font-medium text-white"
-                    [style.background]="f7rMeta?.color ?? '#6B7280'">
-                {{ f7rMeta?.icon ?? '' }} {{ f7rMeta?.label ?? f7r }}
+                    [style.background]="f7rMeta?.color ?? '#6B7280'"
+                    [style.opacity]="fase7BadgeOpacity(f7rStars)"
+                    [title]="fase7BadgeTooltip(f7r, f7rStars)">
+                {{ f7rMeta?.icon ?? '' }} {{ fase7BadgeText(f7r, f7rStars) }}{{ f7rStars ? ' ' + '★'.repeat(f7rStars) : '' }}
               </span>
             }
             @if (player().Fase7_Prezzo; as f7p) {
               @let f7pMeta = FASE7_PREZZO_LABELS[f7p];
+              @let f7pStars = fase7StarsFor(f7p, player().Fase7_Prezzo_Gap, 15);
               <span class="rounded-full px-2 py-0.5 text-xs font-medium text-white"
-                    [style.background]="f7pMeta?.color ?? '#6B7280'">
-                {{ f7pMeta?.icon ?? '' }} {{ f7pMeta?.label ?? f7p }}
+                    [style.background]="f7pMeta?.color ?? '#6B7280'"
+                    [style.opacity]="fase7BadgeOpacity(f7pStars)"
+                    [title]="fase7BadgeTooltip(f7p, f7pStars)">
+                {{ f7pMeta?.icon ?? '' }} {{ fase7BadgeText(f7p, f7pStars) }}{{ f7pStars ? ' ' + '★'.repeat(f7pStars) : '' }}
               </span>
             }
             @for (l of player().hybridLabels ?? []; track l) {
@@ -253,6 +266,10 @@ export class OverviewDrawerComponent {
 
   readonly FASE7_RENDIMENTO_LABELS = FASE7_RENDIMENTO_LABELS;
   readonly FASE7_PREZZO_LABELS = FASE7_PREZZO_LABELS;
+  readonly fase7StarsFor = fase7StarsFor;
+  readonly fase7BadgeText = fase7BadgeText;
+  readonly fase7BadgeTooltip = fase7BadgeTooltip;
+  readonly fase7BadgeOpacity = fase7BadgeOpacity;
 
   readonly statsHistory = signal<PlayerSeasonStat[]>([]);
   readonly quotHistory = signal<PlayerQuotation[]>([]);

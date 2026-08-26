@@ -119,19 +119,42 @@ class TestRendimentoIndividualLabels:
 
     def test_scommessa_gap(self, cfg):
         """SCOMMESSA is a gap between VR percentile and raw-FP percentile
-        within the role pool, not two independent absolute thresholds."""
+        within the role pool, not two independent absolute thresholds — AND
+        the candidate must actually be cheap (a "scommessa" is a cheap
+        gamble by definition)."""
         n = 6
         df = pd.DataFrame({
             "ruolo_primario": ["C"] * n,
             "Stagioni_IT": [0] * n, "Pr": [0.0] * n, "DV": [5.0] * n,
+            "Pz1": [50, 60, 70, 80, 90, 5],
         })
-        # Candidate (last row): lowest raw FP, highest VR in the pool.
+        # Candidate (last row): lowest raw FP, highest VR, cheapest price.
         fp = [80, 78, 76, 74, 72, 20]
         fp_mantra = [40] * n  # keep everyone well below TOP_FP_SOGLIA (80)
         vr = [90, 92, 94, 96, 98, 130]
         p1 = [50] * n
         result = _rend(df, fp=fp, fp_mantra=fp_mantra, vr=vr, p1=p1, cfg=cfg)
         assert result.iloc[-1] == "SCOMMESSA"
+
+    def test_scommessa_requires_cheap_price(self, cfg):
+        """Same gap as an otherwise-qualifying SCOMMESSA candidate, but
+        priced at the top of the role pool: must NOT be labeled SCOMMESSA —
+        a "scommessa" that costs more than everyone else in its role isn't
+        a gamble, it's a bad buy. Regression for real 2026 auction data
+        (Cutrone/Frattesi) where an ungated gap rule produced SCOMMESSA tags
+        on above-median-priced players."""
+        n = 6
+        df = pd.DataFrame({
+            "ruolo_primario": ["C"] * n,
+            "Stagioni_IT": [0] * n, "Pr": [0.0] * n, "DV": [5.0] * n,
+            "Pz1": [5, 10, 15, 20, 25, 100],  # candidate is the most expensive
+        })
+        fp = [80, 78, 76, 74, 72, 20]
+        fp_mantra = [40] * n
+        vr = [90, 92, 94, 96, 98, 130]
+        p1 = [50] * n
+        result = _rend(df, fp=fp, fp_mantra=fp_mantra, vr=vr, p1=p1, cfg=cfg)
+        assert result.iloc[-1] != "SCOMMESSA"
 
     def test_none_when_no_rendimento_rule_matches(self, cfg):
         n = 3
@@ -380,3 +403,155 @@ class TestTopExternalGates:
         assert label.iloc[0] != "TOP"
         assert motivo.iloc[0] is not None
         assert "esperti" in motivo.iloc[0].lower() or "rating" in motivo.iloc[0].lower()
+
+
+class TestCertezzaEspertiLeg:
+    """Gruppo Esperti titolarita+salute as a second, independent
+    forward-looking CERTEZZA leg (alongside the EWMA one)."""
+
+    def test_idx_above_soglia_grants_certezza(self, cfg):
+        df = _base_df(1)  # Stagioni_IT=0 -> certezza_storica always false here
+        df["expert_titolarita"] = [9]
+        df["expert_salute"] = [9]
+        result = _rend(df, fp=[40], fp_mantra=[40], vr=[90], p1=[30], cfg=cfg)
+        assert result.iloc[0] == "CERTEZZA"
+
+    def test_idx_below_soglia_does_not_grant_certezza(self, cfg):
+        df = _base_df(1)
+        df["expert_titolarita"] = [5]
+        df["expert_salute"] = [5]
+        result = _rend(df, fp=[40], fp_mantra=[40], vr=[90], p1=[30], cfg=cfg)
+        assert result.iloc[0] != "CERTEZZA"
+
+    def test_requires_both_subscores(self, cfg):
+        """A single sub-score present (the other missing) must not grant
+        CERTEZZA — the index needs both titolarita and salute."""
+        df = _base_df(1)
+        df["expert_titolarita"] = [10]  # expert_salute column absent entirely
+        result = _rend(df, fp=[40], fp_mantra=[40], vr=[90], p1=[30], cfg=cfg)
+        assert result.iloc[0] != "CERTEZZA"
+
+    def test_ignores_dv_gate(self, cfg):
+        """Unlike the historical/EWMA legs, the experts leg has no DV gate —
+        it exists specifically for players who lack the statistical history
+        DV is built from."""
+        df = pd.DataFrame({
+            "ruolo_primario": ["C"], "Stagioni_IT": [0], "Pr": [0.0],
+            "DV": [99.0],  # deliberately terrible/default value
+            "expert_titolarita": [10], "expert_salute": [10],
+        })
+        result = _rend(df, fp=[40], fp_mantra=[40], vr=[90], p1=[30], cfg=cfg)
+        assert result.iloc[0] == "CERTEZZA"
+
+
+def _boost_pool_df(pz1_candidate_cheap: float = 5) -> pd.DataFrame:
+    """11-player 'C' pool (10-point percentile granularity) where the last
+    row is the SCOMMESSA candidate: lowest raw FP, 2nd-lowest VR (gap=10,
+    just under SCOMMESSA_GAP_MIN=15 without a boost), cheapest price."""
+    n = 11
+    return pd.DataFrame({
+        "ruolo_primario": ["C"] * n,
+        "Stagioni_IT": [0] * n, "Pr": [0.0] * n, "DV": [5.0] * n,
+        "Pz1": [50, 60, 70, 80, 90, 100, 110, 120, 130, 140, pz1_candidate_cheap],
+    })
+
+
+_BOOST_FP = [20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 5]
+_BOOST_FP_MANTRA = [40] * 11
+_BOOST_VR = [50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 55]
+_BOOST_P1 = [50] * 11
+
+
+class TestScommessaQualityBoost:
+    """Gruppo Esperti bonus+media_voto as a never-negative boost on the
+    SCOMMESSA gap — never a block, never a penalty."""
+
+    def test_boost_tips_marginal_gap_over_threshold(self, cfg):
+        df = _boost_pool_df()
+        df["expert_bonus"] = [None] * 10 + [10]
+        df["expert_media_voto"] = [None] * 10 + [10]
+        result = _rend(df, fp=_BOOST_FP, fp_mantra=_BOOST_FP_MANTRA, vr=_BOOST_VR, p1=_BOOST_P1, cfg=cfg)
+        assert result.iloc[-1] == "SCOMMESSA"
+
+    def test_same_gap_without_expert_quality_data_is_not_scommessa(self, cfg):
+        """Regression: identical gap (10, below SCOMMESSA_GAP_MIN=15), no
+        expert quality columns at all -> unchanged pre-Gruppo-Esperti
+        behavior, no SCOMMESSA."""
+        df = _boost_pool_df()
+        result = _rend(df, fp=_BOOST_FP, fp_mantra=_BOOST_FP_MANTRA, vr=_BOOST_VR, p1=_BOOST_P1, cfg=cfg)
+        assert result.iloc[-1] != "SCOMMESSA"
+
+    def test_boost_never_negative_when_quality_is_poor(self, cfg):
+        """Quality well below SCOMMESSA_QUALITY_NEUTRAL must clip to a 0
+        boost, never a penalty that makes the gap worse than ungated."""
+        df = _boost_pool_df()
+        df["expert_bonus"] = [None] * 10 + [1]
+        df["expert_media_voto"] = [None] * 10 + [1]
+        result = _rend(df, fp=_BOOST_FP, fp_mantra=_BOOST_FP_MANTRA, vr=_BOOST_VR, p1=_BOOST_P1, cfg=cfg)
+        assert result.iloc[-1] != "SCOMMESSA"
+
+    def test_exposed_gap_reflects_boost(self, cfg):
+        """Fase7_Rendimento_Gap (returned gap) must reflect the boosted
+        value, not the raw one — otherwise a labeled SCOMMESSA could show a
+        sub-threshold gap in the frontend star rating."""
+        df = _boost_pool_df()
+        df["expert_bonus"] = [None] * 10 + [10]
+        df["expert_media_voto"] = [None] * 10 + [10]
+        label_rend, _, gap_rend, *_ = _classify(
+            df, fp=_BOOST_FP, fp_mantra=_BOOST_FP_MANTRA, vr=_BOOST_VR, p1=_BOOST_P1, cfg=cfg,
+        )
+        assert label_rend.iloc[-1] == "SCOMMESSA"
+        assert gap_rend.iloc[-1] > cfg.SCOMMESSA_GAP_MIN
+
+
+class TestPrezzoExpertBlend:
+    """Gruppo Esperti TOTALE blended into the Prezzo/Valore quality anchor
+    alongside FP_Mantra."""
+
+    @staticmethod
+    def _pool(with_totale: bool) -> pd.DataFrame:
+        n = 5
+        df = pd.DataFrame({
+            "ruolo_primario": ["C"] * n,
+            "Stagioni_IT": [0] * n, "Pr": [0.0] * n, "DV": [5.0] * n,
+            "Pz1": [10, 20, 45, 40, 50],  # candidate (idx 2) -> price_pct 75
+        })
+        if with_totale:
+            df["expert_totale"] = [10, None, 46, None, None]  # candidate -> pct 100
+        return df
+
+    def test_marginal_sopravalutato_without_expert_totale(self, cfg):
+        df = self._pool(with_totale=False)
+        fp_mantra = [10, 20, 50, 80, 90]  # candidate (idx 2) -> fp_mantra_pct 50
+        _, _, _, label_prezzo, _, gap_prezzo = _classify(
+            df, fp=[40] * 5, fp_mantra=fp_mantra, vr=[90] * 5, p1=[50] * 5, cfg=cfg,
+        )
+        assert label_prezzo.iloc[2] == "SOPRAVALUTATO"
+        assert gap_prezzo.iloc[2] == pytest.approx(25.0)
+
+    def test_expert_totale_rescues_marginal_sopravalutato(self, cfg):
+        """Same gap as above, but the candidate has a strong Gruppo Esperti
+        TOTALE — the blend must bring the gap back inside the GIUSTO band.
+        With the default PREZZO_EXPERT_TOTALE_WEIGHT=0.5 (equal weight with
+        FP_Mantra), quality_pct = 0.5*50 + 0.5*100 = 75 = price_pct -> gap 0."""
+        df = self._pool(with_totale=True)
+        fp_mantra = [10, 20, 50, 80, 90]
+        _, _, _, label_prezzo, _, gap_prezzo = _classify(
+            df, fp=[40] * 5, fp_mantra=fp_mantra, vr=[90] * 5, p1=[50] * 5, cfg=cfg,
+        )
+        assert label_prezzo.iloc[2] == "GIUSTO"
+        assert gap_prezzo.iloc[2] == pytest.approx(0.0)
+
+    def test_missing_totale_for_this_player_is_a_pure_fp_mantra_fallback(self, cfg):
+        """Even when other players in the pool have expert_totale, a player
+        without it must fall back to FP_Mantra-only (no blend applied to
+        him specifically)."""
+        df = self._pool(with_totale=True)
+        # Player idx 3 has no expert_totale (already None in the fixture) —
+        # his gap must match a pure FP_Mantra-vs-price calculation.
+        fp_mantra = [10, 20, 50, 55, 90]  # idx 3 -> fp_mantra_pct 75 (rank4/5)
+        _, _, _, _, _, gap_prezzo = _classify(
+            df, fp=[40] * 5, fp_mantra=fp_mantra, vr=[90] * 5, p1=[50] * 5, cfg=cfg,
+        )
+        # Pz1 idx3 = 40 -> price_pct 50 (rank3/5); fp_mantra_pct 75 -> gap = -25
+        assert gap_prezzo.iloc[3] == pytest.approx(-25.0)

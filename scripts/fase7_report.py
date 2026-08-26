@@ -9,6 +9,7 @@ anywhere and is not wired into ``run_mantra`` / ``season_refresh.py``.
 
 Usage:
   python scripts/fase7_report.py --season 2026 [--db-url ...] [--sample 5]
+  python scripts/fase7_report.py --season 2026 --ablate-expert-signals
 """
 from __future__ import annotations
 
@@ -64,6 +65,15 @@ def main() -> None:
     parser.add_argument("--season", type=int, required=True, help="season_start, e.g. 2026")
     parser.add_argument("--db-url", default=os.environ.get("ML_DATABASE_URL"))
     parser.add_argument("--sample", type=int, default=5, help="players to print per label")
+    parser.add_argument(
+        "--ablate-expert-signals", action="store_true",
+        help=(
+            "Drop the Gruppo Esperti columns (titolarita/media_voto/salute/"
+            "bonus/totale) after loading, before classification — run twice "
+            "(with and without this flag) to see how much they move the "
+            "label distribution."
+        ),
+    )
     args = parser.parse_args()
 
     if not args.db_url:
@@ -75,6 +85,13 @@ def main() -> None:
 
     df = load_data(engine, args.season)
     df = _attach_fase7_external_signals(df, engine, args.season, None, cfg)
+    if args.ablate_expert_signals:
+        expert_cols = [
+            "expert_titolarita", "expert_media_voto", "expert_salute",
+            "expert_bonus", "expert_totale",
+        ]
+        df = df.drop(columns=[c for c in expert_cols if c in df.columns])
+        print(f"[ablate-expert-signals] dropped: {expert_cols}")
     fp, p1, scores = _compute_scores(df, cfg)
 
     (

@@ -278,6 +278,56 @@ def _load_expert_ratings_by_fotmob(
     return {int(r[0]): float(r[1]) for r in rows if r[0] is not None and r[1] is not None}
 
 
+_EXPERT_DETAIL_COLUMNS = ("titolarita", "media_voto", "salute", "bonus_value", "totale")
+
+
+def _load_expert_details_by_fotmob(
+    engine: sa.Engine,
+    season_start: int,
+) -> dict[int, dict[str, float]]:
+    """Average Gruppo Esperti sub-scores (titolarita/media_voto/salute/
+    bonus_value/totale, all 1-10 except totale ~/50) per ``player_fotmob_id``
+    for the season. Same join as ``_load_expert_ratings_by_fotmob``. Used to
+    stabilize Fase7's CERTEZZA (titolarita+salute), SCOMMESSA (bonus+
+    media_voto boost) and Prezzo/Valore (totale blend) — see
+    ``ml/mantra/fase7.py``. Failures are non-fatal (empty dict).
+    """
+    sql = sa.text(
+        """
+        SELECT pim.player_fotmob_id AS fotmob_id,
+               AVG(er.titolarita)::float AS titolarita,
+               AVG(er.media_voto)::float AS media_voto,
+               AVG(er.salute)::float AS salute,
+               AVG(er.bonus_value)::float AS bonus_value,
+               AVG(er.totale)::float AS totale
+        FROM expert_ratings er
+        JOIN player_id_map pim
+          ON (
+               er.player_id = 'fc-' || pim.fantacalcio_id::text
+               OR er.player_id = pim.player_fotmob_id::text
+             )
+        WHERE er.season_start = :season_start
+          AND pim.player_fotmob_id IS NOT NULL
+        GROUP BY pim.player_fotmob_id
+        """
+    )
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(sql, {"season_start": season_start}).fetchall()
+    except Exception as exc:  # noqa: BLE001 — informational gate only
+        log.warning("Could not load expert detail scores for Fase7 gates: %s", exc)
+        return {}
+    out: dict[int, dict[str, float]] = {}
+    for r in rows:
+        m = r._mapping
+        if m["fotmob_id"] is None:
+            continue
+        out[int(m["fotmob_id"])] = {
+            col: float(m[col]) for col in _EXPERT_DETAIL_COLUMNS if m[col] is not None
+        }
+    return out
+
+
 def _load_titolarita_status(
     engine: sa.Engine,
     season_start: int,
@@ -380,8 +430,10 @@ def _attach_fase7_external_signals(
     cfg: MantraConfig,
 ) -> pd.DataFrame:
     """Attach optional ``predicted_next_fantavoto`` / ``predicted_fantavoto``
-    / ``expert_rating`` / ``titolarita_attesa`` columns used by Fase7 gates.
-    Missing sources leave the columns as NaN (gate skipped).
+    / ``expert_rating`` / ``expert_titolarita`` / ``expert_media_voto`` /
+    ``expert_salute`` / ``expert_bonus`` / ``expert_totale`` /
+    ``titolarita_attesa`` columns used by Fase7 gates. Missing sources leave
+    the columns as NaN (gate skipped).
     """
     out = df.copy()
 
@@ -423,16 +475,31 @@ def _attach_fase7_external_signals(
 
     out["expert_rating"] = out["player_fotmob_id"].map(_exp)
 
+    expert_details = _load_expert_details_by_fotmob(engine, season_start)
+
+    def _expert_detail(fid, col):
+        if fid is None or (isinstance(fid, float) and fid != fid):
+            return None
+        try:
+            return expert_details.get(int(fid), {}).get(col)
+        except (TypeError, ValueError):
+            return None
+
+    for col in _EXPERT_DETAIL_COLUMNS:
+        out_col = "expert_bonus" if col == "bonus_value" else f"expert_{col}"
+        out[out_col] = out["player_fotmob_id"].map(lambda fid, c=col: _expert_detail(fid, c))
+
     status_df = _load_titolarita_status(engine, season_start)
     out["titolarita_attesa"] = _compute_titolarita_attesa(out, status_df, season_start, cfg)
 
     n_ml = int(out["predicted_next_fantavoto"].notna().sum())
     n_ex = int(out["expert_rating"].notna().sum())
+    n_ex_detail = int(out["expert_totale"].notna().sum())
     n_tit = int(out["titolarita_attesa"].notna().sum())
     log.info(
         "Fase7 external signals: %d/%d with ML next, %d/%d with expert rating, "
-        "%d/%d with titolarita attesa",
-        n_ml, len(out), n_ex, len(out), n_tit, len(out),
+        "%d/%d with expert detail scores, %d/%d with titolarita attesa",
+        n_ml, len(out), n_ex, len(out), n_ex_detail, len(out), n_tit, len(out),
     )
     return out
 

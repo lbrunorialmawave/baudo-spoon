@@ -75,17 +75,52 @@ class MantraConfig:
     CERTEZZA_TITOLARITA_SOGLIA: float = 75.0
     TITOLARITA_EWMA_LAMBDA: float = 0.65
     TITOLARITA_EWMA_WINDOW: int = 5
+    # Second forward-looking CERTEZZA leg, from Gruppo Esperti (titolarita +
+    # salute, 1-10 scale each, no DV gate — see ml/mantra/fase7.py). A
+    # dedicated (lower) threshold than CERTEZZA_TITOLARITA_SOGLIA: the
+    # experts' scale only has 10 discrete values, coarser than the EWMA one.
+    CERTEZZA_ESPERTI_SOGLIA: float = 70.0
+    CERTEZZA_ESPERTI_TITOLARITA_PESO: float = 0.7   # salute weight = 1 - this
 
     # ── Fase 7 gap-based axes ─────────────────────────────────────────────────
     # Rendimento/Affidabilità axis (TOP > CERTEZZA > SCOMMESSA): SCOMMESSA is
     # the divergence between a player's VR percentile and his raw-FP
     # percentile within his role pool, not two independent absolute
-    # thresholds (which almost never overlap in practice).
-    SCOMMESSA_GAP_MIN: float = 25.0
+    # thresholds (which almost never overlap in practice). It also requires
+    # a cheap quotation (SCOMMESSA_PREZZO_PERCENTILE_MAX): a "scommessa" is a
+    # cheap gamble with hidden upside by definition — without a price gate,
+    # the label can land on an already-pricey player, which defeats its
+    # purpose (validated against real 2026 auction data: the two ungated
+    # candidates were priced above their role's median).
+    SCOMMESSA_GAP_MIN: float = 15.0
+    SCOMMESSA_PREZZO_PERCENTILE_MAX: float = 40.0
+    # Gruppo Esperti quality boost (bonus + media_voto, 1-10 scale each) on
+    # the SCOMMESSA gap: a marginal statistical gap can still qualify when
+    # the expert panel rates the player's quality well above average. Never
+    # negative (floor 0) and never blocking — missing data just means no
+    # boost, same "null = gate skipped" convention as the rest of this
+    # module. NEUTRAL is the 0-100 quality-index value below which no boost
+    # applies (~6/10 raw); BOOST_MAX (2/3 of SCOMMESSA_GAP_MIN) can tip a
+    # near-miss over the line, not manufacture a gap from nothing.
+    SCOMMESSA_QUALITY_NEUTRAL: float = 55.0
+    SCOMMESSA_QUALITY_BOOST_MAX: float = 10.0
+    SCOMMESSA_QUALITY_BONUS_PESO: float = 0.5   # media_voto weight = 1 - this
     # Prezzo/Valore axis (AFFARE / GIUSTO / SOPRAVALUTATO): three contiguous
-    # bands of the gap between a player's quotation percentile and his VR
-    # percentile within his role pool. |gap| <= this band = GIUSTO.
+    # bands of the gap between a player's quotation percentile and his
+    # FP_Mantra percentile within his role pool. |gap| <= this band = GIUSTO.
     GIUSTO_GAP_BAND: float = 15.0
+    # Gruppo Esperti TOTALE (/50 scale) blended into the Prezzo/Valore
+    # "quality" anchor alongside FP_Mantra: a player with a temporarily poor
+    # backward-looking VR/FP_Mantra (bad luck — missed penalties, hit the
+    # woodwork) but a strong expert TOTALE shouldn't be flagged SOPRAVALUTATO
+    # on the statistical read alone. Equal weight with FP_Mantra: validated
+    # against real 2026 auction data — a conservative 0.25 weight was not
+    # enough to rescue an expert-loved, most-expensive-in-role player from a
+    # false SOPRAVALUTATO (gap stayed at 22.5 vs. the 15.0 band); 0.5 does
+    # (gap 15.6, at the edge). 0 = ignore experts entirely (pre-Gruppo-Esperti
+    # behavior); falls back to FP_Mantra-only automatically when TOTALE is
+    # missing for a player.
+    PREZZO_EXPERT_TOTALE_WEIGHT: float = 0.5
 
     # ── Fase 7 threshold mode ─────────────────────────────────────────────────
     # "percentile": TOP thresholds (and CERTEZZA's DV leg) are computed per

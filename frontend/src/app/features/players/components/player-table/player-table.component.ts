@@ -6,7 +6,10 @@ import {
   FASE7_PREZZO_LABELS,
   FASE7_TOOLTIPS,
   MATCHDAY_STATUS_CONFIG,
-  fase7Stars,
+  fase7StarsFor,
+  fase7BadgeText,
+  fase7BadgeTooltip,
+  fase7BadgeOpacity,
 } from '../../../../core/models/mantra.models';
 import { ExpertRatingWithFantacalcioId } from '../../../../core/models/expert-ratings.models';
 import { SkeletonComponent } from '../../../../shared/components/skeleton/skeleton.component';
@@ -121,18 +124,22 @@ import { SkeletonComponent } from '../../../../shared/components/skeleton/skelet
                   <div class="flex flex-col items-start gap-1">
                     @if (mp && mp.Fase7_Rendimento) {
                       @let f7r = FASE7_RENDIMENTO_LABELS[mp.Fase7_Rendimento];
+                      @let f7rStars = fase7StarsFor(mp.Fase7_Rendimento, mp.Fase7_Rendimento_Gap, RENDIMENTO_GAP_BASE);
                       <span class="rounded-full px-1.5 py-0.5 text-[10px] font-medium text-white"
                             [style.background]="f7r?.color ?? '#6B7280'"
-                            [title]="FASE7_TOOLTIPS[mp.Fase7_Rendimento]">
-                        {{ f7r?.icon ?? '' }} {{ f7r?.label ?? mp.Fase7_Rendimento }}{{ starBadge(mp.Fase7_Rendimento_Gap, RENDIMENTO_GAP_BASE) }}
+                            [style.opacity]="fase7BadgeOpacity(f7rStars)"
+                            [title]="fase7BadgeTooltip(mp.Fase7_Rendimento, f7rStars)">
+                        {{ f7r?.icon ?? '' }} {{ fase7BadgeText(mp.Fase7_Rendimento, f7rStars) }}{{ f7rStars ? ' ' + '★'.repeat(f7rStars) : '' }}
                       </span>
                     }
                     @if (mp && mp.Fase7_Prezzo) {
                       @let f7p = FASE7_PREZZO_LABELS[mp.Fase7_Prezzo];
+                      @let f7pStars = fase7StarsFor(mp.Fase7_Prezzo, mp.Fase7_Prezzo_Gap, PREZZO_GAP_BASE);
                       <span class="rounded-full px-1.5 py-0.5 text-[10px] font-medium text-white"
                             [style.background]="f7p?.color ?? '#6B7280'"
-                            [title]="FASE7_TOOLTIPS[mp.Fase7_Prezzo]">
-                        {{ f7p?.icon ?? '' }} {{ f7p?.label ?? mp.Fase7_Prezzo }}{{ starBadge(mp.Fase7_Prezzo_Gap, PREZZO_GAP_BASE) }}
+                            [style.opacity]="fase7BadgeOpacity(f7pStars)"
+                            [title]="fase7BadgeTooltip(mp.Fase7_Prezzo, f7pStars)">
+                        {{ f7p?.icon ?? '' }} {{ fase7BadgeText(mp.Fase7_Prezzo, f7pStars) }}{{ f7pStars ? ' ' + '★'.repeat(f7pStars) : '' }}
                       </span>
                     }
                     @if (mp && !mp.Fase7_Rendimento && !mp.Fase7_Prezzo) {
@@ -220,13 +227,11 @@ export class PlayerTableComponent {
 
   // Gap base thresholds mirroring ml/mantra/config.py's SCOMMESSA_GAP_MIN /
   // GIUSTO_GAP_BAND — keep in sync if the backend retunes them.
-  readonly RENDIMENTO_GAP_BASE = 25;
+  readonly RENDIMENTO_GAP_BASE = 15;
   readonly PREZZO_GAP_BASE = 15;
 
-  /** " ★★" (1-3 stars) confidence suffix for a Fase7 gap, or '' when there's
-   *  nothing to rate. */
-  readonly starBadge = (gap: number | null | undefined, base: number): string => {
-    const n = fase7Stars(gap, base);
-    return n ? ' ' + '★'.repeat(n) : '';
-  };
+  readonly fase7StarsFor = fase7StarsFor;
+  readonly fase7BadgeText = fase7BadgeText;
+  readonly fase7BadgeTooltip = fase7BadgeTooltip;
+  readonly fase7BadgeOpacity = fase7BadgeOpacity;
 }

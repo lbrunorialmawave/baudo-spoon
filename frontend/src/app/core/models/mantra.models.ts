@@ -172,7 +172,7 @@ export const FASE7_TOOLTIPS: Record<string, string> = {
 
 /** Derive a 1-3 "star" confidence rating from a Fase7 gap value (percentile
  *  points). `baseThreshold` is the gap magnitude at which the label itself
- *  first kicks in (SCOMMESSA_GAP_MIN=25 for the Rendimento axis,
+ *  first kicks in (SCOMMESSA_GAP_MIN=15 for the Rendimento axis,
  *  GIUSTO_GAP_BAND=15 for the Prezzo axis in ml/mantra/config.py — keep
  *  these two numbers in sync with the backend if they're ever retuned).
  *  Returns null when there's no gap to rate (e.g. never-quoted player). */
@@ -183,6 +183,76 @@ export function fase7Stars(gap: number | null | undefined, baseThreshold: number
   if (magnitude < baseThreshold * 2) return 1;
   if (magnitude < baseThreshold * 3) return 2;
   return 3;
+}
+
+/** The only three Fase7 labels whose star rating is meaningful — TOP and
+ *  CERTEZZA carry a Fase7_Rendimento_Gap too, but it's the leftover SCOMMESSA
+ *  gap computation, unrelated to why *they* were labeled, and GIUSTO is
+ *  "too small to have stars" by construction (fase7Stars already returns
+ *  null in its band). Showing a star count on TOP/CERTEZZA would look like
+ *  it means something when it doesn't. */
+const FASE7_STARRED_LABELS = new Set(['SCOMMESSA', 'AFFARE', 'SOPRAVALUTATO']);
+
+/** Like fase7Stars, but returns null outright for labels where a star
+ *  rating isn't meaningful (see FASE7_STARRED_LABELS) — the one function
+ *  row badges should call. */
+export function fase7StarsFor(
+  label: string | null | undefined,
+  gap: number | null | undefined,
+  baseThreshold: number,
+): 1 | 2 | 3 | null {
+  if (!label || !FASE7_STARRED_LABELS.has(label)) return null;
+  return fase7Stars(gap, baseThreshold);
+}
+
+/** Graduated badge text for the 3 star-rated labels: a 1-star case (barely
+ *  past the threshold) reads very differently from a 3-star one (well past
+ *  it) — a flat "SOPRAVALUTATO" + "Rischi" on both is misleading for the
+ *  marginal case (e.g. gap 15.1 read the same as gap 60). Falls back to the
+ *  plain FASE7_LABELS text when stars is null (TOP/CERTEZZA/GIUSTO, or a
+ *  starred label with no computable gap). */
+const FASE7_GRADIENT_TEXT: Record<string, Record<1 | 2 | 3, string>> = {
+  SCOMMESSA: { 1: 'Piccolo potenziale', 2: 'Scommessa', 3: 'Forte scommessa' },
+  AFFARE: { 1: 'Leggero sconto', 2: 'Affare', 3: 'Grande affare' },
+  SOPRAVALUTATO: { 1: 'Leggermente sopra quota', 2: 'Sopravvalutato', 3: 'Molto sopravvalutato' },
+};
+
+const FASE7_GRADIENT_TOOLTIP: Record<string, Record<1 | 2 | 3, string>> = {
+  SCOMMESSA: {
+    1: '🔄 Piccolo segnale di potenziale inespresso: il divario tra VR e rendimento grezzo è minimo — da monitorare, non da inseguire.',
+    2: '🔄 SCOMMESSA — Potenziale inespresso: FP basso ma VR nettamente più alto. Può esplodere.',
+    3: '🔄 FORTE SCOMMESSA — Divario molto ampio tra rendimento grezzo e VR, a un prezzo economico. Candidato ideale per un colpo a basso costo.',
+  },
+  AFFARE: {
+    1: '💎 Leggero sconto sulla qualità (FP_Mantra) — margine minimo, non aspettarti un vero saldo.',
+    2: '💎 AFFARE — Prezzo sotto la qualità (FP_Mantra) nel pool di ruolo. Ottimo rapporto Q/P.',
+    3: '💎 GRANDE AFFARE — Prezzo nettamente sotto la qualità. Tra i migliori rapporti qualità/prezzo del ruolo.',
+  },
+  SOPRAVALUTATO: {
+    1: '⚖️ Leggermente sopra la qualità (FP_Mantra) — differenza minima, non è un campanello d\'allarme.',
+    2: '⚠️ SOPRAVALUTATO — Prezzo sopra la qualità (FP_Mantra) nel pool di ruolo.',
+    3: '⚠️ MOLTO SOPRAVALUTATO — Prezzo nettamente sopra la qualità. Valuta con attenzione prima di spendere.',
+  },
+};
+
+/** Badge text for a Fase7 label, graduated by star rating when applicable
+ *  (see fase7StarsFor), otherwise the plain FASE7_LABELS text. */
+export function fase7BadgeText(label: string, stars: 1 | 2 | 3 | null): string {
+  if (stars != null && FASE7_GRADIENT_TEXT[label]) return FASE7_GRADIENT_TEXT[label][stars];
+  return FASE7_LABELS[label]?.label ?? label;
+}
+
+/** Tooltip for a Fase7 label, graduated by star rating when applicable,
+ *  otherwise the plain FASE7_TOOLTIPS text. */
+export function fase7BadgeTooltip(label: string, stars: 1 | 2 | 3 | null): string {
+  if (stars != null && FASE7_GRADIENT_TOOLTIP[label]) return FASE7_GRADIENT_TOOLTIP[label][stars];
+  return FASE7_TOOLTIPS[label] ?? '';
+}
+
+/** Slightly lighter visual weight for a 1-star (marginal) case, so it
+ *  doesn't read with the same intensity as a 2-3 star one at a glance. */
+export function fase7BadgeOpacity(stars: 1 | 2 | 3 | null): number {
+  return stars === 1 ? 0.75 : 1;
 }
 
 export const MANTRA_ROLES = [
@@ -199,7 +269,7 @@ export const HYBRID_LABELS: { id: string; label: string; color: string; desc: st
   { id: 'ML_Boosted',    label: 'Sorpresa',            color: '#a855f7', desc: 'ML molto sopra la media del ruolo, possibile sorpresa' },
   { id: 'Contradiction', label: 'Contrasto',           color: '#d97706', desc: 'Disaccordo MANTRA vs ML — valutare con cautela' },
   { id: 'Minutes_Risk',  label: 'Minuti a rischio',    color: '#f97316', desc: 'Pochi minuti previsti in stagione' },
-  { id: 'Best_Value',    label: 'Miglior rapporto Q/P', color: '#22c55e', desc: 'Ottimo rapporto qualità/prezzo all\'asta' },
+  { id: 'Best_Value',    label: 'Rendimento Alto',     color: '#22c55e', desc: 'VR e punteggio ibrido MANTRA+ML entrambi alti — non è un confronto col prezzo (per quello vedi Prezzo/Valore in Profilo)' },
   { id: 'Sleeper',       label: 'Sleeper',             color: '#3b82f6', desc: 'Sottovalutato dal MANTRA ma con buona prediction ML' },
 ];
 
