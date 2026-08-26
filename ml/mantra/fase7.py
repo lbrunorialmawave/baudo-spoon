@@ -6,6 +6,10 @@ Axis 1: Rendimento/Affidabilità (mutually exclusive, first match wins)
                  AND VR above the role-pool VR floor (median-ish)
                  AND (optional) ML next-fantavoto ≥ role soglia when present
                  AND (optional) expert rating ≥ TOP_EXPERT_MIN when present
+                 AND (optional) titolarità signal ≥ TOP_TITOLARITA_MIN when
+                 present (same EWMA-else-expert signal as AFFARE's gate — a
+                 great historical FP_Mantra doesn't make a benched backup a
+                 TOP pick this season)
 2. ✅ CERTEZZA   Stagioni_IT >= 2 AND Pr >= 0.70 AND DV <= pool quantile AND
                  P1 >= 55 ... OR titolarita_attesa (EWMA of matchday-status
                  probability) >= CERTEZZA_TITOLARITA_SOGLIA AND DV <= pool
@@ -52,6 +56,34 @@ penalties, hit the woodwork) but whom the expert panel still rates highly.
 - ⚖️ GIUSTO          |gap| < GIUSTO_GAP_BAND    (price tracks quality)
 - ⚠️ SOPRAVALUTATO   gap >= GIUSTO_GAP_BAND    (pricey relative to quality)
 - (none)             no quotation available — see Fase7_Prezzo_Motivo.
+
+AFFARE additionally requires a titolarità signal (EWMA titolarita_attesa,
+else Gruppo Esperti titolarita rescaled — see ``_affare_titolarita_signal``)
+>= ``AFFARE_TITOLARITA_MIN``. FP_Mantra/quality is entirely backward-looking:
+a backup keeper who started 25 games last season on injury cover can still
+show a great historical quality score at a 1cr price, but that price is the
+market correctly pricing "he won't play this season", not a bargain. No
+signal at all (neither source) never qualifies either, same "can't confirm,
+so don't claim it" policy as SCOMMESSA's price gate. Above the floor but
+below ``AFFARE_TITOLARITA_FULL_CONFIDENCE``, the label still fires but the
+*displayed* gap (``Fase7_Prezzo_Gap``, and therefore the frontend's star
+rating) is scaled down — a barely-passing titolarità reads as a lower-
+confidence bargain, not the same 2-3 star claim as a clear starter. This
+dampening never changes the label itself, only how confidently it's shown.
+
+SOPRAVALUTATO is suppressed entirely (falls through to GIUSTO) when the same
+titolarità signal is >= ``SOPRAVALUTATO_TITOLARITA_MAX``: a confirmed
+starter's FP_Mantra can still be anchored to a backup-era season (promoted
+from the bench, joined from a smaller club) and look "overpriced" purely
+because the stats haven't caught up to the new role — that's not real
+overpricing, it's stale history. Missing signal never suppresses (no
+evidence to doubt the raw stats either way). Between the AFFARE floor and
+the SOPRAVALUTATO ceiling there's a dead zone with no titolarità opinion at
+all — deliberately: a mid-pack titolarità shouldn't tilt an already-priced
+GIUSTO player either way. Below the ceiling but above
+``SOPRAVALUTATO_TITOLARITA_FULL_CONFIDENCE``, the label still fires but the
+displayed gap is dampened the same way AFFARE's is, mirrored: the closer to
+the suppression ceiling, the less confidently it's shown.
 
 A player can carry a label on both axes independently (e.g. CERTEZZA +
 AFFARE), one, or neither — the two axes never compete with each other.
@@ -264,6 +296,16 @@ def _external_expert_ok(df: pd.DataFrame, cfg: MantraConfig) -> pd.Series:
     return rating.isna() | (rating >= cfg.TOP_EXPERT_MIN)
 
 
+def _external_titolarita_ok(df: pd.DataFrame, cfg: MantraConfig) -> pd.Series:
+    """True where the combined titolarità signal (see
+    ``_affare_titolarita_signal``) is missing OR >= TOP_TITOLARITA_MIN. A
+    deliberately low bar: blocks only a clearly-benched player showing
+    elite historical stats (the same backup-keeper pattern as the AFFARE
+    gate), not ordinary rotation uncertainty."""
+    tit = _affare_titolarita_signal(df)
+    return tit.isna() | (tit >= cfg.TOP_TITOLARITA_MIN)
+
+
 def _explain_rendimento(
     df: pd.DataFrame,
     fp_mantra: pd.Series,
@@ -273,6 +315,7 @@ def _explain_rendimento(
     boost: pd.Series,
     price_pct: pd.Series,
     expert_certezza_idx: pd.Series,
+    top_titolarita: pd.Series,
     th: pd.DataFrame,
     label_rend: pd.Series,
     cfg: MantraConfig,
@@ -364,6 +407,11 @@ def _explain_rendimento(
                     reasons.append(
                         f"rating esperti {er:.0f} < {cfg.TOP_EXPERT_MIN:.0f}"
                     )
+            tit_top = top_titolarita.at[idx]
+            if pd.notna(tit_top) and tit_top < cfg.TOP_TITOLARITA_MIN:
+                reasons.append(
+                    f"titolarità attesa {tit_top:.0f} < {cfg.TOP_TITOLARITA_MIN:.0f}"
+                )
             if reasons:
                 motivo.at[idx] = (
                     f"Quasi TOP (FP_Mantra {fp_v:.0f} > {top_th:.0f}) ma "
@@ -397,15 +445,30 @@ def _explain_rendimento(
     return motivo
 
 
+def _affare_titolarita_signal(df: pd.DataFrame) -> pd.Series:
+    """Combined 0-100 expected-titolarità signal for the AFFARE gate: the
+    EWMA ``titolarita_attesa`` (concrete, matchday-scraped) when available,
+    else Gruppo Esperti ``expert_titolarita`` (1-10) rescaled — a season-long
+    subjective assessment, used only when the more concrete source is
+    missing. NaN when neither is available."""
+    ewma = df.get("titolarita_attesa", pd.Series(np.nan, index=df.index))
+    expert = pd.to_numeric(
+        df.get("expert_titolarita", pd.Series(np.nan, index=df.index)), errors="coerce"
+    )
+    return ewma.where(ewma.notna(), _to_100(expert))
+
+
 def _explain_prezzo(
     df: pd.DataFrame,
     gap_prezzo: pd.Series,
+    would_be_affare: pd.Series,
+    affare_titolarita: pd.Series,
     label_prezzo: pd.Series,
     cfg: MantraConfig,
 ) -> pd.Series:
-    """Explain, for players with no Prezzo-axis label, why (in practice this
-    is always "no quotation" — the three bands otherwise cover the whole
-    gap range contiguously)."""
+    """Explain, for players with no Prezzo-axis label, why — either "no
+    quotation" (three bands otherwise cover the whole gap range
+    contiguously) or "would be AFFARE but titolarità too low/unknown"."""
     motivo = pd.Series([None] * len(df), index=df.index, dtype=object)
     for idx in df.index[label_prezzo.isna()]:
         g = gap_prezzo.at[idx]
@@ -413,6 +476,16 @@ def _explain_prezzo(
             motivo.at[idx] = (
                 "Nessuna quotazione disponibile: impossibile calcolare il gap "
                 "prezzo/valore"
+            )
+        elif would_be_affare.at[idx]:
+            tit = affare_titolarita.at[idx]
+            reason = (
+                f"titolarità attesa {tit:.0f} < {cfg.AFFARE_TITOLARITA_MIN:.0f}"
+                if pd.notna(tit) else "nessun segnale di titolarità disponibile"
+            )
+            motivo.at[idx] = (
+                f"Gap Prezzo/Valore {g:.0f}: sarebbe AFFARE ma {reason} — "
+                "non abbastanza sicuro che giochi"
             )
         else:
             motivo.at[idx] = (
@@ -489,11 +562,13 @@ def classify_fase7(
 
     ml_ok = _external_ml_ok(df, cfg)
     expert_ok = _external_expert_ok(df, cfg)
+    titolarita_ok = _external_titolarita_ok(df, cfg)
     mask = (
         (fp_mantra > th["top_fp_mantra"])
         & (vr > th["top_vr"])
         & ml_ok
         & expert_ok
+        & titolarita_ok
     )
     label_rend[mask] = "TOP"
 
@@ -528,7 +603,7 @@ def classify_fase7(
 
     motivo_rend = _explain_rendimento(
         df, fp_mantra, vr, p1, gap_rend_eff, boost, price_pct, expert_certezza_idx,
-        th, label_rend, cfg,
+        _affare_titolarita_signal(df), th, label_rend, cfg,
     )
 
     # ── Asse Prezzo/Valore: AFFARE / GIUSTO / SOPRAVALUTATO ─────────────────
@@ -546,12 +621,58 @@ def classify_fase7(
         ~have_totale, (1.0 - w) * fp_mantra_pct + w * expert_totale_pct
     )
     gap_prezzo = price_pct - quality_pct
+
+    # AFFARE additionally requires a titolarità signal above the floor (see
+    # module docstring): a great historical quality score at a rock-bottom
+    # price is often just the market correctly pricing "won't play", not a
+    # bargain. Blocked candidates stay unlabeled (None), not GIUSTO — the
+    # statistical gap really does say "underpriced", we just can't confirm
+    # it matters; see _explain_prezzo.
+    affare_titolarita = _affare_titolarita_signal(df)
+    affare_titolarita_ok = affare_titolarita.notna() & (affare_titolarita >= cfg.AFFARE_TITOLARITA_MIN)
+    would_be_affare = gap_prezzo <= -cfg.GIUSTO_GAP_BAND
+    affare_mask = would_be_affare & affare_titolarita_ok
+
+    # Mirror image for SOPRAVALUTATO: a confirmed starter (high titolarità)
+    # whose FP_Mantra is still anchored to a backup-era season will show a
+    # large price/quality gap purely because his stats haven't caught up to
+    # his new role — not real overpricing. At/above MAX it's suppressed
+    # entirely (falls through to GIUSTO below); missing signal never
+    # suppresses (no evidence to doubt the raw stats either way).
+    sopravalutato_suppressed = affare_titolarita.notna() & (affare_titolarita >= cfg.SOPRAVALUTATO_TITOLARITA_MAX)
+    would_be_sopravalutato = gap_prezzo >= cfg.GIUSTO_GAP_BAND
+    sopravalutato_mask = would_be_sopravalutato & ~sopravalutato_suppressed
+
     label_prezzo = pd.Series([None] * len(df), index=df.index, dtype=object)
-    label_prezzo[gap_prezzo <= -cfg.GIUSTO_GAP_BAND] = "AFFARE"
-    label_prezzo[gap_prezzo >= cfg.GIUSTO_GAP_BAND] = "SOPRAVALUTATO"
-    mid_mask = gap_prezzo.notna() & label_prezzo.isna()
-    label_prezzo[mid_mask] = "GIUSTO"
+    label_prezzo[sopravalutato_mask] = "SOPRAVALUTATO"
+    label_prezzo[affare_mask] = "AFFARE"
+    giusto_mask = gap_prezzo.notna() & label_prezzo.isna() & ~would_be_affare
+    label_prezzo[giusto_mask] = "GIUSTO"
 
-    motivo_prezzo = _explain_prezzo(df, gap_prezzo, label_prezzo, cfg)
+    # Above the AFFARE floor, dampen the *displayed* gap (drives the
+    # frontend star rating) for marginal titolarità — the label still
+    # fires, but a 30%-to-start bargain shouldn't read as confidently as a
+    # clear starter's. Same shape, inverted, just below the SOPRAVALUTATO
+    # suppression ceiling. Neither ever changes the label, only the stars.
+    affare_ramp = (
+        (affare_titolarita - cfg.AFFARE_TITOLARITA_MIN)
+        / (cfg.AFFARE_TITOLARITA_FULL_CONFIDENCE - cfg.AFFARE_TITOLARITA_MIN)
+    ).clip(lower=0.0, upper=1.0)
+    affare_conf_mult = cfg.AFFARE_TITOLARITA_MIN_CONFIDENCE + (1.0 - cfg.AFFARE_TITOLARITA_MIN_CONFIDENCE) * affare_ramp
 
-    return label_rend, motivo_rend, gap_rend_eff, label_prezzo, motivo_prezzo, gap_prezzo
+    sopravalutato_ramp = (
+        (cfg.SOPRAVALUTATO_TITOLARITA_MAX - affare_titolarita)
+        / (cfg.SOPRAVALUTATO_TITOLARITA_MAX - cfg.SOPRAVALUTATO_TITOLARITA_FULL_CONFIDENCE)
+    ).clip(lower=0.0, upper=1.0).fillna(1.0)  # no signal -> full confidence, no dampening
+    sopravalutato_conf_mult = (
+        cfg.SOPRAVALUTATO_TITOLARITA_MIN_CONFIDENCE
+        + (1.0 - cfg.SOPRAVALUTATO_TITOLARITA_MIN_CONFIDENCE) * sopravalutato_ramp
+    )
+
+    gap_prezzo_display = gap_prezzo.copy()
+    gap_prezzo_display[affare_mask] = gap_prezzo[affare_mask] * affare_conf_mult[affare_mask]
+    gap_prezzo_display[sopravalutato_mask] = gap_prezzo[sopravalutato_mask] * sopravalutato_conf_mult[sopravalutato_mask]
+
+    motivo_prezzo = _explain_prezzo(df, gap_prezzo, would_be_affare, affare_titolarita, label_prezzo, cfg)
+
+    return label_rend, motivo_rend, gap_rend_eff, label_prezzo, motivo_prezzo, gap_prezzo_display

@@ -179,6 +179,7 @@ class TestPrezzoAxis:
             "ruolo_primario": ["C", "C"],
             "Stagioni_IT": [0, 0], "Pr": [0.0, 0.0], "DV": [5.0, 5.0],
             "Pz1": [10, 100],
+            "titolarita_attesa": [90.0, 50.0],  # candidate: clear starter, no AFFARE dampening
         })
         _, _, _, label_prezzo, _, gap_prezzo = _classify(
             df, fp=[40, 40], fp_mantra=[130, 40], vr=[90, 90], p1=[50, 50], cfg=cfg,
@@ -231,12 +232,176 @@ class TestPrezzoAxis:
         assert "quotazione" in motivo_prezzo.iloc[0].lower()
 
 
+class TestAffareTitolaritaGate:
+    """AFFARE requires a titolarità signal above AFFARE_TITOLARITA_MIN — a
+    great historical quality score at a rock-bottom price is often just the
+    market pricing in "won't play", not a bargain (real 2026 auction data:
+    backup goalkeepers priced 1cr with a strong prior-season FP_Mantra)."""
+
+    @staticmethod
+    def _cheap_high_quality_df(**titolarita_cols) -> pd.DataFrame:
+        """2-player 'C' pool: candidate (idx0) is the cheapest (Pz1=1) with
+        the highest FP_Mantra — price_pct=0, quality_pct=100, raw gap=-100
+        (a clear, extreme AFFARE gap by the numbers), gated only by
+        titolarità. The peer (idx1) never gets the titolarita override."""
+        n = 2
+        data = {
+            "ruolo_primario": ["C"] * n,
+            "Stagioni_IT": [0] * n, "Pr": [0.0] * n, "DV": [5.0] * n,
+            "Pz1": [1, 100],
+        }
+        for k, v in titolarita_cols.items():
+            data[k] = [v, np.nan]
+        return pd.DataFrame(data)
+
+    def _gap(self, cfg, **titolarita_cols):
+        df = self._cheap_high_quality_df(**titolarita_cols)
+        return _classify(df, fp=[40, 40], fp_mantra=[130, 40], vr=[90, 90], p1=[50, 50], cfg=cfg)
+
+    def test_blocked_when_titolarita_below_floor(self, cfg):
+        _, _, _, label_prezzo, motivo_prezzo, _ = self._gap(cfg, titolarita_attesa=5.0)
+        assert pd.isna(label_prezzo.iloc[0])
+        assert "sarebbe AFFARE" in motivo_prezzo.iloc[0]
+        assert "titolarità attesa 5" in motivo_prezzo.iloc[0]
+
+    def test_blocked_when_no_titolarita_signal_at_all(self, cfg):
+        _, _, _, label_prezzo, motivo_prezzo, _ = self._gap(cfg)
+        assert pd.isna(label_prezzo.iloc[0])
+        assert "sarebbe AFFARE" in motivo_prezzo.iloc[0]
+        assert "nessun segnale" in motivo_prezzo.iloc[0].lower()
+
+    def test_allowed_when_titolarita_above_floor(self, cfg):
+        _, _, _, label_prezzo, _, _ = self._gap(cfg, titolarita_attesa=90.0)
+        assert label_prezzo.iloc[0] == "AFFARE"
+
+    def test_expert_titolarita_used_as_fallback(self, cfg):
+        """When EWMA titolarita_attesa is unavailable, Gruppo Esperti
+        expert_titolarita (1-10, rescaled to 0-100) is used instead."""
+        _, _, _, label_prezzo, _, _ = self._gap(cfg, expert_titolarita=9.0)  # -> 88.9
+        assert label_prezzo.iloc[0] == "AFFARE"
+
+    def test_ewma_takes_priority_over_expert_when_both_present(self, cfg):
+        """A low EWMA (concrete, current) must block AFFARE even if the
+        expert panel (season-long, less current) is optimistic."""
+        _, _, _, label_prezzo, _, _ = self._gap(
+            cfg, titolarita_attesa=5.0, expert_titolarita=9.0,
+        )
+        assert pd.isna(label_prezzo.iloc[0])
+
+    def test_confidence_dampened_at_the_floor(self, cfg):
+        """At exactly AFFARE_TITOLARITA_MIN, the label still fires but the
+        displayed gap is scaled by AFFARE_TITOLARITA_MIN_CONFIDENCE (never
+        zero) — the raw gap here is an exact -100 by construction."""
+        _, _, _, label_prezzo, _, gap_prezzo = self._gap(
+            cfg, titolarita_attesa=cfg.AFFARE_TITOLARITA_MIN,
+        )
+        assert label_prezzo.iloc[0] == "AFFARE"
+        assert gap_prezzo.iloc[0] == pytest.approx(-100.0 * cfg.AFFARE_TITOLARITA_MIN_CONFIDENCE)
+
+    def test_full_confidence_at_or_above_ceiling_is_undamped(self, cfg):
+        """At/above AFFARE_TITOLARITA_FULL_CONFIDENCE, the displayed gap
+        equals the raw price/quality gap (no dampening)."""
+        _, _, _, label_prezzo, _, gap_prezzo = self._gap(
+            cfg, titolarita_attesa=cfg.AFFARE_TITOLARITA_FULL_CONFIDENCE,
+        )
+        assert label_prezzo.iloc[0] == "AFFARE"
+        assert gap_prezzo.iloc[0] == pytest.approx(-100.0)
+
+        _, _, _, _, _, gap_prezzo_above = self._gap(cfg, titolarita_attesa=95.0)
+        assert gap_prezzo_above.iloc[0] == pytest.approx(-100.0)
+
+
+class TestSopravalutatoTitolaritaSuppression:
+    """SOPRAVALUTATO is suppressed when titolarità is high (mirror image of
+    AFFARE's gate): a confirmed starter's FP_Mantra can still be anchored to
+    a backup-era season, making the price/quality gap look like overpricing
+    when it's really just stale history (real 2026 case: Martinez Jo.,
+    Inter's starting keeper, showing SOPRAVALUTATO at 94% titolarità)."""
+
+    @staticmethod
+    def _expensive_low_quality_df(**titolarita_cols) -> pd.DataFrame:
+        """2-player 'C' pool: candidate (idx0) is the priciest (Pz1=100)
+        with the lowest FP_Mantra — price_pct=100, quality_pct=0, raw
+        gap=+100 (a clear, extreme SOPRAVALUTATO gap by the numbers),
+        gated only by titolarità. The peer (idx1) never gets the
+        titolarita override."""
+        n = 2
+        data = {
+            "ruolo_primario": ["C"] * n,
+            "Stagioni_IT": [0] * n, "Pr": [0.0] * n, "DV": [5.0] * n,
+            "Pz1": [100, 1],
+        }
+        for k, v in titolarita_cols.items():
+            data[k] = [v, np.nan]
+        return pd.DataFrame(data)
+
+    def _gap(self, cfg, **titolarita_cols):
+        df = self._expensive_low_quality_df(**titolarita_cols)
+        return _classify(df, fp=[40, 40], fp_mantra=[40, 130], vr=[90, 90], p1=[50, 50], cfg=cfg)
+
+    def test_not_suppressed_when_titolarita_below_ceiling(self, cfg):
+        _, _, _, label_prezzo, _, _ = self._gap(cfg, titolarita_attesa=50.0)
+        assert label_prezzo.iloc[0] == "SOPRAVALUTATO"
+
+    def test_not_suppressed_when_no_titolarita_signal_at_all(self, cfg):
+        """Missing signal never suppresses — no evidence to doubt the raw
+        stats either way, same policy as the AFFARE gate."""
+        _, _, _, label_prezzo, _, _ = self._gap(cfg)
+        assert label_prezzo.iloc[0] == "SOPRAVALUTATO"
+
+    def test_suppressed_falls_through_to_giusto_at_or_above_ceiling(self, cfg):
+        _, _, _, label_prezzo, _, _ = self._gap(
+            cfg, titolarita_attesa=cfg.SOPRAVALUTATO_TITOLARITA_MAX,
+        )
+        assert label_prezzo.iloc[0] == "GIUSTO"
+
+        _, _, _, label_prezzo_above, _, _ = self._gap(cfg, titolarita_attesa=95.0)
+        assert label_prezzo_above.iloc[0] == "GIUSTO"
+
+    def test_expert_titolarita_used_as_fallback(self, cfg):
+        """expert_titolarita=9 -> 88.9, above the 70 ceiling."""
+        _, _, _, label_prezzo, _, _ = self._gap(cfg, expert_titolarita=9.0)
+        assert label_prezzo.iloc[0] != "SOPRAVALUTATO"
+
+    def test_ewma_takes_priority_over_expert_when_both_present(self, cfg):
+        """A mid EWMA below the ceiling (concrete, current) must not be
+        overridden by an optimistic expert panel score above it."""
+        _, _, _, label_prezzo, _, _ = self._gap(
+            cfg, titolarita_attesa=50.0, expert_titolarita=9.0,
+        )
+        assert label_prezzo.iloc[0] == "SOPRAVALUTATO"
+
+    def test_full_confidence_at_or_below_floor_is_undamped(self, cfg):
+        """At/below SOPRAVALUTATO_TITOLARITA_FULL_CONFIDENCE, the displayed
+        gap equals the raw price/quality gap (no dampening)."""
+        _, _, _, label_prezzo, _, gap_prezzo = self._gap(
+            cfg, titolarita_attesa=cfg.SOPRAVALUTATO_TITOLARITA_FULL_CONFIDENCE,
+        )
+        assert label_prezzo.iloc[0] == "SOPRAVALUTATO"
+        assert gap_prezzo.iloc[0] == pytest.approx(100.0)
+
+        _, _, _, _, _, gap_prezzo_below = self._gap(cfg, titolarita_attesa=10.0)
+        assert gap_prezzo_below.iloc[0] == pytest.approx(100.0)
+
+    def test_confidence_dampened_near_the_ceiling(self, cfg):
+        """Just below SOPRAVALUTATO_TITOLARITA_MAX, the label still fires
+        but the displayed gap is scaled toward
+        SOPRAVALUTATO_TITOLARITA_MIN_CONFIDENCE (never zero)."""
+        near_ceiling = cfg.SOPRAVALUTATO_TITOLARITA_MAX - 0.01
+        _, _, _, label_prezzo, _, gap_prezzo = self._gap(cfg, titolarita_attesa=near_ceiling)
+        assert label_prezzo.iloc[0] == "SOPRAVALUTATO"
+        assert gap_prezzo.iloc[0] == pytest.approx(
+            100.0 * cfg.SOPRAVALUTATO_TITOLARITA_MIN_CONFIDENCE, abs=0.1,
+        )
+
+
 class TestAxesAreIndependent:
     def test_certezza_and_affare_can_coexist(self, cfg):
         df = pd.DataFrame({
             "ruolo_primario": ["C", "C"],
             "Stagioni_IT": [2, 2], "Pr": [0.9, 0.9], "DV": [1.0, 1.0],
             "Pz1": [10, 100],
+            "titolarita_attesa": [90.0, 50.0],
         })
         label_rend, _, _, label_prezzo, _, _ = _classify(
             df, fp=[55, 55], fp_mantra=[55, 55], vr=[95, 95], p1=[60, 60], cfg=cfg,
@@ -403,6 +568,45 @@ class TestTopExternalGates:
         assert label.iloc[0] != "TOP"
         assert motivo.iloc[0] is not None
         assert "esperti" in motivo.iloc[0].lower() or "rating" in motivo.iloc[0].lower()
+
+
+class TestTopTitolaritaGate:
+    """TOP blocked by a present titolarità signal below TOP_TITOLARITA_MIN
+    (same EWMA-else-expert signal as the AFFARE/SOPRAVALUTATO gates); nulls
+    never block."""
+
+    def test_titolarita_below_soglia_blocks_top(self, cfg):
+        df = _base_df(1)
+        df["titolarita_attesa"] = [10.0]  # well below TOP_TITOLARITA_MIN (40)
+        result = _rend(df, fp=[85], fp_mantra=[85], vr=[120], p1=[50], cfg=cfg)
+        assert result.iloc[0] != "TOP"
+
+    def test_titolarita_above_soglia_allows_top(self, cfg):
+        df = _base_df(1)
+        df["titolarita_attesa"] = [90.0]
+        result = _rend(df, fp=[85], fp_mantra=[85], vr=[120], p1=[50], cfg=cfg)
+        assert result.iloc[0] == "TOP"
+
+    def test_missing_titolarita_does_not_block(self, cfg):
+        df = _base_df(1)
+        result = _rend(df, fp=[85], fp_mantra=[85], vr=[120], p1=[50], cfg=cfg)
+        assert result.iloc[0] == "TOP"
+
+    def test_expert_titolarita_used_as_fallback(self, cfg):
+        df = _base_df(1)
+        df["expert_titolarita"] = [1.0]  # -> 0.0, well below TOP_TITOLARITA_MIN
+        result = _rend(df, fp=[85], fp_mantra=[85], vr=[120], p1=[50], cfg=cfg)
+        assert result.iloc[0] != "TOP"
+
+    def test_motivo_mentions_titolarita_block(self, cfg):
+        df = _base_df(1)
+        df["titolarita_attesa"] = [5.0]
+        label, motivo, *_ = _classify(
+            df, fp=[85], fp_mantra=[85], vr=[120], p1=[50], cfg=cfg,
+        )
+        assert label.iloc[0] != "TOP"
+        assert motivo.iloc[0] is not None
+        assert "titolarità" in motivo.iloc[0].lower()
 
 
 class TestCertezzaEspertiLeg:

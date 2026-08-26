@@ -121,6 +121,54 @@ class MantraConfig:
     # behavior); falls back to FP_Mantra-only automatically when TOTALE is
     # missing for a player.
     PREZZO_EXPERT_TOTALE_WEIGHT: float = 0.5
+    # AFFARE requires a minimum expected-titolarità signal (EWMA
+    # titolarita_attesa, else Gruppo Esperti titolarita rescaled to 0-100 —
+    # see _affare_titolarita_signal). FP_Mantra/quality is entirely
+    # backward-looking: a backup keeper who started 25 games last season
+    # (injury cover) can still show a great historical quality score at a
+    # 1cr price, but that price is the market correctly pricing "he won't
+    # play this season", not a bargain. Validated against real 2026 auction
+    # data: this blocked 20/81 AFFARE labels, nearly all confirmed backups
+    # (e.g. three separate backup goalkeepers priced 1cr with tit=1-5), while
+    # leaving legitimate underpriced-but-likely-starters (tit>=60) untouched.
+    # No signal available (neither source) never qualifies either — same
+    # "can't confirm, so don't claim it" policy as SCOMMESSA's price gate.
+    AFFARE_TITOLARITA_MIN: float = 30.0
+    # Above the floor, AFFARE still fires, but the *displayed* gap
+    # (Fase7_Prezzo_Gap, driving the frontend star rating) is scaled down
+    # for marginal titolarità so a 30%-to-start bargain doesn't show the
+    # same confidence as a clear starter's. Full confidence (no dampening)
+    # at/above this value; a floor multiplier at exactly AFFARE_TITOLARITA_MIN
+    # (linear ramp between the two), never zero — the label still means
+    # something even at the floor, just fewer stars.
+    AFFARE_TITOLARITA_FULL_CONFIDENCE: float = 70.0
+    AFFARE_TITOLARITA_MIN_CONFIDENCE: float = 0.5
+    # Mirror image of the AFFARE gate above, for SOPRAVALUTATO: a player
+    # whose FP_Mantra is still anchored to a backup-era season (low minutes)
+    # but who has since become a confirmed starter (high titolarità) will
+    # show a large price/quality gap purely because his stats haven't
+    # caught up to his new role yet — that's not real overpricing.
+    # Validated against real 2026 data: a starting Serie A goalkeeper who
+    # played only 450 min (13% presence, backup role) last season but has
+    # titolarita_attesa=94 this season showed SOPRAVALUTATO (gap +38.8) from
+    # stale backward-looking stats alone. At/above MAX, SOPRAVALUTATO is
+    # suppressed entirely (falls to GIUSTO); below it but above
+    # FULL_CONFIDENCE, the *displayed* gap is dampened (same ramp shape as
+    # AFFARE, inverted). No signal at all never dampens/suppresses — with no
+    # evidence he's a confirmed starter, the raw stats stand as-is.
+    SOPRAVALUTATO_TITOLARITA_MAX: float = 70.0
+    SOPRAVALUTATO_TITOLARITA_FULL_CONFIDENCE: float = 30.0
+    SOPRAVALUTATO_TITOLARITA_MIN_CONFIDENCE: float = 0.5
+    # TOP also requires the same combined titolarità signal (when present)
+    # to be at least this — optional gate, same "null = skipped" convention
+    # as TOP_EXPERT_MIN / NEXT_FANTAVOTO_MIN_BY_ROLE. Deliberately a low bar
+    # (unlike AFFARE_TITOLARITA_MIN=30): TOP should only be blocked by a
+    # clearly-benched player showing elite historical stats (the same
+    # backup-keeper pattern as AFFARE), not by ordinary rotation uncertainty
+    # — validated against real 2026 data at this threshold: only 2/68 TOP
+    # players blocked, both clear backups (tit<=5), leaving merely-uncertain
+    # (40-60) cases untouched.
+    TOP_TITOLARITA_MIN: float = 40.0
 
     # ── Fase 7 threshold mode ─────────────────────────────────────────────────
     # "percentile": TOP thresholds (and CERTEZZA's DV leg) are computed per
