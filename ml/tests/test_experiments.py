@@ -123,6 +123,11 @@ class TestRunExperiment:
 
         def _fake_trainer(cfg):  # type: ignore[no-untyped-def]
             class _StubTrainer:
+                def __init__(self, cfg):  # type: ignore[no-untyped-def]
+                    # Real Trainer stores the config as .cfg; harness.py force-sets
+                    # flags on it post-construction (object.__setattr__(trainer.cfg, ...)).
+                    self.cfg = cfg
+
                 def run(self, external_fantavoto_csv=None):  # type: ignore[no-untyped-def]
                     return {
                         "best_model": "ridge",
@@ -165,7 +170,7 @@ class TestRunExperiment:
                             },
                         ],
                     }
-            return _StubTrainer()
+            return _StubTrainer(cfg)
 
         original = harness_mod.Trainer
         harness_mod.Trainer = _fake_trainer  # type: ignore[assignment]
@@ -195,9 +200,12 @@ class TestRunExperiment:
 
         def _exploding_trainer(cfg):  # type: ignore[no-untyped-def]
             class _Exploder:
+                def __init__(self, cfg):  # type: ignore[no-untyped-def]
+                    self.cfg = cfg
+
                 def run(self, external_fantavoto_csv=None):  # type: ignore[no-untyped-def]
                     raise RuntimeError("simulated failure")
-            return _Exploder()
+            return _Exploder(cfg)
 
         original = harness_mod.Trainer
         harness_mod.Trainer = _exploding_trainer  # type: ignore[assignment]

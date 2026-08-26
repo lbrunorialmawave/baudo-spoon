@@ -173,7 +173,7 @@ def test_missing_view_degrades_to_noop(monkeypatch: pytest.MonkeyPatch, caplog: 
     with caplog.at_level(logging.WARNING):
         result = _append_foreign_fallback_rows(df_player, _FakeEngine(), logging.getLogger("test"))
     assert len(result) == len(df_player)
-    assert any("migration 018" in r.message for r in caplog.records)
+    assert any("migrations 018" in r.message for r in caplog.records)
 
 
 def test_empty_query_result_is_noop(monkeypatch: pytest.MonkeyPatch) -> None:

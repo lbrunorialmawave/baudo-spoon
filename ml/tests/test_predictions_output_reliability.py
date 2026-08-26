@@ -35,7 +35,9 @@ def test_player_prediction_schema_maps_artifact_keys_and_pr9_fields() -> None:
         player_fotmob_id=raw.get("player_fotmob_id"),
         team_name=raw.get("team_name"),
         canonical_role=raw.get("canonical_role"),
-        season=raw.get("season_start") or raw.get("season"),
+        # season_start in the artifact is a JSON int; PlayerPredictionSchema.season
+        # is str, and Pydantic v2 doesn't coerce int -> str.
+        season=str(raw["season_start"]) if raw.get("season_start") is not None else raw.get("season"),
         fantavoto_medio=raw.get("fantavoto_medio"),
         predicted=float(
             raw["predicted_fantavoto"]
@@ -57,7 +59,7 @@ def test_player_prediction_schema_maps_artifact_keys_and_pr9_fields() -> None:
 
     dumped = item.model_dump(by_alias=True)
     assert dumped["playerName"] == "Test Player"
-    assert dumped["season"] == 2025
+    assert dumped["season"] == "2025"
     assert dumped["predicted"] == 7.8
     assert dumped["sampleCohort"] == "LIMITED"
     assert dumped["mlValuesNoisy"] is True

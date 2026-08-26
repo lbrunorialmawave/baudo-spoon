@@ -16,6 +16,7 @@ scipy>=1.11
 pulp>=2.7
 # ML rearchitecture (Phase 0-5)
 polars>=0.20
+pyarrow>=14.0  # required by polars for pandas interop with nullable dtypes (e.g. Int64)
 optuna>=3.5
 lightgbm>=4.3
 catboost>=1.2

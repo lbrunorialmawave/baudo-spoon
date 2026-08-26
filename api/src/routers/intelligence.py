@@ -129,13 +129,16 @@ async def list_player_predictions(
     for r in raw:
         name: str = r.get("player_name", "")
         db_meta = db_lookup.get(name, {})
+        # Artifact uses season_start (a JSON int, e.g. 2025); older consumers
+        # may still emit season. PlayerPredictionSchema.season is str, and
+        # Pydantic v2 doesn't coerce int -> str, so this must be stringified.
+        season_raw = r.get("season_start") or r.get("season")
         item = PlayerPredictionSchema(
             player_name=name,
             player_fotmob_id=r.get("player_fotmob_id") or db_meta.get("player_fotmob_id"),
             team_name=r.get("team_name") or db_meta.get("team_name"),
             canonical_role=r.get("canonical_role"),
-            # Artifact uses season_start; older consumers may still emit season.
-            season=r.get("season_start") or r.get("season"),
+            season=str(season_raw) if season_raw is not None else None,
             fantavoto_medio=r.get("fantavoto_medio"),
             # Artifact key is predicted_fantavoto; keep predicted as fallback.
             predicted=float(r.get("predicted_fantavoto") if r.get("predicted_fantavoto") is not None else r.get("predicted", 0.0)),

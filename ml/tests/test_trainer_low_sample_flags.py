@@ -45,6 +45,24 @@ def _cfg(tmp_path: Path, **overrides) -> MLConfig:
     )
 
 
+@pytest.fixture(autouse=True)
+def _skip_rollout_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Trainer.__init__ calls apply_production_flags_to_config(cfg,
+    resolve_env_flags()), which resets enable_shrinkage /
+    enable_limited_sample_training / etc. to whatever the ML_ENABLE_*
+    environment variables say (production default: all off) — silently
+    overriding whatever this test's MLConfig(...) explicitly set. This is
+    the same root cause ml/experiments/harness.py works around with its
+    "last-resort force" object.__setattr__ calls (see its comment citing
+    runs 20260817_065857 / 20260817_074700). These tests exercise Trainer's
+    flag-gated behavior in isolation from the rollout system, so disable
+    the override entirely rather than reverse-engineering env var names."""
+    monkeypatch.setattr(
+        "ml.rollout.env_flags.apply_production_flags_to_config",
+        lambda cfg, resolved: None,
+    )
+
+
 def _toy_frame(n_players: int = 30, seasons: tuple[int, ...] = (2021, 2022, 2023, 2024)) -> pd.DataFrame:
     """Deterministic multi-season, multi-role player frame with per-90 stats."""
     rng = np.random.default_rng(42)
@@ -344,4 +362,8 @@ class TestShrinkagePreventsPhenom:
         cfg = _cfg(tmp_path)
         assert cfg.enable_limited_sample_training is False
         assert cfg.enable_shrinkage is False
-        assert cfg.reliability_weight_mode == "bucket"
+        # "continuous" is the documented default since plan-limited-cohort-patches.md
+        # G3 Option 1 (see ml/config.py's reliability_weight_mode comment) — this is
+        # a decision-layer weighting mode, not a training kill-switch like the two
+        # flags above, so it isn't gated the same way.
+        assert cfg.reliability_weight_mode == "continuous"
